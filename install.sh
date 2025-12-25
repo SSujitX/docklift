@@ -60,7 +60,7 @@ INSTALL_DIR="/opt/docklift"
 if [ -d "$INSTALL_DIR" ]; then
     echo -e "${YELLOW}➜ Updating existing installation...${NC}"
     cd "$INSTALL_DIR"
-    git pull origin main
+    git pull origin master
 else
     echo -e "${YELLOW}➜ Cloning Docklift...${NC}"
     git clone https://github.com/SSujitX/docklift.git "$INSTALL_DIR"
