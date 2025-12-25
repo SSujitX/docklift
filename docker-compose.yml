@@ -1,0 +1,67 @@
+services:
+  docklift-backend:
+    build: ./backend
+    container_name: docklift-backend
+    restart: unless-stopped
+    expose:
+      - "8000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./data:/app/data
+      - ./deployments:/deployments
+      - ./nginx-proxy/conf.d:/nginx-conf
+    environment:
+      - DOCKLIFT_DEPLOYMENTS_PATH=/deployments
+      - DOCKLIFT_NGINX_CONF_PATH=/nginx-conf
+      - DOCKLIFT_DOCKER_NETWORK=docklift_network
+    networks:
+      - docklift_network
+    depends_on:
+      - docklift-nginx-proxy
+
+  docklift-frontend:
+    build: 
+      context: ./frontend
+      args:
+        - NEXT_PUBLIC_API_URL=http://localhost:8000
+    container_name: docklift-frontend
+    restart: unless-stopped
+    expose:
+      - "3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://docklift-backend:8000
+    networks:
+      - docklift_network
+    depends_on:
+      - docklift-backend
+
+  docklift-nginx:
+    image: nginx:stable-alpine
+    container_name: docklift-nginx
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - docklift_network
+    depends_on:
+      - docklift-frontend
+      - docklift-backend
+
+  docklift-nginx-proxy:
+    image: nginx:stable-alpine
+    container_name: docklift-nginx-proxy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx-proxy/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx-proxy/nginx.conf:/etc/nginx/nginx.conf:ro
+    networks:
+      - docklift_network
+
+networks:
+  docklift_network:
+    name: docklift_network
+    driver: bridge

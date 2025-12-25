@@ -1,0 +1,62 @@
+# Docklift - Ignore List
+
+# Node.js
+node_modules/
+.next/
+out/
+dist/
+build/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg
+*.egg-info/
+.eggs/
+*.manifest
+*.spec
+pip-log.txt
+pip-delete-this-directory.txt
+.venv/
+venv/
+ENV/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+data/*.db
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# IDE
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+
+# Deployments (user project files)
+backend/deployments/*
+!backend/deployments/.gitkeep
+
+# Nginx proxy configs (auto-generated, keep default)
+nginx-proxy/conf.d/*
+!nginx-proxy/conf.d/.gitkeep
+!nginx-proxy/conf.d/default.conf
