@@ -4,8 +4,21 @@ import { ThemeProvider } from "@/lib/theme";
 import { Toaster } from "@/components/ui/sonner";
 
 export const metadata: Metadata = {
-  title: "Docklift",
-  description: "Self-hosted Docker deployment platform. Deploy your apps with a single click.",
+  title: "Docklift - Self-hosted Docker Deployment Platform",
+  description: "Open-source, self-hosted PaaS for Docker deployments. Deploy any application to your own server with one click. Free alternative to Heroku, Vercel, Netlify.",
+  keywords: ["docker", "deployment", "self-hosted", "paas", "devops", "containers", "open-source"],
+  authors: [{ name: "SSujitX" }],
+  openGraph: {
+    title: "Docklift - Self-hosted Docker Deployment Platform",
+    description: "Deploy any application to your own server with one click. Open-source, self-hosted PaaS.",
+    type: "website",
+    url: "https://github.com/SSujitX/docklift",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Docklift - Self-hosted Docker Deployment Platform",
+    description: "Deploy any application to your own server with one click.",
+  },
 };
 
 export default function RootLayout({
