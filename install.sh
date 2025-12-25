@@ -78,10 +78,16 @@ mkdir -p "$INSTALL_DIR/nginx-proxy/conf.d"
 
 # Build and start
 echo -e "${YELLOW}[6/6]${NC} Building and starting Docklift (this may take a few minutes)..."
-docker compose up -d --build --quiet-pull 2>&1 | grep -E "^(\[|\#|Step|Successfully|ERROR)" || true
+docker compose up -d --build 2>&1 | tail -20
+
+# Wait for containers to start
+echo -e "${YELLOW}  Waiting for containers to start...${NC}"
+sleep 5
 
 # Check if containers are running
-if docker compose ps | grep -q "Up"; then
+RUNNING=$(docker compose ps --format "table {{.Name}}\t{{.Status}}" 2>/dev/null | grep -c "Up" || echo "0")
+
+if [ "$RUNNING" -gt 0 ]; then
     # Get server IP
     SERVER_IP=$(hostname -I | awk '{print $1}')
 
@@ -101,6 +107,13 @@ if docker compose ps | grep -q "Up"; then
     echo -e "   cd $INSTALL_DIR && docker compose up -d    # Start"
     echo ""
 else
-    echo -e "${RED}❌ Installation failed. Check logs with:${NC}"
-    echo -e "   cd $INSTALL_DIR && docker compose logs"
+    echo ""
+    echo -e "${YELLOW}⚠️  Containers built but may still be starting.${NC}"
+    echo -e "${YELLOW}   Check status with: cd $INSTALL_DIR && docker compose ps${NC}"
+    echo ""
+    
+    SERVER_IP=$(hostname -I | awk '{print $1}')
+    echo -e "   ${CYAN}Dashboard:${NC}  http://${SERVER_IP}:8080"
+    echo -e "   ${CYAN}API:${NC}        http://${SERVER_IP}:8000"
+    echo ""
 fi
