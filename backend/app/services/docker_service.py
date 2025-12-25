@@ -31,11 +31,15 @@ async def compose_up(project_path: Path, project_id: str) -> AsyncGenerator[str,
     yield f"📦 Phase 1: Building Docker Image...\n"
     yield f"{'─' * 40}\n"
     
+    # Use docker compose (v2) - the exec args must be separate strings
+    cmd = ["docker", "compose", "-p", project_id, "up", "-d", "--build", "--progress=plain"]
+    
     process = await asyncio.create_subprocess_exec(
-        "docker", "compose", "-p", project_id, "up", "-d", "--build",
+        *cmd,
         cwd=str(project_path),
         stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.STDOUT
+        stderr=asyncio.subprocess.STDOUT,
+        env={**os.environ, "DOCKER_BUILDKIT": "1", "COMPOSE_DOCKER_CLI_BUILD": "1"}
     )
     
     while True:
@@ -76,8 +80,9 @@ async def compose_down(project_path: Path, project_id: str) -> AsyncGenerator[st
     yield f"📅 {timestamp}\n"
     yield f"{'━' * 50}\n\n"
     
+    cmd = ["docker", "compose", "-p", project_id, "down"]
     process = await asyncio.create_subprocess_exec(
-        "docker", "compose", "-p", project_id, "down",
+        *cmd,
         cwd=str(project_path),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT
@@ -109,8 +114,9 @@ async def compose_restart(project_path: Path, project_id: str) -> AsyncGenerator
     yield f"📅 {timestamp}\n"
     yield f"{'━' * 50}\n\n"
     
+    cmd = ["docker", "compose", "-p", project_id, "restart"]
     process = await asyncio.create_subprocess_exec(
-        "docker", "compose", "-p", project_id, "restart",
+        *cmd,
         cwd=str(project_path),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT
