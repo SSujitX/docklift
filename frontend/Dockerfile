@@ -14,6 +14,9 @@ COPY . .
 
 ENV NEXT_TELEMETRY_DISABLED=1
 
+# Ensure public folder exists
+RUN mkdir -p public
+
 RUN npm run build
 
 FROM base AS runner
@@ -24,6 +27,9 @@ ENV NEXT_TELEMETRY_DISABLED=1
 
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
+
+# Create public folder if it doesn't exist
+RUN mkdir -p public
 
 COPY --from=builder /app/public ./public
 
