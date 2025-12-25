@@ -13,7 +13,7 @@
 ## 🚀 Quick Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/main/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh | sudo bash
 ```
 
 Or manually:
