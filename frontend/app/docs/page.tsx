@@ -103,6 +103,37 @@ export default function DocsPage() {
                 <p className="text-muted-foreground mb-4">
                   Docklift is a self-hosted Docker deployment platform. Deploy your apps with a single click.
                 </p>
+                
+                <div className="bg-zinc-900 rounded-xl p-4 font-mono text-sm text-zinc-300 mb-4">
+                  <div className="text-zinc-500 mb-2"># One-liner install (VPS/Linux server)</div>
+                  <pre className="text-cyan-400">curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh | sudo bash</pre>
+                </div>
+
+                <div className="bg-secondary/50 rounded-xl p-6 mb-4">
+                  <h4 className="font-semibold mb-3">Manual Installation</h4>
+                  <div className="bg-zinc-900 rounded-lg p-3 font-mono text-sm text-zinc-300">
+                    <pre>{`git clone https://github.com/SSujitX/docklift.git
+cd docklift
+docker compose up -d`}</pre>
+                  </div>
+                </div>
+
+                <div className="bg-secondary/50 rounded-xl p-6 mb-4">
+                  <h4 className="font-semibold mb-3">Development Mode</h4>
+                  <div className="bg-zinc-900 rounded-lg p-3 font-mono text-sm text-zinc-300 mb-3">
+                    <pre>{`# Backend
+cd backend && uv sync
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+# Frontend (new terminal)
+cd frontend && npm install
+npm run dev`}</pre>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Access at <code className="bg-primary/10 px-1.5 py-0.5 rounded text-primary">http://localhost:3000</code>
+                  </p>
+                </div>
+
                 <div className="bg-secondary/50 rounded-xl p-6 mb-4">
                   <h4 className="font-semibold mb-2">Quick Start</h4>
                   <ol className="list-decimal list-inside space-y-2 text-muted-foreground">
