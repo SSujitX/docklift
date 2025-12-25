@@ -67,14 +67,13 @@ else
     cd "$INSTALL_DIR"
 fi
 
-# Create Docker network if not exists
-docker network create docklift_network 2>/dev/null || true
-echo -e "${GREEN}  ✓ Docker network ready${NC}"
-
 # Create data directories
 mkdir -p "$INSTALL_DIR/data"
 mkdir -p "$INSTALL_DIR/deployments"
 mkdir -p "$INSTALL_DIR/nginx-proxy/conf.d"
+
+# Clean up any conflicting network from previous installs
+docker network rm docklift_network 2>/dev/null || true
 
 # Build and start
 echo -e "${YELLOW}[6/6]${NC} Building and starting Docklift (this may take a few minutes)..."
