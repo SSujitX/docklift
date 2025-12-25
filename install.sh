@@ -60,7 +60,10 @@ INSTALL_DIR="/opt/docklift"
 if [ -d "$INSTALL_DIR" ]; then
     echo -e "${YELLOW}[5/6]${NC} Updating existing installation..."
     cd "$INSTALL_DIR"
-    git pull origin master -q
+    # Stop existing containers before update
+    docker compose down 2>/dev/null || true
+    git fetch origin master -q
+    git reset --hard origin/master -q
 else
     echo -e "${YELLOW}[5/6]${NC} Cloning Docklift..."
     git clone -q https://github.com/SSujitX/docklift.git "$INSTALL_DIR"
@@ -98,7 +101,6 @@ if [ "$RUNNING" -gt 0 ]; then
     echo -e "${GREEN}╚═══════════════════════════════════════════════════════════╝${NC}"
     echo ""
     echo -e "   ${CYAN}Dashboard:${NC}  http://${SERVER_IP}:8080"
-    echo -e "   ${CYAN}API:${NC}        http://${SERVER_IP}:8000"
     echo ""
     echo -e "   ${YELLOW}Manage:${NC}"
     echo -e "   cd $INSTALL_DIR && docker compose logs -f  # View logs"
@@ -113,6 +115,5 @@ else
     
     SERVER_IP=$(hostname -I | awk '{print $1}')
     echo -e "   ${CYAN}Dashboard:${NC}  http://${SERVER_IP}:8080"
-    echo -e "   ${CYAN}API:${NC}        http://${SERVER_IP}:8000"
     echo ""
 fi
