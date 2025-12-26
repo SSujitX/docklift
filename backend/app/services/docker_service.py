@@ -32,7 +32,7 @@ async def compose_up(project_path: Path, project_id: str) -> AsyncGenerator[str,
     yield f"{'─' * 40}\n"
     
     # Use docker compose (v2) - the exec args must be separate strings
-    cmd = ["docker", "compose", "-p", project_id, "up", "-d", "--build", "--progress=plain"]
+    cmd = ["docker", "compose", "-p", project_id, "up", "-d", "--build"]
     
     process = await asyncio.create_subprocess_exec(
         *cmd,
