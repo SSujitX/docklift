@@ -17,6 +17,46 @@ def ensure_network():
         client.networks.create(settings.docker_network, driver="bridge")
 
 
+def patch_nextjs_middleware(project_path: Path) -> str:
+    """Patch Next.js middleware to allow all hosts for deployment"""
+    middleware_files = list(project_path.glob("**/middleware.ts")) + list(project_path.glob("**/middleware.js"))
+    
+    patched = []
+    for mw_file in middleware_files:
+        # Skip node_modules
+        if "node_modules" in str(mw_file):
+            continue
+        
+        try:
+            content = mw_file.read_text(encoding='utf-8')
+            
+            # Check if it has host validation that might block IPs
+            if any(check in content.lower() for check in ['allowedhosts', 'allowed_hosts', 'x-forwarded-host', 'req.headers.host']):
+                # Create a permissive middleware that just passes through
+                new_content = '''import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
+
+// Patched by Docklift for deployment - allows all hosts
+export function middleware(request: NextRequest) {
+    return NextResponse.next();
+}
+
+export const config = {
+    matcher: [
+        '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    ],
+};
+'''
+                mw_file.write_text(new_content, encoding='utf-8')
+                patched.append(str(mw_file.name))
+        except Exception as e:
+            continue
+    
+    if patched:
+        return f"🔧 Patched middleware: {', '.join(patched)}\n"
+    return ""
+
+
 async def compose_up(project_path: Path, project_id: str) -> AsyncGenerator[str, None]:
     ensure_network()
     from datetime import datetime
@@ -27,6 +67,11 @@ async def compose_up(project_path: Path, project_id: str) -> AsyncGenerator[str,
     yield f"🚀 DEPLOYMENT STARTED\n"
     yield f"📅 {timestamp}\n"
     yield f"{'━' * 50}\n\n"
+    
+    # Patch any restrictive Next.js middleware
+    patch_message = patch_nextjs_middleware(project_path)
+    if patch_message:
+        yield patch_message
     
     yield f"📦 Phase 1: Building Docker Image...\n"
     yield f"{'─' * 40}\n"
