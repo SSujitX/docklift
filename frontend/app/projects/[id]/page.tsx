@@ -197,8 +197,8 @@ export default function ProjectDetail() {
                 {project.domain} <ExternalLink className="h-3.5 w-3.5" />
               </a>
             ) : project.port ? (
-              <a href={`http://localhost:${project.port}`} target="_blank" rel="noopener noreferrer" className="font-mono font-medium text-primary flex items-center gap-1 hover:underline">
-                localhost:{project.port} <ExternalLink className="h-3.5 w-3.5" />
+              <a href={`http://${typeof window !== 'undefined' ? window.location.hostname : 'localhost'}:${project.port}`} target="_blank" rel="noopener noreferrer" className="font-mono font-medium text-primary flex items-center gap-1 hover:underline">
+                {typeof window !== 'undefined' ? window.location.hostname : 'localhost'}:{project.port} <ExternalLink className="h-3.5 w-3.5" />
               </a>
             ) : (
               <span className="text-muted-foreground text-sm">Not assigned</span>
