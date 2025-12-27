@@ -8,7 +8,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Server, Network, Container, Info, Loader2, Check, X, Sparkles, Globe, Plus, Trash2, ExternalLink } from "lucide-react";
+import { Server, Network, Container, Info, Loader2, Check, X, Sparkles, Globe, Plus, Trash2, ExternalLink, Copy } from "lucide-react";
 import { GithubIcon } from "@/components/icons/GithubIcon";
 import { toast } from "sonner";
 import { API_URL } from "@/lib/utils";
@@ -40,6 +40,7 @@ function SettingsContent() {
   const [showAddDomain, setShowAddDomain] = useState(false);
   const [newDomain, setNewDomain] = useState({ domain: '', port: '8080' });
   const [addingDomain, setAddingDomain] = useState(false);
+  const [serverIP, setServerIP] = useState<string>('...');
 
   const searchParams = useSearchParams();
 
@@ -53,7 +54,23 @@ function SettingsContent() {
     if (activeTab === 'domain') {
       fetchDomains();
     }
+
+    if (activeTab === 'server') {
+      fetchServerIP();
+    }
   }, [searchParams, activeTab]);
+
+  const fetchServerIP = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/system/ip`);
+      if (res.ok) {
+        const data = await res.json();
+        setServerIP(data.ip || 'N/A');
+      }
+    } catch {
+      setServerIP('N/A');
+    }
+  };
 
   const fetchGitHubStatus = async () => {
     try {
@@ -301,19 +318,83 @@ function SettingsContent() {
                   </div>
                   <div className="grid gap-6">
                     <div className="space-y-2">
-                      <label className="text-sm font-medium">API Endpoint</label>
+                      <label className="text-sm font-medium">Server IP Address</label>
                       <div className="flex gap-2">
                         <Input 
-                          value={API_URL || (typeof window !== 'undefined' ? window.location.origin : 'Detecting...')} 
+                          value={serverIP} 
                           disabled 
                           className="bg-secondary/50 font-mono" 
                         />
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          onClick={() => {
+                            navigator.clipboard.writeText(serverIP);
+                            toast.success('IP copied!');
+                          }}
+                        >
+                          <Copy className="h-4 w-4" />
+                        </Button>
                       </div>
-                      <p className="text-xs text-muted-foreground">The base URL for backend communication.</p>
+                      <p className="text-xs text-muted-foreground">Your server&apos;s public IP address.</p>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Docklift Panel URL</label>
+                      <div className="flex gap-2">
+                        <Input 
+                          value={`http://${serverIP}:8080`} 
+                          disabled 
+                          className="bg-secondary/50 font-mono" 
+                        />
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          onClick={() => {
+                            navigator.clipboard.writeText(`http://${serverIP}:8080`);
+                            toast.success('URL copied!');
+                          }}
+                        >
+                          <Copy className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      <p className="text-xs text-muted-foreground">Access Docklift at this URL (Frontend port 8080).</p>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Backend API URL</label>
+                      <div className="flex gap-2">
+                        <Input 
+                          value={`http://${serverIP}:4000`} 
+                          disabled 
+                          className="bg-secondary/50 font-mono" 
+                        />
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          onClick={() => {
+                            navigator.clipboard.writeText(`http://${serverIP}:4000`);
+                            toast.success('URL copied!');
+                          }}
+                        >
+                          <Copy className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      <p className="text-xs text-muted-foreground">Backend API endpoint (Port 4000).</p>
                     </div>
                     <div className="space-y-2">
                       <label className="text-sm font-medium">Deployments Directory</label>
-                      <Input value="/deployments" disabled className="bg-secondary/50 font-mono" />
+                      <div className="flex gap-2">
+                        <Input value="/deployments" disabled className="bg-secondary/50 font-mono" />
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          onClick={() => {
+                            navigator.clipboard.writeText('/deployments');
+                            toast.success('Path copied!');
+                          }}
+                        >
+                          <Copy className="h-4 w-4" />
+                        </Button>
+                      </div>
                       <p className="text-xs text-muted-foreground">Absolute path where project files are stored on the host.</p>
                     </div>
                   </div>
