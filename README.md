@@ -120,6 +120,42 @@ npm run dev
 
 ---
 
+## 📂 Project Structure Guide
+
+Docklift is designed to be flexible. It automatically scans your project for `Dockerfile` files. 
+
+### 1. Single-Service Project (Recommended for simple apps)
+Use this for a standard Next.js, Python, or Go application.
+
+```text
+my-cool-app/
+├── Dockerfile          <-- Required (at the root)
+├── package.json        (or requirements.txt, main.go, etc.)
+├── src/
+└── ...
+```
+
+### 2. Multi-Service Project (Mono-repo style)
+Docklift will detect each `Dockerfile` and create separate services for them within the same project.
+
+```text
+my-complex-app/
+├── api/
+│   ├── Dockerfile     <-- Service 1 (e.g. FastAPI)
+│   ├── main.py
+│   └── requirements.txt
+├── dashboard/
+│   ├── Dockerfile     <-- Service 2 (e.g. Next.js)
+│   ├── package.json
+│   └── ...
+└── README.md
+```
+
+> [!TIP]
+> **Docklift Tip**: Each subdirectory containing a `Dockerfile` becomes an independent container with its own internal port and optional custom domain.
+
+---
+
 ## 🤝 Contributing
 
 Contributions are welcome! Please open an issue to discuss proposed changes or features.
