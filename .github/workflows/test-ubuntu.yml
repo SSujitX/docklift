@@ -14,29 +14,29 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Setup Environment
+      - name: Preparing System
         id: setup
         run: |
-          START_TIME=$(date +%s)
-          sudo apt-get update
-          sudo apt-get install -y curl sudo
-          END_TIME=$(date +%s)
-          echo "duration=$((END_TIME - START_TIME))" >> $GITHUB_OUTPUT
+          ST=$(date +%s)
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq curl sudo
+          ET=$(date +%s)
+          echo "duration=$((ET - ST))" >> $GITHUB_OUTPUT
 
-      - name: Run Install Script
+      - name: Installing Docklift
         id: install
         run: |
-          START_TIME=$(date +%s)
+          ST=$(date +%s)
           chmod +x install.sh
           sudo CI=true DOCKLIFT_CI_LOCAL=true ./install.sh 2>&1 | tee install_output.txt
-          EXIT_CODE=${PIPESTATUS[0]}
-          END_TIME=$(date +%s)
-          echo "duration=$((END_TIME - START_TIME))" >> $GITHUB_OUTPUT
-          echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
-          exit $EXIT_CODE
+          EC=${PIPESTATUS[0]}
+          ET=$(date +%s)
+          echo "duration=$((ET - ST))" >> $GITHUB_OUTPUT
+          echo "exit_code=$EC" >> $GITHUB_OUTPUT
+          exit $EC
         continue-on-error: true
 
-      - name: Verify Installation
+      - name: Verifying Services
         id: verify
         run: |
           check_container() {
@@ -60,7 +60,6 @@ jobs:
       - name: Generate Summary
         if: always()
         run: |
-          # Determine overall status
           if [ "${{ steps.install.outputs.exit_code }}" = "0" ]; then
             STATUS_EMOJI="✅"
             STATUS_TEXT="Success"
@@ -69,7 +68,6 @@ jobs:
             STATUS_TEXT="Failed"
           fi
           
-          # Build summary
           cat >> $GITHUB_STEP_SUMMARY << EOF
           # 📋 Docklift Installation Test Summary
           
@@ -78,7 +76,7 @@ jobs:
           ### 📦 Version Info
           - **Version:** \`${{ steps.verify.outputs.version }}\`
           - **Path:** \`/opt/docklift\`
-          - **Status:** $([ "${{ steps.verify.outputs.dir_exists }}" = "true" ] && echo "✅ Directory created" || echo "❌ Directory missing")
+          - **Status:** $([ "${{ steps.verify.outputs.dir_exists }}" == "true" ] && echo "✅ Directory created" || echo "❌ Directory missing")
           
           ### ⏱️ Timing
           | Step | Duration |
@@ -96,7 +94,6 @@ jobs:
           
           EOF
           
-          # Add errors if install failed
           if [ "${{ steps.install.outputs.exit_code }}" != "0" ]; then
             echo "### ❌ Error Logs (Last 50 lines)" >> $GITHUB_STEP_SUMMARY
             echo '```bash' >> $GITHUB_STEP_SUMMARY
@@ -111,5 +108,3 @@ jobs:
       - name: Fail if install failed
         if: steps.install.outputs.exit_code != '0'
         run: exit 1
-
-

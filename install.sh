@@ -33,13 +33,12 @@ link() {
 # Header
 clear 2>/dev/null || true
 echo ""
-echo -e "${CYAN}"
-echo "  ____             _    _ _  __ _   "
-echo " |  _ \\  ___   ___| | _| (_)/ _| |_ "
-echo " | | | |/ _ \\ / __| |/ / | | |_| __|"
-echo " | |_| | (_) | (__|   <| | |  _| |_ "
-echo " |____/ \\___/ \\___|_|\\_\\_|_|_|  \\__|"
-echo -e "${NC}"
+echo -e "  ${CYAN}____             _    _ _  __ _   ${NC}"
+echo -e "  ${CYAN}|  _ \\  ___   ___| | _| (_)/ _| |_ ${NC}"
+echo -e "  ${CYAN}| | | |/ _ \\ / __| |/ / | | |_| __|${NC}"
+echo -e "  ${CYAN}| |_| | (_) | (__|   <| | |  _| |_ ${NC}"
+echo -e "  ${CYAN}|____/ \\___/ \\___|_|\\_\\_|_|_|  \\__|${NC}"
+echo ""
 echo -e "  ${DIM}Self-Hosted Docker Deployment Platform${NC}"
 echo ""
 
@@ -81,27 +80,29 @@ INSTALL_DIR="/opt/docklift"
 FETCH_START=$(date +%s)
 
 printf "  ${CYAN}[2/5]${NC} Fetching code..."
-if [ "$DOCKLIFT_CI_LOCAL" = "true" ]; then
-    mkdir -p "$INSTALL_DIR"
-    cp -r . "$INSTALL_DIR/"
-    cd "$INSTALL_DIR"
-elif [ -d "$INSTALL_DIR/.git" ]; then
-    cd "$INSTALL_DIR"
-    docker compose down 2>/dev/null || true
-    git fetch origin master -q 2>/dev/null
-    git reset --hard origin/master -q 2>/dev/null
-else
-    git clone -q https://github.com/SSujitX/docklift.git "$INSTALL_DIR" 2>/dev/null
-    cd "$INSTALL_DIR"
-fi
+{
+    if [ "$DOCKLIFT_CI_LOCAL" = "true" ]; then
+        mkdir -p "$INSTALL_DIR"
+        cp -r . "$INSTALL_DIR/"
+        cd "$INSTALL_DIR"
+    elif [ -d "$INSTALL_DIR/.git" ]; then
+        cd "$INSTALL_DIR"
+        docker compose down 2>/dev/null || true
+        git fetch origin master -q 2>/dev/null
+        git reset --hard origin/master -q 2>/dev/null
+    else
+        git clone -q https://github.com/SSujitX/docklift.git "$INSTALL_DIR" 2>/dev/null
+        cd "$INSTALL_DIR"
+    fi
+} >/dev/null 2>&1
 
 FETCH_END=$(date +%s)
 FETCH_TIME=$((FETCH_END - FETCH_START))
 echo -e " ${GREEN}done${NC} ${DIM}($(format_time $FETCH_TIME))${NC}"
 
 # Get version
-VERSION=$(grep -o '"version": *"[^"]*"' "$INSTALL_DIR/backend/package.json" 2>/dev/null | head -1 | cut -d'"' -f4 || echo "1.0.0")
-echo -e "        ${DIM}Version: ${VERSION}${NC}"
+VERSION=$(grep -o '"version": *"[^"]*"' "$INSTALL_DIR/backend/package.json" 2>/dev/null | head -1 | cut -d'"' -f4 || echo "1.1.0")
+echo -e "        ${DIM}➞ Version: ${VERSION}${NC}"
 
 # Step 3: Directories
 printf "  ${CYAN}[3/5]${NC} Creating directories..."
@@ -160,31 +161,32 @@ if [ "$RUNNING" -gt 0 ]; then
     echo ""
     
     if [ "$CI" != "true" ]; then
-        PUBLIC_IPV4=$(curl -4 -s --connect-timeout 2 https://api.ipify.org 2>/dev/null || echo "")
-        PUBLIC_IPV6=$(curl -6 -s --connect-timeout 2 https://api64.ipify.org 2>/dev/null || echo "")
+        PUB4=$(curl -4 -s --connect-timeout 2 https://api.ipify.org 2>/dev/null || echo "")
+        PUB6=$(curl -6 -s --connect-timeout 2 https://api64.ipify.org 2>/dev/null || echo "")
         
-        # Get local IP, excluding the public one and common docker bridges
-        PRIVATE_IP=$(hostname -I 2>/dev/null | tr ' ' '\n' | grep -v "$PUBLIC_IPV4" | grep -vE '172\.(1[7-8])\.0\.1' | grep -E '^(10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|192\.168\.)' | head -1)
+        # Get strictly private IPs, excluding public and docker bridges
+        PRV=$(hostname -I 2>/dev/null | tr ' ' '\n' | \
+            grep -v "${PUB4:-NOT_SET}" | \
+            grep -vE '^172\.(1[6-9]|2[0-9]|3[0-1])\.[0-9]+\.1$' | \
+            grep -vE '^172\.17\.0\.1$' | \
+            grep -E '^(10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|192\.168\.)' | \
+            head -1 || echo "")
         
-        # Fallback if no specific RFC1918 match but we have something else
-        if [ -z "$PRIVATE_IP" ]; then
-            PRIVATE_IP=$(hostname -I 2>/dev/null | tr ' ' '\n' | grep -v "$PUBLIC_IPV4" | grep -vE '172\.(1[7-8])\.0\.1' | grep -v '^$' | head -1)
-        fi
-        
-        if [ -n "$PUBLIC_IPV4" ] || [ -n "$PRIVATE_IP" ]; then
+        if [ -n "$PUB4" ] || [ -n "$PRV" ]; then
             echo -e "  ${BOLD}Access Docklift:${NC}"
             echo ""
             
-            [ -n "$PUBLIC_IPV4" ] && echo -e "  ${CYAN}Public:  ${NC} $(link "http://${PUBLIC_IPV4}:8080" "http://${PUBLIC_IPV4}:8080")"
-            [ -n "$PUBLIC_IPV6" ] && echo -e "  ${CYAN}IPv6:    ${NC} $(link "http://[${PUBLIC_IPV6}]:8080" "http://[${PUBLIC_IPV6}]:8080")"
-            [ -n "$PRIVATE_IP" ] && echo -e "  ${DIM}Private: ${NC} $(link "http://${PRIVATE_IP}:8080" "http://${PRIVATE_IP}:8080")"
+            [ -n "$PUB4" ] && echo -e "  ${CYAN}Public:  ${NC} $(link "http://${PUB4}:8080" "http://${PUB4}:8080")"
+            [ -n "$PUB6" ] && echo -e "  ${CYAN}IPv6:    ${NC} $(link "http://[${PUB6}]:8080" "http://[${PUB6}]:8080")"
+            [ -n "$PRV" ] && echo -e "  ${DIM}Private: ${NC} $(link "http://${PRV}:8080" "http://${PRV}:8080")"
             echo ""
         fi
     else
-        echo -e "  ${DIM}CI environment - containers ready${NC}"
+        echo -e "  ${DIM}Version: $VERSION | Build: $(format_time $BUILD_TIME)${NC}"
         echo ""
     fi
 else
     echo -e "  ${RED}Error: Containers not running${NC}"
     echo -e "  ${DIM}Run: cd $INSTALL_DIR && docker compose logs${NC}"
 fi
+echo ""
