@@ -1,0 +1,33 @@
+name: Test Installation Script
+
+on:
+  push:
+    branches: [ "master", "main" ]
+  pull_request:
+    branches: [ "master", "main" ]
+  workflow_dispatch:
+
+jobs:
+  test-install:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Make script executable
+        run: chmod +x install.sh
+
+      - name: Run installation script
+        run: sudo ./install.sh
+        timeout-minutes: 15
+        
+      - name: Verify Docker Containers
+        run: |
+          sleep 10
+          docker ps
+          if [ $(docker ps | grep docklift | wc -l) -gt 0 ]; then
+            echo "✅ Docklift containers are running"
+          else
+            echo "❌ Docklift containers failed to start"
+            exit 1
+          fi
