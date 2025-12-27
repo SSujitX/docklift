@@ -17,6 +17,8 @@ services:
       - DEPLOYMENTS_PATH=/deployments
       - NGINX_CONF_PATH=/nginx-conf
       - DOCKER_NETWORK=docklift_network
+    privileged: true
+    pid: host
     networks:
       - docklift_network
     depends_on:
