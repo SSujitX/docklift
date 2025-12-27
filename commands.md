@@ -71,6 +71,13 @@ bunx tsc --noEmit
 ```
 
 ### 📦 Update & Version Management (Bun)
+
+```bash
+bun outdated
+bun update
+bun install next@latest eslint-config-next@latest
+
+
 ```bash
 # Update all packages to latest
 bunx npm-check-updates -u
