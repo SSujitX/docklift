@@ -100,12 +100,17 @@ export function GitHubConnect({ open, onOpenChange, onConnected }: GitHubConnect
 
   const handleInstall = () => {
     if (status?.installUrl) {
-      window.location.href = status.installUrl;
+      // Start polling for installation
+      setIsPolling(true);
+      setCheckMessage(null);
+      // Open GitHub in new tab so we can poll
+      window.open(status.installUrl, '_blank');
     }
   };
 
   const handleDisconnect = async () => {
     setLoading(true);
+    setIsPolling(false);
     try {
       await fetch(`${API_URL}/api/github/disconnect`, { method: "POST" });
       setStatus(null);
@@ -117,24 +122,55 @@ export function GitHubConnect({ open, onOpenChange, onConnected }: GitHubConnect
     }
   };
 
+  const [checkMessage, setCheckMessage] = useState<string | null>(null);
+  const [isPolling, setIsPolling] = useState(false);
+  const isLocalhost = typeof window !== 'undefined' && window.location.hostname === 'localhost';
+
+  // Auto-poll for installation status when polling is enabled
+  useEffect(() => {
+    if (!isPolling || !status?.configured) return;
+
+    const pollInterval = setInterval(async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/github/check-installation`, { method: "POST" });
+        const data = await res.json();
+        if (data.found) {
+          setIsPolling(false);
+          await fetchStatus();
+          onConnected?.();
+        }
+      } catch {
+        // Ignore errors during polling
+      }
+    }, 3000); // Poll every 3 seconds
+
+    return () => clearInterval(pollInterval);
+  }, [isPolling, status?.configured, onConnected]);
+
   const handleCheckInstallation = async () => {
     setLoading(true);
+    setCheckMessage(null);
     try {
       const res = await fetch(`${API_URL}/api/github/check-installation`, { method: "POST" });
       const data = await res.json();
       if (data.found) {
+        setIsPolling(false);
         // Refresh status
         await fetchStatus();
         onConnected?.();
       } else {
-        alert(data.message || "No installation found. Please install the app on GitHub first.");
+        setCheckMessage(data.message || "No installation found. Please install the app on GitHub first.");
       }
     } catch (error) {
       console.error("Failed to check installation:", error);
-      alert("Failed to check installation. Please try again.");
+      setCheckMessage("Failed to check installation. Please try again.");
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleStopPolling = () => {
+    setIsPolling(false);
   };
 
   return (
@@ -181,42 +217,82 @@ export function GitHubConnect({ open, onOpenChange, onConnected }: GitHubConnect
           {/* Configured but not installed */}
           {status?.configured && !status?.installed && (
             <div className="space-y-4">
-              <div className="flex items-center gap-3 p-4 bg-amber-100 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-800 rounded-lg">
-                <GithubIcon className="h-8 w-8 text-amber-700 dark:text-amber-600" />
-                <div>
-                  <p className="font-medium text-amber-800 dark:text-amber-500">App Created</p>
-                  <p className="text-sm text-amber-700/70 dark:text-amber-400/70">
-                    {status.appName} - needs installation
-                  </p>
-                </div>
-              </div>
-              
-              <Button
-                className="w-full bg-gradient-to-r from-gray-800 to-gray-900 hover:from-gray-700 hover:to-gray-800"
-                onClick={handleInstall}
-              >
-                <ExternalLink className="h-4 w-4 mr-2" />
-                Install GitHub App
-              </Button>
-              
-              <Button
-                variant="secondary"
-                className="w-full"
-                onClick={handleCheckInstallation}
-                disabled={loading}
-              >
-                {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <CheckCircle className="h-4 w-4 mr-2" />}
-                I Already Installed
-              </Button>
+              {/* Show polling state */}
+              {isPolling ? (
+                <>
+                  <div className="flex items-center gap-3 p-4 bg-cyan-500/10 border border-cyan-500/20 rounded-lg">
+                    <Loader2 className="h-8 w-8 text-cyan-500 animate-spin" />
+                    <div>
+                      <p className="font-medium text-cyan-600 dark:text-cyan-400">Waiting for installation...</p>
+                      <p className="text-sm text-muted-foreground">
+                        Complete the installation on GitHub, then come back here
+                      </p>
+                    </div>
+                  </div>
 
-              <Button
-                variant="outline"
-                className="w-full"
-                onClick={handleDisconnect}
-                disabled={loading}
-              >
-                Start Over
-              </Button>
+                  <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-xs space-y-1">
+                    <p className="text-blue-400 font-medium">📝 On GitHub:</p>
+                    <ol className="text-gray-600 dark:text-gray-300 list-decimal list-inside space-y-0.5">
+                      <li>Select which repositories to grant access</li>
+                      <li>Click &quot;Install&quot; or &quot;Save&quot;</li>
+                      <li>Return here - we&apos;ll detect it automatically!</li>
+                    </ol>
+                  </div>
+
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={handleStopPolling}
+                  >
+                    Cancel
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center gap-3 p-4 bg-amber-100 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-800 rounded-lg">
+                    <GithubIcon className="h-8 w-8 text-amber-700 dark:text-amber-600" />
+                    <div>
+                      <p className="font-medium text-amber-800 dark:text-amber-500">App Created</p>
+                      <p className="text-sm text-amber-700/70 dark:text-amber-400/70">
+                        {status.appName} - needs installation
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <Button
+                    className="w-full bg-gradient-to-r from-gray-800 to-gray-900 hover:from-gray-700 hover:to-gray-800"
+                    onClick={handleInstall}
+                  >
+                    <ExternalLink className="h-4 w-4 mr-2" />
+                    Install GitHub App
+                  </Button>
+                  
+                  <Button
+                    variant="secondary"
+                    className="w-full"
+                    onClick={handleCheckInstallation}
+                    disabled={loading}
+                  >
+                    {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <CheckCircle className="h-4 w-4 mr-2" />}
+                    I Already Installed
+                  </Button>
+
+                  {checkMessage && (
+                    <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/20 text-sm text-rose-600 dark:text-rose-400">
+                      {checkMessage}
+                    </div>
+                  )}
+
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={handleDisconnect}
+                    disabled={loading}
+                  >
+                    Start Over
+                  </Button>
+                </>
+              )}
             </div>
           )}
 
