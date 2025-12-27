@@ -334,7 +334,7 @@ export default function NewProjectPage() {
           {/* STEP 1: Source Selection */}
           {step === 1 && (
             <div className="space-y-8">
-              <div className="flex flex-wrap gap-4 p-1.5 bg-secondary/30 rounded-2xl border border-border/40 w-fit">
+              <div className="flex flex-wrap gap-4 p-1.5 bg-secondary/30 rounded-2xl border border-border/40 w-fit mx-auto">
                <button
                   onClick={() => setSourceType("public")}
                   className={cn(
@@ -417,7 +417,10 @@ export default function NewProjectPage() {
                       <GitHubConnect 
                         open={showGitHubConnect} 
                         onOpenChange={setShowGitHubConnect}
-                        onConnected={fetchGitHubStatus}
+                        onConnected={() => {
+                          fetchGitHubStatus();
+                          setSourceType("github"); // Stay on github tab
+                        }}
                       />
                     </Card>
                   ) : (
