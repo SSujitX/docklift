@@ -124,6 +124,37 @@ function formatUptime(seconds: number): string {
   return parts.length > 0 ? parts.join(', ') : '< 1 Min';
 }
 
+// Helper to read host file content safely
+async function readHostFile(path: string): Promise<string | null> {
+  try {
+    const fs = require('fs/promises');
+    const content = await fs.readFile(path, 'utf8');
+    return content.trim();
+  } catch (e) {
+    return null;
+  }
+}
+
+// Helper to parse os-release file
+async function readHostOSInfo() {
+  const content = await readHostFile('/host/os-release');
+  if (!content) return null;
+  
+  const info: any = {};
+  content.split('\n').forEach((line: string) => {
+    const [key, value] = line.split('=');
+    if (key && value) {
+      info[key] = value.replace(/"/g, '');
+    }
+  });
+  
+  return {
+    platform: 'linux',
+    distro: info.PRETTY_NAME || info.NAME || 'Linux',
+    release: info.VERSION_ID || ''
+  };
+}
+
 // Get comprehensive system stats
 async function getSystemStats(): Promise<SystemStats> {
   const now = Date.now();
@@ -135,7 +166,6 @@ async function getSystemStats(): Promise<SystemStats> {
 
   try {
     // Fetch connections in background (slow call - cache for 30s)
-    // Only run on Linux - Windows netstat causes errors
     if (process.platform !== 'win32' && now - lastConnectionsFetch > CONNECTIONS_CACHE_TTL) {
       si.networkConnections().then(conns => {
         cachedConnections = Array.isArray(conns) ? conns.filter((c: { state?: string }) => c.state === 'ESTABLISHED').length : 0;
@@ -143,7 +173,6 @@ async function getSystemStats(): Promise<SystemStats> {
       }).catch(() => {});
     }
 
-    // Fetch public IP and location in background (cache for 5 min)
     if (now - lastIPFetch > IP_CACHE_TTL) {
       fetchPublicIPInfo();
     }
@@ -161,20 +190,22 @@ async function getSystemStats(): Promise<SystemStats> {
       osInfo,
       graphics,
       time,
-      networkInterfaces
+      networkInterfaces,
+      hostHostname,
+      hostOS
     ] = await Promise.all([
       si.cpu(),
       si.currentLoad(),
-      // Skip cpuTemperature on Windows (causes errors)
       isWindows ? Promise.resolve({ main: null }) : si.cpuTemperature().catch(() => ({ main: null })),
       si.mem(),
       si.fsSize(),
       si.networkStats(),
       si.osInfo(),
-      // Skip graphics on Windows (causes errors)
       isWindows ? Promise.resolve({ controllers: [] }) : si.graphics().catch(() => ({ controllers: [] })),
       si.time(),
-      si.networkInterfaces().catch(() => [])
+      si.networkInterfaces().catch(() => []),
+      readHostFile('/host/hostname'),
+      readHostOSInfo()
     ]);
 
     // Process GPU data
@@ -188,9 +219,9 @@ async function getSystemStats(): Promise<SystemStats> {
       utilization: gpuController?.utilizationGpu || null
     };
 
-    // Process disk data (filter out small/system partitions)
+    // Process disk data
     const diskInfo = diskData
-      .filter(d => d.size > 1024 * 1024 * 100) // > 100MB
+      .filter(d => d.size > 1024 * 1024 * 100)
       .map(d => ({
         mount: d.mount,
         type: d.type,
@@ -226,11 +257,11 @@ async function getSystemStats(): Promise<SystemStats> {
       disk: diskInfo,
       network: networkInfo,
       server: {
-        hostname: osInfo.hostname,
-        platform: osInfo.platform,
-        distro: osInfo.distro,
-        kernel: osInfo.kernel,
-        arch: osInfo.arch,
+        hostname: hostHostname || osInfo.hostname,
+        platform: hostOS ? hostOS.platform : osInfo.platform,
+        distro: hostOS ? hostOS.distro : osInfo.distro,
+        kernel: osInfo.kernel, // Kernel is shared with host
+        arch: osInfo.arch,     // Architecture is shared with host
         uptime: time.uptime,
         uptimeFormatted: formatUptime(time.uptime),
         serverTime: new Date().toLocaleString(),
@@ -252,7 +283,6 @@ async function getSystemStats(): Promise<SystemStats> {
       timestamp: new Date().toISOString()
     };
 
-    // Update cache
     cachedStats = stats;
     lastFetch = now;
 
