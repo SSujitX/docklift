@@ -136,6 +136,15 @@ LOG_FILE=$(mktemp)
 (
     # Force clean Nginx configs (Backend will regenerate valid ones)
     rm -f "$INSTALL_DIR/nginx-proxy/conf.d/"*.conf 2>/dev/null || true
+    
+    # Create default config to prevent empty include errors
+    cat > "$INSTALL_DIR/nginx-proxy/conf.d/default.conf" <<EOF
+server {
+    listen 80 default_server;
+    server_name _;
+    return 404;
+}
+EOF
 
     docker compose up -d --build --remove-orphans > "$LOG_FILE" 2>&1
 ) &

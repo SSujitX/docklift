@@ -171,6 +171,9 @@ async function reloadNginx() {
     console.log('Reloading Nginx proxy...');
     const child = spawn('docker', ['exec', 'docklift-nginx-proxy', 'nginx', '-s', 'reload']);
     
+    child.stdout.on('data', (data) => console.log(`Nginx stdout: ${data}`));
+    child.stderr.on('data', (data) => console.error(`Nginx stderr: ${data}`));
+
     child.on('close', (code) => {
       if (code === 0) {
         console.log('Nginx proxy reloaded successfully');
