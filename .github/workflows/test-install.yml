@@ -8,6 +8,10 @@ on:
   workflow_dispatch:
 
 jobs:
+  test-install:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    container: ${{ matrix.container }}
     strategy:
       fail-fast: false
       matrix:
@@ -26,10 +30,6 @@ jobs:
           - name: AlmaLinux 9 (CentOS)
             os: ubuntu-latest
             container: almalinux:9
-
-    name: ${{ matrix.name }}
-    runs-on: ${{ matrix.os }}
-    container: ${{ matrix.container }}
     
     steps:
       - name: 📥 Checkout Code
