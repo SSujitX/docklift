@@ -5,11 +5,16 @@ services:
     restart: unless-stopped
     expose:
       - "8000"
+    privileged: true
+    pid: host
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./data:/app/data
       - ./deployments:/deployments
       - ./nginx-proxy/conf.d:/nginx-conf
+      - /etc/hostname:/host/hostname:ro
+      - /etc/os-release:/host/os-release:ro
+      - /proc:/host/proc:ro
     environment:
       - NODE_ENV=production
       - DATABASE_URL=file:/app/data/docklift.db
@@ -17,8 +22,6 @@ services:
       - DEPLOYMENTS_PATH=/deployments
       - NGINX_CONF_PATH=/nginx-conf
       - DOCKER_NETWORK=docklift_network
-    privileged: true
-    pid: host
     networks:
       - docklift_network
     depends_on:
