@@ -71,7 +71,13 @@ spinner $pid
 
 if ! command -v docker &> /dev/null; then
     echo -e "${YELLOW}[2/6]${NC} Installing Docker..."
-    curl -fsSL https://get.docker.com | sh -s -- --quiet > /dev/null 2>&1
+    # In CI containers, we allow this to fail as Docker-in-Docker is restricted
+    if [ "$CI" = "true" ]; then
+        curl -fsSL https://get.docker.com | sh -s -- --quiet > /dev/null 2>&1 || echo -e "${YELLOW}⚠️ Docker installation skipped/failed in CI.${NC}"
+    else
+        curl -fsSL https://get.docker.com | sh -s -- --quiet > /dev/null 2>&1
+    fi
+    
     if command -v systemctl &> /dev/null; then
         systemctl enable docker >/dev/null 2>&1 || true
         systemctl start docker >/dev/null 2>&1 || true
@@ -101,7 +107,12 @@ INSTALL_DIR="/opt/docklift"
 
 # Step 2: Fetch Code
 printf "${CYAN}[2/5]${NC} Fetching latest version..."
-if [ -d "$INSTALL_DIR/.git" ]; then
+if [ "$DOCKLIFT_CI_LOCAL" = "true" ]; then
+    echo -e "${YELLOW}CI Local mode: Copying current directory to $INSTALL_DIR...${NC}"
+    mkdir -p "$INSTALL_DIR"
+    cp -r . "$INSTALL_DIR/"
+    cd "$INSTALL_DIR"
+elif [ -d "$INSTALL_DIR/.git" ]; then
     cd "$INSTALL_DIR"
     (
         docker compose down 2>/dev/null || true

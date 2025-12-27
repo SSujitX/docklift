@@ -23,8 +23,7 @@ jobs:
       - name: Run Install Script
         run: |
           chmod +x install.sh
-          # We skip the actual docker daemon start in a container but test the script logic
-          sudo ./install.sh || echo "Script finished with expected container limitations"
+          sudo DOCKLIFT_CI_LOCAL=true ./install.sh
         env:
           CI: true
 
