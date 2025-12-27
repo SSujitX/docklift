@@ -352,11 +352,13 @@ router.post('/reboot', async (req: Request, res: Response) => {
     // Execute asynchronously with a small delay to allow response to be sent
     // Use -f to force reboot (skips shutdown scripts/stuck processes)
     setTimeout(() => {
-      exec('sudo reboot -f', (error, stdout, stderr) => {
+      // Without sudo because we are root inside the container
+      // and have privileged: true to control the host
+      exec('reboot -f', (error, stdout, stderr) => {
         if (error) {
           console.error('CRITICAL: Reboot command failed locally!');
           console.error('Error:', error.message);
-          console.error('STDERR:', stderr); // This usually contains "sudo: password required"
+          console.error('STDERR:', stderr); 
         } else {
           console.log('Reboot command executed successfully. System should go down.');
         }
