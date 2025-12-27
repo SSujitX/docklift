@@ -8,19 +8,42 @@ on:
   workflow_dispatch:
 
 jobs:
-  test-install:
-    name: 🏗️ Test on ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, ubuntu-22.04, ubuntu-20.04]
-    permissions:
-      contents: read
+        include:
+          # Standard Ubuntu VM tests
+          - name: Ubuntu 24.04
+            os: ubuntu-24.04
+          - name: Ubuntu 22.04
+            os: ubuntu-22.04
+            
+          # Container Tests (Debian / CentOS compatible)
+          # Note: We use an Ubuntu host but run the steps inside these containers
+          - name: Debian Bookworm
+            os: ubuntu-latest
+            container: debian:bookworm
+          - name: AlmaLinux 9 (CentOS)
+            os: ubuntu-latest
+            container: almalinux:9
+
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    container: ${{ matrix.container }}
     
     steps:
       - name: 📥 Checkout Code
         uses: actions/checkout@v4
+
+      - name: ⚙️ Install Prerequisites (Container Only)
+        if: matrix.container != ''
+        run: |
+          # Install minimal dependencies for the script to start (curl, sudo if missing)
+          if command -v apt-get &> /dev/null; then
+            apt-get update && apt-get install -y curl sudo procps
+          elif command -v dnf &> /dev/null; then
+            dnf install -y curl sudo procps
+          fi
 
       - name: ⚙️ Prepare Script
         run: chmod +x install.sh
