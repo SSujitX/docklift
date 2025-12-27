@@ -15,7 +15,7 @@ DIM='\033[2m'
 spinner() {
     local pid=$1
     local delay=0.1
-    local spinstr='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+    local spinstr='|/-\'
     
     while kill -0 "$pid" 2> /dev/null; do
         # Only animate if in a TTY and NOT in CI
