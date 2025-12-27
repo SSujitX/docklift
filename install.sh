@@ -101,7 +101,7 @@ FETCH_TIME=$((FETCH_END - FETCH_START))
 echo -e " ${GREEN}done${NC} ${DIM}($(format_time $FETCH_TIME))${NC}"
 
 # Get version
-VERSION=$(grep -o '"version": *"[^"]*"' "$INSTALL_DIR/backend/package.json" 2>/dev/null | head -1 | cut -d'"' -f4 || echo "1.1.0")
+VERSION=$(grep -o '"version": *"[^"]*"' "$INSTALL_DIR/backend/package.json" 2>/dev/null | head -1 | cut -d'"' -f4 || echo "1.1.1")
 echo -e "        ${DIM}➞ Version: ${VERSION}${NC}"
 
 # Step 3: Directories
@@ -161,24 +161,24 @@ if [ "$RUNNING" -gt 0 ]; then
     echo ""
     
     if [ "$CI" != "true" ]; then
-        PUB4=$(curl -4 -s --connect-timeout 2 https://api.ipify.org 2>/dev/null || echo "")
-        PUB6=$(curl -6 -s --connect-timeout 2 https://api64.ipify.org 2>/dev/null || echo "")
+        PUB4=$(curl -4 -s --connect-timeout 2 https://api.ipify.org 2>/dev/null || curl -4 -s --connect-timeout 2 https://ifconfig.me 2>/dev/null || echo "")
+        PUB6=$(curl -6 -s --connect-timeout 2 https://api64.ipify.org 2>/dev/null || curl -6 -s --connect-timeout 2 https://ifconfig.co 2>/dev/null || echo "")
         
-        # Get strictly private IPs, excluding public and docker bridges
+        # Get strictly private IPs, excluding public ones and all potential docker/virtual bridges
         PRV=$(hostname -I 2>/dev/null | tr ' ' '\n' | \
             grep -v "${PUB4:-NOT_SET}" | \
-            grep -vE '^172\.(1[6-9]|2[0-9]|3[0-1])\.[0-9]+\.1$' | \
+            grep -vE '^(127\.|172\.(1[7-9]|2[0-9]|3[0-1])\.[0-9]+\.1$)' | \
             grep -vE '^172\.17\.0\.1$' | \
             grep -E '^(10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|192\.168\.)' | \
             head -1 || echo "")
         
-        if [ -n "$PUB4" ] || [ -n "$PRV" ]; then
+        if [ -n "$PUB4" ] || [ -n "$PRV" ] || [ -n "$PUB6" ]; then
             echo -e "  ${BOLD}Access Docklift:${NC}"
             echo ""
             
-            [ -n "$PUB4" ] && echo -e "  ${CYAN}Public:  ${NC} $(link "http://${PUB4}:8080" "http://${PUB4}:8080")"
-            [ -n "$PUB6" ] && echo -e "  ${CYAN}IPv6:    ${NC} $(link "http://[${PUB6}]:8080" "http://[${PUB6}]:8080")"
-            [ -n "$PRV" ] && echo -e "  ${DIM}Private: ${NC} $(link "http://${PRV}:8080" "http://${PRV}:8080")"
+            [ -n "$PUB4" ] && printf "  ${CYAN}Public:  ${NC} " && link "http://${PUB4}:8080" "http://${PUB4}:8080" && echo ""
+            [ -n "$PUB6" ] && printf "  ${CYAN}IPv6:    ${NC} " && link "http://[${PUB6}]:8080" "http://[${PUB6}]:8080" && echo ""
+            [ -n "$PRV" ] && printf "  ${DIM}Private: ${NC} " && link "http://${PRV}:8080" "http://${PRV}:8080" && echo ""
             echo ""
         fi
     else
