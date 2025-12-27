@@ -33,14 +33,16 @@ jobs:
       - name: Verifying Services
         id: verify
         run: |
-          check() { sudo docker ps | grep -q "$1" && echo "✅ Running" || echo "❌ Not Running"; }
-          echo "backend=$(check docklift-backend)" >> $GITHUB_OUTPUT
-          echo "frontend=$(check docklift-frontend)" >> $GITHUB_OUTPUT
-          echo "nginx=$(check docklift-nginx)" >> $GITHUB_OUTPUT
-          echo "proxy=$(check docklift-nginx-proxy)" >> $GITHUB_OUTPUT
-          [ -d "/opt/docklift" ] && echo "dir=✅ Created" || echo "dir=❌ Missing" >> $GITHUB_OUTPUT
-          V=$(grep -o '"version": *"[^"]*"' /opt/docklift/backend/package.json 2>/dev/null | head -1 | cut -d'"' -f4 || echo "Unknown")
-          echo "version=$V" >> $GITHUB_OUTPUT
+          c() { sudo docker ps | grep -q "$1" && echo "✅ Running" || echo "❌ Not Running"; }
+          {
+            echo "backend=$(c docklift-backend)"
+            echo "frontend=$(c docklift-frontend)"
+            echo "nginx=$(c docklift-nginx)"
+            echo "proxy=$(c docklift-nginx-proxy)"
+            [ -d "/opt/docklift" ] && echo "dir=✅ Created" || echo "dir=❌ Missing"
+            v=$(grep -o '"version": *"[^"]*"' /opt/docklift/backend/package.json 2>/dev/null | head -1 | cut -d'"' -f4 || echo "Unknown")
+            echo "version=$v"
+          } >> $GITHUB_OUTPUT
 
       - name: Generate Summary
         if: always()
