@@ -198,6 +198,16 @@ router.post('/:projectId/deploy', async (req: Request, res: Response) => {
         
         if (service.container_name !== targetName) {
            res.write(`     🛠️ Migrating container name to shorter format...\n`);
+           
+           // Force remove the old container name to free up ports
+           const { execSync } = await import('child_process');
+           try {
+              res.write(`     🛑 Removing old container: ${service.container_name}\n`);
+              execSync(`docker rm -f ${service.container_name}`, { stdio: 'ignore' });
+           } catch (e) {
+              // Ignore if container doesn't exist
+           }
+
            service = await prisma.service.update({
              where: { id: service.id },
              data: { container_name: targetName }
