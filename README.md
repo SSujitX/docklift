@@ -42,9 +42,13 @@ To run Docklift locally or on a server, you need:
 
 Run this on your Ubuntu/Debian server to set up everything automatically:
 
+#### Install
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh | sudo bash
 ```
+
+#### Uninstall
 
 ```bash
 curl -fsSL "https://raw.githubusercontent.com/SSujitX/docklift/master/uninstall.sh?nocache=1" | sudo bash -s -- -y
