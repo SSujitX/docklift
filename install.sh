@@ -58,11 +58,6 @@ echo -e "${BOLD}🚀 Starting Installation...${NC}\n"
 
 # Step 1: System Requirements
 printf "${CYAN}[1/5]${NC} Checking system requirements..."
-
-# Pre-install dependencies for specific distros
-if [ -f /etc/redhat-release ]; then
-    dnf install -y --allowerasing dnf-plugins-core >/dev/null 2>&1 || yum install -y yum-utils >/dev/null 2>&1
-fi
 {
     command -v docker &> /dev/null && command -v git &> /dev/null
 } &
@@ -70,8 +65,7 @@ pid=$!
 spinner $pid
 
 if ! command -v docker &> /dev/null; then
-    echo -e "${YELLOW}[2/6]${NC} Installing Docker..."
-    # In CI containers, we allow this to fail as Docker-in-Docker is restricted
+    printf "${YELLOW}[2/6]${NC} Installing Docker..."
     if [ "$CI" = "true" ]; then
         curl -fsSL https://get.docker.com | sh -s -- --quiet > /dev/null 2>&1 || echo -e "${YELLOW}⚠️ Docker installation skipped/failed in CI.${NC}"
     else
@@ -86,18 +80,7 @@ fi
 
 if ! command -v git &> /dev/null; then
     echo -e "\n${YELLOW}Git not found. Installing...${NC}"
-    if [ -f /etc/debian_version ]; then
-        apt-get update -qq && apt-get install -y -qq git >/dev/null 2>&1
-    elif [ -f /etc/alpine-release ]; then
-        apk add --no-cache git >/dev/null 2>&1
-    elif [ -f /etc/redhat-release ]; then
-        # CentOS / AlmaLinux / RHEL / Fedora
-        if command -v dnf &> /dev/null; then
-            dnf install -y --allowerasing git >/dev/null 2>&1
-        else
-            yum install -y git >/dev/null 2>&1
-        fi
-    fi
+    apt-get update -qq && apt-get install -y -qq git >/dev/null 2>&1 || yum install -y git >/dev/null 2>&1 || apk add --no-cache git >/dev/null 2>&1
 fi
 echo -e "${GREEN}✓ Ready${NC}"
 
