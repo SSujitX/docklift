@@ -173,12 +173,13 @@ router.post('/:projectId/deploy', async (req: Request, res: Response) => {
       
       if (!service) {
         const port = await allocatePort(projectId);
+        const shortId = projectId.substring(0, 8);
         service = await prisma.service.create({
           data: {
             project_id: projectId,
             name: df.name,
             dockerfile_path: df.dockerfile_path,
-            container_name: `docklift_${projectId}_${df.name}`,
+            container_name: `dl_${shortId}_${df.name}`,
             internal_port: df.internal_port,
             port: port,
             status: 'building',
@@ -186,6 +187,16 @@ router.post('/:projectId/deploy', async (req: Request, res: Response) => {
         });
         res.write(`     Assigned new service: ${df.name} (Port: ${port})\n`);
       } else {
+        // Migration: If existing service has long container name, shorten it
+        const shortId = projectId.substring(0, 8);
+        const targetName = `dl_${shortId}_${df.name}`;
+        if (service.container_name !== targetName) {
+           res.write(`     🛠️ Migrating container name to shorter format...\n`);
+           service = await prisma.service.update({
+             where: { id: service.id },
+             data: { container_name: targetName }
+           });
+        }
         // Ensure service has a port if it's missing
         if (!service.port) {
           const port = await allocatePort(projectId);

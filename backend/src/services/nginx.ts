@@ -62,7 +62,7 @@ server {
     server_name ${domains};
 
     # Docker internal DNS resolver
-    resolver 127.0.0.11 valid=30s;
+    resolver 127.0.0.11 valid=30s ipv6=off;
     
     location / {
         set $target_${service.id.replace(/-/g, '_')} ${service.container_name};
