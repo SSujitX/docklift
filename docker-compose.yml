@@ -61,6 +61,8 @@ services:
     image: nginx:stable-alpine
     container_name: docklift-nginx-proxy
     restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "80:80"
     volumes:
