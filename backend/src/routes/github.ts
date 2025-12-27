@@ -252,7 +252,13 @@ router.post('/check-installation', async (req: Request, res: Response) => {
     }
     
     // Get JWT token
-    const jwtToken = await createJwtToken();
+    let jwtToken: string;
+    try {
+      jwtToken = await createJwtToken();
+    } catch (err) {
+      // App not properly configured yet
+      return res.json({ found: false, message: 'GitHub App credentials not ready. Please complete app creation.' });
+    }
     
     // Fetch all installations for this app
     const response = await fetch(`${GITHUB_API_URL}/app/installations`, {
@@ -264,7 +270,17 @@ router.post('/check-installation', async (req: Request, res: Response) => {
     });
     
     if (!response.ok) {
-      throw new Error(`Failed to fetch installations: ${await response.text()}`);
+      const errorText = await response.text();
+      // 404 means app not found or not installed - handle gracefully
+      if (response.status === 404) {
+        return res.json({ found: false, message: 'App not installed yet. Click "Install GitHub App" to continue.' });
+      }
+      // 401 means auth issue
+      if (response.status === 401) {
+        return res.json({ found: false, message: 'Authentication failed. Please recreate the GitHub App.' });
+      }
+      console.error('GitHub API error:', response.status, errorText);
+      return res.json({ found: false, message: 'Could not verify installation status.' });
     }
     
     const installations = await response.json() as Array<{
@@ -290,8 +306,8 @@ router.post('/check-installation', async (req: Request, res: Response) => {
       username: installation.account?.login 
     });
   } catch (error) {
-    console.error('Check installation error:', error);
-    res.status(500).json({ error: 'Failed to check installation' });
+    // Don't spam console for expected errors
+    res.json({ found: false, message: 'Could not check installation. Please try installing the app.' });
   }
 });
 
