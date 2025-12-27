@@ -180,11 +180,15 @@ function SettingsContent() {
             <div className="grid gap-4">
               <div className="space-y-2">
                 <label className="text-sm font-medium">API URL</label>
-                <Input value={API_URL} disabled className="bg-secondary/50" />
+                <Input 
+                  value={API_URL || (typeof window !== 'undefined' ? window.location.origin : 'Detecting...')} 
+                  disabled 
+                  className="bg-secondary/50 font-mono" 
+                />
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">Deployments Path</label>
-                <Input value="/deployments" disabled className="bg-secondary/50" />
+                <Input value="/deployments" disabled className="bg-secondary/50 font-mono" />
               </div>
             </div>
           </Card>
