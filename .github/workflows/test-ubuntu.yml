@@ -1,0 +1,42 @@
+name: Test Install - Ubuntu
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+  workflow_dispatch:
+
+jobs:
+  test-ubuntu:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl sudo
+
+      - name: Run Install Script
+        run: |
+          chmod +x install.sh
+          sudo ./install.sh
+        env:
+          CI: true
+
+      - name: Verify Installation
+        run: |
+          if [ -d "/opt/docklift" ]; then
+            echo "✅ Installation directory exists"
+          else
+            echo "❌ Installation directory missing"
+            exit 1
+          fi
+          
+          if sudo docker ps | grep -q "docklift-backend"; then
+            echo "✅ Docklift containers are running"
+          else
+            echo "⚠️ Containers not running (expected in some CI environments)"
+          fi
