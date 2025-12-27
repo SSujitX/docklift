@@ -36,25 +36,9 @@ No vendor lock-in, which means all your application data, configurations, and Do
 
 ---
 
-## 🆚 Coolify Alternative
+## 🆚 Why Docklift over Coolify?
 
-Docklift is a lightweight alternative to Coolify. Here's how they compare:
-
-| Feature | Docklift | Coolify |
-|---------|----------|---------|
-| **Focus** | Lightweight, Docker-focused | Full-featured PaaS |
-| **Tech Stack** | Next.js + Express + Prisma | Laravel + Livewire |
-| **System Monitoring** | ✅ Full (CPU, RAM, GPU, disk, network) | Basic per-container |
-| **Web Terminal** | ✅ Built-in | ❌ Not available |
-| **Database Management** | Deploy your own | Built-in (PostgreSQL, MySQL, Redis) |
-| **Multi-Server** | Single server | Multi-server support |
-| **Build System** | Pure Docker | Nixpacks + Docker |
-| **Resource Usage** | Lighter footprint | Heavier (~500MB+ RAM) |
-| **Learning Curve** | Easier | Steeper |
-
-**Choose Docklift if:** You want something simple, lightweight, with great monitoring and web terminal.
-
-**Choose Coolify if:** You need managed databases, multi-server support, or auto-Dockerfile generation.
+Coolify is great, but it can feel heavy for simple use cases. Docklift is built to be **lightweight and easy to understand**. It focuses purely on Docker deployments with some nice extras that Coolify doesn't have - like full **system monitoring** (CPU, RAM, GPU, disk, network) and a **web terminal** right in the browser. If you just want to deploy Docker containers without all the extra complexity, Docklift is for you.
 
 ---
 
