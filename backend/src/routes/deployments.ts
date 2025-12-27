@@ -283,20 +283,38 @@ router.post('/:projectId/deploy', async (req: Request, res: Response) => {
       shell: false,
     });
     
+    // Throttled database update for logs
+    let lastUpdate = Date.now();
+    const syncLogsToDb = async (force = false) => {
+      const now = Date.now();
+      if (force || now - lastUpdate > 2000) { // Update every 2 seconds or if forced
+        lastUpdate = now;
+        await prisma.deployment.update({
+          where: { id: deployment.id },
+          data: { logs: logs.join('') },
+        }).catch(err => console.error('Failed to sync logs to DB:', err));
+      }
+    };
+    
     dockerProcess.stdout.on('data', (data) => {
       const text = data.toString();
       logs.push(text);
       res.write(text);
+      syncLogsToDb();
     });
     
     dockerProcess.stderr.on('data', (data) => {
       const text = data.toString();
       logs.push(text);
       res.write(text);
+      syncLogsToDb();
     });
     
     dockerProcess.on('close', async (code) => {
       success = code === 0;
+      
+      // Force final sync
+      await syncLogsToDb(true);
       
       // Update statuses
       await prisma.deployment.update({
