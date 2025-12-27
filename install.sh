@@ -162,22 +162,28 @@ if [ "$RUNNING" -gt 0 ]; then
     if [ "$CI" != "true" ]; then
         PUBLIC_IPV4=$(curl -4 -s --connect-timeout 2 https://api.ipify.org 2>/dev/null || echo "")
         PUBLIC_IPV6=$(curl -6 -s --connect-timeout 2 https://api64.ipify.org 2>/dev/null || echo "")
-        PRIVATE_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+        
+        # Get local IP, excluding the public one if it matches
+        PRIVATE_IP=$(hostname -I 2>/dev/null | tr ' ' '\n' | grep -v "$PUBLIC_IPV4" | grep -E '^(10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|192\.168\.)' | head -1)
+        # Fallback if no RFC1918 IP found
+        if [ -z "$PRIVATE_IP" ]; then
+            PRIVATE_IP=$(hostname -I 2>/dev/null | tr ' ' '\n' | grep -v "$PUBLIC_IPV4" | grep -v '^$' | head -1)
+        fi
         
         echo -e "  ${BOLD}Access Docklift:${NC}"
         echo ""
         
         if [ -n "$PUBLIC_IPV4" ]; then
             URL="http://${PUBLIC_IPV4}:8080"
-            echo -e "  ${CYAN}IPv4:${NC}    $(link "$URL" "$URL")"
+            echo -e "  ${CYAN}Public: ${NC} $(link "$URL" "$URL")"
         fi
         
         if [ -n "$PUBLIC_IPV6" ]; then
             URL="http://[${PUBLIC_IPV6}]:8080"
-            echo -e "  ${CYAN}IPv6:${NC}    $(link "$URL" "$URL")"
+            echo -e "  ${CYAN}IPv6:   ${NC} $(link "$URL" "$URL")"
         fi
         
-        if [ -n "$PRIVATE_IP" ]; then
+        if [ -n "$PRIVATE_IP" ] && [ "$PRIVATE_IP" != "$PUBLIC_IPV4" ]; then
             URL="http://${PRIVATE_IP}:8080"
             echo -e "  ${DIM}Private:${NC} $(link "$URL" "$URL")"
         fi
