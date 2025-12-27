@@ -1,11 +1,11 @@
-# 🐳 Docklift
-
 <p align="center">
   <a href="https://nextjs.org"><img src="https://img.shields.io/badge/Next.js-16-black" alt="Next.js"></a>
   <a href="https://expressjs.com"><img src="https://img.shields.io/badge/Express-Node.js-green" alt="Express"></a>
   <a href="https://docker.com"><img src="https://img.shields.io/badge/Docker-Compose-blue" alt="Docker"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow" alt="License"></a>
 </p>
+
+# 🐳 Docklift
 
 **Open-source, self-hosted PaaS for Docker deployments.**  
 Deploy any application to your own server with one click. A free alternative to Heroku, Vercel, and Netlify. 
