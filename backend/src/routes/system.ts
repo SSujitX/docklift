@@ -399,6 +399,19 @@ router.get('/quick', async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/system/ip - Get server's public IP address
+router.get('/ip', async (req: Request, res: Response) => {
+  try {
+    // Ensure IP is fetched
+    if (cachedPublicIP === 'N/A' || Date.now() - lastIPFetch > IP_CACHE_TTL) {
+      await fetchPublicIPInfo();
+    }
+    res.json({ ip: cachedPublicIP });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch server IP' });
+  }
+});
+
 // POST /api/system/purge - Clean up system resources and free memory
 router.post('/purge', async (req: Request, res: Response) => {
   try {
