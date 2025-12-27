@@ -2,6 +2,14 @@
 
 Useful commands for debugging and maintaining your Docklift instance.
 
+## 📋 Table of Contents
+- [📜 Check Infrastructure Logs](#-check-infrastructure-logs)
+- [🛰️ Project Debugging](#-project-debugging)
+- [🧹 Cleaning & Resetting](#-cleaning--resetting)
+- [🌐 Network & Port Check](#-network--port-check)
+
+---
+
 ### 📜 Check Infrastructure Logs
 ```bash
 # View Backend logs
