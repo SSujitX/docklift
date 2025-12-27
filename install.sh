@@ -160,20 +160,26 @@ if [ "$RUNNING" -gt 0 ]; then
     echo ""
     
     if [ "$CI" != "true" ]; then
-        PUBLIC_IP=$(curl -4 -s --connect-timeout 2 https://api.ipify.org 2>/dev/null || echo "")
-        LOCAL_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+        PUBLIC_IPV4=$(curl -4 -s --connect-timeout 2 https://api.ipify.org 2>/dev/null || echo "")
+        PUBLIC_IPV6=$(curl -6 -s --connect-timeout 2 https://api64.ipify.org 2>/dev/null || echo "")
+        PRIVATE_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
         
         echo -e "  ${BOLD}Access Docklift:${NC}"
         echo ""
         
-        if [ -n "$PUBLIC_IP" ]; then
-            URL="http://${PUBLIC_IP}:8080"
-            echo -e "  ${CYAN}Public:${NC}  $(link "$URL" "$URL")"
+        if [ -n "$PUBLIC_IPV4" ]; then
+            URL="http://${PUBLIC_IPV4}:8080"
+            echo -e "  ${CYAN}IPv4:${NC}    $(link "$URL" "$URL")"
         fi
         
-        if [ -n "$LOCAL_IP" ] && [ "$LOCAL_IP" != "$PUBLIC_IP" ]; then
-            URL="http://${LOCAL_IP}:8080"
-            echo -e "  ${DIM}Local:${NC}   $(link "$URL" "$URL")"
+        if [ -n "$PUBLIC_IPV6" ]; then
+            URL="http://[${PUBLIC_IPV6}]:8080"
+            echo -e "  ${CYAN}IPv6:${NC}    $(link "$URL" "$URL")"
+        fi
+        
+        if [ -n "$PRIVATE_IP" ]; then
+            URL="http://${PRIVATE_IP}:8080"
+            echo -e "  ${DIM}Private:${NC} $(link "$URL" "$URL")"
         fi
         echo ""
     else
