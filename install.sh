@@ -61,7 +61,7 @@ printf "${CYAN}[1/5]${NC} Checking system requirements..."
 
 # Pre-install dependencies for specific distros
 if [ -f /etc/redhat-release ]; then
-    dnf install -y dnf-plugins-core >/dev/null 2>&1 || yum install -y yum-utils >/dev/null 2>&1
+    dnf install -y --allowerasing dnf-plugins-core >/dev/null 2>&1 || yum install -y yum-utils >/dev/null 2>&1
 fi
 {
     command -v docker &> /dev/null && command -v git &> /dev/null
@@ -87,7 +87,7 @@ if ! command -v git &> /dev/null; then
     elif [ -f /etc/redhat-release ]; then
         # CentOS / AlmaLinux / RHEL / Fedora
         if command -v dnf &> /dev/null; then
-            dnf install -y git >/dev/null 2>&1
+            dnf install -y --allowerasing git >/dev/null 2>&1
         else
             yum install -y git >/dev/null 2>&1
         fi
