@@ -27,10 +27,11 @@ jobs:
           TERM: xterm
         run: |
           # Redirect output to file to keep logs clean, but tail it if needed
-          sudo ./install.sh
+          sudo -E ./install.sh
 
       - name: 🏥 Health Check verification
         id: health
+        if: success()
         run: |
           echo "⏳ Waiting for services to stabilize..."
           sleep 15
@@ -54,15 +55,20 @@ jobs:
             echo "status=failure" >> $GITHUB_OUTPUT
             echo "containers=$COUNT" >> $GITHUB_OUTPUT
             echo "http_code=$HTTP_CODE" >> $GITHUB_OUTPUT
-            # We don't exit 1 yet so we can generate the report first
           fi
 
       - name: 📊 Generate Summary Report
         if: always()
         run: |
+          # Default to failure if step didn't run
           STATUS="${{ steps.health.outputs.status }}"
+          [ -z "$STATUS" ] && STATUS="failure"
+          
           CONTAINERS="${{ steps.health.outputs.containers }}"
+          [ -z "$CONTAINERS" ] && CONTAINERS="0"
+          
           HTTP="${{ steps.health.outputs.http_code }}"
+          [ -z "$HTTP" ] && HTTP="N/A"
           
           echo "# 🧪 Docklift Installation Test" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
