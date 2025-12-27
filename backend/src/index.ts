@@ -14,6 +14,7 @@ import deploymentsRouter from './routes/deployments.js';
 import filesRouter from './routes/files.js';
 import portsRouter from './routes/ports.js';
 import githubRouter from './routes/github.js';
+import systemRouter from './routes/system.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -47,6 +48,7 @@ app.use('/api/deployments', deploymentsRouter);
 app.use('/api/files', filesRouter);
 app.use('/api/ports', portsRouter);
 app.use('/api/github', githubRouter);
+app.use('/api/system', systemRouter);
 
 // Error handler
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {

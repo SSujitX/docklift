@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Container, Settings, Moon, Sun, Monitor, BookOpen, Anchor, LayoutGrid, ChevronDown } from "lucide-react";
+import { Container, Settings, Moon, Sun, Monitor, BookOpen, Anchor, LayoutGrid, ChevronDown, Gauge } from "lucide-react";
 import { GithubIcon } from "./icons/GithubIcon";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -30,6 +30,7 @@ export function Header() {
   const navItems = [
     { name: "Projects", href: "/", icon: LayoutGrid },
     { name: "Ports", href: "/ports", icon: Anchor },
+    { name: "System", href: "/system", icon: Gauge },
     { name: "Docs", href: "/docs", icon: BookOpen },
   ];
 
