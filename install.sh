@@ -71,6 +71,7 @@ if ! command -v docker &> /dev/null; then
         systemctl enable docker >/dev/null 2>&1 || true
         systemctl start docker >/dev/null 2>&1 || true
     fi
+fi
 
 if ! command -v git &> /dev/null; then
     echo -e "\n${YELLOW}Git not found. Installing...${NC}"
