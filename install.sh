@@ -26,7 +26,6 @@ spinner() {
     printf "    \b\b\b\b"
 }
 
-clear
 
 cat << "EOF"
   ____             _    _ _  __ _   
