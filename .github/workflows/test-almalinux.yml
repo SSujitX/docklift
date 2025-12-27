@@ -17,7 +17,7 @@ jobs:
 
       - name: Install Basic Ops
         run: |
-          dnf install -y curl sudo procps-ng
+          dnf install -y --allowerasing curl sudo procps-ng
 
       - name: Run Install Script
         run: |
