@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url';
 
 import { config } from './lib/config.js';
 import { ensureNetwork } from './services/docker.js';
+import { syncNginxConfigs } from './services/nginx.js';
 
 import projectsRouter from './routes/projects.js';
 import deploymentsRouter from './routes/deployments.js';
@@ -71,6 +72,9 @@ async function main() {
 ║                                                            ║
 ╚════════════════════════════════════════════════════════════╝
       `);
+      
+      // Clean up orphaned Nginx configs on startup
+      syncNginxConfigs().catch(console.error);
     });
   } catch (error) {
     console.error('Failed to start server:', error);

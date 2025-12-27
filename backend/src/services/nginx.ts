@@ -57,6 +57,59 @@ server {
   } catch (error) {
     console.error('Failed to write Nginx config:', error);
   }
+
+}
+
+export async function syncNginxConfigs() {
+  try {
+    if (!fs.existsSync(config.nginxConfPath)) return;
+    
+    // Get all conf files
+    const files = fs.readdirSync(config.nginxConfPath).filter(f => f.startsWith('service-') && f.endsWith('.conf'));
+    
+    // Extract service IDs from filenames
+    const fileServiceIds = files.map(f => {
+      const match = f.match(/^service-(.+)\.conf$/);
+      return match ? match[1] : null;
+    }).filter(Boolean) as string[];
+    
+    if (fileServiceIds.length === 0) return;
+    
+    console.log(`Found ${fileServiceIds.length} Nginx config files. Verifying against database...`);
+    
+    // Check which ones exist in DB
+    const { default: prisma } = await import('../lib/prisma.js');
+    const dbServices = await prisma.service.findMany({
+      where: {
+        id: { in: fileServiceIds }
+      },
+      select: { id: true }
+    });
+    
+    const dbServiceIds = new Set(dbServices.map(s => s.id));
+    let changeMade = false;
+    
+    // Delete orphans
+    for (const file of files) {
+        const match = file.match(/^service-(.+)\.conf$/);
+        const id = match ? match[1] : null;
+        
+        if (id && !dbServiceIds.has(id)) {
+            console.log(`Removing orphaned Nginx config: ${file}`);
+            fs.unlinkSync(path.join(config.nginxConfPath, file));
+            changeMade = true;
+        }
+    }
+    
+    if (changeMade) {
+        await reloadNginx();
+    } else {
+        console.log('Nginx configs are in sync.');
+    }
+    
+  } catch (error) {
+    console.error('Failed to sync Nginx configs:', error);
+  }
 }
 
 export async function cleanupServiceDomain(serviceId: string) {
