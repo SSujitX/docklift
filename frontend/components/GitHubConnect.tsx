@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Loader2, CheckCircle, ExternalLink } from "lucide-react";
 import { GithubIcon } from "./icons/GithubIcon";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
 interface GitHubAppStatus {
   configured: boolean;
