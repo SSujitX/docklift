@@ -73,14 +73,11 @@ if ! command -v git &> /dev/null; then
 fi
 echo -e "${GREEN}✓ Ready${NC}"
 
-# Step 2: Directories
+# Set install directory
 INSTALL_DIR="/opt/docklift"
-printf "${CYAN}[2/5]${NC} Preparing directories ($INSTALL_DIR)..."
-mkdir -p "$INSTALL_DIR/data" "$INSTALL_DIR/deployments" "$INSTALL_DIR/nginx-proxy/conf.d"
-echo -e "${GREEN}✓ Done${NC}"
 
-# Step 3: Fetch Code
-printf "${CYAN}[3/5]${NC} Fetching latest version..."
+# Step 2: Fetch Code
+printf "${CYAN}[2/5]${NC} Fetching latest version..."
 if [ -d "$INSTALL_DIR/.git" ]; then
     cd "$INSTALL_DIR"
     (
@@ -101,6 +98,11 @@ else
     cd "$INSTALL_DIR"
 fi
 echo -e "${GREEN}✓ Updated${NC}"
+
+# Step 3: Directories
+printf "${CYAN}[3/5]${NC} Preparing directories ($INSTALL_DIR)..."
+mkdir -p "$INSTALL_DIR/data" "$INSTALL_DIR/deployments" "$INSTALL_DIR/nginx-proxy/conf.d"
+echo -e "${GREEN}✓ Done${NC}"
 
 # Step 4: Cleanup
 printf "${CYAN}[4/5]${NC} Cleaning networking..."
