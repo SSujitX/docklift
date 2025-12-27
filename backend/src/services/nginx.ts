@@ -65,8 +65,8 @@ server {
     resolver 127.0.0.11 valid=30s;
     
     location / {
-        set $upstream_addr ${service.container_name};
-        proxy_pass http://$upstream_addr:${service.internal_port};
+        set $target_${service.id.replace(/-/g, '_')} ${service.container_name};
+        proxy_pass http://$target_${service.id.replace(/-/g, '_')}:${service.internal_port};
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
