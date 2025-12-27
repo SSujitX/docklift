@@ -7,22 +7,17 @@
 
 # 🐳 Docklift
 
-**Open-source, self-hosted PaaS for Docker deployments.**  
-Deploy any application to your own server with one click. A free alternative to Heroku, Vercel, and Netlify. 
-Similar to Coolify, CapRover, and Dokku, but simpler.
+**Docklift is an open-source & self-hostable alternative to Heroku / Netlify / Vercel / etc.**
 
-## 📋 Table of Contents
-- [✨ Key Features](#-key-features)
-- [🛠️ Prerequisites](#️-prerequisites)
-- [🚀 Getting Started](#-getting-started)
-- [🐳 Deploying Your First App](#-deploying-your-first-app)
-- [📂 Project Structure Guide](#-project-structure-guide)
-- [🤝 Contributing](#-contributing)
-- [📄 License](#-license)
+It helps you deploy and manage your applications on your own hardware - you only need a VPS with Docker installed. Deploy from GitHub or upload files directly, manage custom domains, monitor system resources, and access your server terminal - all from a beautiful web interface.
+
+**Imagine having the ease of a cloud platform but on your own servers. That is Docklift.**
+
+No vendor lock-in, which means all your application data, configurations, and Docker containers live on your server. If you decide to stop using Docklift, your apps keep running - you just lose the beautiful dashboard and automations. 🪄
 
 ---
 
-> 🚀 **Self-hosted deployment platform** • Deploy Docker containers from GitHub or ZIP upload • Real-time build logs • Automatic port management • Built with Next.js 15 & Express
+> 🚀 **Self-hosted deployment platform** • Deploy Docker containers from GitHub or ZIP upload • Real-time build logs • Automatic port management • Custom domains • System monitoring • Web terminal • Built with Next.js 16 & Express
 
 ![Docklift Dashboard](screenshots/home.png)
 
