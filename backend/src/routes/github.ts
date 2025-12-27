@@ -528,7 +528,7 @@ router.get('/branches', async (req: Request, res: Response) => {
     }
 
     let url = `${GITHUB_API_URL}/repos/${repo}/branches`;
-    let headers: HeadersInit = {
+    let headers: Record<string, string> = {
       Accept: 'application/vnd.github+json',
       'X-GitHub-Api-Version': '2022-11-28',
       'User-Agent': 'Docklift-App'
