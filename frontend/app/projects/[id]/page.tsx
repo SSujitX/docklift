@@ -202,10 +202,27 @@ export default function ProjectDetail() {
   const [currentAction, setCurrentAction] = useState<string | null>(null);
   const [editingFile, setEditingFile] = useState<{ name: string; content: string } | null>(null);
   const [activeTab, setActiveTab] = useState("overview");
+  const [serverIP, setServerIP] = useState<string>('...');
 
   // Confirmation Dialog State
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
+
+  // Fetch server IP on mount
+  useEffect(() => {
+    const fetchServerIP = async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/system/ip`);
+        if (res.ok) {
+          const data = await res.json();
+          setServerIP(data.ip || 'N/A');
+        }
+      } catch {
+        setServerIP('N/A');
+      }
+    };
+    fetchServerIP();
+  }, []);
 
   const fetchProject = useCallback(async () => {
     try {
@@ -577,13 +594,12 @@ export default function ProjectDetail() {
                 </div>
                 <div className="grid gap-4">
                   {services.map((svc) => {
-                    const hostname = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
                     const domains = svc.domain ? svc.domain.split(',').map(d => d.trim()).filter(Boolean) : [];
                     
-                    // Always add the raw port access as a fallback or primary if no domains
+                    // Use real server IP for port access
                     const portEndpoint = { 
-                      url: `http://${hostname}:${svc.port}`, 
-                      label: `${hostname}:${svc.port}` 
+                      url: `http://${serverIP}:${svc.port}`, 
+                      label: `${serverIP}:${svc.port}` 
                     };
 
                     const links = domains.length > 0 
@@ -864,7 +880,7 @@ export default function ProjectDetail() {
                              size="icon" 
                              className="h-6 w-6 hover:bg-background" 
                              onClick={() => {
-                               navigator.clipboard.writeText(typeof window !== 'undefined' ? window.location.hostname : '');
+                               navigator.clipboard.writeText(serverIP);
                                toast.success("IP copied to clipboard");
                              }}
                            >
@@ -872,7 +888,7 @@ export default function ProjectDetail() {
                            </Button>
                          </div>
                          <code className="text-xl font-mono font-bold text-cyan-500 block">
-                           {typeof window !== 'undefined' ? window.location.hostname : '...'}
+                           {serverIP}
                          </code>
                          <p className="text-[10px] text-muted-foreground mt-2">
                            Target for all <strong>A Records</strong>.
