@@ -36,6 +36,7 @@ ENV PORT=8000
 
 # Install Docker CLI and Git for managing deployments
 RUN apk add --no-cache docker-cli docker-cli-compose git
+RUN npm install -g npm@latest
 
 # Create non-root user
 RUN addgroup --system --gid 1001 nodejs
