@@ -7,7 +7,7 @@
 
 # 🐳 Docklift
 
-**Docklift is an open-source & self-hostable alternative to Heroku / Netlify / Vercel / etc.**
+**Docklift is an open-source & self-hostable alternative to Coolify/ Heroku / Netlify / Vercel / etc.**
 
 It helps you deploy and manage your applications on your own hardware - you only need a VPS with Docker installed. Deploy from GitHub or upload files directly, manage custom domains, monitor system resources, and access your server terminal - all from a beautiful web interface.
 
@@ -29,9 +29,32 @@ No vendor lock-in, which means all your application data, configurations, and Do
 - **🔄 Zero-Downtime Redeploys** - Rebuild and restart containers seamlessly.
 - **📜 Live Build Logs** - Watch your application build in real-time.
 - **🐙 GitHub Integration** - Private repository support via GitHub Apps.
+- **📊 System Monitoring** - Real-time CPU, RAM, GPU, disk, and network stats.
+- **💻 Web Terminal** - Full SSH-like terminal access in your browser.
 
 ![Deployment In Progress](screenshots/deploy.png)
 
+---
+
+## 🆚 Coolify Alternative
+
+Docklift is a lightweight alternative to Coolify. Here's how they compare:
+
+| Feature | Docklift | Coolify |
+|---------|----------|---------|
+| **Focus** | Lightweight, Docker-focused | Full-featured PaaS |
+| **Tech Stack** | Next.js + Express + Prisma | Laravel + Livewire |
+| **System Monitoring** | ✅ Full (CPU, RAM, GPU, disk, network) | Basic per-container |
+| **Web Terminal** | ✅ Built-in | ❌ Not available |
+| **Database Management** | Deploy your own | Built-in (PostgreSQL, MySQL, Redis) |
+| **Multi-Server** | Single server | Multi-server support |
+| **Build System** | Pure Docker | Nixpacks + Docker |
+| **Resource Usage** | Lighter footprint | Heavier (~500MB+ RAM) |
+| **Learning Curve** | Easier | Steeper |
+
+**Choose Docklift if:** You want something simple, lightweight, with great monitoring and web terminal.
+
+**Choose Coolify if:** You need managed databases, multi-server support, or auto-Dockerfile generation.
 
 ---
 
@@ -48,7 +71,7 @@ To run Docklift locally or on a server, you need:
 
 ### 1. One-Command Install (Recommended)
 
-Run this on your Ubuntu/Debian server to set up everything automatically:
+Run this on your Ubuntu server to set up everything automatically:
 
 #### Install
 
