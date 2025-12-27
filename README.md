@@ -180,3 +180,10 @@ MIT License - see [LICENSE](LICENSE)
 ***
 
 **Made with ❤️ for developers who take control.**
+
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=SSujitX/docklift&type=date&legend=top-left)](https://www.star-history.com/#SSujitX/docklift&type=date&legend=top-left)
+
+![](https://api.visitorbadge.io/api/VisitorHit?user=SSujitX&docklift&countColor=%237B1E7A)
