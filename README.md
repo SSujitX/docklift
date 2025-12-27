@@ -186,4 +186,4 @@ MIT License - see [LICENSE](LICENSE)
 
 [![Star History Chart](https://api.star-history.com/svg?repos=SSujitX/docklift&type=date&legend=top-left)](https://www.star-history.com/#SSujitX/docklift&type=date&legend=top-left)
 
-![](https://api.visitorbadge.io/api/VisitorHit?user=SSujitX&docklift&countColor=%237B1E7A)
+![Visitors](https://api.visitorbadge.io/api/visitors?path=https%3A%2F%2Fgithub.com%2FSSujitX%2Fdocklift&countColor=%23263759)
