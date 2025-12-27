@@ -8,12 +8,17 @@ YELLOW='\033[1;33m'
 NC='\033[0m'
 
 echo -e "${RED}${BOLD}⚠️  THIS WILL DELETE ALL DOCKLIFT DATA, PROJECTS, AND DATABASES! ⚠️${NC}"
-echo -e "${YELLOW}Are you sure you want to continue? (y/N)${NC}"
-read -r response
 
-if [[ ! "$response" =~ ^([yY][eE][sS]|[yY])$ ]]; then
-    echo "Aborted."
-    exit 1
+if [[ "$1" == "-y" || "$1" == "--force" ]]; then
+    echo -e "${YELLOW}Force mode detected. Skipping confirmation.${NC}"
+else
+    echo -e "${YELLOW}Are you sure you want to continue? (y/N)${NC}"
+    read -r response
+
+    if [[ ! "$response" =~ ^([yY][eE][sS]|[yY])$ ]]; then
+        echo "Aborted."
+        exit 1
+    fi
 fi
 
 echo -e "${YELLOW}Stopping Docklift containers...${NC}"
