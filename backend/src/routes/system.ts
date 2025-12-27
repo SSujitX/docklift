@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import si from 'systeminformation';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import os from 'os';
 
 const execAsync = promisify(exec);
 
