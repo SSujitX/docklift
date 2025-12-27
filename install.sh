@@ -181,28 +181,40 @@ if [ "$RUNNING" -gt 0 ]; then
     echo -e "  ${DIM}Build: $(format_duration $BUILD_DURATION) | Total: $(format_duration $TOTAL_DURATION)${NC}"
     echo ""
     
-    # Get IPs
-    PUBLIC_IPV4=$(curl -4 -s --connect-timeout 2 https://api.ipify.org || echo "")
-    
-    echo -e "  ${BOLD}Access Docklift:${NC}"
-    echo ""
-    
-    if [ -n "$PUBLIC_IPV4" ]; then
-        URL="http://${PUBLIC_IPV4}:8080"
-        echo -e "  ${CYAN}>${NC} $(link "$URL" "$URL")"
-    fi
-    
-    # Local IPs
-    hostname -I 2>/dev/null | tr ' ' '\n' | head -3 | while read ip; do
-        if [ -n "$ip" ]; then
-            URL="http://${ip}:8080"
-            echo -e "  ${DIM}>${NC} $(link "$URL" "$URL")"
+    # Skip IP display in CI
+    if [ "$CI" != "true" ]; then
+        # Get public IP
+        PUBLIC_IPV4=$(curl -4 -s --connect-timeout 2 https://api.ipify.org 2>/dev/null || echo "")
+        
+        # Get local IPs
+        LOCAL_IPS=$(hostname -I 2>/dev/null | tr ' ' '\n' | grep -v '^$' | head -3)
+        
+        # Only show section if we have IPs
+        if [ -n "$PUBLIC_IPV4" ] || [ -n "$LOCAL_IPS" ]; then
+            echo -e "  ${BOLD}Access Docklift:${NC}"
+            echo ""
+            
+            if [ -n "$PUBLIC_IPV4" ]; then
+                URL="http://${PUBLIC_IPV4}:8080"
+                echo -e "  ${CYAN}>${NC} $(link "$URL" "$URL")"
+            fi
+            
+            # Local IPs
+            echo "$LOCAL_IPS" | while read ip; do
+                if [ -n "$ip" ]; then
+                    URL="http://${ip}:8080"
+                    echo -e "  ${DIM}>${NC} $(link "$URL" "$URL")"
+                fi
+            done
+            echo ""
         fi
-    done
-    
-    echo ""
+    else
+        echo -e "  ${DIM}CI environment - containers ready${NC}"
+        echo ""
+    fi
 else
     echo -e "  ${RED}Something went wrong. Containers not running.${NC}"
     echo -e "  Run: cd $INSTALL_DIR && docker compose logs"
 fi
 echo ""
+
