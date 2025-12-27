@@ -39,34 +39,20 @@ jobs:
       - name: Verify Installation
         id: verify
         run: |
-          BACKEND_STATUS="⚠️ Not Running"
-          FRONTEND_STATUS="⚠️ Not Running"
-          NGINX_STATUS="⚠️ Not Running"
+          check_container() {
+            if sudo docker ps | grep -q "$1"; then echo "✅ Running"; else echo "❌ Not Running"; fi
+          }
+          
+          echo "backend_status=$(check_container docklift-backend)" >> $GITHUB_OUTPUT
+          echo "frontend_status=$(check_container docklift-frontend)" >> $GITHUB_OUTPUT
+          echo "nginx_status=$(check_container docklift-nginx)" >> $GITHUB_OUTPUT
+          echo "proxy_status=$(check_container docklift-nginx-proxy)" >> $GITHUB_OUTPUT
           
           if [ -d "/opt/docklift" ]; then
             echo "dir_exists=true" >> $GITHUB_OUTPUT
           else
             echo "dir_exists=false" >> $GITHUB_OUTPUT
           fi
-          
-          if sudo docker ps | grep -q "docklift-backend"; then
-            BACKEND_STATUS="✅ Running"
-            echo "backend_running=true" >> $GITHUB_OUTPUT
-          fi
-          
-          if sudo docker ps | grep -q "docklift-frontend"; then
-            FRONTEND_STATUS="✅ Running"
-            echo "frontend_running=true" >> $GITHUB_OUTPUT
-          fi
-          
-          if sudo docker ps | grep -q "docklift-nginx"; then
-            NGINX_STATUS="✅ Running"
-            echo "nginx_running=true" >> $GITHUB_OUTPUT
-          fi
-          
-          echo "backend_status=$BACKEND_STATUS" >> $GITHUB_OUTPUT
-          echo "frontend_status=$FRONTEND_STATUS" >> $GITHUB_OUTPUT
-          echo "nginx_status=$NGINX_STATUS" >> $GITHUB_OUTPUT
 
       - name: Generate Summary
         if: always()
@@ -81,41 +67,35 @@ jobs:
           fi
           
           # Build summary
-          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          cat >> $GITHUB_STEP_SUMMARY << EOF
           # 📋 Docklift Installation Test Summary
+          
+          ## $STATUS_EMOJI Overall Status: $STATUS_TEXT
+          
+          ### ⏱️ Timing
+          | Step | Duration |
+          |------|----------|
+          | Environment Setup | ${{ steps.setup.outputs.duration }}s |
+          | Install Script | ${{ steps.install.outputs.duration }}s |
+          
+          ### 🐳 Container Status
+          | Service | Status |
+          |---------|--------|
+          | Backend | ${{ steps.verify.outputs.backend_status }} |
+          | Frontend | ${{ steps.verify.outputs.frontend_status }} |
+          | Web UI (8080) | ${{ steps.verify.outputs.nginx_status }} |
+          | Reverse Proxy (80) | ${{ steps.verify.outputs.proxy_status }} |
+          
+          ### 📁 Installation Directory
+          - **Path:** \`/opt/docklift\`
+          - **Exists:** $([ "${{ steps.verify.outputs.dir_exists }}" = "true" ] && echo "✅ Yes" || echo "❌ No")
           
           EOF
           
-          echo "## $STATUS_EMOJI Overall: $STATUS_TEXT" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          
-          echo "### ⏱️ Timing" >> $GITHUB_STEP_SUMMARY
-          echo "| Step | Duration |" >> $GITHUB_STEP_SUMMARY
-          echo "|------|----------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Environment Setup | ${{ steps.setup.outputs.duration }}s |" >> $GITHUB_STEP_SUMMARY
-          echo "| Install Script | ${{ steps.install.outputs.duration }}s |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          
-          echo "### 🐳 Container Status" >> $GITHUB_STEP_SUMMARY
-          echo "| Service | Status |" >> $GITHUB_STEP_SUMMARY
-          echo "|---------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Backend | ${{ steps.verify.outputs.backend_status }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Frontend | ${{ steps.verify.outputs.frontend_status }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Nginx Proxy | ${{ steps.verify.outputs.nginx_status }} |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          
-          echo "### 📁 Installation" >> $GITHUB_STEP_SUMMARY
-          if [ "${{ steps.verify.outputs.dir_exists }}" = "true" ]; then
-            echo "- ✅ Directory created: \`/opt/docklift\`" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "- ❌ Directory missing: \`/opt/docklift\`" >> $GITHUB_STEP_SUMMARY
-          fi
-          echo "" >> $GITHUB_STEP_SUMMARY
-          
           # Add errors if install failed
           if [ "${{ steps.install.outputs.exit_code }}" != "0" ]; then
-            echo "### ❌ Errors" >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "### ❌ Error Logs (Last 50 lines)" >> $GITHUB_STEP_SUMMARY
+            echo '```bash' >> $GITHUB_STEP_SUMMARY
             tail -50 install_output.txt >> $GITHUB_STEP_SUMMARY || echo "No output captured" >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
           fi
@@ -127,3 +107,4 @@ jobs:
       - name: Fail if install failed
         if: steps.install.outputs.exit_code != '0'
         run: exit 1
+
