@@ -11,6 +11,8 @@ Similar to Coolify, CapRover, and Dokku, but simpler.
 
 > 🚀 **Self-hosted deployment platform** • Deploy Docker containers from GitHub or ZIP upload • Real-time build logs • Automatic port management • Built with Next.js 15 & Express
 
+![Docklift Dashboard](screenshots/home.png)
+
 ## ✨ Key Features
 
 - **📦 One-Click Deployment** - Simply connect a GitHub repository or upload a ZIP file.
@@ -19,6 +21,9 @@ Similar to Coolify, CapRover, and Dokku, but simpler.
 - **🔄 Zero-Downtime Redeploys** - Rebuild and restart containers seamlessly.
 - **📜 Live Build Logs** - Watch your application build in real-time.
 - **🐙 GitHub Integration** - Private repository support via GitHub Apps.
+
+![Deployment In Progress](screenshots/deploy.png)
+
 
 ---
 
