@@ -350,8 +350,9 @@ router.post('/reboot', async (req: Request, res: Response) => {
 
     // Production Linux Reboot
     // Execute asynchronously with a small delay to allow response to be sent
+    // Use -f to force reboot (skips shutdown scripts/stuck processes)
     setTimeout(() => {
-      exec('sudo reboot');
+      exec('sudo reboot -f');
     }, 1000);
     
     res.json({ message: 'System is rebooting now...' });
