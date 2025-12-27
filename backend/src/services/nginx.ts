@@ -54,13 +54,19 @@ export async function updateServiceDomain(service: any) {
   // Use container name and internal port for routing within the docker network
   const upstream = `${service.container_name}:${service.internal_port}`;
   
+  // Use a variable for proxy_pass and add a resolver. 
+  // This prevents Nginx from failing to start/reload if the container is not yet in DNS.
   const content = `
 server {
     listen 80;
     server_name ${domains};
+
+    # Docker internal DNS resolver
+    resolver 127.0.0.11 valid=30s;
     
     location / {
-        proxy_pass http://${upstream};
+        set $upstream_addr ${service.container_name};
+        proxy_pass http://$upstream_addr:${service.internal_port};
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
