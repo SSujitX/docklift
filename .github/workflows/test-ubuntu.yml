@@ -50,8 +50,11 @@ jobs:
           
           if [ -d "/opt/docklift" ]; then
             echo "dir_exists=true" >> $GITHUB_OUTPUT
+            VERSION=$(grep -o '"version": *"[^"]*"' /opt/docklift/backend/package.json 2>/dev/null | head -1 | cut -d'"' -f4 || echo "Unknown")
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
           else
             echo "dir_exists=false" >> $GITHUB_OUTPUT
+            echo "version=Unknown" >> $GITHUB_OUTPUT
           fi
 
       - name: Generate Summary
@@ -72,6 +75,11 @@ jobs:
           
           ## $STATUS_EMOJI Overall Status: $STATUS_TEXT
           
+          ### 📦 Version Info
+          - **Version:** \`${{ steps.verify.outputs.version }}\`
+          - **Path:** \`/opt/docklift\`
+          - **Status:** $([ "${{ steps.verify.outputs.dir_exists }}" = "true" ] && echo "✅ Directory created" || echo "❌ Directory missing")
+          
           ### ⏱️ Timing
           | Step | Duration |
           |------|----------|
@@ -85,10 +93,6 @@ jobs:
           | Frontend | ${{ steps.verify.outputs.frontend_status }} |
           | Web UI (8080) | ${{ steps.verify.outputs.nginx_status }} |
           | Reverse Proxy (80) | ${{ steps.verify.outputs.proxy_status }} |
-          
-          ### 📁 Installation Directory
-          - **Path:** \`/opt/docklift\`
-          - **Exists:** $([ "${{ steps.verify.outputs.dir_exists }}" = "true" ] && echo "✅ Yes" || echo "❌ No")
           
           EOF
           
@@ -107,4 +111,5 @@ jobs:
       - name: Fail if install failed
         if: steps.install.outputs.exit_code != '0'
         run: exit 1
+
 

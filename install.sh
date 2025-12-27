@@ -99,7 +99,7 @@ FETCH_END=$(date +%s)
 FETCH_TIME=$((FETCH_END - FETCH_START))
 echo -e " ${GREEN}done${NC} ${DIM}($(format_time $FETCH_TIME))${NC}"
 
-# Show version
+# Get version
 VERSION=$(grep -o '"version": *"[^"]*"' "$INSTALL_DIR/backend/package.json" 2>/dev/null | head -1 | cut -d'"' -f4 || echo "1.0.0")
 echo -e "        ${DIM}Version: ${VERSION}${NC}"
 
@@ -163,31 +163,23 @@ if [ "$RUNNING" -gt 0 ]; then
         PUBLIC_IPV4=$(curl -4 -s --connect-timeout 2 https://api.ipify.org 2>/dev/null || echo "")
         PUBLIC_IPV6=$(curl -6 -s --connect-timeout 2 https://api64.ipify.org 2>/dev/null || echo "")
         
-        # Get local IP, excluding the public one if it matches
-        PRIVATE_IP=$(hostname -I 2>/dev/null | tr ' ' '\n' | grep -v "$PUBLIC_IPV4" | grep -E '^(10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|192\.168\.)' | head -1)
-        # Fallback if no RFC1918 IP found
+        # Get local IP, excluding the public one and common docker bridges
+        PRIVATE_IP=$(hostname -I 2>/dev/null | tr ' ' '\n' | grep -v "$PUBLIC_IPV4" | grep -vE '172\.(1[7-8])\.0\.1' | grep -E '^(10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|192\.168\.)' | head -1)
+        
+        # Fallback if no specific RFC1918 match but we have something else
         if [ -z "$PRIVATE_IP" ]; then
-            PRIVATE_IP=$(hostname -I 2>/dev/null | tr ' ' '\n' | grep -v "$PUBLIC_IPV4" | grep -v '^$' | head -1)
+            PRIVATE_IP=$(hostname -I 2>/dev/null | tr ' ' '\n' | grep -v "$PUBLIC_IPV4" | grep -vE '172\.(1[7-8])\.0\.1' | grep -v '^$' | head -1)
         fi
         
-        echo -e "  ${BOLD}Access Docklift:${NC}"
-        echo ""
-        
-        if [ -n "$PUBLIC_IPV4" ]; then
-            URL="http://${PUBLIC_IPV4}:8080"
-            echo -e "  ${CYAN}Public: ${NC} $(link "$URL" "$URL")"
+        if [ -n "$PUBLIC_IPV4" ] || [ -n "$PRIVATE_IP" ]; then
+            echo -e "  ${BOLD}Access Docklift:${NC}"
+            echo ""
+            
+            [ -n "$PUBLIC_IPV4" ] && echo -e "  ${CYAN}Public:  ${NC} $(link "http://${PUBLIC_IPV4}:8080" "http://${PUBLIC_IPV4}:8080")"
+            [ -n "$PUBLIC_IPV6" ] && echo -e "  ${CYAN}IPv6:    ${NC} $(link "http://[${PUBLIC_IPV6}]:8080" "http://[${PUBLIC_IPV6}]:8080")"
+            [ -n "$PRIVATE_IP" ] && echo -e "  ${DIM}Private: ${NC} $(link "http://${PRIVATE_IP}:8080" "http://${PRIVATE_IP}:8080")"
+            echo ""
         fi
-        
-        if [ -n "$PUBLIC_IPV6" ]; then
-            URL="http://[${PUBLIC_IPV6}]:8080"
-            echo -e "  ${CYAN}IPv6:   ${NC} $(link "$URL" "$URL")"
-        fi
-        
-        if [ -n "$PRIVATE_IP" ] && [ "$PRIVATE_IP" != "$PUBLIC_IPV4" ]; then
-            URL="http://${PRIVATE_IP}:8080"
-            echo -e "  ${DIM}Private:${NC} $(link "$URL" "$URL")"
-        fi
-        echo ""
     else
         echo -e "  ${DIM}CI environment - containers ready${NC}"
         echo ""
