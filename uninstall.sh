@@ -42,6 +42,12 @@ docker network prune -f 2>/dev/null || true
 # Clean up any orphaned volumes/images related to docklift
 docker volume prune -f 2>/dev/null || true
 
+echo -e "${YELLOW}Killing any leftover processes on project ports (3001-3100)...${NC}"
+# Use fuser to kill anything holding our port range
+for port in {3001..3050}; do
+    fuser -k ${port}/tcp 2>/dev/null || true
+done
+
 echo -e "${YELLOW}Removing installation directory (/opt/docklift)...${NC}"
 rm -rf /opt/docklift
 
