@@ -22,15 +22,16 @@ else
 fi
 
 echo -e "${YELLOW}Stopping and removing ALL Docklift-related containers...${NC}"
-# Find all container IDs that have "docklift" in the name
-DOCKLIFT_CONTAINERS=$(docker ps -a -q --filter name=docklift)
+# Find all container IDs that have "docklift" OR "dl_" in the name
+DOCKLIFT_CONTAINERS=$(docker ps -a -q --filter name=docklift --filter name=dl_)
 
 if [ -n "$DOCKLIFT_CONTAINERS" ]; then
+    echo -e "${YELLOW}Found containers, stopping and removing...${NC}"
     docker stop $DOCKLIFT_CONTAINERS 2>/dev/null || true
     docker rm $DOCKLIFT_CONTAINERS 2>/dev/null || true
-    echo -e "${GREEN}✓ Removed all containers${NC}"
+    echo -e "${GREEN}✓ Removed all containers ($DOCKLIFT_CONTAINERS)${NC}"
 else
-    echo -e "${DIM}No docklift containers found.${NC}"
+    echo -e "${DIM}No docklift or dl_ containers found.${NC}"
 fi
 
 echo -e "${YELLOW}Cleaning up Docker resources...${NC}"
