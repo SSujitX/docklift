@@ -38,7 +38,15 @@ To run Docklift locally or on a server, you need:
 
 ## 🚀 Getting Started
 
-### 1. Clone the Repository
+### 1. One-Command Install (Recommended)
+
+Run this on your Ubuntu/Debian server to set up everything automatically:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh | sudo bash
+```
+
+### 2. Manual Installation (Clone Repo)
 
 ```bash
 git clone https://github.com/SSujitX/docklift.git
