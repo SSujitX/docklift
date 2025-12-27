@@ -38,7 +38,7 @@ function SettingsContent() {
   const [domains, setDomains] = useState<DomainConfig[]>([]);
   const [loadingDomains, setLoadingDomains] = useState(false);
   const [showAddDomain, setShowAddDomain] = useState(false);
-  const [newDomain, setNewDomain] = useState({ domain: '', port: '' });
+  const [newDomain, setNewDomain] = useState({ domain: '', port: '8080' });
   const [addingDomain, setAddingDomain] = useState(false);
 
   const searchParams = useSearchParams();
@@ -106,10 +106,12 @@ function SettingsContent() {
   };
 
   const handleAddDomain = async () => {
-    if (!newDomain.domain || !newDomain.port) {
-      toast.error("Please fill in all fields");
+    if (!newDomain.domain) {
+      toast.error("Please enter a domain name");
       return;
     }
+
+    const port = newDomain.port || '8080';
 
     setAddingDomain(true);
     try {
@@ -118,7 +120,7 @@ function SettingsContent() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           domain: newDomain.domain,
-          port: parseInt(newDomain.port)
+          port: parseInt(port)
         })
       });
 
@@ -128,7 +130,7 @@ function SettingsContent() {
       
       toast.success(`Domain ${newDomain.domain} added successfully`);
       setShowAddDomain(false);
-      setNewDomain({ domain: '', port: '' });
+      setNewDomain({ domain: '', port: '8080' });
       fetchDomains();
     } catch (error: any) {
       toast.error(error.message);
