@@ -58,6 +58,11 @@ echo -e "${BOLD}🚀 Starting Installation...${NC}\n"
 
 # Step 1: System Requirements
 printf "${CYAN}[1/5]${NC} Checking system requirements..."
+
+# Pre-install dependencies for specific distros
+if [ -f /etc/redhat-release ]; then
+    dnf install -y dnf-plugins-core >/dev/null 2>&1 || yum install -y yum-utils >/dev/null 2>&1
+fi
 {
     command -v docker &> /dev/null && command -v git &> /dev/null
 } &
