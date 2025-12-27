@@ -13,7 +13,7 @@
     "db:studio": "bunx prisma studio"
   },
   "dependencies": {
-    "@prisma/client": "^6.19.1",
+    "@prisma/client": "6",
     "cors": "^2.8.5",
     "dockerode": "^4.0.9",
     "dotenv": "^17.2.3",
@@ -35,7 +35,7 @@
     "@types/multer": "^2.0.0",
     "@types/node": "^25.0.3",
     "@types/unzipper": "^0.10.11",
-    "prisma": "^6.19.1",
+    "prisma": "6",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"
   }

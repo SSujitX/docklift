@@ -9,7 +9,7 @@ WORKDIR /app
 COPY package.json bun.lock* ./
 COPY prisma ./prisma/
 RUN bun install --frozen-lockfile
-RUN bunx prisma generate
+RUN bunx prisma generate --no-hints
 
 # Production dependencies stage
 FROM base AS prod-deps
@@ -17,7 +17,7 @@ WORKDIR /app
 COPY package.json bun.lock* ./
 COPY prisma ./prisma/
 RUN bun install --production --frozen-lockfile
-RUN bunx prisma generate
+RUN bunx prisma generate --no-hints
 
 # Builder stage
 FROM base AS builder

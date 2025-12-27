@@ -301,7 +301,7 @@ router.post('/purge', async (req: Request, res: Response) => {
     try {
       const { stdout: dockerOutput } = await execAsync('docker system prune -f');
       results.push('Docker cleanup successful');
-      console.log('Docker Prune:', dockerOutput);
+      // console.log('Docker Prune:', dockerOutput);
     } catch (err: any) {
       console.error('Docker prune failed:', err);
       results.push('Docker cleanup skipped or failed');
