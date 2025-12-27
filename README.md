@@ -1,5 +1,12 @@
 # 🐳 Docklift
 
+<p align="center">
+  <a href="https://nextjs.org"><img src="https://img.shields.io/badge/Next.js-15-black" alt="Next.js"></a>
+  <a href="https://expressjs.com"><img src="https://img.shields.io/badge/Express-Node.js-green" alt="Express"></a>
+  <a href="https://docker.com"><img src="https://img.shields.io/badge/Docker-Compose-blue" alt="Docker"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow" alt="License"></a>
+</p>
+
 **Open-source, self-hosted PaaS for Docker deployments.**  
 Deploy any application to your own server with one click. A free alternative to Heroku, Vercel, and Netlify. 
 Similar to Coolify, CapRover, and Dokku, but simpler.
@@ -14,10 +21,6 @@ Similar to Coolify, CapRover, and Dokku, but simpler.
 - [📄 License](#-license)
 
 ---
-[![Next.js](https://img.shields.io/badge/Next.js-16-black)](https://nextjs.org)
-[![Express](https://img.shields.io/badge/Express-Node.js-green)](https://expressjs.com)
-[![Docker](https://img.shields.io/badge/Docker-Compose-blue)](https://docker.com)
-[![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 
 > 🚀 **Self-hosted deployment platform** • Deploy Docker containers from GitHub or ZIP upload • Real-time build logs • Automatic port management • Built with Next.js 15 & Express
 
