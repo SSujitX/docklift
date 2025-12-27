@@ -65,11 +65,12 @@ pid=$!
 spinner $pid
 
 if ! command -v docker &> /dev/null; then
-    echo -e "\n${YELLOW}Docker not found. Installing...${NC}"
+    echo -e "${YELLOW}[2/6]${NC} Installing Docker..."
     curl -fsSL https://get.docker.com | sh -s -- --quiet > /dev/null 2>&1
-    systemctl enable docker >/dev/null 2>&1
-    systemctl start docker >/dev/null 2>&1
-fi
+    if command -v systemctl &> /dev/null; then
+        systemctl enable docker >/dev/null 2>&1 || true
+        systemctl start docker >/dev/null 2>&1 || true
+    fi
 
 if ! command -v git &> /dev/null; then
     echo -e "\n${YELLOW}Git not found. Installing...${NC}"
@@ -77,12 +78,20 @@ if ! command -v git &> /dev/null; then
         apt-get update -qq && apt-get install -y -qq git >/dev/null 2>&1
     elif [ -f /etc/alpine-release ]; then
         apk add --no-cache git >/dev/null 2>&1
+    elif [ -f /etc/redhat-release ]; then
+        # CentOS / AlmaLinux / RHEL / Fedora
+        if command -v dnf &> /dev/null; then
+            dnf install -y git >/dev/null 2>&1
+        else
+            yum install -y git >/dev/null 2>&1
+        fi
     fi
 fi
 echo -e "${GREEN}✓ Ready${NC}"
 
-# Set install directory
+# Step 2: Fetch Code
 INSTALL_DIR="/opt/docklift"
+
 
 # Step 2: Fetch Code
 printf "${CYAN}[2/5]${NC} Fetching latest version..."
