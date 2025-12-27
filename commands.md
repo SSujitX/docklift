@@ -22,6 +22,9 @@ docker logs docklift-frontend --tail 50 -f
 
 docker logs -f docklift-frontend
 
+# Build & run
+docker compose up -d --build
+
 # View Nginx Proxy logs (useful for 502/404 errors)
 docker logs docklift-nginx-proxy --tail 50 -f
 ```
