@@ -14,23 +14,24 @@ DIM='\033[2m'
 # Spinner function
 spinner() {
     local pid=$1
-    
-    # Disable spinner if not in a terminal or if running in CI
-    if [ ! -t 1 ] || [ -n "$CI" ]; then
-        wait "$pid"
-        return
-    fi
-
     local delay=0.1
     local spinstr='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+    
     while kill -0 "$pid" 2> /dev/null; do
-        local temp=${spinstr#?}
-        printf "   ${BLUE}%c${NC}  " "$spinstr"
-        local spinstr=$temp${spinstr%"$temp"}
+        # Only animate if in a TTY and NOT in CI
+        if [ -t 1 ] && [ -z "$CI" ]; then
+            local temp=${spinstr#?}
+            printf "   ${BLUE}%c${NC}  " "$spinstr"
+            local spinstr=$temp${spinstr%"$temp"}
+            printf "\b\b\b\b\b\b"
+        fi
         sleep $delay
-        printf "\b\b\b\b\b\b"
     done
-    printf "    \b\b\b\b"
+    
+    # Clear spinner artifact if we acted
+    if [ -t 1 ] && [ -z "$CI" ]; then
+        printf "    \b\b\b\b"
+    fi
 }
 
 
