@@ -15,6 +15,13 @@ Useful commands for debugging and maintaining your Docklift instance.
 # View Backend logs
 docker logs docklift-backend --tail 50 -f
 
+docker logs -f docklift-backend
+
+# View Frontend logs
+docker logs docklift-frontend --tail 50 -f
+
+docker logs -f docklift-frontend
+
 # View Nginx Proxy logs (useful for 502/404 errors)
 docker logs docklift-nginx-proxy --tail 50 -f
 ```
