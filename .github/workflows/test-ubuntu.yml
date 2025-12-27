@@ -22,7 +22,7 @@ jobs:
       - name: Run Install Script
         run: |
           chmod +x install.sh
-          sudo DOCKLIFT_CI_LOCAL=true ./install.sh
+          sudo CI=true DOCKLIFT_CI_LOCAL=true ./install.sh
         env:
           CI: true
 

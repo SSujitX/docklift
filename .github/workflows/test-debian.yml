@@ -23,7 +23,8 @@ jobs:
       - name: Run Install Script
         run: |
           chmod +x install-debian.sh
-          sudo DOCKLIFT_CI_LOCAL=true ./install-debian.sh
+          # Explicitly pass CI=true through sudo
+          sudo CI=true DOCKLIFT_CI_LOCAL=true ./install-debian.sh
         env:
           CI: true
 

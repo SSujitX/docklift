@@ -22,8 +22,8 @@ jobs:
       - name: Run Install Script
         run: |
           chmod +x install-almalinux.sh
-          # Pass DOCKLIFT_CI_LOCAL=true to use the current directory files instead of cloning
-          sudo DOCKLIFT_CI_LOCAL=true ./install-almalinux.sh
+          # Explicitly pass CI=true through sudo
+          sudo CI=true DOCKLIFT_CI_LOCAL=true ./install-almalinux.sh
         env:
           CI: true
 

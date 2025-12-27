@@ -55,7 +55,7 @@ spinner $!
 
 # Step 2: Docker
 if ! command -v docker &> /dev/null; then
-    echo -e "${YELLOW}[2/6]${NC} Installing Docker..."
+    echo -e "${CYAN}[2/5]${NC} Installing Docker..."
     if [ "$CI" = "true" ]; then
         curl -fsSL https://get.docker.com | sh -s -- --quiet > /dev/null 2>&1 || echo "⚠️ Docker skipped in CI"
     else
@@ -69,9 +69,9 @@ if ! command -v git &> /dev/null; then
     dnf install -y --allowerasing git >/dev/null 2>&1
 fi
 
-# Step 2: Fetch Code
+# Step 3: Fetch Code
 INSTALL_DIR="/opt/docklift"
-printf "${CYAN}[2/5]${NC} Fetching latest version..."
+printf "${CYAN}[3/5]${NC} Fetching latest version..."
 if [ "$DOCKLIFT_CI_LOCAL" = "true" ]; then
     mkdir -p "$INSTALL_DIR"
     cp -r . "$INSTALL_DIR/"
@@ -89,8 +89,8 @@ else
 fi
 echo -e "${GREEN}✓ Ready${NC}"
 
-# Step 3: Launch
-printf "${CYAN}[3/5]${NC} Preparing environment..."
+# Step 4: Launch
+printf "${CYAN}[4/5]${NC} Preparing environment..."
 mkdir -p "$INSTALL_DIR/data" "$INSTALL_DIR/deployments" "$INSTALL_DIR/nginx-proxy/conf.d"
 rm -f "$INSTALL_DIR/nginx-proxy/conf.d/"*.conf 2>/dev/null || true
 cat > "$INSTALL_DIR/nginx-proxy/conf.d/default.conf" <<EOF
@@ -102,7 +102,7 @@ server {
 EOF
 echo -e "${GREEN}✓ Done${NC}"
 
-echo -e "${CYAN}[4/5]${NC} Launching Docklift..."
+echo -e "${CYAN}[5/5]${NC} Launching Docklift..."
 if [ "$CI" = "true" ]; then
     echo -e "${YELLOW}⚠️ CI Environment detected: Skipping 'docker compose up' (Docker daemon not available).${NC}"
 else
