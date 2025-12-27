@@ -131,13 +131,16 @@ echo -e "${CYAN}[5/5]${NC} Building and launching Docklift..."
 echo -e "${DIM}      (This takes a moment for the first build)${NC}"
 
 # Run compose up
-LOG_FILE=$(mktemp)
-(
-    # Force clean Nginx configs (Backend will regenerate valid ones)
-    rm -f "$INSTALL_DIR/nginx-proxy/conf.d/"*.conf 2>/dev/null || true
-    
-    # Create default config to prevent empty include errors
-    cat > "$INSTALL_DIR/nginx-proxy/conf.d/default.conf" <<EOF
+if [ "$CI" = "true" ]; then
+    echo -e "${YELLOW}⚠️ CI Environment detected: Skipping 'docker compose up'.${NC}"
+else
+    LOG_FILE=$(mktemp)
+    (
+        # Force clean Nginx configs (Backend will regenerate valid ones)
+        rm -f "$INSTALL_DIR/nginx-proxy/conf.d/"*.conf 2>/dev/null || true
+        
+        # Create default config to prevent empty include errors
+        cat > "$INSTALL_DIR/nginx-proxy/conf.d/default.conf" <<EOF
 server {
     listen 80 default_server;
     server_name _;
@@ -145,22 +148,23 @@ server {
 }
 EOF
 
-    docker compose up -d --build --remove-orphans > "$LOG_FILE" 2>&1
-) &
-pid=$!
-spinner $pid
-EXIT_CODE=0
-wait $pid || EXIT_CODE=$?
+        docker compose up -d --build --remove-orphans > "$LOG_FILE" 2>&1
+    ) &
+    pid=$!
+    spinner $pid
+    EXIT_CODE=0
+    wait $pid || EXIT_CODE=$?
 
-if [ $EXIT_CODE -ne 0 ]; then
-    echo -e "\n${RED}❌ Build Failed!${NC}"
-    if [ -f "$LOG_FILE" ]; then
-        cat "$LOG_FILE"
-        rm "$LOG_FILE"
+    if [ $EXIT_CODE -ne 0 ]; then
+        echo -e "\n${RED}❌ Build Failed!${NC}"
+        if [ -f "$LOG_FILE" ]; then
+            cat "$LOG_FILE"
+            rm "$LOG_FILE"
+        fi
+        exit $EXIT_CODE
     fi
-    exit $EXIT_CODE
+    rm "$LOG_FILE"
 fi
-rm "$LOG_FILE"
 
 # Wait for health check (simple wait)
 sleep 5

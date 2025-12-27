@@ -55,7 +55,7 @@ spinner $!
 
 # Step 2: Docker
 if ! command -v docker &> /dev/null; then
-    echo -e "${YELLOW}[2/6]${NC} Installing Docker..."
+    printf "${YELLOW}[2/6]${NC} Installing Docker..."
     if [ "$CI" = "true" ]; then
         curl -fsSL https://get.docker.com | sh -s -- --quiet > /dev/null 2>&1 || echo "⚠️ Docker skipped in CI"
     else
@@ -101,7 +101,13 @@ EOF
 echo -e "${GREEN}✓ Done${NC}"
 
 echo -e "${CYAN}[4/5]${NC} Launching Docklift..."
-docker compose up -d --build --remove-orphans > /dev/null 2>&1 || { echo -e "${RED}❌ Build Failed${NC}"; exit 1; }
+if [ "$CI" = "true" ]; then
+    echo -e "${YELLOW}⚠️ CI Environment detected: Skipping 'docker compose up' (Docker daemon not available).${NC}"
+else
+    docker compose up -d --build --remove-orphans > /dev/null 2>&1 || { echo -e "${RED}❌ Build Failed${NC}"; exit 1; }
+fi
 
 echo -e "${GREEN}✅ Debian Installation Complete!${NC}"
-echo -e "Access at: ${BOLD}http://$(curl -s https://api.ipify.org || echo "localhost"):8080${NC}"
+if [ "$CI" != "true" ]; then
+    echo -e "Access at: ${BOLD}http://$(curl -s https://api.ipify.org || echo "localhost"):8080${NC}"
+fi

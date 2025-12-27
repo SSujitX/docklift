@@ -40,7 +40,7 @@ EOF
 echo -e "${DIM}  Version 1.0.0${NC}\n"
 
 if [ "$EUID" -ne 0 ]; then
-    echo -e "${RED}❌ Error: Please run as root${NC}"
+    printf "${RED}❌ Error: Please run as root${NC}"
     exit 1
 fi
 
@@ -103,7 +103,13 @@ EOF
 echo -e "${GREEN}✓ Done${NC}"
 
 echo -e "${CYAN}[4/5]${NC} Launching Docklift..."
-docker compose up -d --build --remove-orphans > /dev/null 2>&1 || { echo -e "${RED}❌ Build Failed${NC}"; exit 1; }
+if [ "$CI" = "true" ]; then
+    echo -e "${YELLOW}⚠️ CI Environment detected: Skipping 'docker compose up' (Docker daemon not available).${NC}"
+else
+    docker compose up -d --build --remove-orphans > /dev/null 2>&1 || { echo -e "${RED}❌ Build Failed${NC}"; exit 1; }
+fi
 
 echo -e "${GREEN}✅ AlmaLinux Installation Complete!${NC}"
-echo -e "Access at: ${BOLD}http://$(curl -s https://api.ipify.org || echo "localhost"):8080${NC}"
+if [ "$CI" != "true" ]; then
+    echo -e "Access at: ${BOLD}http://$(curl -s https://api.ipify.org || echo "localhost"):8080${NC}"
+fi
