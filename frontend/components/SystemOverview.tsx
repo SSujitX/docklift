@@ -9,6 +9,7 @@ import {
   Activity,
   RefreshCw,
   Gauge,
+  CheckCircle2,
   CircuitBoard,
   ArrowDownToLine,
   ArrowUpFromLine,
@@ -19,8 +20,19 @@ import {
   Calendar,
   Network,
   MapPin,
+  Trash2,
 } from "lucide-react";
-import { API_URL } from "@/lib/utils";
+import { toast } from "sonner";
+import { API_URL, cn } from "@/lib/utils";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 
 interface SystemStats {
   cpu: {
@@ -231,22 +243,43 @@ export function SystemOverview() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
+  const [purging, setPurging] = useState(false);
+  const [showPurgeDialog, setShowPurgeDialog] = useState(false);
 
   const fetchStats = useCallback(async () => {
     try {
       const res = await fetch(`${API_URL}/api/system/stats`);
-      if (!res.ok) throw new Error("Failed to fetch stats");
       const data = await res.json();
       setStats(data);
       setLastUpdate(new Date());
-      setError(null);
     } catch (err) {
-      setError("Failed to fetch system stats");
+      setError("Failed to fetch system statistics");
       console.error(err);
     } finally {
       setLoading(false);
     }
   }, []);
+
+  const handlePurge = async () => {
+    setShowPurgeDialog(false);
+    setPurging(true);
+    try {
+      const res = await fetch(`${API_URL}/api/system/purge`, {
+        method: "POST",
+      });
+      const data = await res.json();
+      
+      if (!res.ok) throw new Error(data.error || "Purge failed");
+      
+      toast.success("Server resources purged successfully!");
+      fetchStats(); 
+    } catch (err: any) {
+      toast.error(err.message || "Failed to purge server");
+      console.error(err);
+    } finally {
+      setPurging(false);
+    }
+  };
 
   useEffect(() => {
     fetchStats();
@@ -299,12 +332,34 @@ export function SystemOverview() {
             {lastUpdate ? lastUpdate.toLocaleTimeString() : "now"}
           </p>
         </div>
+        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
+        <button
+          onClick={() => setShowPurgeDialog(true)}
+          disabled={purging}
+          className={cn(
+            "flex items-center gap-2 px-4 py-2 rounded-xl border text-xs font-bold transition-all active:scale-95 shadow-sm",
+            purging 
+              ? "bg-rose-500/10 text-rose-500/30 border-rose-500/20 cursor-not-allowed" 
+              : "bg-background hover:bg-rose-500/5 text-rose-500 border-rose-500/20 hover:border-rose-500/40"
+          )}
+        >
+          {purging ? (
+            <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Trash2 className="h-3.5 w-3.5" />
+          )}
+          Purge Server
+        </button>
+
         <button
           onClick={fetchStats}
-          className="p-2.5 rounded-xl bg-secondary/50 hover:bg-secondary border border-border/50 transition-all active:scale-95"
+          className="p-2.5 rounded-xl bg-secondary/50 hover:bg-secondary border border-border/50 transition-all active:scale-95 text-muted-foreground hover:text-foreground"
         >
           <RefreshCw className="h-4 w-4" />
         </button>
+      </div>
+        </div>
       </div>
 
       {/* Main Stats Grid */}
@@ -445,7 +500,7 @@ export function SystemOverview() {
             <h3 className="font-semibold">Server Details</h3>
           </div>
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-gradient-to-r from-emerald-500/10 to-cyan-500/10 border border-emerald-500/20">
-            <Clock className="h-3.5 w-3.5 text-emerald-500" />
+            <Clock className="h-3.5 w-3.5" />
             <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
               Uptime: {stats.server.uptimeFormatted}
             </span>
@@ -582,6 +637,52 @@ export function SystemOverview() {
           </div>
         )}
       </div>
+
+      {/* Purge Confirmation Dialog */}
+      <Dialog open={showPurgeDialog} onOpenChange={setShowPurgeDialog}>
+        <DialogContent className="sm:max-w-md bg-background border-border shadow-2xl">
+          <DialogHeader className="space-y-3">
+            <div className="mx-auto w-12 h-12 rounded-2xl bg-rose-500/10 flex items-center justify-center mb-2">
+              <Trash2 className="h-6 w-6 text-rose-500" />
+            </div>
+            <DialogTitle className="text-center text-xl font-bold tracking-tight">Purge Server Resources</DialogTitle>
+            <DialogDescription className="text-center text-muted-foreground text-sm">
+              Deep clean Docker containers, image caches, and memory pages.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-2.5 my-4">
+            <div className="p-3 rounded-xl bg-secondary/30 border border-border flex items-center gap-3">
+              <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+              <p className="text-xs font-semibold">Cleanup unused Docker volumes & networks</p>
+            </div>
+            <div className="p-3 rounded-xl bg-secondary/30 border border-border flex items-center gap-3">
+              <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+              <p className="text-xs font-semibold">Remove dangling image layers</p>
+            </div>
+            <div className="p-3 rounded-xl bg-secondary/30 border border-border flex items-center gap-3">
+              <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+              <p className="text-xs font-semibold">Flush Linux PageCache (Free RAM)</p>
+            </div>
+          </div>
+
+          <DialogFooter className="flex flex-col sm:flex-row gap-2 pt-2">
+            <Button
+              variant="ghost"
+              onClick={() => setShowPurgeDialog(false)}
+              className="flex-1 rounded-xl font-bold"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handlePurge}
+              className="flex-1 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-bold shadow-lg shadow-rose-500/20"
+            >
+              Start Purge
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

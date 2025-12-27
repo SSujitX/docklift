@@ -30,8 +30,8 @@ export function Header() {
   const navItems = [
     { name: "Projects", href: "/", icon: LayoutGrid },
     { name: "Ports", href: "/ports", icon: Anchor },
-    { name: "Docs", href: "/docs", icon: BookOpen },
     { name: "System", href: "/system", icon: Gauge },
+    { name: "Terminal", href: "/terminal", icon: Monitor },
   ];
 
   return (
@@ -101,8 +101,16 @@ export function Header() {
           </a>
 
           <div className="flex items-center bg-secondary/30 p-1 rounded-xl border border-border/40">
+            <Link href="/docs">
+              <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground hover:bg-background/80 h-9 w-9 rounded-lg transition-all active:scale-90" title="Documentation">
+                <BookOpen className="h-[18px] w-[18px]" />
+              </Button>
+            </Link>
+
+            <div className="w-px h-4 bg-border/50 mx-1" />
+
             <Link href="/settings">
-              <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground hover:bg-background/80 h-9 w-9 rounded-lg transition-all active:scale-90">
+              <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground hover:bg-background/80 h-9 w-9 rounded-lg transition-all active:scale-90" title="Settings">
                 <Settings className="h-[18px] w-[18px]" />
               </Button>
             </Link>

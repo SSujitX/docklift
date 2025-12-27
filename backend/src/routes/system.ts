@@ -1,5 +1,9 @@
 import { Router, Request, Response } from 'express';
 import si from 'systeminformation';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+
+const execAsync = promisify(exec);
 
 const router = Router();
 
@@ -284,6 +288,114 @@ router.get('/quick', async (req: Request, res: Response) => {
     });
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch quick stats' });
+  }
+});
+
+// POST /api/system/purge - Clean up system resources and free memory
+router.post('/purge', async (req: Request, res: Response) => {
+  try {
+    const results: string[] = [];
+    
+    // 1. Docker Cleanup
+    try {
+      const { stdout: dockerOutput } = await execAsync('docker system prune -f');
+      results.push('Docker cleanup successful');
+      console.log('Docker Prune:', dockerOutput);
+    } catch (err: any) {
+      console.error('Docker prune failed:', err);
+      results.push('Docker cleanup skipped or failed');
+    }
+
+    // 2. Clear Linux Memory Caches (Drop PageCache, dentries and inodes)
+    // Only works on Linux and requires root
+    if (process.platform === 'linux') {
+      try {
+        await execAsync('sync && echo 3 > /proc/sys/vm/drop_caches');
+        results.push('System memory caches cleared');
+        
+        // Reset system stats cache to reflect changes immediately
+        cachedStats = null;
+        lastFetch = 0;
+      } catch (err: any) {
+        console.error('Failed to clear memory caches:', err);
+        results.push('Memory cache clearing failed (requires root)');
+      }
+    } else {
+      results.push('Memory cache clearing only supported on Linux');
+    }
+
+    res.json({ 
+      message: 'Purge operation completed', 
+      details: results 
+    });
+  } catch (error) {
+    console.error('Purge error:', error);
+    res.status(500).json({ error: 'Failed to complete purge operation' });
+  }
+});
+
+// POST /api/system/reboot - Reboot the server
+router.post('/reboot', async (req: Request, res: Response) => {
+  try {
+    if (process.platform !== 'linux') {
+      return res.status(400).json({ error: 'Reboot is only supported on Linux' });
+    }
+    
+    // Asynchronous reboot to allow response to be sent
+    exec('sudo reboot');
+    
+    res.json({ message: 'Server reboot initiated' });
+  } catch (error) {
+    console.error('Reboot error:', error);
+    res.status(500).json({ error: 'Failed to initiate reboot' });
+  }
+});
+
+// POST /api/system/reset - Reset Docklift services
+router.post('/reset', async (req: Request, res: Response) => {
+  try {
+    // This will attempt to restart the Docklift container stack if running in Docker
+    // or just restart the services if managed by systemd/pm2
+    // For now, let's assume we want to restart the core services
+    try {
+      await execAsync('docker restart docklift-backend docklift-frontend docklift-proxy docklift-webui || true');
+      res.json({ message: 'Services reset successfully' });
+    } catch (err: any) {
+      res.json({ message: 'Services reset triggered', warning: 'Some services may not have restarted' });
+    }
+  } catch (error) {
+    console.error('Reset error:', error);
+    res.status(500).json({ error: 'Failed to reset services' });
+  }
+});
+
+// POST /api/system/execute - Execute a command and return output
+router.post('/execute', async (req: Request, res: Response) => {
+  const { command } = req.body;
+  
+  if (!command) {
+    return res.status(400).json({ error: 'No command provided' });
+  }
+
+  try {
+    // Basic security: avoid obviously destructive commands if possible
+    // though the user is admin, we should still be cautious
+    const forbidden = ['rm -rf /', ':(){ :|:& };:', 'mv /dev/null'];
+    if (forbidden.some(b => command.includes(b))) {
+      return res.status(403).json({ error: 'Command forbidden for safety' });
+    }
+
+    const { stdout, stderr } = await execAsync(command, { timeout: 30000 });
+    res.json({ 
+      output: stdout,
+      error: stderr || null
+    });
+  } catch (error: any) {
+    res.status(500).json({ 
+      error: error.message,
+      output: error.stdout || '',
+      stderr: error.stderr || ''
+    });
   }
 });
 
