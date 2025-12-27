@@ -7,6 +7,7 @@ import prisma from '../lib/prisma.js';
 import { config } from '../lib/config.js';
 import { cloneRepo, getCurrentBranch } from '../services/git.js';
 import * as dockerService from '../services/docker.js';
+import { getInstallationToken, getSetting } from './github.js';
 
 const router = Router();
 const upload = multer({ dest: 'uploads/' });
@@ -164,9 +165,7 @@ router.post('/', upload.single('files'), async (req: Request, res: Response) => 
     
     const projectPath = path.join(config.deploymentsPath, project.id);
     
-import { getInstallationToken, getSetting } from './github.js';
 
-// ... (existing imports)
 
     // Handle file upload or git clone
     if (source_type === 'github' && github_url) {
