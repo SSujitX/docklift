@@ -4,6 +4,16 @@
 Deploy any application to your own server with one click. A free alternative to Heroku, Vercel, and Netlify. 
 Similar to Coolify, CapRover, and Dokku, but simpler.
 
+## 📋 Table of Contents
+- [✨ Key Features](#-key-features)
+- [🛠️ Prerequisites](#️-prerequisites)
+- [🚀 Getting Started](#-getting-started)
+- [🐳 Deploying Your First App](#-deploying-your-first-app)
+- [📂 Project Structure Guide](#-project-structure-guide)
+- [🤝 Contributing](#-contributing)
+- [📄 License](#-license)
+
+---
 [![Next.js](https://img.shields.io/badge/Next.js-16-black)](https://nextjs.org)
 [![Express](https://img.shields.io/badge/Express-Node.js-green)](https://expressjs.com)
 [![Docker](https://img.shields.io/badge/Docker-Compose-blue)](https://docker.com)
