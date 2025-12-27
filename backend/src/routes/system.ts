@@ -386,7 +386,10 @@ router.post('/reset', async (req: Request, res: Response) => {
 
     // Production: Attempt to restart docker containers
     // Use detached execution to allow response to complete
-    const command = 'sleep 1 && docker restart docklift-backend docklift-frontend docklift-proxy docklift-webui';
+    const containers = 'docklift-backend docklift-frontend docklift-nginx docklift-nginx-proxy';
+    const command = `sleep 1 && docker restart ${containers}`;
+    
+    console.log(`Reset triggered. Restarting: ${containers}`);
     
     exec(command, (error) => {
       if (error) console.error('Reset execution ended:', error);
