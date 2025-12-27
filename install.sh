@@ -16,7 +16,7 @@ spinner() {
     local pid=$1
     local delay=0.1
     local spinstr='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
-    while [ "$(ps a | awk '{print $1}' | grep $pid)" ]; do
+    while kill -0 "$pid" 2> /dev/null; do
         local temp=${spinstr#?}
         printf "   ${BLUE}%c${NC}  " "$spinstr"
         local spinstr=$temp${spinstr%"$temp"}
@@ -84,19 +84,21 @@ echo -e "${GREEN}✓ Done${NC}"
 printf "${CYAN}[3/5]${NC} Fetching latest version..."
 if [ -d "$INSTALL_DIR/.git" ]; then
     cd "$INSTALL_DIR"
-    {
+    (
         docker compose down 2>/dev/null || true
         git fetch origin master -q
         git reset --hard origin/master -q
-    } &
+    ) &
     pid=$!
     spinner $pid
+    wait $pid
 else
-    {
+    (
         git clone -q https://github.com/SSujitX/docklift.git "$INSTALL_DIR"
-    } &
+    ) &
     pid=$!
     spinner $pid
+    wait $pid
     cd "$INSTALL_DIR"
 fi
 echo -e "${GREEN}✓ Updated${NC}"
@@ -110,21 +112,31 @@ echo -e "${GREEN}✓ Cleaned${NC}"
 echo -e "${CYAN}[5/5]${NC} Building and launching Docklift..."
 echo -e "${DIM}      (This takes a moment for the first build)${NC}"
 
-# Run compose up and capture output slightly to show progress if needed, 
-# but for spinner we background it.
-{
-    docker compose up -d --build --remove-orphans > /dev/null 2>&1
-} &
+# Run compose up
+LOG_FILE=$(mktemp)
+(
+    docker compose up -d --build --remove-orphans > "$LOG_FILE" 2>&1
+) &
 pid=$!
 spinner $pid
+wait $pid
+EXIT_CODE=$?
+
+if [ $EXIT_CODE -ne 0 ]; then
+    echo -e "\n${RED}❌ Build Failed!${NC}"
+    cat "$LOG_FILE"
+    rm "$LOG_FILE"
+    exit $EXIT_CODE
+fi
+rm "$LOG_FILE"
 
 # Wait for health check (simple wait)
-sleep 2
+sleep 5
 
 # Final Status Check
 RUNNING=$(docker compose ps --format "table {{.Name}}\t{{.Status}}" 2>/dev/null | grep -c "Up" || echo "0")
-IP=$(hostname -I | awk '{print $1}')
-PUBLIC_IP=$(curl -s https://api.ipify.org || echo "Unavailable")
+IP=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "127.0.0.1")
+PUBLIC_IP=$(curl -s --connect-timeout 2 https://api.ipify.org || echo "Unavailable")
 
 echo ""
 if [ "$RUNNING" -gt 0 ]; then
