@@ -3,6 +3,9 @@ import path from 'path';
 import { spawn } from 'child_process';
 import { config } from '../lib/config.js';
 
+// ... imports
+import * as dockerService from './docker.js';
+
 export async function updateServiceDomain(service: any) {
   // Ensure config directory exists
   if (!fs.existsSync(config.nginxConfPath)) {
@@ -11,7 +14,10 @@ export async function updateServiceDomain(service: any) {
 
   const confPath = path.join(config.nginxConfPath, `service-${service.id}.conf`);
   
-  if (!service.domain) {
+  // Only generate config if service is running and has a domain
+  const shouldExist = service.domain && service.container_name && (service.status === 'running' || service.status === 'starting');
+  
+  if (!shouldExist) {
     if (fs.existsSync(confPath)) {
       fs.unlinkSync(confPath);
       await reloadNginx();
@@ -19,6 +25,22 @@ export async function updateServiceDomain(service: any) {
     return;
   }
   
+  // Verify container actually exists in Docker to prevent Nginx crash
+  try {
+    const containerStatus = await dockerService.getContainerStatus(service.container_name);
+    if (!containerStatus.running && service.status !== 'starting') {
+       console.warn(`Container ${service.container_name} not running, skipping Nginx config to prevent crash.`);
+       if (fs.existsSync(confPath)) {
+          fs.unlinkSync(confPath);
+          await reloadNginx();
+       }
+       return;
+    }
+  } catch (e) {
+    // If error checking container, err on side of caution
+    return;
+  }
+
   const domains = service.domain.split(',').map((d: string) => d.trim()).filter(Boolean).join(' ');
   
   if (!domains) {
@@ -57,48 +79,66 @@ server {
   } catch (error) {
     console.error('Failed to write Nginx config:', error);
   }
-
 }
 
 export async function syncNginxConfigs() {
   try {
     if (!fs.existsSync(config.nginxConfPath)) return;
     
-    // Get all conf files
+    // 1. Get all existing conf files
     const files = fs.readdirSync(config.nginxConfPath).filter(f => f.startsWith('service-') && f.endsWith('.conf'));
-    
-    // Extract service IDs from filenames
-    const fileServiceIds = files.map(f => {
+    const fileServiceIds = new Set(files.map(f => {
       const match = f.match(/^service-(.+)\.conf$/);
       return match ? match[1] : null;
-    }).filter(Boolean) as string[];
+    }).filter(Boolean) as string[]);
     
-    if (fileServiceIds.length === 0) return;
-    
-    console.log(`Found ${fileServiceIds.length} Nginx config files. Verifying against database...`);
-    
-    // Check which ones exist in DB
+    // 2. Get all Services from DB that SHOULD have config
+    // (Running, have domain, have container_name)
     const { default: prisma } = await import('../lib/prisma.js');
-    const dbServices = await prisma.service.findMany({
-      where: {
-        id: { in: fileServiceIds }
-      },
-      select: { id: true }
-    });
-    
-    const dbServiceIds = new Set(dbServices.map(s => s.id));
-    let changeMade = false;
-    
-    // Delete orphans
-    for (const file of files) {
-        const match = file.match(/^service-(.+)\.conf$/);
-        const id = match ? match[1] : null;
-        
-        if (id && !dbServiceIds.has(id)) {
-            console.log(`Removing orphaned Nginx config: ${file}`);
-            fs.unlinkSync(path.join(config.nginxConfPath, file));
-            changeMade = true;
+    const allServices = await prisma.service.findMany({
+        where: {
+            domain: { not: null },
+            status: 'running' // Only running services!
         }
+    });
+
+    let changeMade = false;
+    const activeServiceIds = new Set();
+
+    // 3. Update/Create valid configs
+    for (const service of allServices) {
+        if (!service.container_name) continue;
+        
+        // Verify container exists to be safe
+        try {
+            const status = await dockerService.getContainerStatus(service.container_name);
+            if (!status.running) continue;
+        } catch (e) { continue; }
+
+        activeServiceIds.add(service.id);
+        
+        // If file missing or we just want to ensure it's correct (simplified: just regenerate if missing)
+        // Actually, let's regenerate all valid ones to be sure content is correct
+        // But optimization: check if file exists.
+        const confPath = path.join(config.nginxConfPath, `service-${service.id}.conf`);
+        
+        // If file doesn't exist, Create it
+        if (!fileServiceIds.has(service.id)) {
+             console.log(`Restoring missing Nginx config for ${service.name}`);
+             await updateServiceDomain(service); // This uses reloadNginx inside, so we might reload multiple times. That's fine for startup.
+             // Note: updateServiceDomain handles check for domain string validity
+        }
+    }
+
+    // 4. Delete orphans (Files that exist but are NOT in the active bucket)
+    // This catches: Deleted services, Stopped services, Dead containers
+    const filesToDelete = [...fileServiceIds].filter(id => !activeServiceIds.has(id));
+    
+    for (const id of filesToDelete) {
+        const file = `service-${id}.conf`;
+        console.log(`Removing invalid/orphaned Nginx config: ${file}`);
+        fs.unlinkSync(path.join(config.nginxConfPath, file));
+        changeMade = true;
     }
     
     if (changeMade) {
