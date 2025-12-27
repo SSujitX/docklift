@@ -98,6 +98,13 @@ interface SystemStats {
     location: string;
     activeConnections: number;
   };
+  processes: Array<{
+    pid: number;
+    name: string;
+    cpu: number;
+    mem: number;
+    user: string;
+  }>;
   timestamp: string;
 }
 
@@ -280,6 +287,17 @@ async function getSystemStats(): Promise<SystemStats> {
         location: cachedLocation,
         activeConnections: cachedConnections
       },
+      processes: (await si.processes()).list
+        .filter(p => p.name !== 'System Idle Process' && p.name !== 'idle')
+        .sort((a, b) => b.cpu - a.cpu)
+        .slice(0, 10)
+        .map(p => ({
+          pid: p.pid,
+          name: p.name,
+          cpu: parseFloat(p.cpu.toFixed(1)),
+          mem: parseFloat(p.mem.toFixed(1)),
+          user: p.user
+        })),
       timestamp: new Date().toISOString()
     };
 

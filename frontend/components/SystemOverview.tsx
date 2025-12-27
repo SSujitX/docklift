@@ -93,6 +93,13 @@ interface SystemStats {
     location: string;
     activeConnections: number;
   };
+  processes: Array<{
+    pid: number;
+    name: string;
+    cpu: number;
+    mem: number;
+    user: string;
+  }>;
   timestamp: string;
 }
 
@@ -611,28 +618,43 @@ export function SystemOverview() {
           </div>
         </div>
 
-        {/* All Storage - Full Width Below */}
-        {stats.disk.length > 1 && (
+        {/* Top Processes - Full Width Below */}
+        {stats.processes && stats.processes.length > 0 && (
           <div className="mt-4 pt-4 border-t border-border/50">
             <div className="flex items-center gap-2 mb-3">
-              <HardDrive className="h-4 w-4 text-blue-500" />
-              <span className="font-medium text-sm">All Storage</span>
+              <Activity className="h-4 w-4 text-blue-500" />
+              <span className="font-medium text-sm">Top Processes (by CPU)</span>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {stats.disk.map((disk, idx) => (
-                <div key={idx} className="flex items-center gap-3">
-                  <span className="text-xs font-medium w-10">{disk.mount}</span>
-                  <div className="flex-1 h-2 bg-secondary rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-gradient-to-r from-amber-500 to-orange-500 rounded-full transition-all duration-500"
-                      style={{ width: `${disk.usedPercent}%` }}
-                    />
-                  </div>
-                  <span className="text-xs text-muted-foreground w-14 text-right">
-                    {disk.usedPercent.toFixed(1)}%
-                  </span>
-                </div>
-              ))}
+            
+            <div className="overflow-hidden rounded-xl border border-border/50">
+              <table className="w-full text-xs text-left">
+                <thead className="bg-secondary/50 text-muted-foreground font-medium">
+                  <tr>
+                    <th className="px-3 py-2">PID</th>
+                    <th className="px-3 py-2">Process</th>
+                    <th className="px-3 py-2">User</th>
+                    <th className="px-3 py-2 text-right">CPU</th>
+                    <th className="px-3 py-2 text-right">Memory</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/30 bg-card">
+                  {stats.processes.map((proc) => (
+                    <tr key={proc.pid} className="hover:bg-secondary/30 transition-colors">
+                      <td className="px-3 py-2 font-mono text-muted-foreground">{proc.pid}</td>
+                      <td className="px-3 py-2 font-medium truncate max-w-[150px]" title={proc.name}>
+                        {proc.name}
+                      </td>
+                      <td className="px-3 py-2 text-muted-foreground">{proc.user}</td>
+                      <td className="px-3 py-2 text-right font-medium text-cyan-500">
+                        {proc.cpu.toFixed(1)}%
+                      </td>
+                      <td className="px-3 py-2 text-right text-purple-500">
+                        {proc.mem.toFixed(1)}%
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         )}
