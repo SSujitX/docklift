@@ -127,13 +127,15 @@ LOG_FILE=$(mktemp)
 ) &
 pid=$!
 spinner $pid
-wait $pid
-EXIT_CODE=$?
+EXIT_CODE=0
+wait $pid || EXIT_CODE=$?
 
 if [ $EXIT_CODE -ne 0 ]; then
     echo -e "\n${RED}❌ Build Failed!${NC}"
-    cat "$LOG_FILE"
-    rm "$LOG_FILE"
+    if [ -f "$LOG_FILE" ]; then
+        cat "$LOG_FILE"
+        rm "$LOG_FILE"
+    fi
     exit $EXIT_CODE
 fi
 rm "$LOG_FILE"
