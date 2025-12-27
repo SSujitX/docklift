@@ -59,6 +59,20 @@ server {
   }
 }
 
+export async function cleanupServiceDomain(serviceId: string) {
+  const confPath = path.join(config.nginxConfPath, `service-${serviceId}.conf`);
+  
+  if (fs.existsSync(confPath)) {
+    try {
+      fs.unlinkSync(confPath);
+      console.log(`Removed Nginx config for service ${serviceId}`);
+      await reloadNginx();
+    } catch (error) {
+      console.error(`Failed to remove Nginx config for service ${serviceId}:`, error);
+    }
+  }
+}
+
 async function reloadNginx() {
   return new Promise<void>((resolve, reject) => {
     console.log('Reloading Nginx proxy...');

@@ -8,6 +8,7 @@ import { config } from '../lib/config.js';
 import { cloneRepo, getCurrentBranch } from '../services/git.js';
 import * as dockerService from '../services/docker.js';
 import { getInstallationToken, getSetting } from './github.js';
+import { cleanupServiceDomain } from '../services/nginx.js';
 
 const router = Router();
 const upload = multer({ dest: 'uploads/' });
@@ -248,6 +249,16 @@ router.delete('/:id', async (req: Request, res: Response) => {
       } catch (fileError) {
         console.warn(`File cleanup warned for project ${projectId}:`, fileError);
       }
+    }
+    
+    // Cleanup Nginx configs for all services
+    const services = await prisma.service.findMany({
+      where: { project_id: projectId },
+      select: { id: true }
+    });
+    
+    for (const svc of services) {
+      await cleanupServiceDomain(svc.id);
     }
     
     // Delete from database (Prisma handles cascading deletes for deployments, services, env_variables, and ports)
