@@ -162,6 +162,54 @@ async function readHostOSInfo() {
   };
 }
 
+// Helper to getting processes using 'top' on Linux (more accurate in Docker)
+async function getLinuxTopProcesses() {
+  try {
+    // Run top in batch mode, 1 iteration, sorted by CPU
+    // -b: batch mode, -n 1: 1 iteration, -w 512: wide output to prevent truncation
+    // -o %CPU: sort by CPU
+    const { stdout } = await execAsync('top -b -n 1 -w 512 -o %CPU | head -n 20');
+    console.log('--- TOP RAW OUTPUT START ---');
+    console.log(stdout); 
+    console.log('--- TOP RAW OUTPUT END ---');
+    
+    const lines = stdout.split('\n');
+    // Find header line to identify columns
+    const headerIndex = lines.findIndex(l => l.includes('PID') && l.includes('COMMAND'));
+    
+    if (headerIndex === -1) return null;
+    
+    const processes = [];
+    
+    // Skip header and process rows
+    for (let i = headerIndex + 1; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line) continue;
+      
+      const parts = line.split(/\s+/);
+      // Top output format usually: PID USER PR NI VIRT RES SHR S %CPU %MEM TIME+ COMMAND
+      // But can vary. We rely on standard column positions for PID, USER, CPU, MEM, COMMAND
+      
+      const pid = parseInt(parts[0]);
+      if (isNaN(pid)) continue;
+      
+      const user = parts[1];
+      const cpu = parseFloat(parts[8]); // 9th column is usually %CPU
+      const mem = parseFloat(parts[9]); // 10th column is usually %MEM
+      const name = parts.slice(11).join(' '); // Command starts at 12th column
+      
+      if (name !== 'top') {
+        processes.push({ pid, name, cpu, mem, user });
+      }
+    }
+    
+    return processes;
+  } catch (error) {
+    console.error('Error running top:', error);
+    return null;
+  }
+}
+
 // Get comprehensive system stats
 async function getSystemStats(): Promise<SystemStats> {
   const now = Date.now();
@@ -199,7 +247,8 @@ async function getSystemStats(): Promise<SystemStats> {
       time,
       networkInterfaces,
       hostHostname,
-      hostOS
+      hostOS,
+      linuxProcesses
     ] = await Promise.all([
       si.cpu(),
       si.currentLoad(),
@@ -212,7 +261,9 @@ async function getSystemStats(): Promise<SystemStats> {
       si.time(),
       si.networkInterfaces().catch(() => []),
       readHostFile('/host/hostname'),
-      readHostOSInfo()
+      readHostOSInfo(),
+      // Try to get Linux processes via top if on Linux
+      (process.platform === 'linux') ? getLinuxTopProcesses() : Promise.resolve(null)
     ]);
 
     // Process GPU data
@@ -245,6 +296,24 @@ async function getSystemStats(): Promise<SystemStats> {
       rxSpeed: primaryNet?.rx_sec || 0,
       txSpeed: primaryNet?.tx_sec || 0
     };
+
+    // Process List Logic: Prefer 'top' output on Linux, fallback to 'si' elsewhere
+    let processList = [];
+    if (linuxProcesses && linuxProcesses.length > 0) {
+      processList = linuxProcesses;
+    } else {
+      processList = (await si.processes()).list
+        .filter(p => p.name !== 'System Idle Process' && p.name !== 'idle')
+        .sort((a, b) => b.cpu - a.cpu)
+        .slice(0, 10)
+        .map(p => ({
+          pid: p.pid,
+          name: p.name,
+          cpu: parseFloat(p.cpu.toFixed(1)),
+          mem: parseFloat(p.mem.toFixed(1)),
+          user: p.user
+        }));
+    }
 
     const stats: SystemStats = {
       cpu: {
@@ -287,17 +356,7 @@ async function getSystemStats(): Promise<SystemStats> {
         location: cachedLocation,
         activeConnections: cachedConnections
       },
-      processes: (await si.processes()).list
-        .filter(p => p.name !== 'System Idle Process' && p.name !== 'idle')
-        .sort((a, b) => b.cpu - a.cpu)
-        .slice(0, 10)
-        .map(p => ({
-          pid: p.pid,
-          name: p.name,
-          cpu: parseFloat(p.cpu.toFixed(1)),
-          mem: parseFloat(p.mem.toFixed(1)),
-          user: p.user
-        })),
+      processes: processList.slice(0, 10),
       timestamp: new Date().toISOString()
     };
 
