@@ -14,6 +14,13 @@ DIM='\033[2m'
 # Spinner function
 spinner() {
     local pid=$1
+    
+    # Disable spinner if not in a terminal or if running in CI
+    if [ ! -t 1 ] || [ -n "$CI" ]; then
+        wait "$pid"
+        return
+    fi
+
     local delay=0.1
     local spinstr='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
     while kill -0 "$pid" 2> /dev/null; do
