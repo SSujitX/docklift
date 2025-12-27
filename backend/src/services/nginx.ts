@@ -171,8 +171,14 @@ async function reloadNginx() {
     console.log('Reloading Nginx proxy...');
     const child = spawn('docker', ['exec', 'docklift-nginx-proxy', 'nginx', '-s', 'reload']);
     
+    let stderrBuffer = '';
+
     child.stdout.on('data', (data) => console.log(`Nginx stdout: ${data}`));
-    child.stderr.on('data', (data) => console.error(`Nginx stderr: ${data}`));
+    child.stderr.on('data', (data) => {
+        const str = data.toString();
+        stderrBuffer += str;
+        console.error(`Nginx stderr: ${str}`);
+    });
 
     child.on('close', (code) => {
       if (code === 0) {
@@ -180,7 +186,29 @@ async function reloadNginx() {
         resolve();
       } else {
         console.error(`Nginx reload failed with code ${code}`);
-        // resolve anyway to avoid breaking the request flow
+        
+        // Self-Healing: Check for "host not found" error
+        const match = stderrBuffer.match(/host not found in upstream .* in (.*\/service-[a-zA-Z0-9-]+\.conf):/);
+        if (match && match[1]) {
+            const badConfPath = match[1];
+            // The path reported by Nginx is inside the container (/etc/nginx/conf.d/...)
+            // We need to map it to our local path
+            const filename = path.basename(badConfPath);
+            const localPath = path.join(config.nginxConfPath, filename);
+            
+            if (fs.existsSync(localPath)) {
+                console.log(`Self-Healing: Removing bad Nginx config causing crash: ${filename}`);
+                try {
+                    fs.unlinkSync(localPath);
+                    console.log('Bad config removed. Nginx should stabilize on next reload.');
+                    // Optional: Trigger another reload immediately? 
+                    // Let's just resolve to avoid infinite loops, next action will fix it.
+                } catch (err) {
+                    console.error('Failed to remove bad config:', err);
+                }
+            }
+        }
+        
         resolve();
       }
     });
