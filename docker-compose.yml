@@ -11,9 +11,12 @@ services:
       - ./deployments:/deployments
       - ./nginx-proxy/conf.d:/nginx-conf
     environment:
-      - DOCKLIFT_DEPLOYMENTS_PATH=/deployments
-      - DOCKLIFT_NGINX_CONF_PATH=/nginx-conf
-      - DOCKLIFT_DOCKER_NETWORK=docklift_network
+      - NODE_ENV=production
+      - DATABASE_URL=file:/app/data/docklift.db
+      - PORT=8000
+      - DEPLOYMENTS_PATH=/deployments
+      - NGINX_CONF_PATH=/nginx-conf
+      - DOCKER_NETWORK=docklift_network
     networks:
       - docklift_network
     depends_on:

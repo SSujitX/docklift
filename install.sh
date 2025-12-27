@@ -1,119 +1,149 @@
 #!/bin/bash
 set -e
 
-# Colors
+# Colors and Formatting
 RED='\033[0;31m'
 GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
 CYAN='\033[0;36m'
+YELLOW='\033[1;33m'
+BOLD='\033[1m'
 NC='\033[0m' # No Color
+DIM='\033[2m'
 
-echo -e "${CYAN}"
-echo "╔═══════════════════════════════════════════════════════════╗"
-echo "║                                                           ║"
-echo "║   🐳 DOCKLIFT - Self-Hosted Docker Deployment Platform    ║"
-echo "║                                                           ║"
-echo "╚═══════════════════════════════════════════════════════════╝"
-echo -e "${NC}"
+# Spinner function
+spinner() {
+    local pid=$1
+    local delay=0.1
+    local spinstr='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+    while [ "$(ps a | awk '{print $1}' | grep $pid)" ]; do
+        local temp=${spinstr#?}
+        printf "   ${BLUE}%c${NC}  " "$spinstr"
+        local spinstr=$temp${spinstr%"$temp"}
+        sleep $delay
+        printf "\b\b\b\b\b\b"
+    done
+    printf "    \b\b\b\b"
+}
+
+clear
+
+cat << "EOF"
+  ____             _    _ _  __ _   
+ |  _ \  ___   ___| | _| (_)/ _| |_ 
+ | | | |/ _ \ / __| |/ / | | |_| __|
+ | |_| | (_) | (__|   <| | |  _| |_ 
+ |____/ \___/ \___|_|\_\_|_|_|  \__|
+                                    
+  Self-Hosted PaaS for Docker
+EOF
+echo ""
+echo -e "${DIM}  Version 1.0.0${NC}"
+echo ""
 
 # Check if running as root
 if [ "$EUID" -ne 0 ]; then
-    echo -e "${RED}❌ Please run as root (use sudo)${NC}"
+    echo -e "${RED}❌ Error: Please run as root (use sudo)${NC}"
     exit 1
 fi
 
-echo -e "${YELLOW}[1/6]${NC} Checking system requirements..."
+echo -e "${BOLD}🚀 Starting Installation...${NC}\n"
 
-# Check for Docker
+# Step 1: System Requirements
+printf "${CYAN}[1/5]${NC} Checking system requirements..."
+{
+    command -v docker &> /dev/null && command -v git &> /dev/null
+} &
+pid=$!
+spinner $pid
+
 if ! command -v docker &> /dev/null; then
-    echo -e "${YELLOW}[2/6]${NC} Installing Docker..."
-    curl -fsSL https://get.docker.com | sh -s -- --quiet
+    echo -e "\n${YELLOW}Docker not found. Installing...${NC}"
+    curl -fsSL https://get.docker.com | sh -s -- --quiet > /dev/null 2>&1
     systemctl enable docker >/dev/null 2>&1
     systemctl start docker >/dev/null 2>&1
-    echo -e "${GREEN}  ✓ Docker installed${NC}"
-else
-    echo -e "${GREEN}  ✓ Docker found${NC}"
 fi
 
-# Check for Docker Compose
-if ! docker compose version &> /dev/null; then
-    echo -e "${YELLOW}[3/6]${NC} Installing Docker Compose..."
-    apt-get update -qq && apt-get install -y -qq docker-compose-plugin >/dev/null 2>&1
-    echo -e "${GREEN}  ✓ Docker Compose installed${NC}"
-else
-    echo -e "${GREEN}  ✓ Docker Compose found${NC}"
-fi
-
-# Check for Git
 if ! command -v git &> /dev/null; then
-    echo -e "${YELLOW}[4/6]${NC} Installing Git..."
-    apt-get update -qq && apt-get install -y -qq git >/dev/null 2>&1
-    echo -e "${GREEN}  ✓ Git installed${NC}"
-else
-    echo -e "${GREEN}  ✓ Git found${NC}"
+    echo -e "\n${YELLOW}Git not found. Installing...${NC}"
+    if [ -f /etc/debian_version ]; then
+        apt-get update -qq && apt-get install -y -qq git >/dev/null 2>&1
+    elif [ -f /etc/alpine-release ]; then
+        apk add --no-cache git >/dev/null 2>&1
+    fi
 fi
+echo -e "${GREEN}✓ Ready${NC}"
 
-# Set install directory
+# Step 2: Directories
 INSTALL_DIR="/opt/docklift"
+printf "${CYAN}[2/5]${NC} Preparing directories ($INSTALL_DIR)..."
+mkdir -p "$INSTALL_DIR/data" "$INSTALL_DIR/deployments" "$INSTALL_DIR/nginx-proxy/conf.d"
+echo -e "${GREEN}✓ Done${NC}"
 
-# Clone or update repo
-if [ -d "$INSTALL_DIR" ]; then
-    echo -e "${YELLOW}[5/6]${NC} Updating existing installation..."
+# Step 3: Fetch Code
+printf "${CYAN}[3/5]${NC} Fetching latest version..."
+if [ -d "$INSTALL_DIR/.git" ]; then
     cd "$INSTALL_DIR"
-    # Stop existing containers before update
-    docker compose down 2>/dev/null || true
-    git fetch origin master -q
-    git reset --hard origin/master -q
+    {
+        docker compose down 2>/dev/null || true
+        git fetch origin master -q
+        git reset --hard origin/master -q
+    } &
+    pid=$!
+    spinner $pid
 else
-    echo -e "${YELLOW}[5/6]${NC} Cloning Docklift..."
-    git clone -q https://github.com/SSujitX/docklift.git "$INSTALL_DIR"
+    {
+        git clone -q https://github.com/SSujitX/docklift.git "$INSTALL_DIR"
+    } &
+    pid=$!
+    spinner $pid
     cd "$INSTALL_DIR"
 fi
+echo -e "${GREEN}✓ Updated${NC}"
 
-# Create data directories
-mkdir -p "$INSTALL_DIR/data"
-mkdir -p "$INSTALL_DIR/deployments"
-mkdir -p "$INSTALL_DIR/nginx-proxy/conf.d"
-
-# Clean up any conflicting network from previous installs
+# Step 4: Cleanup
+printf "${CYAN}[4/5]${NC} Cleaning networking..."
 docker network rm docklift_network 2>/dev/null || true
+echo -e "${GREEN}✓ Cleaned${NC}"
 
-# Build and start
-echo -e "${YELLOW}[6/6]${NC} Building and starting Docklift (this may take a few minutes)..."
-docker compose up -d --build 2>&1 | tail -20
+# Step 5: Launch
+echo -e "${CYAN}[5/5]${NC} Building and launching Docklift..."
+echo -e "${DIM}      (This takes a moment for the first build)${NC}"
 
-# Wait for containers to start
-echo -e "${YELLOW}  Waiting for containers to start...${NC}"
-sleep 5
+# Run compose up and capture output slightly to show progress if needed, 
+# but for spinner we background it.
+{
+    docker compose up -d --build --remove-orphans > /dev/null 2>&1
+} &
+pid=$!
+spinner $pid
 
-# Check if containers are running
+# Wait for health check (simple wait)
+sleep 2
+
+# Final Status Check
 RUNNING=$(docker compose ps --format "table {{.Name}}\t{{.Status}}" 2>/dev/null | grep -c "Up" || echo "0")
+IP=$(hostname -I | awk '{print $1}')
+PUBLIC_IP=$(curl -s https://api.ipify.org || echo "Unavailable")
 
+echo ""
 if [ "$RUNNING" -gt 0 ]; then
-    # Get server IP
-    SERVER_IP=$(hostname -I | awk '{print $1}')
-
+    echo -e "${GREEN}╔═══════════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${GREEN}║                                                                   ║${NC}"
+    echo -e "${GREEN}║   ✅ Docklift is ready to use!                                    ║${NC}"
+    echo -e "${GREEN}║                                                                   ║${NC}"
+    echo -e "${GREEN}╚═══════════════════════════════════════════════════════════════════╝${NC}"
     echo ""
-    echo -e "${GREEN}╔═══════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${GREEN}║                                                           ║${NC}"
-    echo -e "${GREEN}║   ✅ Docklift installed successfully!                     ║${NC}"
-    echo -e "${GREEN}║                                                           ║${NC}"
-    echo -e "${GREEN}╚═══════════════════════════════════════════════════════════╝${NC}"
+    echo -e "    You can access your dashboard at:"
+    echo -e "    ${BOLD}Local:${NC}   http://${IP}:8080"
+    echo -e "    ${BOLD}Public:${NC}  http://${PUBLIC_IP}:8080"
     echo ""
-    echo -e "   ${CYAN}Dashboard:${NC}  http://${SERVER_IP}:8080"
+    echo -e "${DIM}    Default Port Range: 3001-3100${NC}"
+    echo -e "${DIM}    Data Directory:     $INSTALL_DIR/data${NC}"
     echo ""
-    echo -e "   ${YELLOW}Manage:${NC}"
-    echo -e "   cd $INSTALL_DIR && docker compose logs -f  # View logs"
-    echo -e "   cd $INSTALL_DIR && docker compose down     # Stop"
-    echo -e "   cd $INSTALL_DIR && docker compose up -d    # Start"
-    echo ""
+    echo -e "${CYAN}Make sure firewall port 8080 is open!${NC}"
 else
-    echo ""
-    echo -e "${YELLOW}⚠️  Containers built but may still be starting.${NC}"
-    echo -e "${YELLOW}   Check status with: cd $INSTALL_DIR && docker compose ps${NC}"
-    echo ""
-    
-    SERVER_IP=$(hostname -I | awk '{print $1}')
-    echo -e "   ${CYAN}Dashboard:${NC}  http://${SERVER_IP}:8080"
-    echo ""
+    echo -e "${RED}⚠️  Something went wrong. Containers are not up.${NC}"
+    echo -e "Run 'cd $INSTALL_DIR && docker compose logs' to debug."
 fi
+echo ""

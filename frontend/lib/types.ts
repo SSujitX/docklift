@@ -3,6 +3,7 @@ export interface Project {
   name: string;
   description: string | null;
   source_type: "upload" | "github";
+  project_type: "app" | "database";
   github_url: string | null;
   github_branch: string;
   domain: string | null;
@@ -26,6 +27,11 @@ export interface Port {
   port: number;
   project_id: string | null;
   is_locked: boolean;
+  project?: {
+    id: string;
+    name: string;
+    status: string;
+  };
 }
 
 export interface ProjectFile {
@@ -37,4 +43,25 @@ export interface ProjectFile {
   children?: ProjectFile[];
 }
 
+export interface Service {
+  id: string;
+  project_id: string;
+  name: string;
+  dockerfile_path: string;
+  container_name: string | null;
+  port: number | null;
+  internal_port: number;
+  domain: string | null;
+  status: "pending" | "building" | "running" | "stopped" | "error";
+  created_at: string;
+}
 
+export interface EnvVariable {
+  id: string;
+  project_id: string;
+  key: string;
+  value: string;
+  is_build_arg: boolean;
+  is_runtime: boolean;
+  created_at: string;
+}

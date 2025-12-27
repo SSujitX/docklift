@@ -31,7 +31,6 @@ ENV/
 data/*.db
 
 # Environment
-.env
 .env.local
 .env.*.local
 

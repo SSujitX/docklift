@@ -1,6 +1,6 @@
 {
   "name": "docklift-frontend",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "scripts": {
     "dev": "node --no-deprecation ./node_modules/next/dist/bin/next dev",
@@ -10,13 +10,10 @@
     "postinstall": "node -e \"const fs=require('fs');['node_modules/next/dist/server/web/sandbox/context.js','node_modules/next/dist/esm/server/web/sandbox/context.js'].forEach(f=>{if(fs.existsSync(f)){let c=fs.readFileSync(f,'utf8');c=c.replace(/'_extend',?/g,'');fs.writeFileSync(f,c)}})\""
   },
   "dependencies": {
+    "@monaco-editor/react": "^4.7.0",
     "@radix-ui/react-dialog": "^1.1.4",
-    "@radix-ui/react-dropdown-menu": "^2.1.4",
     "@radix-ui/react-slot": "^1.1.1",
     "@radix-ui/react-tabs": "^1.1.2",
-    "@radix-ui/react-toast": "^1.2.4",
-    "@xterm/addon-fit": "^0.10.0",
-    "@xterm/xterm": "^5.5.0",
     "axios": "^1.13.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

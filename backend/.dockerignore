@@ -1,0 +1,12 @@
+node_modules
+dist
+data
+deployments
+uploads
+.env
+.env.local
+*.pem
+*.log
+.git
+.gitignore
+*.md

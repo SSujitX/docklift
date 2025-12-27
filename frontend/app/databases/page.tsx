@@ -5,12 +5,12 @@ import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 import { ProjectCard } from "@/components/ProjectCard";
 import { Button } from "@/components/ui/button";
+import { useRouter } from "next/navigation";
 import { Project } from "@/lib/types";
 import { API_URL } from "@/lib/utils";
-import { Plus, RefreshCw, Container, Sparkles } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { Plus, RefreshCw, Database, Sparkles } from "lucide-react";
 
-export default function Dashboard() {
+export default function DatabasesPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
@@ -19,9 +19,11 @@ export default function Dashboard() {
     try {
       const res = await fetch(`${API_URL}/api/projects`);
       const data = await res.json();
-      setProjects(data);
+      // Filter only database projects
+      const databaseProjects = data.filter((p: Project) => p.project_type === "database");
+      setProjects(databaseProjects);
     } catch (error) {
-      console.error("Failed to fetch projects:", error);
+      console.error("Failed to fetch database services:", error);
     } finally {
       setLoading(false);
     }
@@ -43,9 +45,12 @@ export default function Dashboard() {
       <main className="flex-1 container max-w-7xl mx-auto px-4 md:px-6 py-8">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Projects</h1>
+            <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3">
+              <Database className="h-8 w-8 text-blue-500" />
+              Databases
+            </h1>
             <p className="text-muted-foreground mt-1">
-              {projects.length} total · <span className="text-emerald-500">{runningCount} running</span> · {stoppedCount} stopped
+              {projects.length} database services · <span className="text-emerald-500">{runningCount} running</span> · {stoppedCount} stopped
             </p>
           </div>
           
@@ -60,43 +65,43 @@ export default function Dashboard() {
             </Button>
             <Button 
               onClick={() => router.push("/projects/new")} 
-              className="gap-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white shadow-lg shadow-cyan-500/25"
+              className="gap-2 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white shadow-lg shadow-blue-500/25"
             >
               <Plus className="h-4 w-4" />
-              New Project
+              New Database
             </Button>
           </div>
         </div>
 
         {loading ? (
-          <div className="flex flex-col gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="h-24 rounded-xl bg-card border border-border shimmer" />
+              <div key={i} className="h-44 rounded-2xl bg-card border border-border shimmer" />
             ))}
           </div>
         ) : projects.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-24">
             <div className="relative mb-6">
-              <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/30 to-blue-500/30 rounded-3xl blur-2xl" />
+              <div className="absolute inset-0 bg-gradient-to-br from-blue-500/30 to-indigo-500/30 rounded-3xl blur-2xl" />
               <div className="relative bg-gradient-to-br from-card to-secondary p-8 rounded-3xl border border-border shadow-xl">
-                <Container className="h-12 w-12 text-cyan-500 animate-float" />
+                <Database className="h-12 w-12 text-blue-500 animate-float" />
               </div>
             </div>
-            <h2 className="text-2xl font-bold mb-2">No projects yet</h2>
+            <h2 className="text-2xl font-bold mb-2">No databases yet</h2>
             <p className="text-muted-foreground text-center mb-8 max-w-md">
-              Deploy your first app in seconds. Just upload your project with a Dockerfile and we handle the rest.
+              Create a dedicated database service. We support PostgreSQL, MySQL, Redis, and more through standard Docker images.
             </p>
             <Button 
               onClick={() => router.push("/projects/new")} 
               size="lg" 
-              className="gap-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white shadow-lg shadow-cyan-500/25"
+              className="gap-2 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white shadow-lg shadow-blue-500/25"
             >
               <Sparkles className="h-5 w-5" />
-              Create Your First Project
+              Launch Database Service
             </Button>
           </div>
         ) : (
-          <div className="flex flex-col gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
             {projects.map((project) => (
               <ProjectCard key={project.id} project={project} onRefresh={fetchProjects} />
             ))}

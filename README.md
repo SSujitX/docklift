@@ -1,114 +1,112 @@
 # 🐳 Docklift
 
-**Open-source, self-hosted PaaS for Docker deployments.** Deploy any application to your own server with one click. A free alternative to Heroku, Vercel, and Netlify. Similar to Coolify, CapRover, and Dokku.
+**Open-source, self-hosted PaaS for Docker deployments.**  
+Deploy any application to your own server with one click. A free alternative to Heroku, Vercel, and Netlify. 
+Similar to Coolify, CapRover, and Dokku, but simpler.
 
-[![Next.js](https://img.shields.io/badge/Next.js-16-black)](https://nextjs.org)
-[![FastAPI](https://img.shields.io/badge/FastAPI-Python-green)](https://fastapi.tiangolo.com)
+[![Next.js](https://img.shields.io/badge/Next.js-15-black)](https://nextjs.org)
+[![Express](https://img.shields.io/badge/Express-Node.js-green)](https://expressjs.com)
 [![Docker](https://img.shields.io/badge/Docker-Compose-blue)](https://docker.com)
 [![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
-[![GitHub Stars](https://img.shields.io/github/stars/SSujitX/docklift?style=social)](https://github.com/SSujitX/docklift)
 
-> 🚀 **Self-hosted deployment platform** • Deploy Docker containers from GitHub or file upload • Real-time build logs • Automatic port management • Built with Next.js 16 & FastAPI
+> 🚀 **Self-hosted deployment platform** • Deploy Docker containers from GitHub or ZIP upload • Real-time build logs • Automatic port management • Built with Next.js 15 & Express
 
-## 🚀 Quick Install
+## ✨ Key Features
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh | sudo bash
-```
+- **📦 One-Click Deployment** - Simply connect a GitHub repository or upload a ZIP file.
+- **🐳 Docker Native** - Automatic generation of `Dockerfile` (if missing) and `docker-compose.yml`. 
+- **🌐 Automatic Port Management** - No need to worry about port conflicts; Docklift handles them.
+- **🔄 Zero-Downtime Redeploys** - Rebuild and restart containers seamlessly.
+- **📜 Live Build Logs** - Watch your application build in real-time.
+- **🐙 GitHub Integration** - Private repository support via GitHub Apps.
 
-Or manually:
+---
+
+## 🛠️ Prerequisites
+
+To run Docklift locally or on a server, you need:
+
+1.  **Docker & Docker Compose** installed and running.
+2.  **Node.js (v18+)** (for local development).
+
+---
+
+## 🚀 Getting Started
+
+### 1. Clone the Repository
 
 ```bash
 git clone https://github.com/SSujitX/docklift.git
 cd docklift
+```
+
+### 2. Configure Environment
+
+Docklift uses environment variables for configuration. **Do not commit `.env` files.**
+
+```bash
+# Backend Setup
+cd backend
+cp .env.example .env
+# Edit .env if needed (default ports and DB paths are usually fine)
+```
+
+### 3. Run with Docker Compose (Recommended)
+
+The easiest way to run Docklift is using the composed setup.
+
+```bash
+# From the root directory
 docker compose up -d
 ```
 
-Access at `http://YOUR_SERVER_IP:8080`
+Access the dashboard at: `http://localhost:3000`
 
----
+### 4. Local Development (Manual Setup)
 
-## ✨ Features
+If you want to contribute or modify code:
 
-- **📦 One-Click Deploy** - Upload your project or connect GitHub, click deploy
-- **🐳 Docker Native** - Auto-generates Dockerfile and docker-compose.yml
-- **📊 Real-time Logs** - Live terminal output during builds
-- **🔄 Redeploy & Rollback** - Easy redeployment with container recreation
-- **📁 File Editor** - Edit project files directly in the browser
-- **🌐 Port Management** - Automatic port allocation and mapping
-- **📜 Deployment History** - Track all deployments with logs
-
-## 🛠️ Tech Stack
-
-| Component | Technology |
-|-----------|------------|
-| Frontend | Next.js 16, React 19, Tailwind CSS |
-| Backend | FastAPI, SQLAlchemy, Python |
-| Database | SQLite (via aiosqlite) |
-| Containers | Docker, Docker Compose |
-
-## � Screenshots
-
-| Dashboard | Project View |
-|-----------|--------------|
-| ![Dashboard](screenshots/dashboard.png) | ![Project](screenshots/project.png) |
-
-## 🐳 Deploy Your First App
-
-1. Click **"New Project"**
-2. Upload your project files (with Dockerfile) or connect GitHub
-3. Click **"Deploy"**
-4. Watch the build in real-time
-5. Access your app at `localhost:PORT`
-
-## 🔧 Configuration
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `DOCKLIFT_PORT_RANGE_START` | 3001 | Starting port for projects |
-| `DOCKLIFT_PORT_RANGE_END` | 3100 | Ending port for projects |
-| `DOCKLIFT_DOCKER_NETWORK` | docklift_network | Docker network name |
-
-## 💻 Development
-
+**Backend:**
 ```bash
-# Backend
 cd backend
-uv sync
-uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
+npm install
+# Ensure you created .env from .env.example
+npm run dev
+```
+*Backend runs on port 8000.*
 
-# Frontend (new terminal)
+**Frontend:**
+```bash
 cd frontend
 npm install
 npm run dev
 ```
+*Frontend runs on port 3000.*
 
-## 📁 Project Structure
+---
 
-```
-docklift/
-├── backend/              # FastAPI backend
-│   ├── app/
-│   │   ├── routes/       # API endpoints
-│   │   ├── services/     # Docker, compose, git services
-│   │   └── models/       # SQLAlchemy models
-│   └── deployments/      # Deployed project files
-├── frontend/             # Next.js frontend
-│   ├── app/              # App router pages
-│   └── components/       # UI components
-├── docker-compose.yml    # Production deployment
-├── install.sh            # One-liner installer
-└── nginx.conf            # Nginx configuration
-```
+## 🐳 Deploying Your First App
+
+1.  Open Docklift (`http://localhost:3000`).
+2.  Click **"New Project"**.
+3.  Choose a source:
+    *   **Public GitHub**: Paste a repo URL.
+    *   **Private GitHub**: Connect the Docklift GitHub App.
+    *   **Direct Upload**: Upload a ZIP file of your code. (Make sure it has a `Dockerfile` for best results!)
+4.  Docklift will detect the branch (defaults to `main`).
+5.  Click **Deploy**.
+6.  Your app will be live at `http://localhost:<ASSIGNED_PORT>`.
+
+---
 
 ## 🤝 Contributing
 
-PRs welcome! Please open an issue first to discuss changes.
+Contributions are welcome! Please open an issue to discuss proposed changes or features.
 
 ## 📄 License
 
 MIT License - see [LICENSE](LICENSE)
 
----
+***
 
-**Made with ❤️ for developers who want to self-host**
+**Made with ❤️ for developers who take control.**

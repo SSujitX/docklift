@@ -1,0 +1,88 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Project {
+  id             String        @id @default(uuid())
+  name           String
+  description    String?
+  source_type    String?
+  project_type   String?
+  github_url     String?
+  github_branch  String?
+  domain         String?
+  port           Int?
+  status         String?
+  container_name String?
+  created_at     DateTime?     @default(now())
+  updated_at     DateTime?     @default(now()) @updatedAt
+  deployments    Deployment[]
+  env_variables  EnvVariable[]
+  services       Service[]
+  ports          Port[]
+
+  @@map("projects")
+}
+
+model Deployment {
+  id          String    @id @default(uuid())
+  project_id  String
+  status      String?
+  logs        String?
+  created_at  DateTime? @default(now())
+  finished_at DateTime?
+  project     Project   @relation(fields: [project_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@map("deployments")
+}
+
+model Service {
+  id              String    @id @default(uuid())
+  project_id      String
+  name            String
+  dockerfile_path String
+  container_name  String?
+  port            Int?
+  internal_port   Int?
+  domain          String?
+  status          String?
+  created_at      DateTime? @default(now())
+  project         Project   @relation(fields: [project_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@map("services")
+}
+
+model EnvVariable {
+  id           String    @id @default(uuid())
+  project_id   String
+  key          String
+  value        String
+  is_build_arg Boolean?
+  is_runtime   Boolean?
+  created_at   DateTime? @default(now())
+  project      Project   @relation(fields: [project_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@map("env_variables")
+}
+
+model Port {
+  port       Int      @id @default(autoincrement())
+  project_id String?
+  is_locked  Boolean?
+  project    Project? @relation(fields: [project_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@map("ports")
+}
+
+model Settings {
+  key        String    @id
+  value      String?
+  updated_at DateTime?
+
+  @@map("settings")
+}

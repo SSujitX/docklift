@@ -1,0 +1,196 @@
+import Docker from 'dockerode';
+import { spawn } from 'child_process';
+import { Response } from 'express';
+import path from 'path';
+import { config } from '../lib/config.js';
+
+const docker = new Docker();
+
+// Ensure Docker network exists
+export async function ensureNetwork(): Promise<void> {
+  try {
+    await docker.getNetwork(config.dockerNetwork).inspect();
+  } catch {
+    await docker.createNetwork({
+      Name: config.dockerNetwork,
+      Driver: 'bridge',
+    });
+  }
+}
+
+// Get container status
+export async function getContainerStatus(containerName: string): Promise<{ status: string; running: boolean }> {
+  try {
+    // Try exact match first
+    const container = docker.getContainer(containerName);
+    const info = await container.inspect();
+    return {
+      status: info.State.Status,
+      running: info.State.Running,
+    };
+  } catch {
+    // Try partial match using list
+    try {
+      const containers = await docker.listContainers({ all: true, filters: { name: [containerName] } });
+      if (containers.length > 0) {
+        return {
+          status: containers[0].State,
+          running: containers[0].State === 'running',
+        };
+      }
+    } catch {
+      // Ignore
+    }
+    return { status: 'not_found', running: false };
+  }
+}
+
+// Get container logs
+export async function getContainerLogs(containerName: string, tail = 100): Promise<string> {
+  try {
+    const container = docker.getContainer(containerName);
+    const logs = await container.logs({
+      stdout: true,
+      stderr: true,
+      tail,
+      timestamps: false,
+    });
+    return logs.toString();
+  } catch {
+    return '';
+  }
+}
+
+// Get container stats
+export async function getContainerStats(containerName: string): Promise<Record<string, unknown> | null> {
+  try {
+    const container = docker.getContainer(containerName);
+    const stats = await container.stats({ stream: false });
+    
+    // Calculate CPU and memory usage
+    const cpuDelta = stats.cpu_stats.cpu_usage.total_usage - stats.precpu_stats.cpu_usage.total_usage;
+    const systemDelta = stats.cpu_stats.system_cpu_usage - stats.precpu_stats.system_cpu_usage;
+    const cpuPercent = systemDelta > 0 ? (cpuDelta / systemDelta) * 100 : 0;
+    
+    const memoryUsage = stats.memory_stats.usage || 0;
+    const memoryLimit = stats.memory_stats.limit || 1;
+    const memoryPercent = (memoryUsage / memoryLimit) * 100;
+    
+    return {
+      cpu_percent: cpuPercent.toFixed(2),
+      memory_usage: (memoryUsage / 1024 / 1024).toFixed(2) + ' MB',
+      memory_limit: (memoryLimit / 1024 / 1024).toFixed(2) + ' MB',
+      memory_percent: memoryPercent.toFixed(2),
+    };
+  } catch {
+    return null;
+  }
+}
+
+// Stream docker compose up
+export function streamComposeUp(projectPath: string, projectId: string, res: Response): void {
+  const timestamp = new Date().toISOString();
+  
+  res.write(`\n${'━'.repeat(50)}\n`);
+  res.write(`🚀 DEPLOYMENT STARTED\n`);
+  res.write(`📅 ${timestamp}\n`);
+  res.write(`${'━'.repeat(50)}\n\n`);
+  
+  res.write(`📦 Phase 1: Building Docker Image...\n`);
+  res.write(`${'─'.repeat(40)}\n`);
+  
+  const childProcess = spawn('docker', ['compose', '-p', projectId, 'up', '-d', '--build'], {
+    cwd: projectPath,
+    env: { ...globalThis.process.env, DOCKER_BUILDKIT: '1', COMPOSE_DOCKER_CLI_BUILD: '1' },
+    shell: false,
+  });
+  
+  childProcess.stdout!.on('data', (data) => {
+    res.write(data.toString());
+  });
+  
+  childProcess.stderr!.on('data', (data) => {
+    res.write(data.toString());
+  });
+  
+  childProcess.on('close', (code) => {
+    res.write(`\n${'─'.repeat(40)}\n`);
+    
+    if (code === 0) {
+      res.write(`\n${'━'.repeat(50)}\n`);
+      res.write(`✅ DEPLOYMENT SUCCESSFUL!\n`);
+      res.write(`${'━'.repeat(50)}\n`);
+    } else {
+      res.write(`\n${'━'.repeat(50)}\n`);
+      res.write(`❌ DEPLOYMENT FAILED (code ${code})\n`);
+      res.write(`${'━'.repeat(50)}\n`);
+    }
+    
+    res.end();
+  });
+  
+  childProcess.on('error', (err) => {
+    res.write(`\n❌ Error: ${err.message}\n`);
+    res.end();
+  });
+}
+
+// Stream docker compose down
+export function streamComposeDown(projectPath: string, projectId: string, res: Response): void {
+  const timestamp = new Date().toISOString();
+  
+  res.write(`\n${'━'.repeat(50)}\n`);
+  res.write(`⏹️ STOPPING CONTAINERS\n`);
+  res.write(`📅 ${timestamp}\n`);
+  res.write(`${'━'.repeat(50)}\n\n`);
+  
+  const childProcess = spawn('docker', ['compose', '-p', projectId, 'down'], {
+    cwd: projectPath,
+    shell: false,
+  });
+  
+  childProcess.stdout!.on('data', (data) => {
+    res.write(data.toString());
+  });
+  
+  childProcess.stderr!.on('data', (data) => {
+    res.write(data.toString());
+  });
+  
+  childProcess.on('close', (code) => {
+    res.write(`\n${'━'.repeat(50)}\n`);
+    res.write(`✅ CONTAINERS STOPPED\n`);
+    res.write(`${'━'.repeat(50)}\n`);
+    res.end();
+  });
+}
+
+// Stream docker compose restart
+export function streamComposeRestart(projectPath: string, projectId: string, res: Response): void {
+  const timestamp = new Date().toISOString();
+  
+  res.write(`\n${'━'.repeat(50)}\n`);
+  res.write(`🔄 RESTARTING CONTAINERS\n`);
+  res.write(`📅 ${timestamp}\n`);
+  res.write(`${'━'.repeat(50)}\n\n`);
+  
+  const childProcess = spawn('docker', ['compose', '-p', projectId, 'restart'], {
+    cwd: projectPath,
+    shell: false,
+  });
+  
+  childProcess.stdout!.on('data', (data) => {
+    res.write(data.toString());
+  });
+  
+  childProcess.stderr!.on('data', (data) => {
+    res.write(data.toString());
+  });
+  
+  childProcess.on('close', (code) => {
+    res.write(`\n${'━'.repeat(50)}\n`);
+    res.write(`✅ CONTAINERS RESTARTED\n`);
+    res.write(`${'━'.repeat(50)}\n`);
+    res.end();
+  });
+}

@@ -33,7 +33,7 @@ export default function PortsPage() {
         <div className="mb-8">
           <h1 className="text-3xl font-bold tracking-tight">Port Management</h1>
           <p className="text-muted-foreground mt-1">
-            <span className="text-amber-500">{usedPorts.length} used</span> · <span className="text-emerald-500">{freePorts.length} available</span>
+            <span className="text-amber-500">{usedPorts.length} allocated</span> · <span className="text-emerald-500">{freePorts.length} available</span>
           </p>
         </div>
 
@@ -45,7 +45,7 @@ export default function PortsPage() {
               </div>
               <div>
                 <h2 className="font-semibold">Used Ports</h2>
-                <p className="text-sm text-muted-foreground">{usedPorts.length} allocated</p>
+                <p className="text-sm text-muted-foreground">{usedPorts.length} active allocations</p>
               </div>
             </div>
             
@@ -58,14 +58,22 @@ export default function PortsPage() {
             ) : usedPorts.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground text-sm">No ports in use</div>
             ) : (
-              <div className="grid grid-cols-5 sm:grid-cols-8 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {usedPorts.map((port) => (
                   <div
                     key={port.port}
-                    className="group relative px-2 py-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-center hover:bg-amber-500/20 transition-colors cursor-default"
-                    title={port.project_id || ""}
+                    className="group relative px-4 py-3 rounded-xl bg-amber-500/10 border border-amber-500/20 flex flex-col hover:bg-amber-500/20 transition-all duration-300 shadow-sm"
                   >
-                    <span className="font-mono text-sm text-amber-600 dark:text-amber-400">{port.port}</span>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-mono text-base font-bold text-amber-600 dark:text-amber-400">:{port.port}</span>
+                      <div className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
+                    </div>
+                    <p className="text-xs font-semibold truncate mt-1 text-foreground/80">
+                      {port.project?.name || "Unknown Project"}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground font-mono mt-0.5 opacity-60">
+                      {port.project_id?.split('-')[0] || "No ID"}
+                    </p>
                   </div>
                 ))}
               </div>
@@ -79,7 +87,7 @@ export default function PortsPage() {
               </div>
               <div>
                 <h2 className="font-semibold">Available Ports</h2>
-                <p className="text-sm text-muted-foreground">{freePorts.length} free</p>
+                <p className="text-sm text-muted-foreground">{freePorts.length} free for deployment</p>
               </div>
             </div>
             
@@ -90,18 +98,18 @@ export default function PortsPage() {
                 ))}
               </div>
             ) : (
-              <div className="grid grid-cols-5 sm:grid-cols-8 gap-2 max-h-[300px] overflow-auto">
-                {freePorts.slice(0, 40).map((port) => (
+              <div className="grid grid-cols-5 sm:grid-cols-8 gap-2 max-h-[400px] overflow-auto pr-2 custom-scrollbar">
+                {freePorts.slice(0, 60).map((port) => (
                   <div
                     key={port.port}
-                    className="px-2 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-center"
+                    className="px-2 py-2.5 rounded-lg bg-emerald-500/5 hover:bg-emerald-500/15 border border-emerald-500/10 hover:border-emerald-500/30 text-center transition-all duration-300"
                   >
                     <span className="font-mono text-sm text-emerald-600 dark:text-emerald-400">{port.port}</span>
                   </div>
                 ))}
-                {freePorts.length > 40 && (
-                  <div className="col-span-full text-center text-sm text-muted-foreground py-2">
-                    +{freePorts.length - 40} more available
+                {freePorts.length > 60 && (
+                  <div className="col-span-full text-center text-[10px] font-bold text-muted-foreground py-3 bg-secondary/30 rounded-lg border border-dashed border-border mt-2">
+                    +{freePorts.length - 60} MORE PORTS AVAILABLE
                   </div>
                 )}
               </div>
@@ -109,25 +117,25 @@ export default function PortsPage() {
           </Card>
         </div>
 
-        <Card className="mt-6 p-6">
+        <Card className="mt-6 p-6 border-border/40 bg-secondary/10">
           <div className="flex items-center gap-3 mb-4">
-            <div className="p-2.5 rounded-xl bg-primary/10">
-              <Network className="h-5 w-5 text-primary" />
+            <div className="p-2.5 rounded-xl bg-cyan-500/10">
+              <Network className="h-5 w-5 text-cyan-500" />
             </div>
-            <h2 className="font-semibold">Configuration</h2>
+            <h2 className="font-semibold">Network Infrastructure</h2>
           </div>
-          <div className="flex flex-wrap items-center gap-6 text-sm">
-            <div className="flex items-center gap-2">
-              <span className="text-muted-foreground">Range:</span>
-              <code className="font-mono bg-secondary px-3 py-1 rounded-lg">3001 - 3100</code>
+          <div className="flex flex-wrap items-center gap-x-8 gap-y-4 text-sm">
+            <div className="flex flex-col gap-1">
+              <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Port Range</span>
+              <code className="font-mono bg-secondary/80 px-3 py-1 rounded-lg border border-border/50 text-xs">3001 - 3100</code>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="text-muted-foreground">Total:</span>
-              <span className="font-semibold">{ports.length} ports</span>
+            <div className="flex flex-col gap-1">
+              <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Global Capacity</span>
+              <span className="font-bold text-foreground">{ports.length} <span className="text-muted-foreground font-normal ml-1">Total Nodes</span></span>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="text-muted-foreground">Network:</span>
-              <code className="font-mono bg-secondary px-3 py-1 rounded-lg">hostify_network</code>
+            <div className="flex flex-col gap-1">
+              <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Virtual Network</span>
+              <code className="font-mono bg-secondary/80 px-3 py-1 rounded-lg border border-border/50 text-xs">docklift_network</code>
             </div>
           </div>
         </Card>
