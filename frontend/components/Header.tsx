@@ -30,8 +30,8 @@ export function Header() {
   const navItems = [
     { name: "Projects", href: "/", icon: LayoutGrid },
     { name: "Ports", href: "/ports", icon: Anchor },
-    { name: "System", href: "/system", icon: Gauge },
     { name: "Docs", href: "/docs", icon: BookOpen },
+    { name: "System", href: "/system", icon: Gauge },
   ];
 
   return (
