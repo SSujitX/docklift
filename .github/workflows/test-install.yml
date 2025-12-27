@@ -1,4 +1,4 @@
-name: Test Installation Script
+name: 🧪 Verify Install Script
 
 on:
   push:
@@ -9,25 +9,89 @@ on:
 
 jobs:
   test-install:
+    name: 🏗️ Test Installation & Startup
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    
     steps:
-      - name: Checkout code
+      - name: 📥 Checkout Code
         uses: actions/checkout@v4
 
-      - name: Make script executable
+      - name: ⚙️ Prepare Script
         run: chmod +x install.sh
 
-      - name: Run installation script
-        run: sudo ./install.sh
-        timeout-minutes: 15
-        
-      - name: Verify Docker Containers
+      - name: 🚀 Run Install Script
+        id: install
         run: |
-          sleep 10
-          docker ps
-          if [ $(docker ps | grep docklift | wc -l) -gt 0 ]; then
-            echo "✅ Docklift containers are running"
+          # Redirect output to file to keep logs clean, but tail it if needed
+          sudo ./install.sh
+
+      - name: 🏥 Health Check verification
+        id: health
+        run: |
+          echo "⏳ Waiting for services to stabilize..."
+          sleep 15
+          
+          # 1. Check Containers
+          RUNNING_CONTAINERS=$(docker ps --format "{{.Names}}" | grep docklift)
+          COUNT=$(echo "$RUNNING_CONTAINERS" | wc -l)
+          echo "Found $COUNT docklift containers."
+          
+          # 2. Check Dashboard Response
+          # Using localhost:8080 as per install script config
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080 || echo "000")
+          echo "Dashboard returned HTTP $HTTP_CODE"
+
+          # Logic
+          if [[ "$COUNT" -gt 0 ]] && [[ "$HTTP_CODE" == "200" ]]; then
+            echo "status=success" >> $GITHUB_OUTPUT
+            echo "containers=$COUNT" >> $GITHUB_OUTPUT
+            echo "http_code=$HTTP_CODE" >> $GITHUB_OUTPUT
           else
-            echo "❌ Docklift containers failed to start"
-            exit 1
+            echo "status=failure" >> $GITHUB_OUTPUT
+            echo "containers=$COUNT" >> $GITHUB_OUTPUT
+            echo "http_code=$HTTP_CODE" >> $GITHUB_OUTPUT
+            # We don't exit 1 yet so we can generate the report first
           fi
+
+      - name: 📊 Generate Summary Report
+        if: always()
+        run: |
+          STATUS="${{ steps.health.outputs.status }}"
+          CONTAINERS="${{ steps.health.outputs.containers }}"
+          HTTP="${{ steps.health.outputs.http_code }}"
+          
+          echo "# 🧪 Docklift Installation Test" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [[ "$STATUS" == "success" ]]; then
+            echo "### ✅ Result: PASSED" >> $GITHUB_STEP_SUMMARY
+            echo "Your installation script is working correctly." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Check | Status | Details |" >> $GITHUB_STEP_SUMMARY
+            echo "| :--- | :---: | :--- |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Script Execution** | ✅ | Completed without errors |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Docker Containers** | ✅ | $CONTAINERS containers running |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Web Dashboard** | ✅ | HTTP $HTTP (OK) at port 8080 |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### ❌ Result: FAILED" >> $GITHUB_STEP_SUMMARY
+            echo "The installation script or startup failed." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Check | Status | Details |" >> $GITHUB_STEP_SUMMARY
+            echo "| :--- | :---: | :--- |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Script Execution** | ❓ | Check logs for errors |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Docker Containers** | ${{ steps.health.outputs.containers > 0 && '✅' || '❌' }} | $CONTAINERS containers found |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Web Dashboard** | ${{ steps.health.outputs.http_code == '200' && '✅' || '❌' }} | HTTP $HTTP response |" >> $GITHUB_STEP_SUMMARY
+            
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### 🔍 Debug Info" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            echo "Running Containers:" >> $GITHUB_STEP_SUMMARY
+            docker ps --format "table {{.Names}}\t{{.Status}}" | grep docklift || echo "None" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: 🚨 Fail Workflow if Check Failed
+        if: steps.health.outputs.status != 'success'
+        run: exit 1
