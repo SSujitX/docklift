@@ -174,12 +174,16 @@ router.post('/:projectId/deploy', async (req: Request, res: Response) => {
       if (!service) {
         const port = await allocatePort(projectId);
         const shortId = projectId.substring(0, 8);
+        // Truncate service name if it's too long to stay under 64 char DNS limit
+        const sanitizedName = df.name.substring(0, 50); 
+        const containerName = `dl_${shortId}_${sanitizedName}`;
+        
         service = await prisma.service.create({
           data: {
             project_id: projectId,
             name: df.name,
             dockerfile_path: df.dockerfile_path,
-            container_name: `dl_${shortId}_${df.name}`,
+            container_name: containerName,
             internal_port: df.internal_port,
             port: port,
             status: 'building',
@@ -189,7 +193,9 @@ router.post('/:projectId/deploy', async (req: Request, res: Response) => {
       } else {
         // Migration: If existing service has long container name, shorten it
         const shortId = projectId.substring(0, 8);
-        const targetName = `dl_${shortId}_${df.name}`;
+        const sanitizedName = df.name.substring(0, 50);
+        const targetName = `dl_${shortId}_${sanitizedName}`;
+        
         if (service.container_name !== targetName) {
            res.write(`     🛠️ Migrating container name to shorter format...\n`);
            service = await prisma.service.update({
@@ -315,13 +321,16 @@ router.post('/:projectId/deploy', async (req: Request, res: Response) => {
       }
       
       if (success) {
+        // Use the request host (e.g., server IP) instead of localhost
+        const host = req.headers.host?.split(':')[0] || 'localhost';
+        
         res.write(`\n${'━'.repeat(50)}\n`);
         res.write(`✅ DEPLOY SUCCESSFUL!\n`);
         res.write(`${'━'.repeat(50)}\n\n`);
         res.write(`🌐 ENDPOINTS:\n`);
         for (const svc of servicesData) {
           if (svc.port) {
-            res.write(`  📍 ${svc.name}: http://localhost:${svc.port}\n`);
+            res.write(`  📍 ${svc.name}: http://${host}:${svc.port}\n`);
           }
         }
         logs.push(`\n${'━'.repeat(50)}\n✅ DEPLOY SUCCESSFUL!\n${'━'.repeat(50)}\n`);
