@@ -7,7 +7,8 @@ import { Footer } from "@/components/Footer";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Server, Network, Container, Info, Loader2, Check, X, Sparkles, Globe, Plus } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Server, Network, Container, Info, Loader2, Check, X, Sparkles, Globe, Plus, Trash2, ExternalLink } from "lucide-react";
 import { GithubIcon } from "@/components/icons/GithubIcon";
 import { toast } from "sonner";
 import { API_URL } from "@/lib/utils";
@@ -21,12 +22,25 @@ interface GitHubStatus {
   error?: string;
 }
 
+interface DomainConfig {
+  domain: string;
+  port: number;
+}
+
 function SettingsContent() {
   const [githubStatus, setGithubStatus] = useState<GitHubStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [disconnecting, setDisconnecting] = useState(false);
   const [showGitHubConnect, setShowGitHubConnect] = useState(false);
   const [activeTab, setActiveTab] = useState('github');
+  
+  // Domain State
+  const [domains, setDomains] = useState<DomainConfig[]>([]);
+  const [loadingDomains, setLoadingDomains] = useState(false);
+  const [showAddDomain, setShowAddDomain] = useState(false);
+  const [newDomain, setNewDomain] = useState({ domain: '', port: '' });
+  const [addingDomain, setAddingDomain] = useState(false);
+
   const searchParams = useSearchParams();
 
   useEffect(() => {
@@ -35,7 +49,11 @@ function SettingsContent() {
     if (searchParams.get("github") === "connected") {
       toast.success("GitHub account connected successfully!");
     }
-  }, [searchParams]);
+
+    if (activeTab === 'domain') {
+      fetchDomains();
+    }
+  }, [searchParams, activeTab]);
 
   const fetchGitHubStatus = async () => {
     try {
@@ -69,6 +87,70 @@ function SettingsContent() {
       toast.error("Failed to disconnect");
     } finally {
       setDisconnecting(false);
+    }
+  };
+
+  const fetchDomains = async () => {
+    setLoadingDomains(true);
+    try {
+      const res = await fetch(`${API_URL}/api/domains`);
+      if (res.ok) {
+        const data = await res.json();
+        setDomains(data);
+      }
+    } catch (error) {
+      toast.error("Failed to load domains");
+    } finally {
+      setLoadingDomains(false);
+    }
+  };
+
+  const handleAddDomain = async () => {
+    if (!newDomain.domain || !newDomain.port) {
+      toast.error("Please fill in all fields");
+      return;
+    }
+
+    setAddingDomain(true);
+    try {
+      const res = await fetch(`${API_URL}/api/domains`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          domain: newDomain.domain,
+          port: parseInt(newDomain.port)
+        })
+      });
+
+      const data = await res.json();
+      
+      if (!res.ok) throw new Error(data.error || "Failed to add domain");
+      
+      toast.success(`Domain ${newDomain.domain} added successfully`);
+      setShowAddDomain(false);
+      setNewDomain({ domain: '', port: '' });
+      fetchDomains();
+    } catch (error: any) {
+      toast.error(error.message);
+    } finally {
+      setAddingDomain(false);
+    }
+  };
+
+  const handleDeleteDomain = async (domain: string) => {
+    if (!confirm(`Are you sure you want to remove ${domain}?`)) return;
+
+    try {
+      const res = await fetch(`${API_URL}/api/domains/${domain}`, {
+        method: "DELETE"
+      });
+      
+      if (!res.ok) throw new Error("Failed to delete domain");
+      
+      toast.success("Domain removed");
+      fetchDomains();
+    } catch (error: any) {
+      toast.error(error.message);
     }
   };
 
@@ -293,7 +375,7 @@ function SettingsContent() {
               </div>
             )}
 
-            {/* Domain Tab (New) */}
+            {/* Domain Tab */}
             {activeTab === 'domain' && (
               <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
                 <Card className="p-6 border-indigo-500/20">
@@ -303,31 +385,128 @@ function SettingsContent() {
                         <Globe className="h-6 w-6 text-indigo-500" />
                       </div>
                       <div>
-                        <h2 className="text-xl font-semibold">Domain Management</h2>
-                        <p className="text-sm text-muted-foreground">Map custom domains to your services</p>
+                        <h2 className="text-xl font-semibold">Server Domain</h2>
+                        <p className="text-sm text-muted-foreground">Access your Docklift panel via custom domain instead of IP</p>
                       </div>
                     </div>
-                    <Button className="bg-indigo-600 hover:bg-indigo-700">
-                      <Plus className="h-4 w-4 mr-2" />
-                      Add Domain
-                    </Button>
+                    
+                    <Dialog open={showAddDomain} onOpenChange={setShowAddDomain}>
+                      <DialogTrigger asChild>
+                        <Button className="bg-indigo-600 hover:bg-indigo-700">
+                          <Plus className="h-4 w-4 mr-2" />
+                          Add Domain
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>Add Server Domain</DialogTitle>
+                          <DialogDescription>
+                            Access Docklift using a custom domain instead of IP address. Configure your DNS first!
+                          </DialogDescription>
+                        </DialogHeader>
+                        
+                        {/* DNS Instructions */}
+                        <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-sm space-y-2">
+                          <p className="font-medium text-amber-600 dark:text-amber-400">📝 DNS Setup Required</p>
+                          <p className="text-muted-foreground">Add an <strong>A Record</strong> in your domain's DNS settings:</p>
+                          <div className="font-mono text-xs bg-secondary/50 p-2 rounded">
+                            <div className="grid grid-cols-3 gap-2">
+                              <span className="text-muted-foreground">Type</span>
+                              <span className="text-muted-foreground">Host</span>
+                              <span className="text-muted-foreground">Value</span>
+                            </div>
+                            <div className="grid grid-cols-3 gap-2 font-bold">
+                              <span>A</span>
+                              <span>@ or subdomain</span>
+                              <span>Your Server IP</span>
+                            </div>
+                          </div>
+                          <p className="text-xs text-muted-foreground">Use <code className="bg-secondary px-1 rounded">@</code> for root domain (example.com) or a subdomain like <code className="bg-secondary px-1 rounded">panel</code> for panel.example.com</p>
+                        </div>
+                        <div className="space-y-4 py-4">
+                          <div className="space-y-2">
+                            <label className="text-sm font-medium">Domain Name</label>
+                            <Input 
+                              placeholder="panel.yourdomain.com" 
+                              value={newDomain.domain}
+                              onChange={(e) => setNewDomain({ ...newDomain, domain: e.target.value })}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-sm font-medium">Docklift Port</label>
+                            <Input 
+                              type="number" 
+                              placeholder="8080" 
+                              value={newDomain.port}
+                              onChange={(e) => setNewDomain({ ...newDomain, port: e.target.value })}
+                            />
+                            <p className="text-xs text-muted-foreground">Docklift runs on port 8080 by default. Change only if you modified it.</p>
+                          </div>
+                        </div>
+                        <DialogFooter>
+                          <Button variant="outline" onClick={() => setShowAddDomain(false)}>Cancel</Button>
+                          <Button onClick={handleAddDomain} disabled={addingDomain} className="bg-indigo-600 hover:bg-indigo-700">
+                            {addingDomain && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                            Add Mapping
+                          </Button>
+                        </DialogFooter>
+                      </DialogContent>
+                    </Dialog>
                   </div>
 
-                  {/* Domain List Placeholder */}
-                  <div className="rounded-xl border border-border/50 overflow-hidden">
-                    <div className="p-8 text-center bg-secondary/20">
-                      <div className="inline-flex items-center justify-center p-4 rounded-full bg-secondary/50 mb-4">
-                        <Globe className="h-8 w-8 text-muted-foreground/50" />
-                      </div>
-                      <h3 className="font-medium text-lg mb-1">No Custom Domains</h3>
-                      <p className="text-muted-foreground text-sm max-w-sm mx-auto mb-4">
-                        You can map custom domains (e.g., app.example.com) to your specific container ports.
-                      </p>
-                      <Button variant="outline" className="gap-2">
-                        Learn how to configure DNS
-                      </Button>
+                  {loadingDomains ? (
+                    <div className="flex justify-center p-8">
+                      <Loader2 className="h-8 w-8 animate-spin text-indigo-500" />
                     </div>
-                  </div>
+                  ) : domains.length > 0 ? (
+                    <div className="rounded-xl border border-border/50 overflow-hidden">
+                      <table className="w-full text-left text-sm">
+                        <thead className="bg-secondary/50 font-medium text-muted-foreground">
+                          <tr>
+                            <th className="px-4 py-3">Domain</th>
+                            <th className="px-4 py-3">Target Port</th>
+                            <th className="px-4 py-3 text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border/50">
+                          {domains.map((d) => (
+                            <tr key={d.domain} className="hover:bg-secondary/20">
+                              <td className="px-4 py-3 font-medium flex items-center gap-2">
+                                <a href={`http://${d.domain}`} target="_blank" rel="noreferrer" className="flex items-center gap-2 hover:text-indigo-500 hover:underline">
+                                  {d.domain}
+                                  <ExternalLink className="h-3 w-3 opacity-50" />
+                                </a>
+                              </td>
+                              <td className="px-4 py-3 font-mono text-muted-foreground">{d.port}</td>
+                              <td className="px-4 py-3 text-right">
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm" 
+                                  className="text-red-500 hover:text-red-600 hover:bg-red-500/10"
+                                  onClick={() => handleDeleteDomain(d.domain)}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    /* Empty State */
+                    <div className="rounded-xl border border-border/50 overflow-hidden">
+                      <div className="p-8 text-center bg-secondary/20">
+                        <div className="inline-flex items-center justify-center p-4 rounded-full bg-secondary/50 mb-4">
+                          <Globe className="h-8 w-8 text-muted-foreground/50" />
+                        </div>
+                        <h3 className="font-medium text-lg mb-1">No Server Domain Configured</h3>
+                        <p className="text-muted-foreground text-sm max-w-sm mx-auto mb-4">
+                          Access your Docklift panel using a custom domain like <strong>panel.yourdomain.com</strong> instead of IP:Port.
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </Card>
               </div>
             )}
