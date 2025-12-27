@@ -23,6 +23,8 @@ jobs:
 
       - name: 🚀 Run Install Script
         id: install
+        env:
+          TERM: xterm
         run: |
           # Redirect output to file to keep logs clean, but tail it if needed
           sudo ./install.sh
