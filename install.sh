@@ -67,21 +67,21 @@ clear 2>/dev/null || true
 echo ""
 echo -e "${CYAN}${BOLD}"
 cat <<'EOF'
-  ╔═══════════════════════════════════════════════╗
-  ║                                               ║
-  ║   ██████╗  ██████╗  ██████╗██╗  ██╗          ║
-  ║   ██╔══██╗██╔═══██╗██╔════╝██║ ██╔╝          ║
-  ║   ██║  ██║██║   ██║██║     █████╔╝           ║
-  ║   ██║  ██║██║   ██║██║     ██╔═██╗           ║
-  ║   ██████╔╝╚██████╔╝╚██████╗██║  ██╗          ║
-  ║   ╚═════╝  ╚═════╝  ╚═════╝╚═╝  ╚═╝LIFT      ║
-  ║                                               ║
-  ║   Self-Hosted Docker Deployment Platform      ║
-  ║                                               ║
-  ╚═══════════════════════════════════════════════╝
+  ╔════════════════════════════════════════════════════════════════════╗
+  ║                                                                    ║
+  ║   ██████╗  ██████╗  ██████╗██╗  ██╗██╗     ██╗███████╗████████╗   ║
+  ║   ██╔══██╗██╔═══██╗██╔════╝██║ ██╔╝██║     ██║██╔════╝╚══██╔══╝   ║
+  ║   ██║  ██║██║   ██║██║     █████╔╝ ██║     ██║█████╗     ██║      ║
+  ║   ██║  ██║██║   ██║██║     ██╔═██╗ ██║     ██║██╔══╝     ██║      ║
+  ║   ██████╔╝╚██████╔╝╚██████╗██║  ██╗███████╗██║██║        ██║      ║
+  ║   ╚═════╝  ╚═════╝  ╚═════╝╚═╝  ╚═╝╚══════╝╚═╝╚═╝        ╚═╝      ║
+  ║                                                                    ║
+  ║              Self-Hosted Docker Deployment Platform                ║
+  ║                                                                    ║
+  ╚════════════════════════════════════════════════════════════════════╝
 EOF
 echo -e "${NC}"
-echo -e "  ${DIM}v1.0.0 • github.com/SSujitX/docklift${NC}"
+# Version will be shown after we know INSTALL_DIR
 echo ""
 
 # Check if running as root
@@ -103,7 +103,8 @@ pid=$!
 spinner $pid
 
 if ! command -v docker &> /dev/null; then
-    printf "${YELLOW}[2/6]${NC} Installing Docker..."
+    echo ""
+    printf "  ${YELLOW}[1/5]${NC} Installing Docker..."
     if [ "$CI" = "true" ]; then
         curl -fsSL https://get.docker.com | sh -s -- --quiet > /dev/null 2>&1 || echo -e "${YELLOW}⚠️ Docker installation skipped/failed in CI.${NC}"
     else
@@ -114,11 +115,14 @@ if ! command -v docker &> /dev/null; then
         systemctl enable docker >/dev/null 2>&1 || true
         systemctl start docker >/dev/null 2>&1 || true
     fi
+    echo -e " ${GREEN}✓${NC}"
 fi
 
 if ! command -v git &> /dev/null; then
-    echo -e "\n${YELLOW}  Git not found. Installing...${NC}"
+    echo ""
+    printf "  ${YELLOW}[1/5]${NC} Installing Git..."
     apt-get update -qq && apt-get install -y -qq git >/dev/null 2>&1 || yum install -y git >/dev/null 2>&1 || apk add --no-cache git >/dev/null 2>&1
+    echo -e " ${GREEN}✓${NC}"
 fi
 echo -e " ${GREEN}✓${NC}"
 
@@ -151,6 +155,11 @@ else
     cd "$INSTALL_DIR"
 fi
 echo -e " ${GREEN}✓${NC}"
+
+# Display version from package.json
+VERSION=$(grep -o '"version": *"[^"]*"' "$INSTALL_DIR/backend/package.json" 2>/dev/null | head -1 | cut -d'"' -f4 || echo "1.0.0")
+echo -e "  ${DIM}v${VERSION} • github.com/SSujitX/docklift${NC}"
+echo ""
 
 # Step 3: Directories
 printf "  ${CYAN}[3/5]${NC} Preparing directories..."
