@@ -460,7 +460,7 @@ router.get('/status', async (req: Request, res: Response) => {
     }
     
     // Check if private key exists
-    const privateKey = getPrivateKey();
+    const privateKey = await getPrivateKey();
     if (!privateKey) {
       return res.json({
         connected: true,

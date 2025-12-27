@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 import { Card } from "@/components/ui/card";
@@ -9,9 +10,8 @@ import { Button } from "@/components/ui/button";
 import { Server, Network, Container, Info, Loader2, Check, X, Sparkles } from "lucide-react";
 import { GithubIcon } from "@/components/icons/GithubIcon";
 import { toast } from "sonner";
+import { API_URL } from "@/lib/utils";
 import { GitHubConnect } from "@/components/GitHubConnect";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 interface GitHubStatus {
   connected: boolean;
@@ -21,15 +21,20 @@ interface GitHubStatus {
   error?: string;
 }
 
-export default function SettingsPage() {
+function SettingsContent() {
   const [githubStatus, setGithubStatus] = useState<GitHubStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [disconnecting, setDisconnecting] = useState(false);
   const [showGitHubConnect, setShowGitHubConnect] = useState(false);
+  const searchParams = useSearchParams();
 
   useEffect(() => {
     fetchGitHubStatus();
-  }, []);
+    
+    if (searchParams.get("github") === "connected") {
+      toast.success("GitHub account connected successfully!");
+    }
+  }, [searchParams]);
 
   const fetchGitHubStatus = async () => {
     try {
@@ -104,34 +109,41 @@ export default function SettingsPage() {
                       <span>Checking...</span>
                     </div>
                   ) : githubStatus?.connected ? (
-                    <div className="flex flex-col items-end gap-3">
-                      <div className="flex items-center gap-3 bg-green-500/10 border border-green-500/20 px-4 py-2 rounded-lg">
-                        {githubStatus.avatar_url && (
+                    <div className="flex flex-col items-center sm:items-end gap-3 w-full sm:w-auto">
+                      <div className="flex items-center gap-4 bg-green-500/10 border border-green-500/20 px-5 py-3 rounded-2xl w-full sm:w-auto">
+                        {githubStatus.avatar_url ? (
                           <img 
                             src={githubStatus.avatar_url} 
                             alt={githubStatus.username} 
-                            className="h-6 w-6 rounded-full"
+                            className="h-10 w-10 rounded-xl border border-green-500/20"
                           />
+                        ) : (
+                          <div className="h-10 w-10 rounded-xl bg-green-500/20 flex items-center justify-center font-bold text-green-500">
+                            {githubStatus.username?.charAt(0).toUpperCase()}
+                          </div>
                         )}
-                        <div className="flex items-center gap-2">
-                          <Check className="h-4 w-4 text-green-500" />
-                          <span className="font-medium text-green-500">Connected</span>
-                          <span className="text-muted-foreground text-sm">@{githubStatus.username}</span>
+                        <div className="flex flex-col">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-green-500">Connected</span>
+                            <Check className="h-4 w-4 text-green-500" />
+                          </div>
+                          <span className="text-sm text-muted-foreground font-medium truncate max-w-[150px]">@{githubStatus.username}</span>
                         </div>
                       </div>
+                      
                       <Button 
                         variant="ghost" 
                         size="sm"
                         onClick={handleDisconnectGitHub}
                         disabled={disconnecting}
-                        className="text-muted-foreground hover:text-destructive"
+                        className="h-8 text-xs text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg group/btn"
                       >
                         {disconnecting ? (
-                          <Loader2 className="h-3 w-3 animate-spin mr-2" />
+                          <Loader2 className="h-3.5 w-3.5 animate-spin mr-2" />
                         ) : (
-                          <X className="h-3 w-3 mr-2" />
+                          <X className="h-3.5 w-3.5 mr-2 group-hover/btn:rotate-90 transition-transform" />
                         )}
-                        Disconnect
+                        Disconnect GitHub Account
                       </Button>
                     </div>
                   ) : (
@@ -234,5 +246,17 @@ export default function SettingsPage() {
 
       <Footer />
     </div>
+  );
+}
+
+export default function SettingsPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-black">
+        <Loader2 className="h-8 w-8 animate-spin text-cyan-500" />
+      </div>
+    }>
+      <SettingsContent />
+    </Suspense>
   );
 }

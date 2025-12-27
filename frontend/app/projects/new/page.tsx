@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 import { Button } from "@/components/ui/button";
@@ -64,13 +64,16 @@ interface GitHubStatus {
   avatar_url?: string;
 }
 
-export default function NewProjectPage() {
+function NewProjectContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
 
   // Form State
-  const [sourceType, setSourceType] = useState<"upload" | "github" | "public">("public");
+  const [sourceType, setSourceType] = useState<"upload" | "github" | "public">(
+    searchParams.get("github") === "connected" ? "github" : "public"
+  );
   const [projectType, setProjectType] = useState<"app" | "database">("app");
   const [name, setName] = useState("");
   const [githubUrl, setGithubUrl] = useState("");
@@ -875,5 +878,17 @@ export default function NewProjectPage() {
 
       <Footer />
     </div>
+  );
+}
+
+export default function NewProjectPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-black">
+        <Loader2 className="h-8 w-8 animate-spin text-cyan-500" />
+      </div>
+    }>
+      <NewProjectContent />
+    </Suspense>
   );
 }
