@@ -349,11 +349,18 @@ router.post('/reboot', async (req: Request, res: Response) => {
     }
 
     // Production Linux Reboot
-    await execAsync('sudo reboot');
+    // Execute asynchronously with a small delay to allow response to be sent
+    setTimeout(() => {
+      exec('sudo reboot');
+    }, 1000);
+    
     res.json({ message: 'System is rebooting now...' });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Reboot error:', error);
-    res.status(500).json({ error: 'Failed to initiate reboot' });
+    res.status(500).json({ 
+      error: 'Failed to initiate reboot', 
+      details: error.message || error.stderr || 'Unknown error' 
+    });
   }
 });
 
@@ -364,21 +371,25 @@ router.post('/reset', async (req: Request, res: Response) => {
     
     if (isWindows) {
       console.log('Reset Service requested (Dev Mode: Simulation)');
-      // Could optionally try to restart the node process itself, but that kills the dev server
       await new Promise(resolve => setTimeout(resolve, 1500));
       return res.json({ message: 'Dev Mode: Simulated Service Reset complete.' });
     }
 
     // Production: Attempt to restart docker containers
-    try {
-      await execAsync('docker restart docklift-backend docklift-frontend docklift-proxy docklift-webui || true');
-      res.json({ message: 'Services reset command sent successfully' });
-    } catch (err: any) {
-      res.json({ message: 'Services reset triggered', warning: 'Orchestrator command sent (check logs)' });
-    }
-  } catch (error) {
+    // Use detached execution to allow response to complete
+    const command = 'sleep 1 && docker restart docklift-backend docklift-frontend docklift-proxy docklift-webui';
+    
+    exec(command, (error) => {
+      if (error) console.error('Reset execution ended:', error);
+    });
+
+    res.json({ message: 'Services reset command sent successfully (Restarting in 1s)' });
+  } catch (error: any) {
     console.error('Reset error:', error);
-    res.status(500).json({ error: 'Failed to reset services' });
+    res.status(500).json({ 
+      error: 'Failed to reset services', 
+      details: error.message || error.stderr || 'Unknown error'
+    });
   }
 });
 
@@ -392,7 +403,6 @@ router.post('/execute', async (req: Request, res: Response) => {
 
   try {
     // Basic security: avoid obviously destructive commands if possible
-    // though the user is admin, we should still be cautious
     const forbidden = ['rm -rf /', ':(){ :|:& };:', 'mv /dev/null'];
     if (forbidden.some(b => command.includes(b))) {
       return res.status(403).json({ error: 'Command forbidden for safety' });
