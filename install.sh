@@ -146,25 +146,38 @@ sleep 5
 
 # Final Status Check
 RUNNING=$(docker compose ps --format "table {{.Name}}\t{{.Status}}" 2>/dev/null | grep -c "Up" || echo "0")
-IP=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "127.0.0.1")
-PUBLIC_IP=$(curl -s --connect-timeout 2 https://api.ipify.org || echo "Unavailable")
 
-echo ""
 if [ "$RUNNING" -gt 0 ]; then
-    echo -e "${GREEN}╔═══════════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${GREEN}║                                                                   ║${NC}"
-    echo -e "${GREEN}║   ✅ Docklift is ready to use!                                    ║${NC}"
-    echo -e "${GREEN}║                                                                   ║${NC}"
-    echo -e "${GREEN}╚═══════════════════════════════════════════════════════════════════╝${NC}"
     echo ""
-    echo -e "    You can access your dashboard at:"
-    echo -e "    ${BOLD}Local:${NC}   http://${IP}:8080"
-    echo -e "    ${BOLD}Public:${NC}  http://${PUBLIC_IP}:8080"
+    echo -e "${GREEN}Your instance is ready to use!${NC}"
     echo ""
-    echo -e "${DIM}    Default Port Range: 3001-3100${NC}"
-    echo -e "${DIM}    Data Directory:     $INSTALL_DIR/data${NC}"
+    
+    # Public IPs
+    PUBLIC_IPV4=$(curl -4 -s --connect-timeout 2 https://api.ipify.org || echo "")
+    PUBLIC_IPV6=$(curl -6 -s --connect-timeout 2 https://api64.ipify.org || echo "")
+    
+    if [ -n "$PUBLIC_IPV4" ]; then
+        echo -e "You can access Docklift through your Public IPv4: ${BOLD}http://${PUBLIC_IPV4}:8080${NC}"
+    fi
+    
+    if [ -n "$PUBLIC_IPV6" ]; then
+        echo -e "You can access Docklift through your Public IPv6: ${BOLD}http://[${PUBLIC_IPV6}]:8080${NC}"
+    fi
+    
     echo ""
-    echo -e "${CYAN}Make sure firewall port 8080 is open!${NC}"
+    echo -e "If your Public IP is not accessible, you can use the following Private IPs:"
+    echo ""
+    
+    # Get all local IPs
+    hostname -I 2>/dev/null | tr ' ' '\n' | while read ip; do
+        if [ -n "$ip" ]; then
+            echo -e "${BOLD}http://${ip}:8080${NC}"
+        fi
+    done
+    
+    echo ""
+    echo -e "${DIM}Default credentials: Create your account on first login.${NC}"
+    echo ""
 else
     echo -e "${RED}⚠️  Something went wrong. Containers are not up.${NC}"
     echo -e "Run 'cd $INSTALL_DIR && docker compose logs' to debug."
