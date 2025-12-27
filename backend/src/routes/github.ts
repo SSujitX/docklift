@@ -9,7 +9,7 @@ const router = Router();
 const GITHUB_API_URL = 'https://api.github.com';
 
 // Helper: Get setting from database
-async function getSetting(key: string): Promise<string | null> {
+export async function getSetting(key: string): Promise<string | null> {
   const setting = await prisma.settings.findUnique({ where: { key } });
   return setting?.value || null;
 }
@@ -29,7 +29,7 @@ async function deleteSetting(key: string): Promise<void> {
 }
 
 // Helper: Get GitHub App private key from database (or fallback to file)
-async function getPrivateKey(): Promise<string | null> {
+export async function getPrivateKey(): Promise<string | null> {
   // First try database (from manifest flow)
   const dbKey = await getSetting('github_private_key');
   if (dbKey) {
@@ -45,7 +45,7 @@ async function getPrivateKey(): Promise<string | null> {
 }
 
 // Helper: Get GitHub App ID from database (or fallback to env)
-async function getAppId(): Promise<string | null> {
+export async function getAppId(): Promise<string | null> {
   const dbAppId = await getSetting('github_app_id');
   if (dbAppId) {
     return dbAppId;
@@ -54,7 +54,7 @@ async function getAppId(): Promise<string | null> {
 }
 
 // Helper: Create JWT for GitHub App auth
-async function createJwtToken(): Promise<string> {
+export async function createJwtToken(): Promise<string> {
   const privateKey = await getPrivateKey();
   if (!privateKey) {
     throw new Error('GitHub App private key not found. Please create a GitHub App first.');
@@ -75,7 +75,7 @@ async function createJwtToken(): Promise<string> {
 }
 
 // Helper: Get installation access token
-async function getInstallationToken(installationId: string): Promise<string> {
+export async function getInstallationToken(installationId: string): Promise<string> {
   const jwtToken = await createJwtToken();
   
   const response = await fetch(

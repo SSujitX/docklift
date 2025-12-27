@@ -164,9 +164,27 @@ router.post('/', upload.single('files'), async (req: Request, res: Response) => 
     
     const projectPath = path.join(config.deploymentsPath, project.id);
     
+import { getInstallationToken, getSetting } from './github.js';
+
+// ... (existing imports)
+
     // Handle file upload or git clone
     if (source_type === 'github' && github_url) {
-      await cloneRepo(github_url, projectPath, github_branch || undefined);
+      let authUrl = github_url;
+      try {
+        const installId = await getSetting('github_installation_id');
+        if (installId) {
+           const token = await getInstallationToken(installId);
+           const urlObj = new URL(github_url);
+           urlObj.username = 'x-access-token';
+           urlObj.password = token;
+           authUrl = urlObj.toString();
+        }
+      } catch (err) {
+        console.warn('Failed to inject GitHub token, trying public clone:', err);
+      }
+      
+      await cloneRepo(authUrl, projectPath, github_branch || undefined);
     } else if (req.file) {
       // Extract zip file
       fs.mkdirSync(projectPath, { recursive: true });
