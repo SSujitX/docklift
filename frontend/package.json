@@ -3,11 +3,10 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "node --no-deprecation ./node_modules/next/dist/bin/next dev",
+    "dev": "bun run next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
-    "postinstall": "node -e \"const fs=require('fs');['node_modules/next/dist/server/web/sandbox/context.js','node_modules/next/dist/esm/server/web/sandbox/context.js'].forEach(f=>{if(fs.existsSync(f)){let c=fs.readFileSync(f,'utf8');c=c.replace(/'_extend',?/g,'');fs.writeFileSync(f,c)}})\""
+    "lint": "next lint"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
