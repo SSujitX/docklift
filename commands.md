@@ -48,3 +48,38 @@ sudo netstat -tulpn | grep 3001
 # Inspect the Docklift internal network
 docker network inspect docklift_network
 ```
+
+---
+
+### 🚀 Development Commands (Bun)
+```bash
+# Database management
+bunx prisma studio              # Open DB GUI
+bunx prisma db push             # Push schema changes
+bunx prisma generate            # Regenerate client
+
+# Frontend dev
+bun run dev                     # Start Next.js dev server
+bunx next dev -p 3001           # Custom port
+
+# Backend dev  
+bun run dev                     # Start with tsx watch
+
+# Build & lint
+bun run build                   
+bunx tsc --noEmit
+```
+
+### 📦 Update & Version Management (Bun)
+```bash
+# Update all packages to latest
+bunx npm-check-updates -u
+bun install
+
+# Version bumps
+npm version patch               # 0.1.5 → 0.1.6 (bug fixes)
+npm version minor               # 0.1.5 → 0.2.0 (new features)
+npm version major               # 0.1.5 → 1.0.0 (breaking changes)
+npm version 0.1.6               # Set specific version
+npm version patch --no-git-tag-version  # No git commit/tag
+```
