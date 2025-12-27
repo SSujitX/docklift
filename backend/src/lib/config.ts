@@ -11,4 +11,5 @@ export const config = {
   githubClientSecret: process.env.DOCKLIFT_GITHUB_CLIENT_SECRET || '',
   githubPrivateKeyPath: process.env.DOCKLIFT_GITHUB_PRIVATE_KEY_PATH || './github-app.pem',
   frontendUrl: process.env.DOCKLIFT_FRONTEND_URL || 'http://localhost:3000',
+  nginxConfPath: path.resolve(process.env.NGINX_CONF_PATH || './nginx-proxy/conf.d'),
 };

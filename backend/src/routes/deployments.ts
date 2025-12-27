@@ -67,6 +67,11 @@ router.get('/:projectId/services', async (req: Request, res: Response) => {
   }
 });
 
+import { updateServiceDomain } from '../services/nginx.js';
+// ... existing imports
+
+// ...
+
 // Update service domain
 router.put('/:projectId/services/:serviceId', async (req: Request, res: Response) => {
   try {
@@ -80,6 +85,15 @@ router.put('/:projectId/services/:serviceId', async (req: Request, res: Response
 
     if (count.count === 0) {
       return res.status(404).json({ error: 'Service not found or access denied' });
+    }
+    
+    // Fetch updated service to generate Nginx config
+    const service = await prisma.service.findUnique({
+      where: { id: serviceId }
+    });
+    
+    if (service && service.container_name) {
+      await updateServiceDomain(service);
     }
 
     res.json({ success: true });
