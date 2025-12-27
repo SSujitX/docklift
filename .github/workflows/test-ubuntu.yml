@@ -28,14 +28,12 @@ jobs:
         run: |
           START_TIME=$(date +%s)
           chmod +x install.sh
-          sudo DOCKLIFT_CI_LOCAL=true ./install.sh 2>&1 | tee install_output.txt
+          sudo CI=true DOCKLIFT_CI_LOCAL=true ./install.sh 2>&1 | tee install_output.txt
           EXIT_CODE=${PIPESTATUS[0]}
           END_TIME=$(date +%s)
           echo "duration=$((END_TIME - START_TIME))" >> $GITHUB_OUTPUT
           echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
           exit $EXIT_CODE
-        env:
-          CI: true
         continue-on-error: true
 
       - name: Verify Installation
