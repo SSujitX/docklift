@@ -13,35 +13,21 @@ NC='\033[0m'
 # Track start time
 START_TIME=$(date +%s)
 
-# Format seconds to human readable
-format_duration() {
-    local seconds=$1
-    local hours=$((seconds / 3600))
-    local minutes=$(((seconds % 3600) / 60))
-    local secs=$((seconds % 60))
-    
-    if [ $hours -gt 0 ]; then
-        echo "${hours}h ${minutes}m ${secs}s"
-    elif [ $minutes -gt 0 ]; then
-        echo "${minutes}m ${secs}s"
+# Format seconds
+format_time() {
+    local s=$1
+    if [ $s -ge 3600 ]; then
+        printf "%dh %dm %ds" $((s/3600)) $((s%3600/60)) $((s%60))
+    elif [ $s -ge 60 ]; then
+        printf "%dm %ds" $((s/60)) $((s%60))
     else
-        echo "${secs}s"
+        printf "%ds" $s
     fi
 }
 
-# Create clickable link (OSC 8)
+# Clickable link (OSC 8)
 link() {
     printf '\033]8;;%s\033\\%s\033]8;;\033\\' "$1" "$2"
-}
-
-# Print step
-step() {
-    printf "  ${CYAN}[%s]${NC} %s" "$1" "$2"
-}
-
-# Print done
-done_step() {
-    echo -e " ${GREEN}done${NC}"
 }
 
 # Header
@@ -59,48 +45,42 @@ echo ""
 
 # Check root
 if [ "$EUID" -ne 0 ]; then
-    echo -e "  ${RED}Error: Please run as root (use sudo)${NC}"
+    echo -e "  ${RED}Error: Please run with sudo${NC}"
     exit 1
 fi
 
-echo -e "  ${BOLD}Starting Installation...${NC}"
+echo -e "  ${BOLD}Starting Installation${NC}"
 echo ""
 
-# Step 1: Check requirements
-step "1/5" "Checking requirements..."
+# Step 1: Requirements
+printf "  ${CYAN}[1/5]${NC} Checking requirements..."
 NEED_DOCKER=false
 NEED_GIT=false
+command -v docker &>/dev/null || NEED_DOCKER=true
+command -v git &>/dev/null || NEED_GIT=true
+echo -e " ${GREEN}done${NC}"
 
-if ! command -v docker &> /dev/null; then NEED_DOCKER=true; fi
-if ! command -v git &> /dev/null; then NEED_GIT=true; fi
-done_step
-
-# Install Docker if needed
 if [ "$NEED_DOCKER" = true ]; then
-    step "1/5" "Installing Docker..."
-    if [ "$CI" = "true" ]; then
-        curl -fsSL https://get.docker.com | sh -s -- --quiet > /dev/null 2>&1 || true
-    else
-        curl -fsSL https://get.docker.com | sh -s -- --quiet > /dev/null 2>&1
-    fi
+    printf "        Installing Docker..."
+    curl -fsSL https://get.docker.com | sh -s -- --quiet >/dev/null 2>&1 || true
     systemctl enable docker >/dev/null 2>&1 || true
     systemctl start docker >/dev/null 2>&1 || true
-    done_step
+    echo -e " ${GREEN}done${NC}"
 fi
 
-# Install Git if needed
 if [ "$NEED_GIT" = true ]; then
-    step "1/5" "Installing Git..."
+    printf "        Installing Git..."
     apt-get update -qq && apt-get install -y -qq git >/dev/null 2>&1 || \
     yum install -y git >/dev/null 2>&1 || \
     apk add --no-cache git >/dev/null 2>&1
-    done_step
+    echo -e " ${GREEN}done${NC}"
 fi
 
-# Step 2: Fetch code
+# Step 2: Fetch
 INSTALL_DIR="/opt/docklift"
+FETCH_START=$(date +%s)
 
-step "2/5" "Fetching code..."
+printf "  ${CYAN}[2/5]${NC} Fetching code..."
 if [ "$DOCKLIFT_CI_LOCAL" = "true" ]; then
     mkdir -p "$INSTALL_DIR"
     cp -r . "$INSTALL_DIR/"
@@ -114,32 +94,32 @@ else
     git clone -q https://github.com/SSujitX/docklift.git "$INSTALL_DIR" 2>/dev/null
     cd "$INSTALL_DIR"
 fi
-done_step
+
+FETCH_END=$(date +%s)
+FETCH_TIME=$((FETCH_END - FETCH_START))
+echo -e " ${GREEN}done${NC} ${DIM}($(format_time $FETCH_TIME))${NC}"
 
 # Show version
 VERSION=$(grep -o '"version": *"[^"]*"' "$INSTALL_DIR/backend/package.json" 2>/dev/null | head -1 | cut -d'"' -f4 || echo "1.0.0")
-echo -e "  ${DIM}v${VERSION}${NC}"
-echo ""
+echo -e "        ${DIM}Version: ${VERSION}${NC}"
 
 # Step 3: Directories
-step "3/5" "Creating directories..."
+printf "  ${CYAN}[3/5]${NC} Creating directories..."
 mkdir -p "$INSTALL_DIR/data" "$INSTALL_DIR/deployments" "$INSTALL_DIR/nginx-proxy/conf.d"
-done_step
+echo -e " ${GREEN}done${NC}"
 
-# Step 4: Network cleanup
-step "4/5" "Cleaning network..."
+# Step 4: Network
+printf "  ${CYAN}[4/5]${NC} Cleaning network..."
 docker network rm docklift_network 2>/dev/null || true
-done_step
+echo -e " ${GREEN}done${NC}"
 
-# Step 5: Build and launch
+# Step 5: Build
 BUILD_START=$(date +%s)
 echo ""
-step "5/5" "Building containers..."
-echo ""
-echo -e "  ${DIM}This may take a few minutes...${NC}"
-echo ""
+echo -e "  ${CYAN}[5/5]${NC} Building containers..."
+echo -e "        ${DIM}This may take a few minutes...${NC}"
 
-# Default nginx config
+# Nginx config
 rm -f "$INSTALL_DIR/nginx-proxy/conf.d/"*.conf 2>/dev/null || true
 cat > "$INSTALL_DIR/nginx-proxy/conf.d/default.conf" <<EOF
 server {
@@ -154,9 +134,10 @@ LOG_FILE=$(mktemp)
 docker compose up -d --build --remove-orphans > "$LOG_FILE" 2>&1
 EXIT_CODE=$?
 BUILD_END=$(date +%s)
-BUILD_DURATION=$((BUILD_END - BUILD_START))
+BUILD_TIME=$((BUILD_END - BUILD_START))
 
 if [ $EXIT_CODE -ne 0 ]; then
+    echo ""
     echo -e "  ${RED}Build failed!${NC}"
     cat "$LOG_FILE"
     rm "$LOG_FILE"
@@ -164,57 +145,42 @@ if [ $EXIT_CODE -ne 0 ]; then
 fi
 rm "$LOG_FILE"
 
-# Wait for containers
 sleep 5
 
-# Total time
+# Results
 END_TIME=$(date +%s)
-TOTAL_DURATION=$((END_TIME - START_TIME))
-
-# Check status
+TOTAL_TIME=$((END_TIME - START_TIME))
 RUNNING=$(docker compose ps --format "table {{.Name}}\t{{.Status}}" 2>/dev/null | grep -c "Up" || echo "0")
 
+echo ""
 if [ "$RUNNING" -gt 0 ]; then
-    echo ""
     echo -e "  ${GREEN}${BOLD}Installation Complete!${NC}"
     echo ""
-    echo -e "  ${DIM}Build: $(format_duration $BUILD_DURATION) | Total: $(format_duration $TOTAL_DURATION)${NC}"
+    echo -e "  ${DIM}Build: $(format_time $BUILD_TIME) | Total: $(format_time $TOTAL_TIME)${NC}"
     echo ""
     
-    # Skip IP display in CI
     if [ "$CI" != "true" ]; then
-        # Get public IP
-        PUBLIC_IPV4=$(curl -4 -s --connect-timeout 2 https://api.ipify.org 2>/dev/null || echo "")
+        PUBLIC_IP=$(curl -4 -s --connect-timeout 2 https://api.ipify.org 2>/dev/null || echo "")
+        LOCAL_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
         
-        # Get local IPs
-        LOCAL_IPS=$(hostname -I 2>/dev/null | tr ' ' '\n' | grep -v '^$' | head -3)
+        echo -e "  ${BOLD}Access Docklift:${NC}"
+        echo ""
         
-        # Only show section if we have IPs
-        if [ -n "$PUBLIC_IPV4" ] || [ -n "$LOCAL_IPS" ]; then
-            echo -e "  ${BOLD}Access Docklift:${NC}"
-            echo ""
-            
-            if [ -n "$PUBLIC_IPV4" ]; then
-                URL="http://${PUBLIC_IPV4}:8080"
-                echo -e "  ${CYAN}>${NC} $(link "$URL" "$URL")"
-            fi
-            
-            # Local IPs
-            echo "$LOCAL_IPS" | while read ip; do
-                if [ -n "$ip" ]; then
-                    URL="http://${ip}:8080"
-                    echo -e "  ${DIM}>${NC} $(link "$URL" "$URL")"
-                fi
-            done
-            echo ""
+        if [ -n "$PUBLIC_IP" ]; then
+            URL="http://${PUBLIC_IP}:8080"
+            echo -e "  ${CYAN}Public:${NC}  $(link "$URL" "$URL")"
         fi
+        
+        if [ -n "$LOCAL_IP" ] && [ "$LOCAL_IP" != "$PUBLIC_IP" ]; then
+            URL="http://${LOCAL_IP}:8080"
+            echo -e "  ${DIM}Local:${NC}   $(link "$URL" "$URL")"
+        fi
+        echo ""
     else
         echo -e "  ${DIM}CI environment - containers ready${NC}"
         echo ""
     fi
 else
-    echo -e "  ${RED}Something went wrong. Containers not running.${NC}"
-    echo -e "  Run: cd $INSTALL_DIR && docker compose logs"
+    echo -e "  ${RED}Error: Containers not running${NC}"
+    echo -e "  ${DIM}Run: cd $INSTALL_DIR && docker compose logs${NC}"
 fi
-echo ""
-
