@@ -337,31 +337,43 @@ router.post('/purge', async (req: Request, res: Response) => {
 // POST /api/system/reboot - Reboot the server
 router.post('/reboot', async (req: Request, res: Response) => {
   try {
-    if (process.platform !== 'linux') {
-      return res.status(400).json({ error: 'Reboot is only supported on Linux' });
+    const isWindows = os.platform() === "win32";
+    const isMac = os.platform() === "darwin";
+
+    if (isWindows || isMac) {
+      // Dev environment stimulation
+      console.log('Reboot requested (Dev Mode: Simulation)');
+      await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate delay
+      return res.json({ message: 'Dev Mode: Simulated Server Reboot successful.' });
     }
-    
-    // Asynchronous reboot to allow response to be sent
-    exec('sudo reboot');
-    
-    res.json({ message: 'Server reboot initiated' });
+
+    // Production Linux Reboot
+    await execAsync('sudo reboot');
+    res.json({ message: 'System is rebooting now...' });
   } catch (error) {
     console.error('Reboot error:', error);
     res.status(500).json({ error: 'Failed to initiate reboot' });
   }
 });
 
-// POST /api/system/reset - Reset Docklift services
+// POST /api/system/reset - Reset Docklift services (OS aware)
 router.post('/reset', async (req: Request, res: Response) => {
   try {
-    // This will attempt to restart the Docklift container stack if running in Docker
-    // or just restart the services if managed by systemd/pm2
-    // For now, let's assume we want to restart the core services
+    const isWindows = os.platform() === "win32";
+    
+    if (isWindows) {
+      console.log('Reset Service requested (Dev Mode: Simulation)');
+      // Could optionally try to restart the node process itself, but that kills the dev server
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      return res.json({ message: 'Dev Mode: Simulated Service Reset complete.' });
+    }
+
+    // Production: Attempt to restart docker containers
     try {
       await execAsync('docker restart docklift-backend docklift-frontend docklift-proxy docklift-webui || true');
-      res.json({ message: 'Services reset successfully' });
+      res.json({ message: 'Services reset command sent successfully' });
     } catch (err: any) {
-      res.json({ message: 'Services reset triggered', warning: 'Some services may not have restarted' });
+      res.json({ message: 'Services reset triggered', warning: 'Orchestrator command sent (check logs)' });
     }
   } catch (error) {
     console.error('Reset error:', error);

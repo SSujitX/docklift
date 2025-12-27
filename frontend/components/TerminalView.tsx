@@ -50,12 +50,20 @@ export function TerminalView() {
   const [isProcessing, setIsProcessing] = useState(false);
   
   const scrollRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [logs]);
+
+  // Focus input on mount and after execution
+  useEffect(() => {
+    if (!executing && inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, [executing]);
 
   const handleExecute = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -251,6 +259,7 @@ export function TerminalView() {
             <form onSubmit={handleExecute} className="relative flex items-center gap-4 bg-[#111] rounded-2xl px-5 py-3 border border-[#222] focus-within:border-cyan-500/40 transition-all shadow-2xl">
               <span className="text-cyan-500 font-black text-xl select-none group-focus-within:scale-110 transition-transform duration-300">λ</span>
               <input 
+                ref={inputRef}
                 type="text" 
                 value={command}
                 onChange={(e) => setCommand(e.target.value)}
@@ -258,6 +267,7 @@ export function TerminalView() {
                 className="flex-1 bg-transparent border-none outline-none text-[#eee] font-mono text-[15px] placeholder:text-[#333] tracking-tight"
                 autoComplete="off"
                 disabled={executing}
+                autoFocus
               />
               <button 
                 type="submit" 
