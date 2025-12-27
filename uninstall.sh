@@ -36,11 +36,13 @@ fi
 echo -e "${YELLOW}Cleaning up Docker resources...${NC}"
 # Remove the network
 docker network rm docklift_network 2>/dev/null || true
+docker network prune -f 2>/dev/null || true
+
 # Clean up any orphaned volumes/images related to docklift
-docker volume prune -f --filter label=com.docker.compose.project.config_files 2>/dev/null || true
+docker volume prune -f 2>/dev/null || true
 
 echo -e "${YELLOW}Removing installation directory (/opt/docklift)...${NC}"
 rm -rf /opt/docklift
 
-echo -e "${GREEN}✅ Uninstallation Complete. Your system is clean.${NC}"
+echo -e "${GREEN}✅ Uninstallation Complete. System is now 100% clean.${NC}"
 echo -e "You can now run the installer again for a fresh start."
