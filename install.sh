@@ -134,6 +134,9 @@ echo -e "${DIM}      (This takes a moment for the first build)${NC}"
 # Run compose up
 LOG_FILE=$(mktemp)
 (
+    # Force clean Nginx configs (Backend will regenerate valid ones)
+    rm -f "$INSTALL_DIR/nginx-proxy/conf.d/"*.conf 2>/dev/null || true
+
     docker compose up -d --build --remove-orphans > "$LOG_FILE" 2>&1
 ) &
 pid=$!
