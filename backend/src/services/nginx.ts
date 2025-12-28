@@ -53,12 +53,37 @@ export async function updateServiceDomain(service: any) {
   // Use container name and internal port for routing within the docker network
   const upstream = `${service.container_name}:${service.internal_port}`;
   
+  // Parse domains and generate www variants for redirect
+  const domainsArray = service.domain.split(',').map((d: string) => d.trim()).filter(Boolean);
+  
+  // Separate main domains from www domains
+  const mainDomains: string[] = [];
+  const wwwRedirects: string[] = [];
+  
+  for (const domain of domainsArray) {
+    if (domain.startsWith('www.')) {
+      // If user explicitly adds www, add it to main domains
+      mainDomains.push(domain);
+    } else {
+      // For non-www domains, add to main and create www redirect
+      mainDomains.push(domain);
+      // Only add www redirect for actual domains (not IPs or localhost)
+      if (!domain.match(/^[\d.]+$/) && !domain.includes('localhost')) {
+        wwwRedirects.push(`www.${domain}`);
+      }
+    }
+  }
+  
+  const mainDomainsStr = mainDomains.join(' ');
+  const wwwDomainsStr = wwwRedirects.join(' ');
+  
   // Use a variable for proxy_pass and add a resolver. 
   // This prevents Nginx from failing to start/reload if the container is not yet in DNS.
-  const content = `
+  let content = `
+# Main server block for ${service.name}
 server {
     listen 80;
-    server_name ${domains};
+    server_name ${mainDomainsStr};
 
     # Docker internal DNS resolver
     resolver 127.0.0.11 valid=30s ipv6=off;
@@ -77,9 +102,30 @@ server {
 }
 `;
 
+  // Add www redirect block if there are www domains to redirect
+  if (wwwRedirects.length > 0) {
+    content += `
+# WWW to non-WWW redirect for ${service.name}
+server {
+    listen 80;
+    server_name ${wwwDomainsStr};
+    
+    # 301 permanent redirect to non-www
+    return 301 http://$host$request_uri;
+}
+`;
+    // Fix: return 301 should redirect to the non-www version
+    // We need to extract the domain without www
+    content = content.replace(
+      'return 301 http://$host$request_uri;',
+      `return 301 $scheme://${mainDomains[0]}$request_uri;`
+    );
+  }
+
+
   try {
     fs.writeFileSync(confPath, content);
-    console.log(`Updated Nginx config for ${service.name} (${domains})`);
+    console.log(`Updated Nginx config for ${service.name} (${mainDomainsStr}${wwwRedirects.length > 0 ? ` + www redirect` : ''})`);
     await reloadNginx();
   } catch (error) {
     console.error('Failed to write Nginx config:', error);
