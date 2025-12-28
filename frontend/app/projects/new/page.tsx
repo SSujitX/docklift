@@ -79,7 +79,6 @@ function NewProjectContent() {
   const [name, setName] = useState("");
   const [githubUrl, setGithubUrl] = useState("");
   const [githubBranch, setGithubBranch] = useState("");
-  const [domain, setDomain] = useState("");
   const [files, setFiles] = useState<FileList | null>(null);
   const [dragActive, setDragActive] = useState(false);
 
@@ -226,7 +225,6 @@ function NewProjectContent() {
       formData.append("name", name);
       formData.append("source_type", sourceType === "public" ? "github" : sourceType);
       formData.append("project_type", projectType);
-      formData.append("domain", domain);
 
       if (sourceType === "github" || sourceType === "public") {
         formData.append("github_url", githubUrl);
@@ -521,22 +519,13 @@ function NewProjectContent() {
                     <h3 className="text-xl font-bold font-display">General Configuration</h3>
                   </div>
                   
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="grid grid-cols-1 gap-6">
                     <div className="space-y-2">
                       <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest ml-1 text-xs">Project Name</label>
                       <Input 
                         placeholder="my-cool-app" 
                         value={name}
                         onChange={(e) => setName(e.target.value)}
-                        className="h-12 bg-secondary/30 border-border/40 focus:border-cyan-500/50 rounded-xl px-4 font-bold" 
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest ml-1 text-xs">Custom Domain (Optional)</label>
-                      <Input 
-                        placeholder="app.example.com" 
-                        value={domain}
-                        onChange={(e) => setDomain(e.target.value)}
                         className="h-12 bg-secondary/30 border-border/40 focus:border-cyan-500/50 rounded-xl px-4 font-bold" 
                       />
                     </div>
