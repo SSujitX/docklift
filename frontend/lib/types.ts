@@ -18,7 +18,8 @@ export interface Project {
 export interface Deployment {
   id: string;
   project_id: string;
-  status: "queued" | "in_progress" | "success" | "failed";
+  status: "queued" | "in_progress" | "success" | "failed" | "pending";
+  trigger?: string;
   logs: string;
   created_at: string;
   finished_at: string | null;

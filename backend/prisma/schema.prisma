@@ -35,6 +35,7 @@ model Deployment {
   id          String    @id @default(uuid())
   project_id  String
   status      String?
+  trigger     String?   @default("manual")
   logs        String?
   created_at  DateTime? @default(now())
   finished_at DateTime?

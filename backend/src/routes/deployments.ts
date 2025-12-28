@@ -126,10 +126,13 @@ router.post('/:projectId/deploy', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'No Dockerfile found in project. Docklift is based on Docker and requires a Dockerfile to automatically build and run your application.' });
     }
     
+    const { trigger } = req.body;
+
     const deployment = await prisma.deployment.create({
       data: {
         project_id: projectId,
         status: 'in_progress',
+        trigger: trigger || 'manual',
       },
     });
     
@@ -410,6 +413,7 @@ router.post('/:projectId/stop', async (req: Request, res: Response) => {
       data: {
         project_id: projectId,
         status: 'pending',
+        trigger: 'stop',
         logs: '',
       },
     });
@@ -498,6 +502,7 @@ router.post('/:projectId/restart', async (req: Request, res: Response) => {
       data: {
         project_id: projectId,
         status: 'pending',
+        trigger: 'restart',
         logs: '',
       },
     });
@@ -581,6 +586,7 @@ router.post('/:projectId/redeploy', async (req: Request, res: Response) => {
       data: {
         project_id: projectId,
         status: 'pending',
+        trigger: 'redeploy',
         logs: '',
       },
     });

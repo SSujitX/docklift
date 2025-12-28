@@ -48,6 +48,7 @@ import {
   Lock,
   Globe2,
   Rocket,
+  Calendar,
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -410,7 +411,11 @@ export default function ProjectDetail() {
         method = "DELETE";
       }
 
-      const res = await fetch(url, { method });
+      const res = await fetch(url, { 
+        method,
+        headers: action === "deploy" ? { "Content-Type": "application/json" } : undefined,
+        body: action === "deploy" ? JSON.stringify({ trigger: "manual" }) : undefined
+      });
       
       if (!res.ok) {
         if (action !== "delete") {
@@ -897,21 +902,35 @@ export default function ProjectDetail() {
                           terminalElement?.scrollIntoView({ behavior: 'smooth', block: 'center' });
                         }}
                       >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <span className={cn(
-                              "text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider",
-                              deployment.status === "success" ? "bg-emerald-500/10 text-emerald-500" :
-                              deployment.status === "failed" ? "bg-red-500/10 text-red-500" : "bg-amber-500/10 text-amber-500"
-                            )}>
-                              {deployment.status}
+                        <div className="flex items-start justify-between">
+                          <div className="flex flex-col gap-1">
+                             <span className="font-bold text-sm tracking-tight">
+                              {deployment.trigger === 'webhook' ? 'Auto-Deploy (GitHub)' :
+                               deployment.trigger === 'restart' ? 'Restart Action' :
+                               deployment.trigger === 'stop' ? 'Stop Action' :
+                               deployment.trigger === 'redeploy' ? 'Manual Redeploy' : 'Manual Deployment'}
                             </span>
-                            <span className="text-[10px] font-mono text-muted-foreground"># {deployment.id.split('-')[0]}</span>
+                            <div className="flex items-center gap-2">
+                              <span className={cn(
+                                "text-[10px] font-bold px-1.5 py-0.5 rounded-md uppercase tracking-wider",
+                                deployment.status === "success" ? "bg-emerald-500/10 text-emerald-500" :
+                                deployment.status === "failed" ? "bg-red-500/10 text-red-500" : "bg-amber-500/10 text-amber-500"
+                              )}>
+                                {deployment.status}
+                              </span>
+                              <span className="text-[10px] font-mono text-muted-foreground opacity-60"># {deployment.id.split('-')[0]}</span>
+                            </div>
                           </div>
-                          <span className="text-[10px] font-medium text-muted-foreground flex items-center gap-1.5">
-                            <Clock className="h-3 w-3" />
-                            {new Date(deployment.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </span>
+                          <div className="flex flex-col items-end gap-1">
+                            <span className="text-[10px] font-medium text-muted-foreground flex items-center gap-1.5 bg-secondary/30 px-2 py-0.5 rounded-full border border-border/20">
+                              <Clock className="h-3 w-3" />
+                              {new Date(deployment.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                             <span className="text-[10px] text-muted-foreground/60 flex items-center gap-1.5 mr-1">
+                              <Calendar className="h-3 w-3" />
+                              {new Date(deployment.created_at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
+                            </span>
+                          </div>
                         </div>
                         <p className="text-[11px] text-muted-foreground line-clamp-1 italic">
                           Click to restore log output to terminal

@@ -95,7 +95,9 @@ bunx tsc --noEmit
 ```bash
 bun outdated
 bun update
-bun install next@latest eslint-config-next@latest
+
+bun update next@latest react@latest react-dom@latest eslint-config-next@latest
+
 ```
 
 ```bash

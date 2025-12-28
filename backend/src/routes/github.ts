@@ -702,6 +702,7 @@ router.post('/webhook', async (req: Request, res: Response) => {
       fetch(deployUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ trigger: 'webhook' }),
       }).catch(err => {
         console.error(`[Auto-Deploy] Failed to trigger deploy for ${project.name}:`, err.message);
       });
