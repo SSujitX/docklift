@@ -10,6 +10,7 @@ import { cloneRepo, getCurrentBranch } from '../services/git.js';
 import * as dockerService from '../services/docker.js';
 import { getInstallationToken, getSetting } from './github.js';
 import { cleanupServiceDomain } from '../services/nginx.js';
+import crypto from 'crypto';
 
 const router = Router();
 const upload = multer({ dest: 'uploads/' });
@@ -315,4 +316,87 @@ router.delete('/:id/env/:envId', async (req: Request, res: Response) => {
   }
 });
 
+// ========================================
+// Auto-Deploy Management
+// ========================================
+
+// Helper: Generate random webhook secret
+function generateWebhookSecret(): string {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+// PATCH /:id/auto-deploy - Toggle auto-deploy for a project
+router.patch('/:id/auto-deploy', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { enabled } = req.body;
+    
+    const project = await prisma.project.findUnique({
+      where: { id },
+    });
+    
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+    
+    // Check if project is from GitHub
+    if (project.source_type !== 'github') {
+      return res.status(400).json({ error: 'Auto-deploy is only available for GitHub projects' });
+    }
+    
+    // Generate webhook secret if enabling and not already set
+    let webhookSecret = project.webhook_secret;
+    if (enabled && !webhookSecret) {
+      webhookSecret = generateWebhookSecret();
+    }
+    
+    const updated = await prisma.project.update({
+      where: { id },
+      data: {
+        auto_deploy: enabled,
+        webhook_secret: webhookSecret,
+      },
+    });
+    
+    res.json({
+      auto_deploy: updated.auto_deploy,
+      webhook_secret: updated.webhook_secret,
+      webhook_url: enabled ? `/api/github/webhook/${id}` : null,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to update auto-deploy settings' });
+  }
+});
+
+// GET /:id/auto-deploy - Get auto-deploy status
+router.get('/:id/auto-deploy', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    
+    const project = await prisma.project.findUnique({
+      where: { id },
+      select: {
+        auto_deploy: true,
+        webhook_secret: true,
+        source_type: true,
+      },
+    });
+    
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+    
+    res.json({
+      auto_deploy: project.auto_deploy || false,
+      webhook_secret: project.auto_deploy ? project.webhook_secret : null,
+      webhook_url: project.auto_deploy ? `/api/github/webhook/${id}` : null,
+      available: project.source_type === 'github',
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to get auto-deploy status' });
+  }
+});
+
 export default router;
+

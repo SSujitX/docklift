@@ -5,6 +5,7 @@ import path from 'path';
 import jwt from 'jsonwebtoken';
 import prisma from '../lib/prisma.js';
 import { config } from '../lib/config.js';
+import crypto from 'crypto';
 
 const router = Router();
 const GITHUB_API_URL = 'https://api.github.com';
@@ -126,7 +127,6 @@ router.post('/manifest', async (req: Request, res: Response) => {
     const serverUrl = `${protocol}://${host}`;
     
     // Build the manifest
-    // Note: hook_attributes removed - webhooks can be configured later in production
     const manifest = {
       name: `docklift-${sanitizedName}`,
       url: 'https://github.com/SSujitX/docklift',
@@ -134,6 +134,12 @@ router.post('/manifest', async (req: Request, res: Response) => {
       callback_urls: [`${serverUrl}/api/github/manifest/callback`],
       // setup_url is called after app installation - redirects user back to Docklift
       setup_url: `${serverUrl}/api/github/setup`,
+      // Webhook configuration - receives push events for auto-deploy
+      hook_attributes: {
+        url: `${serverUrl}/api/github/webhook`,
+        active: true
+      },
+      default_events: ['push'],
       public: false,
       default_permissions: {
         contents: 'read',
@@ -591,4 +597,131 @@ router.post('/disconnect', async (req: Request, res: Response) => {
   }
 });
 
+// ========================================
+// GitHub Webhook for Auto-Deploy
+// ========================================
+
+// Track recent deploys for debouncing (project_id -> last deploy timestamp)
+const recentDeploys = new Map<string, number>();
+const DEPLOY_COOLDOWN_MS = 10000; // 10 seconds
+
+// Helper: Verify GitHub webhook signature
+function verifyWebhookSignature(payload: string, signature: string, secret: string): boolean {
+  const hmac = crypto.createHmac('sha256', secret);
+  const digest = 'sha256=' + hmac.update(payload).digest('hex');
+  
+  try {
+    return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(digest));
+  } catch {
+    return false;
+  }
+}
+
+// POST /webhook - Global webhook endpoint for GitHub App
+// Receives push events for ALL repos connected to the app
+// Matches projects by repository URL and triggers auto-deploy if enabled
+router.post('/webhook', async (req: Request, res: Response) => {
+  try {
+    const signature = req.headers['x-hub-signature-256'] as string;
+    const event = req.headers['x-github-event'] as string;
+    
+    // Only handle push events
+    if (event !== 'push') {
+      return res.status(200).json({ message: `Ignoring ${event} event` });
+    }
+    
+    const payload = req.body;
+    const repoUrl = payload.repository?.clone_url || payload.repository?.html_url;
+    const pushedBranch = payload.ref?.replace('refs/heads/', '');
+    
+    if (!repoUrl) {
+      return res.status(200).json({ message: 'No repository URL in payload' });
+    }
+    
+    // Normalize URL for matching (remove .git suffix if present)
+    const normalizedUrl = repoUrl.replace(/\.git$/, '');
+    
+    // Find all projects that match this repo URL
+    const projects = await prisma.project.findMany({
+      where: {
+        source_type: 'github',
+        auto_deploy: true,
+        OR: [
+          { github_url: repoUrl },
+          { github_url: normalizedUrl },
+          { github_url: `${normalizedUrl}.git` },
+        ],
+      },
+    });
+    
+    if (projects.length === 0) {
+      console.log(`[Webhook] No projects with auto-deploy enabled for repo: ${repoUrl}`);
+      return res.status(200).json({ message: 'No matching projects with auto-deploy enabled' });
+    }
+    
+    // Verify webhook signature using the global webhook secret
+    const webhookSecret = await getSetting('github_webhook_secret');
+    if (webhookSecret && signature) {
+      const rawBody = JSON.stringify(req.body);
+      if (!verifyWebhookSignature(rawBody, signature, webhookSecret)) {
+        console.warn(`[Webhook] Signature verification failed`);
+        return res.status(401).json({ error: 'Invalid signature' });
+      }
+    }
+    
+    const triggered: string[] = [];
+    const skipped: string[] = [];
+    
+    for (const project of projects) {
+      // Check branch match
+      if (project.github_branch && pushedBranch !== project.github_branch) {
+        skipped.push(`${project.name} (branch mismatch: ${pushedBranch} != ${project.github_branch})`);
+        continue;
+      }
+      
+      // Debounce: Check cooldown
+      const lastDeploy = recentDeploys.get(project.id);
+      const now = Date.now();
+      
+      if (lastDeploy && (now - lastDeploy) < DEPLOY_COOLDOWN_MS) {
+        skipped.push(`${project.name} (cooldown)`);
+        continue;
+      }
+      
+      // Mark deploy time
+      recentDeploys.set(project.id, now);
+      
+      // Log the trigger
+      const commitMessage = payload.head_commit?.message || 'No message';
+      const pusher = payload.pusher?.name || 'Unknown';
+      console.log(`[Auto-Deploy] Triggered for ${project.name} by ${pusher}: "${commitMessage.substring(0, 50)}..."`);
+      
+      // Trigger deploy
+      const deployUrl = `http://localhost:${process.env.PORT || 4000}/api/deployments/${project.id}/deploy`;
+      
+      fetch(deployUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      }).catch(err => {
+        console.error(`[Auto-Deploy] Failed to trigger deploy for ${project.name}:`, err.message);
+      });
+      
+      triggered.push(project.name);
+    }
+    
+    res.status(200).json({ 
+      message: triggered.length > 0 ? 'Auto-deploy triggered' : 'No deployments triggered',
+      triggered,
+      skipped,
+      branch: pushedBranch,
+      commit: payload.head_commit?.id?.substring(0, 7) || 'unknown',
+    });
+    
+  } catch (error) {
+    console.error('Webhook error:', error);
+    res.status(500).json({ error: 'Webhook processing failed' });
+  }
+});
+
 export default router;
+

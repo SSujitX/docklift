@@ -19,6 +19,8 @@ model Project {
   port           Int?
   status         String?
   container_name String?
+  auto_deploy    Boolean?      @default(false)
+  webhook_secret String?
   created_at     DateTime?     @default(now())
   updated_at     DateTime?     @default(now()) @updatedAt
   deployments    Deployment[]

@@ -47,6 +47,7 @@ import {
   Plus,
   Lock,
   Globe2,
+  Rocket,
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -209,6 +210,10 @@ export default function ProjectDetail() {
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
 
+  // Auto-deploy state
+  const [autoDeploy, setAutoDeploy] = useState(false);
+  const [autoDeployLoading, setAutoDeployLoading] = useState(false);
+
   // Fetch server IP on mount
   useEffect(() => {
     const fetchServerIP = async () => {
@@ -274,6 +279,49 @@ export default function ProjectDetail() {
     const interval = setInterval(fetchProject, pollInterval);
     return () => clearInterval(interval);
   }, [fetchProject, project?.status]);
+
+  // Fetch auto-deploy status
+  useEffect(() => {
+    if (!projectId) return;
+    
+    const fetchAutoDeploy = async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/projects/${projectId}/auto-deploy`);
+        if (res.ok) {
+          const data = await res.json();
+          setAutoDeploy(data.auto_deploy || false);
+        }
+      } catch (error) {
+        console.error('Failed to fetch auto-deploy status:', error);
+      }
+    };
+    
+    fetchAutoDeploy();
+  }, [projectId]);
+
+  // Toggle auto-deploy handler
+  const handleAutoDeployToggle = async (enabled: boolean) => {
+    setAutoDeployLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/api/projects/${projectId}/auto-deploy`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled }),
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        setAutoDeploy(data.auto_deploy);
+        toast.success(enabled ? 'Auto-deploy enabled!' : 'Auto-deploy disabled');
+      } else {
+        toast.error('Failed to update auto-deploy');
+      }
+    } catch (error) {
+      toast.error('Failed to update auto-deploy');
+    } finally {
+      setAutoDeployLoading(false);
+    }
+  };
 
   const confirmAction = (action: string) => {
     setPendingAction(action);
@@ -758,6 +806,40 @@ export default function ProjectDetail() {
                         {project.github_branch}
                       </div>
                     </div>
+                  </div>
+                </div>
+
+                {/* Auto-Deploy Section */}
+                <div className="border-t border-border/40 p-6">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-lg bg-emerald-500/10">
+                        <Rocket className="h-4 w-4 text-emerald-500" />
+                      </div>
+                      <div>
+                        <span className="font-semibold">Auto-Deploy</span>
+                        <p className="text-xs text-muted-foreground">
+                          {autoDeploy 
+                            ? "Pushes to this branch will trigger automatic deployment" 
+                            : "Enable to auto-redeploy when commits are pushed"}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleAutoDeployToggle(!autoDeploy)}
+                      disabled={autoDeployLoading}
+                      className={cn(
+                        "relative h-6 w-11 rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500",
+                        autoDeploy ? "bg-emerald-500" : "bg-secondary"
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200",
+                          autoDeploy ? "translate-x-5" : "translate-x-0"
+                        )}
+                      />
+                    </button>
                   </div>
                 </div>
               </Card>
