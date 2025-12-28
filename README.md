@@ -27,7 +27,8 @@ No vendor lock-in, which means all your application data, configurations, and Do
 - **🐳 Docker Native** - Requires a `Dockerfile` in your project; Docklift generates `docker-compose.yml` automatically. 
 - **🌐 Automatic Port Management** - No need to worry about port conflicts; Docklift handles them.
 - **🔄 Zero-Downtime Redeploys** - Rebuild and restart containers seamlessly.
-- **📜 Live Build Logs** - Watch your application build in real-time.
+- **Live Build Logs** - Watch your application build in real-time.
+- **🔄 Auto-Deploy (Webhooks)** - Automatically redeploy when you push code to GitHub.
 - **🐙 GitHub Integration** - Private repository support via GitHub Apps.
 - **📊 System Monitoring** - Real-time CPU, RAM, GPU, disk, and network stats.
 - **💻 Web Terminal** - Full SSH-like terminal access in your browser.
@@ -167,8 +168,9 @@ bun run dev
     *   **Private GitHub**: Connect the Docklift GitHub App.
     *   **Direct Upload**: Upload a ZIP file of your code (must include a `Dockerfile`).
 4.  Docklift will detect the branch (defaults to `main`).
-5.  Click **Deploy**.
-6.  Your app will be live at `http://localhost:<ASSIGNED_PORT>`.
+5.  **Enable Auto-Deploy (Optional)**: In project settings, toggle "Auto-Deploy" to automatically rebuild on every GitHub push.
+6.  Click **Deploy**.
+7.  Your app will be live at `http://localhost:<ASSIGNED_PORT>` or your custom domain.
 
 ---
 
