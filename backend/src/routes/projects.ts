@@ -151,7 +151,7 @@ router.get('/:id', async (req: Request, res: Response) => {
 // Create project
 router.post('/', upload.single('files'), async (req: Request, res: Response) => {
   try {
-    const { name, description, source_type, github_url, project_type, github_branch } = req.body;
+    const { name, description, source_type, github_url, project_type, github_branch, domain } = req.body;
     
     // Create project record
     const project = await prisma.project.create({
@@ -162,6 +162,7 @@ router.post('/', upload.single('files'), async (req: Request, res: Response) => 
         github_url: github_url || null,
         github_branch: github_branch || null,
         project_type: project_type || 'app',
+        domain: domain || null,
         status: 'pending',
       },
     });
@@ -206,7 +207,7 @@ router.post('/', upload.single('files'), async (req: Request, res: Response) => 
 // Update project
 router.patch('/:id', async (req: Request, res: Response) => {
   try {
-    const { name, description, github_url, project_type } = req.body;
+    const { name, description, github_url, project_type, domain } = req.body;
     
     const project = await prisma.project.update({
       where: { id: req.params.id },
@@ -215,6 +216,7 @@ router.patch('/:id', async (req: Request, res: Response) => {
         ...(description !== undefined && { description }),
         ...(github_url !== undefined && { github_url: github_url }),
         ...(project_type && { project_type: project_type }),
+        ...(domain !== undefined && { domain: domain }),
       },
     });
     

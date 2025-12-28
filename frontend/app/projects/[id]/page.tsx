@@ -515,9 +515,16 @@ export default function ProjectDetail() {
                 <h1 className="text-3xl font-bold tracking-tight">{project.name}</h1>
                 <StatusBadge status={project.status} />
               </div>
-              <p className="text-sm text-muted-foreground mt-1 flex items-center gap-2">
-                <span className="capitalize">{project.project_type}</span>
-                <span className="h-1 w-1 rounded-full bg-muted-foreground/30" />
+              <p className="text-sm text-muted-foreground mt-1 flex flex-wrap items-center gap-x-4 gap-y-1">
+                <span className="capitalize font-bold text-foreground/80">{project.project_type}</span>
+                <span className="flex items-center gap-1.5 opacity-70">
+                  <Calendar className="h-3.5 w-3.5" />
+                  Created {new Date(project.created_at).toLocaleString([], { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                </span>
+                <span className="flex items-center gap-1.5 opacity-70">
+                  <Clock className="h-3.5 w-3.5" />
+                  Updated {new Date(project.updated_at).toLocaleString([], { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                </span>
                 <span className="font-mono text-[10px] bg-secondary px-1.5 py-0.5 rounded uppercase tracking-wider">{project.id.split('-')[0]}</span>
               </p>
             </div>

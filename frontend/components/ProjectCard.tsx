@@ -25,7 +25,9 @@ import {
   XCircle,
   Globe,
   Server,
-  AlertTriangle
+  AlertTriangle,
+  Calendar,
+  Clock
 } from "lucide-react";
 import { API_URL } from "@/lib/utils";
 import { useState } from "react";
@@ -111,19 +113,32 @@ export function ProjectCard({ project, onRefresh }: ProjectCardProps) {
         }`} />
 
         {/* Identity Section */}
-        <div className="flex-1 min-w-[200px] flex items-center gap-4">
-           <h3 className="text-xl font-bold text-cyan-600 dark:text-cyan-400 truncate tracking-tight">
-             {project.name}
-           </h3>
-           
-           {project.status === "running" && (
-              <span className="text-[10px] font-extrabold px-2 py-1 rounded bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 uppercase tracking-widest shadow-sm">
-                Running
-              </span>
-           )}
+        <div className="flex-1 min-w-[200px] flex flex-col justify-center gap-1">
+           <div className="flex items-center gap-3">
+             <h3 className="text-xl font-bold text-cyan-600 dark:text-cyan-400 truncate tracking-tight">
+               {project.name}
+             </h3>
+             
+             {project.status === "running" && (
+                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 uppercase tracking-widest shadow-sm">
+                  Running
+                </span>
+             )}
+           </div>
+
+           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-muted-foreground/60 font-medium tracking-tight">
+             <div className="flex items-center gap-1.5">
+               <Calendar className="h-3 w-3" />
+               <span>Created: {new Date(project.created_at).toLocaleString([], { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+             </div>
+             <div className="flex items-center gap-1.5">
+               <Clock className="h-3 w-3" />
+               <span>Updated: {new Date(project.updated_at).toLocaleString([], { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+             </div>
+           </div>
            
            {project.domain && (
-             <div className="hidden lg:flex items-center gap-1.5 text-xs text-muted-foreground/80 hover:text-cyan-500 transition-colors">
+             <div className="hidden lg:flex items-center gap-1.5 text-xs text-muted-foreground/80 hover:text-cyan-500 transition-colors mt-1">
                <Globe className="h-3 w-3" />
                <span className="truncate max-w-[200px]">{project.domain}</span>
              </div>

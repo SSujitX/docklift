@@ -148,25 +148,38 @@ router.post('/:projectId/deploy', async (req: Request, res: Response) => {
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('Transfer-Encoding', 'chunked');
     
-    // Send initial chunk immediately to bypass any buffering
-    res.write('🚀 Starting deployment...\n');
-    
     const logs: string[] = [];
+    
+    // Helper to write logs to both response and DB logs array
+    const writeLog = (text: string) => {
+      res.write(text);
+      logs.push(text);
+    };
+
     let success = false;
     const servicesData: any[] = [];
     
+    // Send initial chunk
+    writeLog('🚀 Starting deployment...\n');
+    
     // Pull latest if GitHub project
     if (project.source_type === 'github' && project.github_url) {
-      await pullRepo(projectPath, res);
+      // Create a wrapper for pullRepo to capture logs
+      const pullResWrapper = {
+        write: (text: string) => writeLog(text),
+        end: () => {},
+        setHeader: () => {},
+      } as any;
+      await pullRepo(projectPath, pullResWrapper);
     }
     
-    res.write(`\n${'━'.repeat(50)}\n`);
-    res.write(`📦 DETECTED ${dockerfiles.length} DOCKERFILE(S)\n`);
-    res.write(`${'━'.repeat(50)}\n\n`);
+    writeLog(`\n${'━'.repeat(50)}\n`);
+    writeLog(`📦 DETECTED ${dockerfiles.length} DOCKERFILE(S)\n`);
+    writeLog(`${'━'.repeat(50)}\n\n`);
     
     for (const df of dockerfiles) {
-      res.write(`  🐳 ${df.name}: ${df.dockerfile_path}\n`);
-      res.write(`     Internal port: ${df.internal_port}\n`);
+      writeLog(`  🐳 ${df.name}: ${df.dockerfile_path}\n`);
+      writeLog(`     Internal port: ${df.internal_port}\n`);
       
       let service = await prisma.service.findFirst({
         where: { project_id: projectId, name: df.name },
@@ -179,6 +192,9 @@ router.post('/:projectId/deploy', async (req: Request, res: Response) => {
         const sanitizedName = df.name.substring(0, 50); 
         const containerName = `dl_${shortId}_${sanitizedName}`;
         
+        // If project has a domain and this is the first service being created, assign it
+        const shouldAssignProjectDomain = project.domain && !service && dockerfiles.indexOf(df) === 0;
+
         service = await prisma.service.create({
           data: {
             project_id: projectId,
@@ -187,10 +203,11 @@ router.post('/:projectId/deploy', async (req: Request, res: Response) => {
             container_name: containerName,
             internal_port: df.internal_port,
             port: port,
+            domain: shouldAssignProjectDomain ? project.domain : null,
             status: 'building',
           },
         });
-        res.write(`     Assigned new service: ${df.name} (Port: ${port})\n`);
+        writeLog(`     Assigned new service: ${df.name} (Port: ${port})${shouldAssignProjectDomain ? ` with domain: ${project.domain}` : ''}\n`);
       } else {
         // Migration: If existing service has long container name, shorten it
         const shortId = projectId.substring(0, 8);
@@ -198,12 +215,12 @@ router.post('/:projectId/deploy', async (req: Request, res: Response) => {
         const targetName = `dl_${shortId}_${sanitizedName}`;
         
         if (service.container_name !== targetName) {
-           res.write(`     🛠️ Migrating container name to shorter format...\n`);
+           writeLog(`     🛠️ Migrating container name to shorter format...\n`);
            
            // Force remove the old container name to free up ports
            const { execSync } = await import('child_process');
            try {
-              res.write(`     🛑 Removing old container: ${service.container_name}\n`);
+              writeLog(`     🛑 Removing old container: ${service.container_name}\n`);
               execSync(`docker rm -f ${service.container_name}`, { stdio: 'ignore' });
            } catch (e) {
               // Ignore if container doesn't exist
@@ -221,13 +238,13 @@ router.post('/:projectId/deploy', async (req: Request, res: Response) => {
             where: { id: service.id },
             data: { port, status: 'building' },
           });
-          res.write(`     Assigned missing port to service: ${df.name} (Port: ${port})\n`);
+          writeLog(`     Assigned missing port to service: ${df.name} (Port: ${port})\n`);
         } else {
           await prisma.service.update({
             where: { id: service.id },
             data: { status: 'building' },
           });
-          res.write(`     Updating existing service: ${df.name} (Port: ${service.port})\n`);
+          writeLog(`     Updating existing service: ${df.name} (Port: ${service.port})\n`);
         }
       }
       
@@ -238,15 +255,15 @@ router.post('/:projectId/deploy', async (req: Request, res: Response) => {
       });
     }
     
-    res.write(`\n${'─'.repeat(40)}\n`);
-    res.write(`📝 Generating docker-compose.yml...\n`);
+    writeLog(`\n${'─'.repeat(40)}\n`);
+    writeLog(`📝 Generating docker-compose.yml...\n`);
     
     const envVars = await prisma.envVariable.findMany({
       where: { project_id: projectId },
     });
     
     if (envVars.length > 0) {
-      res.write(`   🔐 Including ${envVars.length} environment variable(s)\n`);
+      writeLog(`   🔐 Including ${envVars.length} environment variable(s)\n`);
     }
     
     generateCompose(projectId, projectPath, servicesData, envVars.map(v => ({
@@ -255,7 +272,7 @@ router.post('/:projectId/deploy', async (req: Request, res: Response) => {
       is_build_arg: v.is_build_arg ?? false,
       is_runtime: v.is_runtime ?? true,
     })), project.project_type ?? 'app');
-    res.write(`✅ docker-compose.yml created with ${servicesData.length} service(s)\n\n`);
+    writeLog(`✅ docker-compose.yml created with ${servicesData.length} service(s)\n\n`);
     
     // Patch middleware host restrictions for local access
     const allDomains: string[] = [];
@@ -281,12 +298,12 @@ router.post('/:projectId/deploy', async (req: Request, res: Response) => {
         port: svc.port || 3000,
         domains: allDomains,
       });
-      logMiddlewareBypassResult(result, (msg) => res.write(msg));
+      logMiddlewareBypassResult(result, (msg) => writeLog(msg));
     }
     
-    res.write(`${'─'.repeat(40)}\n`);
-    res.write(`🚀 Starting containers...\n`);
-    res.write(`${'─'.repeat(40)}\n\n`);
+    writeLog(`${'─'.repeat(40)}\n`);
+    writeLog(`🚀 Starting containers...\n`);
+    writeLog(`${'─'.repeat(40)}\n\n`);
     
     // Run docker compose up
     const dockerProcess = spawn('docker', ['compose', '-p', projectId, 'up', '-d', '--build'], {
@@ -327,7 +344,26 @@ router.post('/:projectId/deploy', async (req: Request, res: Response) => {
       // Force final sync
       await syncLogsToDb(true);
       
-      // Update statuses
+      if (success) {
+        // Use the request host (e.g., server IP) instead of localhost
+        const host = req.headers.host?.split(':')[0] || 'localhost';
+        
+        writeLog(`\n${'━'.repeat(50)}\n`);
+        writeLog(`✅ DEPLOY SUCCESSFUL!\n`);
+        writeLog(`${'━'.repeat(50)}\n\n`);
+        writeLog(`🌐 ENDPOINTS:\n`);
+        for (const svc of servicesData) {
+          if (svc.port) {
+            writeLog(`  📍 ${svc.name}: http://${host}:${svc.port}\n`);
+          }
+        }
+      } else {
+        writeLog(`\n${'━'.repeat(50)}\n`);
+        writeLog(`❌ DEPLOY FAILED (Exit Code: ${code})\n`);
+        writeLog(`${'━'.repeat(50)}\n`);
+      }
+      
+      // Update logs in DB with final messages
       await prisma.deployment.update({
         where: { id: deployment.id },
         data: {
@@ -349,36 +385,7 @@ router.post('/:projectId/deploy', async (req: Request, res: Response) => {
         });
       }
       
-      if (success) {
-        // Use the request host (e.g., server IP) instead of localhost
-        const host = req.headers.host?.split(':')[0] || 'localhost';
-        
-        res.write(`\n${'━'.repeat(50)}\n`);
-        res.write(`✅ DEPLOY SUCCESSFUL!\n`);
-        res.write(`${'━'.repeat(50)}\n\n`);
-        res.write(`🌐 ENDPOINTS:\n`);
-        for (const svc of servicesData) {
-          if (svc.port) {
-            res.write(`  📍 ${svc.name}: http://${host}:${svc.port}\n`);
-          }
-        }
-        logs.push(`\n${'━'.repeat(50)}\n✅ DEPLOY SUCCESSFUL!\n${'━'.repeat(50)}\n`);
-      } else {
-        res.write(`\n${'━'.repeat(50)}\n`);
-        res.write(`❌ DEPLOY FAILED (Exit Code: ${code})\n`);
-        res.write(`${'━'.repeat(50)}\n`);
-        logs.push(`\n${'━'.repeat(50)}\n❌ DEPLOY FAILED (Exit Code: ${code})\n${'━'.repeat(50)}\n`);
-      }
-      
-      // Update logs in DB with final messages
-      await prisma.deployment.update({
-        where: { id: deployment.id },
-        data: {
-          logs: logs.join(''),
-        },
-      });
-      
-      res.write(`\n📊 Deployment complete! Status: ${success ? 'SUCCESS ✅' : 'FAILED ❌'}\n`);
+      writeLog(`\n📊 Deployment complete! Status: ${success ? 'SUCCESS ✅' : 'FAILED ❌'}\n`);
       res.end();
     });
     
@@ -406,6 +413,11 @@ router.post('/:projectId/stop', async (req: Request, res: Response) => {
     res.setHeader('Transfer-Encoding', 'chunked');
     
     const logs: string[] = [];
+    const writeLog = (text: string) => {
+      res.write(text);
+      logs.push(text);
+    };
+
     const timestamp = new Date().toISOString();
     
     // Create deployment record for stop action
@@ -418,9 +430,7 @@ router.post('/:projectId/stop', async (req: Request, res: Response) => {
       },
     });
     
-    const header = `\n${'━'.repeat(50)}\n🛑 STOPPING PROJECT\n📅 ${timestamp}\n${'━'.repeat(50)}\n\n`;
-    logs.push(header);
-    res.write(header);
+    writeLog(`\n${'━'.repeat(50)}\n🛑 STOPPING PROJECT\n📅 ${timestamp}\n${'━'.repeat(50)}\n\n`);
     
     const dockerProcess = spawn('docker', ['compose', '-p', projectId, 'down'], {
       cwd: projectPath,
@@ -428,28 +438,20 @@ router.post('/:projectId/stop', async (req: Request, res: Response) => {
     });
     
     dockerProcess.stdout.on('data', (data) => {
-      const text = data.toString();
-      logs.push(text);
-      res.write(text);
+      writeLog(data.toString());
     });
     
     dockerProcess.stderr.on('data', (data) => {
-      const text = data.toString();
-      logs.push(text);
-      res.write(text);
+      writeLog(data.toString());
     });
     
     dockerProcess.on('close', async (code) => {
       const success = code === 0;
       
       if (success) {
-        const msg = `\n${'━'.repeat(50)}\n✅ STOP SUCCESSFUL!\n${'━'.repeat(50)}\n`;
-        logs.push(msg);
-        res.write(msg);
+        writeLog(`\n${'━'.repeat(50)}\n✅ STOP SUCCESSFUL!\n${'━'.repeat(50)}\n`);
       } else {
-        const msg = `\n${'━'.repeat(50)}\n❌ STOP FAILED (code ${code})\n${'━'.repeat(50)}\n`;
-        logs.push(msg);
-        res.write(msg);
+        writeLog(`\n${'━'.repeat(50)}\n❌ STOP FAILED (code ${code})\n${'━'.repeat(50)}\n`);
       }
       
       // Update deployment record with logs
@@ -495,6 +497,11 @@ router.post('/:projectId/restart', async (req: Request, res: Response) => {
     res.setHeader('Transfer-Encoding', 'chunked');
     
     const logs: string[] = [];
+    const writeLog = (text: string) => {
+      res.write(text);
+      logs.push(text);
+    };
+
     const timestamp = new Date().toISOString();
     
     // Create deployment record for restart action
@@ -507,9 +514,7 @@ router.post('/:projectId/restart', async (req: Request, res: Response) => {
       },
     });
     
-    const header = `\n${'━'.repeat(50)}\n🔄 RESTARTING PROJECT\n📅 ${timestamp}\n${'━'.repeat(50)}\n\n`;
-    logs.push(header);
-    res.write(header);
+    writeLog(`\n${'━'.repeat(50)}\n🔄 RESTARTING PROJECT\n📅 ${timestamp}\n${'━'.repeat(50)}\n\n`);
     
     const dockerProcess = spawn('docker', ['compose', '-p', projectId, 'restart'], {
       cwd: projectPath,
@@ -517,28 +522,20 @@ router.post('/:projectId/restart', async (req: Request, res: Response) => {
     });
     
     dockerProcess.stdout.on('data', (data) => {
-      const text = data.toString();
-      logs.push(text);
-      res.write(text);
+      writeLog(data.toString());
     });
     
     dockerProcess.stderr.on('data', (data) => {
-      const text = data.toString();
-      logs.push(text);
-      res.write(text);
+      writeLog(data.toString());
     });
     
     dockerProcess.on('close', async (code) => {
       const success = code === 0;
       
       if (success) {
-        const msg = `\n${'━'.repeat(50)}\n✅ RESTART SUCCESSFUL!\n${'━'.repeat(50)}\n`;
-        logs.push(msg);
-        res.write(msg);
+        writeLog(`\n${'━'.repeat(50)}\n✅ RESTART SUCCESSFUL!\n${'━'.repeat(50)}\n`);
       } else {
-        const msg = `\n${'━'.repeat(50)}\n❌ RESTART FAILED (code ${code})\n${'━'.repeat(50)}\n`;
-        logs.push(msg);
-        res.write(msg);
+        writeLog(`\n${'━'.repeat(50)}\n❌ RESTART FAILED (code ${code})\n${'━'.repeat(50)}\n`);
       }
       
       // Update deployment record with logs
@@ -579,6 +576,11 @@ router.post('/:projectId/redeploy', async (req: Request, res: Response) => {
     res.setHeader('Transfer-Encoding', 'chunked');
     
     const logs: string[] = [];
+    const writeLog = (text: string) => {
+      res.write(text);
+      logs.push(text);
+    };
+
     const timestamp = new Date().toISOString();
     
     // Create deployment record for redeploy action
@@ -591,9 +593,7 @@ router.post('/:projectId/redeploy', async (req: Request, res: Response) => {
       },
     });
     
-    const header = `\n${'━'.repeat(50)}\n🔄 REDEPLOYING CONTAINER\n📅 ${timestamp}\n${'━'.repeat(50)}\n\n📦 Rebuilding with --force-recreate...\n${'─'.repeat(40)}\n`;
-    logs.push(header);
-    res.write(header);
+    writeLog(`\n${'━'.repeat(50)}\n🔄 REDEPLOYING CONTAINER\n📅 ${timestamp}\n${'━'.repeat(50)}\n\n📦 Rebuilding with --force-recreate...\n${'─'.repeat(40)}\n`);
     
     const dockerProcess = spawn('docker', ['compose', '-p', projectId, 'up', '-d', '--build', '--force-recreate'], {
       cwd: projectPath,
@@ -601,27 +601,20 @@ router.post('/:projectId/redeploy', async (req: Request, res: Response) => {
     });
     
     dockerProcess.stdout.on('data', (data) => {
-      const text = data.toString();
-      logs.push(text);
-      res.write(text);
+      writeLog(data.toString());
     });
     
     dockerProcess.stderr.on('data', (data) => {
-      const text = data.toString();
-      logs.push(text);
-      res.write(text);
+      writeLog(data.toString());
     });
     
     dockerProcess.on('close', async (code) => {
       const success = code === 0;
       
-      res.write(`\n${'─'.repeat(40)}\n`);
-      logs.push(`\n${'─'.repeat(40)}\n`);
+      writeLog(`\n${'─'.repeat(40)}\n`);
       
       if (success) {
-        const msg = `\n${'━'.repeat(50)}\n✅ REDEPLOY SUCCESSFUL!\n${'━'.repeat(50)}\n`;
-        logs.push(msg);
-        res.write(msg);
+        writeLog(`\n${'━'.repeat(50)}\n✅ REDEPLOY SUCCESSFUL!\n${'━'.repeat(50)}\n`);
         
         await prisma.project.update({
           where: { id: projectId },
@@ -633,9 +626,7 @@ router.post('/:projectId/redeploy', async (req: Request, res: Response) => {
           data: { status: 'running' },
         });
       } else {
-        const msg = `\n${'━'.repeat(50)}\n❌ REDEPLOY FAILED (code ${code})\n${'━'.repeat(50)}\n`;
-        logs.push(msg);
-        res.write(msg);
+        writeLog(`\n${'━'.repeat(50)}\n❌ REDEPLOY FAILED (code ${code})\n${'━'.repeat(50)}\n`);
         
         await prisma.project.update({
           where: { id: projectId },
