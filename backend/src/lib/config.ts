@@ -1,3 +1,4 @@
+// Application configuration - loads settings from environment variables
 import path from 'path';
 
 export const config = {

@@ -1,3 +1,4 @@
+// StatusBadge component - colored badge showing project status (running, building, etc.)
 import { cn } from "@/lib/utils";
 
 interface StatusBadgeProps {

@@ -1,3 +1,4 @@
+// System routes - API endpoints for monitoring, server controls, and command execution
 import { Router, Request, Response } from 'express';
 import si from 'systeminformation';
 import { exec } from 'child_process';

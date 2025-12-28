@@ -1,3 +1,4 @@
+// Header component - navigation bar with logo, nav links, theme toggle, GitHub stars
 "use client";
 
 import { useState, useEffect } from "react";

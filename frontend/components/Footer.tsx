@@ -1,3 +1,4 @@
+// Footer component - displays copyright, GitHub link, and credits
 "use client";
 
 import { Container, Heart } from "lucide-react";

@@ -1,3 +1,4 @@
+// Prisma database client singleton - prevents multiple instances in development
 import { PrismaClient } from '@prisma/client';
 
 const globalForPrisma = globalThis as unknown as {

@@ -1,3 +1,4 @@
+// Docker Compose service - scans for Dockerfiles and generates docker-compose.yml
 import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';

@@ -1,3 +1,4 @@
+// Utility functions - cn() for Tailwind merging, API_URL, fetchAPI helper
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 

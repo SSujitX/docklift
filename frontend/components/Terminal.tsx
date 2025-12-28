@@ -1,3 +1,4 @@
+// Terminal component - build log display with syntax highlighting and copy feature
 "use client";
 
 import { useEffect, useRef, useState } from "react";

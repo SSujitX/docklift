@@ -1,3 +1,4 @@
+// Theme provider - manages light/dark/system theme with localStorage persistence
 "use client";
 
 import { createContext, useContext, useEffect, useState } from "react";

@@ -1,3 +1,4 @@
+// Docker service - container operations (status, logs, stats) and compose streaming
 import Docker from 'dockerode';
 import { spawn } from 'child_process';
 import { Response } from 'express';

@@ -1,3 +1,4 @@
+// Domains routes - API endpoints for custom domain configuration
 import express, { Request, Response, Router } from 'express';
 import fs from 'fs/promises';
 import path from 'path';

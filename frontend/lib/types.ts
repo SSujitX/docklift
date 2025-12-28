@@ -1,3 +1,4 @@
+// TypeScript interfaces for API data models (Project, Deployment, Service, etc.)
 export interface Project {
   id: string;
   name: string;

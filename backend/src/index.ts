@@ -1,3 +1,4 @@
+// Express server entry point - configures middleware, routes, and starts the Docklift backend
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';

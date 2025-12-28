@@ -1,3 +1,4 @@
+// ProjectCard component - displays project info with deploy/stop/restart/delete actions
 "use client";
 
 import { Project } from "@/lib/types";

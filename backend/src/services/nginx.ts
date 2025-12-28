@@ -1,9 +1,8 @@
+// Nginx service - manages reverse proxy configurations for custom domains
 import fs from 'fs';
 import path from 'path';
 import { spawn } from 'child_process';
 import { config } from '../lib/config.js';
-
-// ... imports
 import * as dockerService from './docker.js';
 
 export async function updateServiceDomain(service: any) {

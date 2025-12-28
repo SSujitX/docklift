@@ -1,3 +1,4 @@
+// Projects routes - API endpoints for project CRUD and environment variables
 import { Router, Request, Response } from 'express';
 import multer from 'multer';
 import fs from 'fs';

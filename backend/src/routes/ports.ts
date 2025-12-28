@@ -1,3 +1,4 @@
+// Ports routes - API endpoints for port allocation management
 import { Router, Request, Response } from 'express';
 import prisma from '../lib/prisma.js';
 

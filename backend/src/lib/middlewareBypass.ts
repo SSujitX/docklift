@@ -1,3 +1,4 @@
+// Middleware bypass utility - patches Next.js middleware to allow localhost/IP access
 import fs from 'fs';
 import path from 'path';
 import os from 'os';

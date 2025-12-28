@@ -1,3 +1,4 @@
+// Root layout - wraps all pages with ThemeProvider, Toaster, and global styles
 import type { Metadata } from "next";
 import "./globals.css";
 import { ThemeProvider } from "@/lib/theme";

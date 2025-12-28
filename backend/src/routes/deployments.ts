@@ -1,3 +1,4 @@
+// Deployments routes - API endpoints for deploy, redeploy, stop, restart, logs
 import { Router, Request, Response } from 'express';
 import { spawn } from 'child_process';
 import path from 'path';
@@ -68,9 +69,6 @@ router.get('/:projectId/services', async (req: Request, res: Response) => {
 });
 
 import { updateServiceDomain } from '../services/nginx.js';
-// ... existing imports
-
-// ...
 
 // Update service domain
 router.put('/:projectId/services/:serviceId', async (req: Request, res: Response) => {

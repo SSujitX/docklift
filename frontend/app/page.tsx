@@ -1,3 +1,4 @@
+// Dashboard page - displays all projects with status, actions, and navigation
 "use client";
 
 import { useEffect, useState, useCallback } from "react";

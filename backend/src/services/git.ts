@@ -1,3 +1,4 @@
+// Git service - repository cloning and pulling operations
 import { simpleGit, SimpleGit } from 'simple-git';
 import fs from 'fs';
 import path from 'path';
