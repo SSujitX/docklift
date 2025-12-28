@@ -7,7 +7,7 @@
 
 # 🐳 Docklift
 
-**Docklift is an open-source & self-hostable alternative to Coolify/ Heroku / Netlify / Vercel / etc.**
+**Docklift is an open-source & self-hostable alternative to Coolify / Dokploy / Heroku / Netlify / Vercel / etc.**
 
 It helps you deploy and manage your applications on your own hardware - you only need a VPS with Docker installed. Deploy from GitHub or upload files directly, manage custom domains, monitor system resources, and access your server terminal - all from a beautiful web interface.
 
@@ -36,9 +36,9 @@ No vendor lock-in, which means all your application data, configurations, and Do
 
 ---
 
-## 🆚 Why Docklift over Coolify?
+## 🆚 Why Docklift?
 
-Coolify is great, but it can feel heavy for simple use cases. Docklift is built to be **lightweight and easy to understand**. It focuses purely on Docker deployments with some nice extras that Coolify doesn't have - like full **system monitoring** (CPU, RAM, GPU, disk, network) and a **web terminal** right in the browser. If you just want to deploy Docker containers without all the extra complexity, Docklift is for you.
+There are great tools out there like **Coolify**, **Dokploy**, **Dokku**, and **CapRover** - but they often come with a learning curve, complex configurations, or feel heavy for simple use cases. Docklift is built to be **lightweight, minimal, and easy to understand**. It focuses purely on Docker deployments without the bloat, while offering features others don't - like full **system monitoring** (CPU, RAM, GPU, disk, network) and a **web terminal** right in your browser. If you want to deploy Docker containers quickly without wrestling with configurations, Docklift is for you.
 
 ---
 
@@ -47,13 +47,13 @@ Coolify is great, but it can feel heavy for simple use cases. Docklift is built 
 To run Docklift locally or on a server, you need:
 
 1.  **Docker & Docker Compose** installed and running.
-2.  **Node.js (v18+)** (for local development).
+2.  **[Bun](https://bun.sh/)** (for local development) - Install with: `curl -fsSL https://bun.sh/install | bash`
 
 ---
 
 ## 🚀 Getting Started
 
-### 1. One-Command Install (Recommended)
+### 1. One-Command Install (Recommended for Production)
 
 Run this on your Ubuntu server to set up everything automatically:
 
@@ -69,55 +69,84 @@ curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh 
 curl -fsSL "https://raw.githubusercontent.com/SSujitX/docklift/master/uninstall.sh?nocache=1" | sudo bash -s -- -y
 ```
 
-### 2. Manual Installation (Clone Repo)
+### 2. Run with Docker Compose
+
+The easiest way to run Docklift without development setup:
 
 ```bash
 git clone https://github.com/SSujitX/docklift.git
 cd docklift
-```
-
-### 2. Configure Environment
-
-Docklift uses environment variables for configuration. **Do not commit `.env` files.**
-
-```bash
-# Backend Setup
-cd backend
-cp .env.example .env
-# Edit .env if needed (default ports and DB paths are usually fine)
-```
-
-### 3. Run with Docker Compose (Recommended)
-
-The easiest way to run Docklift is using the composed setup.
-
-```bash
-# From the root directory
 docker compose up -d
 ```
 
 Access the dashboard at: `http://localhost:3000`
 
-### 4. Local Development (Manual Setup)
+---
 
-If you want to contribute or modify code:
+## 💻 Local Development Setup
 
-**Backend:**
+If you want to contribute or modify code, follow these steps:
+
+### 1. Clone & Configure
+
+```bash
+git clone https://github.com/SSujitX/docklift.git
+cd docklift
+
+# Setup backend environment
+cd backend
+cp .env.example .env
+```
+
+### 2. Install Dependencies
+
+```bash
+# Backend (from /backend directory)
+bun install
+
+# Frontend (from /frontend directory)
+cd ../frontend
+bun install
+```
+
+### 3. Initialize Database (Required)
+
+After installing dependencies, you **must** run these commands:
+
 ```bash
 cd backend
-npm install
-# Ensure you created .env from .env.example
-npm run dev
-```
-*Backend runs on port 8000.*
 
-**Frontend:**
-```bash
-cd frontend
-npm install
-npm run dev
+# Generate Prisma client from schema
+bun run db:generate
+
+# Create/sync database tables
+bun run db:push
 ```
-*Frontend runs on port 3000.*
+
+> [!IMPORTANT]
+> Run these commands after every fresh clone or when pulling new schema changes.
+
+### 4. Start Development Servers
+
+```bash
+# Terminal 1 - Backend (runs on port 8000)
+cd backend
+bun run dev
+
+# Terminal 2 - Frontend (runs on port 3000)
+cd frontend
+bun run dev
+```
+
+### 5. Useful Development Commands
+
+| Command | Description |
+|---------|-------------|
+| `bun run dev` | Start development server |
+| `bun run build` | Build for production |
+| `bun run db:generate` | Regenerate Prisma client |
+| `bun run db:push` | Push schema changes to DB |
+| `bun run db:studio` | Open Prisma Studio GUI |
 
 ---
 
