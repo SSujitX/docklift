@@ -112,4 +112,7 @@ npm version patch --no-git-tag-version  # No git commit/tag
 
 # Version bumps
 bunx bumpp
-```
+bunx bumpp --patch
+bunx bumpp --minor
+bunx bumpp --major
+
