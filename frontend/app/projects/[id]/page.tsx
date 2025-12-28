@@ -600,12 +600,16 @@ export default function ProjectDetail() {
                     // Use real server IP for port access
                     const portEndpoint = { 
                       url: `http://${serverIP}:${svc.port}`, 
-                      label: `${serverIP}:${svc.port}` 
+                      label: `${serverIP}:${svc.port}`,
+                      isPort: true
                     };
 
-                    const links = domains.length > 0 
-                      ? domains.map(d => ({ url: `https://${d}`, label: d }))
-                      : [portEndpoint];
+                    // Always show port endpoint + any configured domains
+                    const domainLinks = domains.map(d => ({ 
+                      url: `https://${d}`, 
+                      label: d,
+                      isPort: false 
+                    }));
 
                     return (
                       <Card 
@@ -634,7 +638,18 @@ export default function ProjectDetail() {
                             </div>
                           </div>
                           <div className="flex flex-col gap-2 items-end">
-                            {links.map((link, idx) => (
+                            {/* Always show IP:Port access */}
+                            <a
+                              href={portEndpoint.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="h-9 px-4 flex items-center gap-2 rounded-xl bg-secondary/50 hover:bg-cyan-500 text-muted-foreground hover:text-white font-mono text-xs font-bold transition-all duration-300 border border-border/50"
+                            >
+                              {portEndpoint.label}
+                              <ExternalLink className="h-3 w-3" />
+                            </a>
+                            {/* Show domain links if configured */}
+                            {domainLinks.map((link, idx) => (
                               <a
                                 key={idx}
                                 href={link.url}
