@@ -1,3 +1,4 @@
+// New project page - wizard for creating projects via GitHub, public repo, or file upload
 "use client";
 
 import { useState, useEffect, Suspense } from "react";

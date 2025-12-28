@@ -1,3 +1,4 @@
+// EnvVarsManager component - CRUD for project environment variables (build args and runtime)
 "use client";
 
 import { useState, useEffect } from "react";

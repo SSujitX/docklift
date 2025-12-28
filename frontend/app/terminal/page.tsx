@@ -1,3 +1,4 @@
+// Terminal page - web-based shell and control center
 "use client";
 
 import { Header } from "@/components/Header";

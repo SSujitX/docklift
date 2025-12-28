@@ -1,3 +1,4 @@
+// BranchSelector component - dropdown for selecting GitHub branches with search
 "use client";
 
 import { useState, useRef, useEffect } from "react";

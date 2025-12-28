@@ -1,3 +1,4 @@
+// TerminalView component - interactive shell with system controls (reboot, reset, purge)
 "use client";
 
 import { useState, useEffect, useRef } from "react";

@@ -1,3 +1,4 @@
+// FileEditor component - Monaco-based code editor for project files
 "use client";
 
 import { useState, useCallback } from "react";

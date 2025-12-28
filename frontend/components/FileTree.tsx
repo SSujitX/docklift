@@ -1,3 +1,4 @@
+// FileTree component - hierarchical file browser with folder expansion
 "use client";
 
 import { useState } from "react";

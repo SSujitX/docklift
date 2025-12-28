@@ -1,3 +1,4 @@
+// Documentation page - comprehensive guide to Docklift features and API reference
 "use client";
 
 import { useState, useEffect } from "react";

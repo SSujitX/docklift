@@ -1,3 +1,4 @@
+// Ports page - displays used and available ports across the server
 "use client";
 
 import { useEffect, useState } from "react";

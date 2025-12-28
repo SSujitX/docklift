@@ -1,3 +1,4 @@
+// Settings page - GitHub integration, server config, port allocation, Docker, and domain management
 "use client";
 
 import { useState, useEffect, Suspense } from "react";

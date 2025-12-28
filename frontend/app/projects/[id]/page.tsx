@@ -1,4 +1,5 @@
-﻿"use client";
+﻿// Project detail page - overview, deployments, env vars, source files, and domain management
+"use client";
 
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";

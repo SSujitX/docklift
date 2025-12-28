@@ -1,3 +1,4 @@
+// GitHubConnect component - GitHub App creation, installation, and connection flow
 "use client";
 
 import { useState, useRef, useEffect } from "react";

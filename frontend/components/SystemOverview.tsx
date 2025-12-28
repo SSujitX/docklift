@@ -1,3 +1,4 @@
+// SystemOverview component - displays CPU, memory, disk, network, GPU stats with live updates
 "use client";
 
 import { useEffect, useState, useCallback } from "react";

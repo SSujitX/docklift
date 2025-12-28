@@ -1,3 +1,4 @@
+// System page - displays server resource monitoring via SystemOverview component
 "use client";
 
 import { Header } from "@/components/Header";
