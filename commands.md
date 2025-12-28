@@ -96,7 +96,7 @@ bunx tsc --noEmit
 bun outdated
 bun update
 bun install next@latest eslint-config-next@latest
-
+```
 
 ```bash
 # Update all packages to latest
@@ -115,4 +115,4 @@ bunx bumpp
 bunx bumpp --patch
 bunx bumpp --minor
 bunx bumpp --major
-
+```
