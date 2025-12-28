@@ -58,3 +58,15 @@ export async function getCurrentBranch(projectPath: string): Promise<string | nu
     return null;
   }
 }
+
+// Get last commit message
+export async function getLastCommitMessage(projectPath: string): Promise<string | null> {
+  try {
+    if (!fs.existsSync(path.join(projectPath, '.git'))) return null;
+    const git = simpleGit(projectPath);
+    const log = await git.log({ maxCount: 1 });
+    return log.latest?.message || null;
+  } catch {
+    return null;
+  }
+}

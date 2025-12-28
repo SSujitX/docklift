@@ -49,6 +49,7 @@ import {
   Globe2,
   Rocket,
   Calendar,
+  RefreshCw
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -215,6 +216,10 @@ export default function ProjectDetail() {
   const [autoDeploy, setAutoDeploy] = useState(false);
   const [autoDeployLoading, setAutoDeployLoading] = useState(false);
 
+  // Pagination state
+  const [historyLimit, setHistoryLimit] = useState(10);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
   // Fetch server IP on mount
   useEffect(() => {
     const fetchServerIP = async () => {
@@ -236,7 +241,7 @@ export default function ProjectDetail() {
       const [projectRes, filesRes, deploymentsRes, servicesRes] = await Promise.all([
         fetch(`${API_URL}/api/projects/${projectId}`),
         fetch(`${API_URL}/api/files/${projectId}`),
-        fetch(`${API_URL}/api/deployments/${projectId}`),
+        fetch(`${API_URL}/api/deployments/${projectId}?limit=${historyLimit}`),
         fetch(`${API_URL}/api/deployments/${projectId}/services`),
       ]);
 
@@ -271,7 +276,11 @@ export default function ProjectDetail() {
     } finally {
       setLoading(false);
     }
-  }, [projectId, router, loading, actionLoading]);
+  }, [projectId, router, loading, actionLoading, historyLimit]);
+
+  const loadMoreHistory = () => {
+    setHistoryLimit(prev => prev + 10);
+  };
 
   useEffect(() => {
     fetchProject();
@@ -942,8 +951,34 @@ export default function ProjectDetail() {
                         <p className="text-[11px] text-muted-foreground line-clamp-1 italic">
                           Click to restore log output to terminal
                         </p>
+                        
+                        {deployment.commit_message && (
+                          <div className="mt-2 flex items-center gap-2 px-3 py-2 bg-secondary/30 rounded-lg border border-border/20">
+                            <GitBranch className="h-3 w-3 text-cyan-500" />
+                            <span className="text-[10px] font-medium text-foreground/80 line-clamp-1">
+                              {deployment.commit_message}
+                            </span>
+                          </div>
+                        )}
                       </div>
                     ))
+                  )}
+                  
+                  {deployments.length >= historyLimit && (
+                    <div className="p-4 bg-secondary/20 flex justify-center border-t border-border/40">
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          loadMoreHistory();
+                        }}
+                        className="text-xs font-bold gap-2 hover:bg-cyan-500/10 hover:text-cyan-500 transition-all"
+                      >
+                        <RefreshCw className="h-3 w-3" />
+                        LOAD MORE HISTORY
+                      </Button>
+                    </div>
                   )}
                 </Card>
               </div>

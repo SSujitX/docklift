@@ -36,6 +36,7 @@ model Deployment {
   project_id  String
   status      String?
   trigger     String?   @default("manual")
+  commit_message String?
   logs        String?
   created_at  DateTime? @default(now())
   finished_at DateTime?

@@ -20,6 +20,7 @@ export interface Deployment {
   project_id: string;
   status: "queued" | "in_progress" | "success" | "failed" | "pending";
   trigger?: string;
+  commit_message?: string;
   logs: string;
   created_at: string;
   finished_at: string | null;

@@ -7,7 +7,7 @@ import prisma from '../lib/prisma.js';
 import { config } from '../lib/config.js';
 import * as dockerService from '../services/docker.js';
 import { scanDockerfiles, generateCompose } from '../services/compose.js';
-import { pullRepo } from '../services/git.js';
+import { pullRepo, getLastCommitMessage } from '../services/git.js';
 import { patchMiddlewareHosts, logMiddlewareBypassResult } from '../lib/middlewareBypass.js';
 
 const router = Router();
@@ -45,10 +45,14 @@ async function allocatePort(projectId: string): Promise<number> {
 // List deployments for a project
 router.get('/:projectId', async (req: Request, res: Response) => {
   try {
+    const limit = parseInt(req.query.limit as string) || 10;
+    const offset = parseInt(req.query.offset as string) || 0;
+    
     const deployments = await prisma.deployment.findMany({
       where: { project_id: req.params.projectId },
       orderBy: { created_at: 'desc' },
-      take: 20,
+      take: limit,
+      skip: offset,
     });
     res.json(deployments);
   } catch (error) {
@@ -126,13 +130,20 @@ router.post('/:projectId/deploy', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'No Dockerfile found in project. Docklift is based on Docker and requires a Dockerfile to automatically build and run your application.' });
     }
     
-    const { trigger } = req.body;
+    const { trigger, commit_message } = req.body;
+
+    // Auto-fetch commit message if not provided (manual deploy)
+    let finalCommitMessage = commit_message;
+    if (!finalCommitMessage && (project.source_type === 'github' || project.source_type === 'public')) {
+      finalCommitMessage = await getLastCommitMessage(projectPath);
+    }
 
     const deployment = await prisma.deployment.create({
       data: {
         project_id: projectId,
         status: 'in_progress',
         trigger: trigger || 'manual',
+        commit_message: finalCommitMessage,
       },
     });
     
