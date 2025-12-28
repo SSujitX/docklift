@@ -24,7 +24,7 @@ No vendor lock-in, which means all your application data, configurations, and Do
 ## ✨ Key Features
 
 - **📦 One-Click Deployment** - Simply connect a GitHub repository or upload a ZIP file.
-- **🐳 Docker Native** - Automatic generation of `Dockerfile` (if missing) and `docker-compose.yml`. 
+- **🐳 Docker Native** - Requires a `Dockerfile` in your project; Docklift generates `docker-compose.yml` automatically. 
 - **🌐 Automatic Port Management** - No need to worry about port conflicts; Docklift handles them.
 - **🔄 Zero-Downtime Redeploys** - Rebuild and restart containers seamlessly.
 - **📜 Live Build Logs** - Watch your application build in real-time.
@@ -157,7 +157,7 @@ bun run dev
 3.  Choose a source:
     *   **Public GitHub**: Paste a repo URL.
     *   **Private GitHub**: Connect the Docklift GitHub App.
-    *   **Direct Upload**: Upload a ZIP file of your code. (Make sure it has a `Dockerfile` for best results!)
+    *   **Direct Upload**: Upload a ZIP file of your code (must include a `Dockerfile`).
 4.  Docklift will detect the branch (defaults to `main`).
 5.  Click **Deploy**.
 6.  Your app will be live at `http://localhost:<ASSIGNED_PORT>`.
