@@ -109,4 +109,7 @@ npm version minor               # 0.1.5 → 0.2.0 (new features)
 npm version major               # 0.1.5 → 1.0.0 (breaking changes)
 npm version 0.1.6               # Set specific version
 npm version patch --no-git-tag-version  # No git commit/tag
+
+# Version bumps
+bunx bumpp
 ```

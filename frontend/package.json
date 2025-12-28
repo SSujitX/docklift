@@ -1,6 +1,6 @@
 {
   "name": "docklift-frontend",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "scripts": {
     "dev": "bun run next dev",
@@ -30,6 +30,7 @@
     "@types/react": "^19.0.2",
     "@types/react-dom": "^19.0.2",
     "autoprefixer": "^10.4.20",
+    "bumpp": "^10.3.2",
     "eslint": "^9.17.0",
     "eslint-config-next": "^16.1.1",
     "postcss": "^8.4.49",
