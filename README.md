@@ -69,6 +69,14 @@ curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh 
 curl -fsSL "https://raw.githubusercontent.com/SSujitX/docklift/master/uninstall.sh?nocache=1" | sudo bash -s -- -y
 ```
 
+#### Upgrade (Preserves Data)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/upgrade.sh | sudo bash
+```
+
+> ⬆️ **Safe Upgrade**: This command backs up your database, updates Docklift to the latest version, and preserves all your projects, containers, and configurations. Database migrations are applied automatically.
+
 ### 2. Run with Docker Compose
 
 The easiest way to run Docklift without development setup:

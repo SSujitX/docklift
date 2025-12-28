@@ -3,10 +3,19 @@
 Useful commands for debugging and maintaining your Docklift instance.
 
 ## 📋 Table of Contents
+- [⬆️ Upgrade](#-upgrade)
 - [📜 Check Infrastructure Logs](#-check-infrastructure-logs)
 - [🛰️ Project Debugging](#-project-debugging)
 - [🧹 Cleaning & Resetting](#-cleaning--resetting)
 - [🌐 Network & Port Check](#-network--port-check)
+
+---
+
+### ⬆️ Upgrade
+```bash
+# Safe upgrade (preserves all data and containers)
+curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/upgrade.sh | sudo bash
+```
 
 ---
 

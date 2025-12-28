@@ -208,6 +208,28 @@ rm -rf docklift            # Remove files`}</pre>
                   </div>
                 </div>
 
+                <div className="bg-gradient-to-r from-cyan-500/10 to-blue-500/10 rounded-xl p-6 border border-cyan-500/20 mb-4">
+                  <h4 className="font-semibold mb-3 text-cyan-500">⬆️ Upgrade (Preserves Data)</h4>
+                  <div className="bg-zinc-900 rounded-lg p-3 font-mono text-sm text-zinc-300 mb-3">
+                    <div className="text-zinc-500 mb-2"># Safe one-liner upgrade</div>
+                    <pre className="text-cyan-400">curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/upgrade.sh | sudo bash</pre>
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <span className="text-emerald-500">✓</span> Database preserved
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <span className="text-emerald-500">✓</span> Projects intact
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <span className="text-emerald-500">✓</span> Auto-backup
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <span className="text-emerald-500">✓</span> Auto-migrate DB
+                    </div>
+                  </div>
+                </div>
+
                 <div className="bg-secondary/50 rounded-xl p-6">
                   <h4 className="font-semibold mb-3">🛠️ Development Mode</h4>
                   <p className="text-sm text-muted-foreground mb-3">For contributing or local development:</p>
