@@ -597,10 +597,14 @@ export default function ProjectDetail() {
                   {services.map((svc) => {
                     const domains = svc.domain ? svc.domain.split(',').map(d => d.trim()).filter(Boolean) : [];
                     
-                    // Use real server IP for port access
+                    // Use localhost when in development (browser is on localhost), server IP otherwise
+                    const isLocal = typeof window !== 'undefined' && 
+                      (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+                    const portHost = isLocal ? 'localhost' : serverIP;
+                    
                     const portEndpoint = { 
-                      url: `http://${serverIP}:${svc.port}`, 
-                      label: `${serverIP}:${svc.port}`,
+                      url: `http://${portHost}:${svc.port}`, 
+                      label: `${portHost}:${svc.port}`,
                       isPort: true
                     };
 
