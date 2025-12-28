@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Server, Network, Container, Info, Loader2, Check, X, Sparkles, Globe, Plus, Trash2, ExternalLink, Copy } from "lucide-react";
 import { GithubIcon } from "@/components/icons/GithubIcon";
 import { toast } from "sonner";
-import { API_URL } from "@/lib/utils";
+import { API_URL, copyToClipboard } from "@/lib/utils";
 import { GitHubConnect } from "@/components/GitHubConnect";
 
 interface GitHubStatus {
@@ -330,7 +330,7 @@ function SettingsContent() {
                           variant="outline"
                           size="icon"
                           onClick={() => {
-                            navigator.clipboard.writeText(serverIP);
+                            copyToClipboard(serverIP);
                             toast.success('IP copied!');
                           }}
                         >
@@ -351,7 +351,7 @@ function SettingsContent() {
                           variant="outline"
                           size="icon"
                           onClick={() => {
-                            navigator.clipboard.writeText(`http://${serverIP}:8080`);
+                            copyToClipboard(`http://${serverIP}:8080`);
                             toast.success('URL copied!');
                           }}
                         >
@@ -372,7 +372,7 @@ function SettingsContent() {
                           variant="outline"
                           size="icon"
                           onClick={() => {
-                            navigator.clipboard.writeText(`http://${serverIP}:4000`);
+                            copyToClipboard(`http://${serverIP}:4000`);
                             toast.success('URL copied!');
                           }}
                         >
@@ -389,7 +389,7 @@ function SettingsContent() {
                           variant="outline"
                           size="icon"
                           onClick={() => {
-                            navigator.clipboard.writeText('/deployments');
+                            copyToClipboard('/deployments');
                             toast.success('Path copied!');
                           }}
                         >

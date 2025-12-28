@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { cn } from "@/lib/utils";
+import { cn, copyToClipboard } from "@/lib/utils";
 import { Copy, Check, Terminal as TerminalIcon, Sparkles, Hash, Layers } from "lucide-react";
 import { Button } from "./ui/button";
 
@@ -30,8 +30,8 @@ export function Terminal({ logs, isBuilding, className }: TerminalProps) {
     }
   };
 
-  const copyToClipboard = () => {
-    navigator.clipboard.writeText(logs);
+  const handleCopy = () => {
+    copyToClipboard(logs);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -112,7 +112,7 @@ export function Terminal({ logs, isBuilding, className }: TerminalProps) {
         <Button 
           variant="ghost" 
           size="sm" 
-          onClick={copyToClipboard}
+          onClick={handleCopy}
           className="h-8 px-3 gap-2 text-zinc-500 hover:text-white hover:bg-white/5 transition-all active:scale-95"
         >
           {copied ? (

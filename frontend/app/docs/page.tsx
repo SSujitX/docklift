@@ -10,6 +10,7 @@ import {
   HardDrive, Network, Shield, RefreshCw, Trash2, Power, Code, Download, Info, Wrench, Copy, Check
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { copyToClipboard } from "@/lib/utils";
 
 const sections = [
   { id: "introduction", title: "Introduction", icon: Info },
@@ -865,7 +866,7 @@ htop                         # System process monitor`}</pre>
                           <p className="text-xs text-muted-foreground mb-1"># {item.desc}</p>
                           <button
                             onClick={() => {
-                              navigator.clipboard.writeText(item.cmd);
+                              copyToClipboard(item.cmd);
                             }}
                             className="w-full text-left font-mono text-sm bg-zinc-900 hover:bg-zinc-800 text-zinc-300 px-4 py-2.5 rounded-lg flex items-center justify-between group transition-colors"
                           >
@@ -891,7 +892,7 @@ htop                         # System process monitor`}</pre>
                           <p className="text-xs text-muted-foreground mb-1"># {item.desc}</p>
                           <button
                             onClick={() => {
-                              navigator.clipboard.writeText(item.cmd);
+                              copyToClipboard(item.cmd);
                             }}
                             className="w-full text-left font-mono text-sm bg-zinc-900 hover:bg-zinc-800 text-zinc-300 px-4 py-2.5 rounded-lg flex items-center justify-between group transition-colors"
                           >
@@ -918,7 +919,7 @@ htop                         # System process monitor`}</pre>
                           <p className="text-xs text-muted-foreground mb-1"># {item.desc}</p>
                           <button
                             onClick={() => {
-                              navigator.clipboard.writeText(item.cmd);
+                              copyToClipboard(item.cmd);
                             }}
                             className="w-full text-left font-mono text-sm bg-zinc-900 hover:bg-zinc-800 text-zinc-300 px-4 py-2.5 rounded-lg flex items-center justify-between group transition-colors overflow-x-auto"
                           >
@@ -944,7 +945,7 @@ htop                         # System process monitor`}</pre>
                           <p className="text-xs text-muted-foreground mb-1"># {item.desc}</p>
                           <button
                             onClick={() => {
-                              navigator.clipboard.writeText(item.cmd);
+                              copyToClipboard(item.cmd);
                             }}
                             className="w-full text-left font-mono text-sm bg-zinc-900 hover:bg-zinc-800 text-zinc-300 px-4 py-2.5 rounded-lg flex items-center justify-between group transition-colors"
                           >
@@ -975,7 +976,7 @@ htop                         # System process monitor`}</pre>
                           <p className="text-xs text-muted-foreground mb-1"># {item.desc}</p>
                           <button
                             onClick={() => {
-                              navigator.clipboard.writeText(item.cmd);
+                              copyToClipboard(item.cmd);
                             }}
                             className="w-full text-left font-mono text-sm bg-zinc-900 hover:bg-zinc-800 text-zinc-300 px-4 py-2.5 rounded-lg flex items-center justify-between group transition-colors"
                           >
@@ -1005,7 +1006,7 @@ htop                         # System process monitor`}</pre>
                           <p className="text-xs text-muted-foreground mb-1"># {item.desc}</p>
                           <button
                             onClick={() => {
-                              navigator.clipboard.writeText(item.cmd);
+                              copyToClipboard(item.cmd);
                             }}
                             className="w-full text-left font-mono text-sm bg-zinc-900 hover:bg-zinc-800 text-zinc-300 px-4 py-2.5 rounded-lg flex items-center justify-between group transition-colors"
                           >

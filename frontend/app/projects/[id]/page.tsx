@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Project, ProjectFile, Deployment, Service } from "@/lib/types";
-import { API_URL, cn } from "@/lib/utils";
+import { API_URL, cn, copyToClipboard } from "@/lib/utils";
 import {
   ArrowLeft,
   Play,
@@ -881,7 +881,7 @@ export default function ProjectDetail() {
                              size="icon" 
                              className="h-6 w-6 hover:bg-background" 
                              onClick={() => {
-                               navigator.clipboard.writeText(serverIP);
+                               copyToClipboard(serverIP);
                                toast.success("IP copied to clipboard");
                              }}
                            >
