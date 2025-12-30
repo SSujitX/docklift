@@ -691,7 +691,7 @@ CMD ["python", "app.py"]`}
                 <div className="bg-gradient-to-r from-cyan-500/10 to-blue-500/10 rounded-xl p-4 border border-cyan-500/20">
                   <p className="text-sm">
                     <span className="font-semibold text-cyan-500">Cloudflare:</span>{" "}
-                    Enable proxy (orange cloud) for SSL. Set SSL mode to <strong>Full (Strict)</strong>.
+                    Enable proxy (orange cloud) for SSL. Set SSL mode to <strong>Flexible</strong>.
                   </p>
                 </div>
               </section>
@@ -1183,7 +1183,7 @@ PORT=3000`}
                       <li>Verify DNS: <code className="bg-primary/10 px-1.5 py-0.5 rounded text-primary">nslookup yourdomain.com</code></li>
                       <li>Check Nginx config in <code className="bg-primary/10 px-1.5 py-0.5 rounded text-primary">/etc/docklift/nginx-conf/</code></li>
                       <li>Reload Nginx: <code className="bg-primary/10 px-1.5 py-0.5 rounded text-primary">docker exec docklift-nginx-proxy nginx -s reload</code></li>
-                      <li>If using Cloudflare, ensure proxy is enabled and SSL mode is Full (Strict)</li>
+                      <li>If using Cloudflare, ensure proxy is enabled and SSL mode is Flexible</li>
                     </ol>
                   </div>
 
