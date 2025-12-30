@@ -17,7 +17,8 @@ import {
   Clock,
   Search,
   Settings as SettingsIcon,
-  Maximize2
+  Maximize2,
+  Send
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -182,7 +183,7 @@ export function TerminalView() {
       </div>
 
       {/* Terminal View */}
-      <Card className="flex-1 min-h-[600px] flex flex-col bg-[#0d0d0d] border-[#1a1a1a] overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.5)] rounded-3xl relative">
+      <Card className="flex flex-col bg-[#0d0d0d] border-[#1a1a1a] overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.5)] rounded-3xl relative">
         {/* Glow effect */}
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(56,189,248,0.05),transparent)] pointer-events-none" />
         
@@ -219,7 +220,7 @@ export function TerminalView() {
         {/* Output Scroll Area */}
         <div 
           ref={scrollRef}
-          className="flex-1 overflow-y-auto p-6 font-mono text-[14px] space-y-4 scrollbar-thin scrollbar-thumb-[#252525] scroll-smooth z-10"
+          className="min-h-[300px] max-h-[70vh] overflow-y-auto p-6 font-mono text-[14px] space-y-4 scrollbar-thin scrollbar-thumb-[#252525] scroll-smooth z-10"
         >
           {logs.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-[#333] gap-4">
@@ -279,7 +280,7 @@ export function TerminalView() {
                 {executing ? (
                   <RefreshCw className="h-3.5 w-3.5 sm:h-4 sm:w-4 animate-spin" />
                 ) : (
-                  <Maximize2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                  <Send className="h-3.5 w-3.5 sm:h-4 sm:w-4 ml-0.5" />
                 )}
               </button>
             </form>
