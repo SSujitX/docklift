@@ -1081,7 +1081,7 @@ export default function ProjectDetail() {
                           </div>
                           <div className="flex flex-wrap items-center gap-2 mt-2 pt-2 border-t border-border/30 text-xs text-emerald-500 font-medium">
                             <Lock className="h-3 w-3" />
-                            ssl/https: Enable <strong>Full (Strict)</strong> mode in Cloudflare/Provider.
+                            ssl/https: Enable <strong>Flexible</strong> mode in Cloudflare/Provider.
                           </div>
                         </div>
                      </div>
