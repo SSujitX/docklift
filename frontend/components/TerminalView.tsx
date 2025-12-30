@@ -187,27 +187,28 @@ export function TerminalView() {
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(56,189,248,0.05),transparent)] pointer-events-none" />
         
         {/* Mac-style Terminal Header */}
-        <div className="p-4 border-b border-[#1a1a1a] flex items-center justify-between bg-[#141414]/90 backdrop-blur-md z-10">
-          <div className="flex items-center gap-5">
-            <div className="flex gap-2">
-              <div className="w-3.5 h-3.5 rounded-full bg-[#ff5f56] shadow-[0_0_10px_rgba(255,95,86,0.3)]" />
-              <div className="w-3.5 h-3.5 rounded-full bg-[#ffbd2e] shadow-[0_0_10px_rgba(255,189,46,0.3)]" />
-              <div className="w-3.5 h-3.5 rounded-full bg-[#27c93f] shadow-[0_0_10px_rgba(39,201,63,0.3)]" />
+        <div className="p-3 sm:p-4 border-b border-[#1a1a1a] flex items-center justify-between bg-[#141414]/90 backdrop-blur-md z-10">
+          <div className="flex items-center gap-3 sm:gap-5">
+            <div className="flex gap-1.5 sm:gap-2">
+              <div className="w-3 h-3 sm:w-3.5 sm:h-3.5 rounded-full bg-[#ff5f56] shadow-[0_0_10px_rgba(255,95,86,0.3)]" />
+              <div className="w-3 h-3 sm:w-3.5 sm:h-3.5 rounded-full bg-[#ffbd2e] shadow-[0_0_10px_rgba(255,189,46,0.3)]" />
+              <div className="w-3 h-3 sm:w-3.5 sm:h-3.5 rounded-full bg-[#27c93f] shadow-[0_0_10px_rgba(39,201,63,0.3)]" />
             </div>
-            <div className="flex items-center gap-2.5 px-4 py-1.5 bg-[#1a1a1a] rounded-lg border border-[#2a2a2a] shadow-inner">
+            <div className="hidden sm:flex items-center gap-2.5 px-4 py-1.5 bg-[#1a1a1a] rounded-lg border border-[#2a2a2a] shadow-inner">
               <TerminalIcon className="h-4 w-4 text-cyan-400" />
               <span className="text-[11px] font-bold text-[#aaa] tracking-[0.2em] uppercase">docklift@root:~</span>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-             <div className="flex items-center gap-2.5 text-[10px] font-bold text-emerald-400 bg-emerald-400/10 px-3 py-1 rounded-full border border-emerald-400/20 shadow-[0_0_15px_rgba(52,211,153,0.1)]">
-                <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                SYSTEM ACTIVE
+          <div className="flex items-center gap-2 sm:gap-3">
+             <div className="flex items-center gap-2 text-[10px] font-bold text-emerald-400 bg-emerald-400/10 px-2 sm:px-3 py-1 rounded-full border border-emerald-400/20 shadow-[0_0_15px_rgba(52,211,153,0.1)]">
+                <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="hidden sm:inline">SYSTEM ACTIVE</span>
+                <span className="sm:hidden">ONLINE</span>
              </div>
              <Button 
               variant="ghost" 
               size="sm" 
-              className="h-8 px-3 text-[10px] font-bold uppercase tracking-widest text-[#666] hover:text-rose-400 hover:bg-[#1a1a1a] rounded-lg border border-transparent hover:border-rose-400/20 transition-all"
+              className="h-7 sm:h-8 px-2 sm:px-3 text-[10px] font-bold uppercase tracking-widest text-[#666] hover:text-rose-400 hover:bg-[#1a1a1a] rounded-lg border border-transparent hover:border-rose-400/20 transition-all"
               onClick={() => setLogs([])}
             >
               Clear
@@ -254,18 +255,18 @@ export function TerminalView() {
         </div>
 
         {/* Input Area */}
-        <div className="p-5 bg-[#0a0a0a] border-t border-[#1a1a1a] z-10">
+        <div className="p-3 sm:p-5 bg-[#0a0a0a] border-t border-[#1a1a1a] z-10">
           <div className="relative group">
             <div className="absolute -inset-1 bg-gradient-to-r from-cyan-500/20 to-violet-500/20 rounded-2xl blur opacity-0 group-focus-within:opacity-100 transition duration-500" />
-            <form onSubmit={handleExecute} className="relative flex items-center gap-4 bg-[#111] rounded-2xl px-5 py-3 border border-[#222] focus-within:border-cyan-500/40 transition-all shadow-2xl">
-              <span className="text-cyan-500 font-black text-xl select-none group-focus-within:scale-110 transition-transform duration-300">λ</span>
+            <form onSubmit={handleExecute} className="relative flex items-center gap-2 sm:gap-4 bg-[#111] rounded-xl sm:rounded-2xl px-3 sm:px-5 py-2 sm:py-3 border border-[#222] focus-within:border-cyan-500/40 transition-all shadow-2xl">
+              <span className="text-cyan-500 font-black text-lg sm:text-xl select-none group-focus-within:scale-110 transition-transform duration-300">λ</span>
               <input 
                 ref={inputRef}
                 type="text" 
                 value={command}
                 onChange={(e) => setCommand(e.target.value)}
-                placeholder="Execute system command..."
-                className="flex-1 bg-transparent border-none outline-none text-[#eee] font-mono text-[15px] placeholder:text-[#333] tracking-tight"
+                placeholder="Execute command..."
+                className="flex-1 bg-transparent border-none outline-none text-[#eee] font-mono text-sm sm:text-[15px] placeholder:text-[#333] tracking-tight min-w-0"
                 autoComplete="off"
                 disabled={executing}
                 autoFocus
@@ -273,12 +274,12 @@ export function TerminalView() {
               <button 
                 type="submit" 
                 disabled={!command.trim() || executing}
-                className="flex items-center justify-center h-9 w-9 rounded-xl bg-[#1a1a1a] hover:bg-[#252525] text-[#555] hover:text-cyan-400 border border-[#2a2a2a] transition-all hover:scale-110 active:scale-95 shadow-lg shadow-black/50"
+                className="flex items-center justify-center h-8 w-8 sm:h-9 sm:w-9 rounded-lg sm:rounded-xl bg-[#1a1a1a] hover:bg-[#252525] text-[#555] hover:text-cyan-400 border border-[#2a2a2a] transition-all hover:scale-110 active:scale-95 shadow-lg shadow-black/50 shrink-0"
               >
                 {executing ? (
-                  <RefreshCw className="h-4 w-4 animate-spin" />
+                  <RefreshCw className="h-3.5 w-3.5 sm:h-4 sm:w-4 animate-spin" />
                 ) : (
-                  <Maximize2 className="h-4 w-4" />
+                  <Maximize2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                 )}
               </button>
             </form>
