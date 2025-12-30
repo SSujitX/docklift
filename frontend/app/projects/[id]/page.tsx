@@ -510,36 +510,32 @@ export default function ProjectDetail() {
           Back to Projects
         </Link>
 
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-10">
-          <div className="flex items-center gap-5">
-            <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-cyan-500/10 to-blue-600/10 border border-cyan-500/20 flex items-center justify-center">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 sm:gap-6 mb-8 sm:mb-10">
+          <div className="flex items-start sm:items-center gap-3 sm:gap-5">
+            <div className="h-12 w-12 sm:h-14 sm:w-14 rounded-2xl bg-gradient-to-br from-cyan-500/10 to-blue-600/10 border border-cyan-500/20 flex items-center justify-center shrink-0">
               {project.project_type === "database" ? (
-                <Database className="h-7 w-7 text-blue-500" />
+                <Database className="h-6 w-6 sm:h-7 sm:w-7 text-blue-500" />
               ) : (
-                <Cloud className="h-7 w-7 text-cyan-500" />
+                <Cloud className="h-6 w-6 sm:h-7 sm:w-7 text-cyan-500" />
               )}
             </div>
-            <div>
-              <div className="flex items-center gap-3">
-                <h1 className="text-3xl font-bold tracking-tight">{project.name}</h1>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                <h1 className="text-2xl sm:text-3xl font-bold tracking-tight truncate">{project.name}</h1>
                 <StatusBadge status={project.status} />
               </div>
-              <p className="text-sm text-muted-foreground mt-1 flex flex-wrap items-center gap-x-4 gap-y-1">
+              <p className="text-xs sm:text-sm text-muted-foreground mt-1 flex flex-wrap items-center gap-x-3 sm:gap-x-4 gap-y-1">
                 <span className="capitalize font-bold text-foreground/80">{project.project_type}</span>
                 <span className="flex items-center gap-1.5 opacity-70">
-                  <Calendar className="h-3.5 w-3.5" />
-                  Created {new Date(project.created_at).toLocaleString([], { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                  <Calendar className="h-3 sm:h-3.5 w-3 sm:w-3.5" />
+                  <span className="hidden sm:inline">Created </span>{new Date(project.created_at).toLocaleString([], { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                 </span>
-                <span className="flex items-center gap-1.5 opacity-70">
-                  <Clock className="h-3.5 w-3.5" />
-                  Updated {new Date(project.updated_at).toLocaleString([], { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                </span>
-                <span className="font-mono text-[10px] bg-secondary px-1.5 py-0.5 rounded uppercase tracking-wider">{project.id.split('-')[0]}</span>
+                <span className="font-mono text-[9px] sm:text-[10px] bg-secondary px-1.5 py-0.5 rounded uppercase tracking-wider">{project.id.split('-')[0]}</span>
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 bg-background/50 backdrop-blur-sm p-1.5 rounded-2xl border border-border/50 shadow-sm">
+          <div className="flex flex-wrap items-center gap-2 bg-background/50 backdrop-blur-sm p-1.5 rounded-2xl border border-border/50 shadow-sm w-full lg:w-auto shrink-0">
             {project.status === "running" ? (
               <>
                 <Button 
@@ -547,7 +543,7 @@ export default function ProjectDetail() {
                     size="sm" 
                     onClick={() => confirmAction("redeploy")} 
                     disabled={actionLoading} 
-                    className="gap-2 h-9 px-4 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white shadow-lg shadow-emerald-500/20 border-0 rounded-xl transition-all font-bold"
+                    className="gap-1 sm:gap-2 h-9 px-3 sm:px-4 text-xs sm:text-sm bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white shadow-lg shadow-emerald-500/20 border-0 rounded-xl transition-all font-bold flex-1 lg:flex-none"
                 >
                   {currentAction === "redeploy" ? <Loader2 className="h-4 w-4 animate-spin text-white" /> : <Play className="h-4 w-4 fill-current" />}
                   Redeploy
@@ -558,7 +554,7 @@ export default function ProjectDetail() {
                     size="sm" 
                     onClick={() => confirmAction("restart")} 
                     disabled={actionLoading} 
-                    className="gap-2 h-9 px-4 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white shadow-lg shadow-amber-500/20 border-0 rounded-xl transition-all font-bold"
+                    className="gap-2 h-9 px-4 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white shadow-lg shadow-cyan-500/20 border-0 rounded-xl transition-all font-bold"
                 >
                   {currentAction === "restart" ? <Loader2 className="h-4 w-4 animate-spin text-white" /> : <RotateCw className="h-4 w-4" />}
                   Restart
@@ -569,7 +565,7 @@ export default function ProjectDetail() {
                     size="sm" 
                     onClick={() => confirmAction("stop")} 
                     disabled={actionLoading} 
-                    className="gap-2 h-9 px-4 bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white shadow-lg shadow-red-500/20 border-0 rounded-xl transition-all font-bold"
+                    className="gap-2 h-9 px-4 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white shadow-lg shadow-amber-500/20 border-0 rounded-xl transition-all font-bold"
                 >
                   {currentAction === "stop" ? <Loader2 className="h-4 w-4 animate-spin text-white" /> : <Square className="h-4 w-4 fill-current" />}
                   Stop
@@ -595,13 +591,14 @@ export default function ProjectDetail() {
 
             <Button 
                 variant="ghost" 
-                size="icon" 
+                size="sm" 
                 onClick={() => confirmAction("delete")} 
                 disabled={actionLoading} 
-                className="h-9 w-9 bg-secondary hover:bg-red-500 hover:text-white text-muted-foreground rounded-xl transition-all shadow-sm"
+                className="gap-2 h-9 px-4 flex-1 lg:flex-none bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white shadow-lg shadow-red-500/25 rounded-xl transition-all border-none font-bold"
                 title="Delete Project"
             >
                 {currentAction === "delete" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                Delete
             </Button>
           </div>
         </div>
@@ -611,43 +608,48 @@ export default function ProjectDetail() {
         {/* Stats Grid removed - moved to Overview */}
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="sticky top-[72px] z-10 w-full md:w-auto flex overflow-x-auto no-scrollbar justify-start bg-background/60 backdrop-blur-xl border border-white/10 p-1.5 rounded-full shadow-2xl inline-flex items-center gap-2">
+          <div className="sticky top-[72px] z-10 -mx-4 px-4 md:mx-0 md:px-0 overflow-x-auto md:overflow-visible md:flex md:justify-center">
+            <TabsList className="w-max flex justify-start md:justify-center bg-background/80 backdrop-blur-xl border border-border/30 p-1 sm:p-1.5 rounded-full shadow-[0_4px_20px_-4px_rgba(0,0,0,0.1)] dark:shadow-[0_4px_20px_-4px_rgba(0,0,0,0.3)] inline-flex items-center gap-0.5 sm:gap-1">
             <TabsTrigger 
               value="overview" 
-              className="gap-2 rounded-full px-5 py-2.5 text-sm font-bold transition-all duration-300 data-[state=active]:bg-white data-[state=active]:dark:bg-cyan-500/20 data-[state=active]:text-cyan-600 data-[state=active]:dark:text-cyan-400 data-[state=active]:shadow-md data-[state=active]:border-cyan-200 data-[state=active]:dark:border-cyan-500/30 border border-transparent hover:bg-white/5"
+              className="gap-1.5 sm:gap-2 rounded-full px-3 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-bold transition-all duration-300 data-[state=active]:bg-white data-[state=active]:dark:bg-cyan-500/20 data-[state=active]:text-cyan-600 data-[state=active]:dark:text-cyan-400 data-[state=active]:shadow-sm data-[state=active]:border-cyan-200/50 data-[state=active]:dark:border-cyan-500/30 border border-transparent hover:bg-secondary/50 whitespace-nowrap"
             >
-              <LayoutDashboard className="h-4 w-4" />
-              Overview
+              <LayoutDashboard className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+              <span className="hidden xs:inline">Overview</span>
+              <span className="xs:hidden">View</span>
             </TabsTrigger>
             <TabsTrigger 
               value="deployments" 
-              className="gap-2 rounded-full px-5 py-2.5 text-sm font-bold transition-all duration-300 data-[state=active]:bg-white data-[state=active]:dark:bg-cyan-500/20 data-[state=active]:text-cyan-600 data-[state=active]:dark:text-cyan-400 data-[state=active]:shadow-md data-[state=active]:border-cyan-200 data-[state=active]:dark:border-cyan-500/30 border border-transparent hover:bg-white/5"
+              className="gap-1.5 sm:gap-2 rounded-full px-3 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-bold transition-all duration-300 data-[state=active]:bg-white data-[state=active]:dark:bg-cyan-500/20 data-[state=active]:text-cyan-600 data-[state=active]:dark:text-cyan-400 data-[state=active]:shadow-sm data-[state=active]:border-cyan-200/50 data-[state=active]:dark:border-cyan-500/30 border border-transparent hover:bg-secondary/50 whitespace-nowrap"
             >
-              <Activity className="h-4 w-4" />
-              Deployments
+              <Activity className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+              <span className="hidden xs:inline">Deployments</span>
+              <span className="xs:hidden">Deploy</span>
             </TabsTrigger>
             <TabsTrigger 
               value="env" 
-              className="gap-2 rounded-full px-5 py-2.5 text-sm font-bold transition-all duration-300 data-[state=active]:bg-white data-[state=active]:dark:bg-cyan-500/20 data-[state=active]:text-cyan-600 data-[state=active]:dark:text-cyan-400 data-[state=active]:shadow-md data-[state=active]:border-cyan-200 data-[state=active]:dark:border-cyan-500/30 border border-transparent hover:bg-white/5"
+              className="gap-1.5 sm:gap-2 rounded-full px-3 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-bold transition-all duration-300 data-[state=active]:bg-white data-[state=active]:dark:bg-cyan-500/20 data-[state=active]:text-cyan-600 data-[state=active]:dark:text-cyan-400 data-[state=active]:shadow-sm data-[state=active]:border-cyan-200/50 data-[state=active]:dark:border-cyan-500/30 border border-transparent hover:bg-secondary/50 whitespace-nowrap"
             >
-              <Key className="h-4 w-4" />
-              Environment
+              <Key className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+              <span className="hidden xs:inline">Environment</span>
+              <span className="xs:hidden">Env</span>
             </TabsTrigger>
             <TabsTrigger 
               value="source" 
-              className="gap-2 rounded-full px-5 py-2.5 text-sm font-bold transition-all duration-300 data-[state=active]:bg-white data-[state=active]:dark:bg-cyan-500/20 data-[state=active]:text-cyan-600 data-[state=active]:dark:text-cyan-400 data-[state=active]:shadow-md data-[state=active]:border-cyan-200 data-[state=active]:dark:border-cyan-500/30 border border-transparent hover:bg-white/5"
+              className="gap-1.5 sm:gap-2 rounded-full px-3 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-bold transition-all duration-300 data-[state=active]:bg-white data-[state=active]:dark:bg-cyan-500/20 data-[state=active]:text-cyan-600 data-[state=active]:dark:text-cyan-400 data-[state=active]:shadow-sm data-[state=active]:border-cyan-200/50 data-[state=active]:dark:border-cyan-500/30 border border-transparent hover:bg-secondary/50 whitespace-nowrap"
             >
-              <FileCode className="h-4 w-4" />
+              <FileCode className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
               Source
             </TabsTrigger>
             <TabsTrigger 
               value="domains" 
-              className="gap-2 rounded-full px-5 py-2.5 text-sm font-bold transition-all duration-300 data-[state=active]:bg-white data-[state=active]:dark:bg-cyan-500/20 data-[state=active]:text-cyan-600 data-[state=active]:dark:text-cyan-400 data-[state=active]:shadow-md data-[state=active]:border-cyan-200 data-[state=active]:dark:border-cyan-500/30 border border-transparent hover:bg-white/5"
+              className="gap-1.5 sm:gap-2 rounded-full px-3 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-bold transition-all duration-300 data-[state=active]:bg-white data-[state=active]:dark:bg-cyan-500/20 data-[state=active]:text-cyan-600 data-[state=active]:dark:text-cyan-400 data-[state=active]:shadow-sm data-[state=active]:border-cyan-200/50 data-[state=active]:dark:border-cyan-500/30 border border-transparent hover:bg-secondary/50 whitespace-nowrap"
             >
-              <Globe className="h-4 w-4" />
+              <Globe className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
               Domains
             </TabsTrigger>
           </TabsList>
+          </div>
 
           <TabsContent value="overview" className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-400">
             {/* Real Services Card */}
@@ -1022,11 +1024,11 @@ export default function ProjectDetail() {
 
                {/* DNS Guide Section */}
                <Card className="p-6 border-cyan-500/20 bg-cyan-500/5">
-                 <div className="flex items-start gap-4">
+                   <div className="flex flex-col sm:flex-row items-start gap-3 sm:gap-4">
                    <div className="p-2 bg-cyan-500/10 rounded-lg shrink-0">
                      <Info className="h-5 w-5 text-cyan-500" />
                    </div>
-                   <div className="space-y-4 flex-1">
+                   <div className="space-y-4 flex-1 min-w-0 w-full">
                      <div>
                        <h3 className="text-lg font-bold text-foreground">DNS Configuration Guide</h3>
                        <p className="text-sm text-muted-foreground mt-1">
@@ -1058,26 +1060,26 @@ export default function ProjectDetail() {
                          </p>
                        </div>
 
-                        <div className="space-y-2 text-sm">
-                          <div className="grid grid-cols-[80px_1fr_auto_1fr] gap-2 items-center p-2 rounded-lg hover:bg-white/5 transition-colors group">
+                        <div className="space-y-2 text-sm overflow-x-auto">
+                          <div className="flex flex-col sm:grid sm:grid-cols-[80px_1fr_auto_1fr] gap-1 sm:gap-2 sm:items-center p-2 rounded-lg hover:bg-white/5 transition-colors group">
                             <span className="font-bold text-muted-foreground group-hover:text-cyan-400 transition-colors">Root</span>
-                            <span className="font-mono">example.com</span>
-                            <span><ArrowRight className="h-4 w-4 text-muted-foreground/50" /></span>
-                            <span className="font-mono bg-secondary px-2 py-1 rounded-md text-xs text-center border border-white/5">A Record (@)</span>
+                            <span className="font-mono text-sm truncate">example.com</span>
+                            <span className="hidden sm:block"><ArrowRight className="h-4 w-4 text-muted-foreground/50" /></span>
+                            <span className="font-mono bg-secondary px-2 py-1 rounded-md text-xs text-center sm:text-left border border-white/5 w-fit">A Record (@)</span>
                           </div>
-                          <div className="grid grid-cols-[80px_1fr_auto_1fr] gap-2 items-center p-2 rounded-lg hover:bg-white/5 transition-colors group">
+                          <div className="flex flex-col sm:grid sm:grid-cols-[80px_1fr_auto_1fr] gap-1 sm:gap-2 sm:items-center p-2 rounded-lg hover:bg-white/5 transition-colors group">
                             <span className="font-bold text-muted-foreground group-hover:text-cyan-400 transition-colors">Subdomain</span>
-                            <span className="font-mono">app.example.com</span>
-                            <span><ArrowRight className="h-4 w-4 text-muted-foreground/50" /></span>
-                            <span className="font-mono bg-secondary px-2 py-1 rounded-md text-xs text-center border border-white/5">A Record (app)</span>
+                            <span className="font-mono text-sm truncate">app.example.com</span>
+                            <span className="hidden sm:block"><ArrowRight className="h-4 w-4 text-muted-foreground/50" /></span>
+                            <span className="font-mono bg-secondary px-2 py-1 rounded-md text-xs text-center sm:text-left border border-white/5 w-fit">A Record (app)</span>
                           </div>
-                          <div className="grid grid-cols-[80px_1fr_auto_1fr] gap-2 items-center p-2 rounded-lg hover:bg-white/5 transition-colors group">
+                          <div className="flex flex-col sm:grid sm:grid-cols-[80px_1fr_auto_1fr] gap-1 sm:gap-2 sm:items-center p-2 rounded-lg hover:bg-white/5 transition-colors group">
                             <span className="font-bold text-muted-foreground group-hover:text-cyan-400 transition-colors">WWW</span>
-                            <span className="font-mono">www.example.com</span>
-                            <span><ArrowRight className="h-4 w-4 text-muted-foreground/50" /></span>
-                            <span className="font-mono bg-secondary px-2 py-1 rounded-md text-xs text-center border border-white/5">CNAME (@)</span>
+                            <span className="font-mono text-sm truncate">www.example.com</span>
+                            <span className="hidden sm:block"><ArrowRight className="h-4 w-4 text-muted-foreground/50" /></span>
+                            <span className="font-mono bg-secondary px-2 py-1 rounded-md text-xs text-center sm:text-left border border-white/5 w-fit">CNAME (@)</span>
                           </div>
-                          <div className="flex items-center gap-2 mt-2 pt-2 border-t border-border/30 text-xs text-emerald-500 font-medium">
+                          <div className="flex flex-wrap items-center gap-2 mt-2 pt-2 border-t border-border/30 text-xs text-emerald-500 font-medium">
                             <Lock className="h-3 w-3" />
                             ssl/https: Enable <strong>Full (Strict)</strong> mode in Cloudflare/Provider.
                           </div>

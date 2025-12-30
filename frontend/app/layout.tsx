@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { ThemeProvider } from "@/lib/theme";
 import { Toaster } from "@/components/ui/sonner";
+import { ScrollToTop } from "@/components/ScrollToTop";
 
 export const metadata: Metadata = {
   title: "Docklift - Self-hosted Docker Deployment Platform",
@@ -34,6 +35,7 @@ export default function RootLayout({
           <div className="relative min-h-screen flex flex-col">
             <div className="fixed inset-0 -z-10 bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(56,189,248,0.08),transparent)] dark:bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(56,189,248,0.12),transparent)]" />
             {children}
+            <ScrollToTop />
           </div>
           <Toaster />
         </ThemeProvider>

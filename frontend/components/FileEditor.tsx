@@ -71,23 +71,34 @@ export function FileEditor({ projectId, filename, content, onClose, onSave }: Fi
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md p-4 md:p-10 animate-in fade-in duration-300">
       <div className="w-full max-w-6xl h-full flex flex-col bg-[#09090b] border border-white/10 rounded-3xl shadow-[0_0_50px_-12px_rgba(0,0,0,0.5)] overflow-hidden">
         {/* Editor Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-white/5 bg-zinc-900/40 backdrop-blur-xl">
-          <div className="flex items-center gap-4">
-            <div className="bg-violet-500/10 p-2 rounded-xl">
-              <Code2 className="h-5 w-5 text-violet-500" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-bold tracking-tight text-zinc-100">{filename.split('/').pop()}</span>
-                <span className="text-[10px] uppercase font-bold tracking-widest text-zinc-500 bg-white/5 px-2 py-0.5 rounded-full border border-white/5 shrink-0">
-                  {getLanguage(filename)}
-                </span>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-white/5 bg-zinc-900/40 backdrop-blur-xl gap-3">
+          <div className="flex items-center justify-between sm:justify-start gap-3 sm:gap-4">
+            <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1">
+              <div className="bg-violet-500/10 p-2 rounded-xl shrink-0">
+                <Code2 className="h-5 w-5 text-violet-500" />
               </div>
-              <p className="text-[10px] text-zinc-500 font-mono mt-0.5">{filename}</p>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-bold tracking-tight text-zinc-100 truncate">{filename.split('/').pop()}</span>
+                  <span className="text-[10px] uppercase font-bold tracking-widest text-zinc-500 bg-white/5 px-2 py-0.5 rounded-full border border-white/5 shrink-0 hidden sm:inline">
+                    {getLanguage(filename)}
+                  </span>
+                </div>
+                <p className="text-[10px] text-zinc-500 font-mono mt-0.5 truncate">{filename}</p>
+              </div>
             </div>
+            {/* Close button - visible on mobile in header row */}
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              onClick={onClose}
+              className="sm:hidden h-10 w-10 rounded-xl hover:bg-white/5 text-zinc-400 hover:text-white transition-colors shrink-0"
+            >
+              <X className="h-5 w-5" />
+            </Button>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
             <div className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/5 border border-emerald-500/10 mr-2">
               <Sparkles className="h-3.5 w-3.5 text-emerald-500" />
               <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest">Autosave Ready</span>
@@ -95,17 +106,17 @@ export function FileEditor({ projectId, filename, content, onClose, onSave }: Fi
             <Button 
               onClick={handleSave} 
               disabled={saving}
-              className="h-10 px-6 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white border-none shadow-lg shadow-violet-500/20 rounded-xl transition-all active:scale-95"
+              className="h-10 px-4 sm:px-6 flex-1 sm:flex-none bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white border-none shadow-lg shadow-violet-500/20 rounded-xl transition-all active:scale-95"
             >
               {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
-              <span className="font-bold">Save Changes</span>
+              <span className="font-bold">Save</span>
             </Button>
-            <div className="w-px h-6 bg-white/10 mx-1" />
+            <div className="hidden sm:block w-px h-6 bg-white/10 mx-1" />
             <Button 
               variant="ghost" 
               size="icon" 
               onClick={onClose}
-              className="h-10 w-10 rounded-xl hover:bg-white/5 text-zinc-400 hover:text-white transition-colors"
+              className="hidden sm:flex h-10 w-10 rounded-xl hover:bg-white/5 text-zinc-400 hover:text-white transition-colors"
             >
               <X className="h-5 w-5" />
             </Button>

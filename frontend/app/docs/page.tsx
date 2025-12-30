@@ -5,12 +5,12 @@ import { useState, useEffect } from "react";
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 import { 
-  ChevronUp, Container, Rocket, FileCode, Settings2, Terminal, FolderTree, 
+  Container, Rocket, FileCode, Settings2, Terminal, FolderTree, 
   History, Plug, Globe, Github, Server, Key, Database, Activity, Cpu, 
   HardDrive, Network, Shield, RefreshCw, Trash2, Power, Code, Download, Info, Wrench, Copy, Check
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { copyToClipboard } from "@/lib/utils";
+import { copyToClipboard, cn } from "@/lib/utils";
 
 const sections = [
   { id: "introduction", title: "Introduction", icon: Info },
@@ -30,14 +30,123 @@ const sections = [
   { id: "troubleshooting", title: "Troubleshooting", icon: Shield },
 ];
 
+const CopyButton = ({ text, className }: { text: string, className?: string }) => {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = () => {
+    copyToClipboard(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+  return (
+    <button
+      onClick={handleCopy}
+      className={cn(
+        "flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white transition-all border border-white/5 shrink-0 active:scale-95",
+        className
+      )}
+    >
+      {copied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
+      <span className="text-[10px] font-bold uppercase tracking-tight hidden sm:inline">
+        {copied ? "Copied" : "Copy"}
+      </span>
+    </button>
+  );
+};
+
+const CommandBlock = ({ command, label, color = "cyan" }: { command: string, label?: string, color?: string }) => {
+  return (
+    <div className="group mb-4 last:mb-0">
+      {label && <p className="text-xs font-bold text-muted-foreground/80 uppercase tracking-wider mb-2 ml-1"># {label}</p>}
+      <div className="relative group/btn">
+        <div className="flex items-center gap-3 bg-zinc-900 border border-white/5 rounded-xl px-4 py-2.5 group-hover/btn:border-white/10 transition-all shadow-inner">
+          <Terminal className="h-4 w-4 text-zinc-600 shrink-0" />
+          <div className="overflow-x-auto no-scrollbar flex-1 font-mono text-sm py-0.5">
+            <code className={cn(
+              "whitespace-nowrap",
+              color === "cyan" ? "text-cyan-400" : 
+              color === "red" ? "text-red-400" : 
+              color === "emerald" ? "text-emerald-400" : 
+              color === "amber" ? "text-amber-400" : 
+              color === "violet" ? "text-violet-400" : "text-blue-400"
+            )}>
+              {command}
+            </code>
+          </div>
+          <CopyButton text={command} />
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const TerminalWindow = ({ title, items, color = "cyan" }: { title: string, items: { cmd?: string, comment?: string }[], color?: string }) => {
+  return (
+    <div className="bg-zinc-950 rounded-2xl border border-white/5 overflow-hidden mb-8 shadow-2xl">
+      <div className="flex items-center justify-between px-5 py-3.5 bg-white/5 border-b border-white/5">
+        <div className="flex items-center gap-4">
+          <div className="flex gap-2">
+            <div className="w-3 h-3 rounded-full bg-red-500/30 border border-red-500/20" />
+            <div className="w-3 h-3 rounded-full bg-amber-500/30 border border-amber-500/20" />
+            <div className="w-3 h-3 rounded-full bg-emerald-500/30 border border-emerald-500/20" />
+          </div>
+          <div className="h-4 w-[1px] bg-white/10 mx-1" />
+          <span className="text-[11px] font-black text-zinc-500 uppercase tracking-[0.2em]">{title}</span>
+        </div>
+      </div>
+      <div className="p-6 space-y-4">
+        {items.map((item, i) => (
+          <div key={i} className="group/item">
+            {item.comment && (
+              <p className="text-xs text-zinc-500 font-medium italic mb-2 ml-1"># {item.comment}</p>
+            )}
+            {item.cmd && (
+              <div className="flex items-center justify-between gap-4 bg-white/5 rounded-xl px-4 py-2.5 border border-white/5 group-hover/item:border-white/10 transition-all">
+                <div className="flex items-center gap-3 min-w-0 flex-1">
+                  <span className="text-zinc-600 text-xs font-mono select-none">$</span>
+                  <div className="overflow-x-auto no-scrollbar font-mono text-sm py-0.5 w-full">
+                    <code className={cn(
+                      "whitespace-nowrap",
+                      color === "cyan" ? "text-cyan-400" : 
+                      color === "emerald" ? "text-emerald-400" : 
+                      color === "amber" ? "text-amber-400" : "text-zinc-300"
+                    )}>
+                      {item.cmd}
+                    </code>
+                  </div>
+                </div>
+                <CopyButton text={item.cmd} />
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const StaticCodeBlock = ({ code, icon: Icon = FileCode, title, color = "cyan" }: { code: string, icon?: any, title?: string, color?: string }) => {
+  return (
+    <div className="relative bg-zinc-950 rounded-2xl border border-white/5 overflow-hidden mb-6 group">
+      <div className="flex items-center justify-between px-5 py-3.5 bg-white/5 border-b border-white/5">
+        <div className="flex items-center gap-3">
+          <Icon className={cn("h-4 w-4", color === "cyan" ? "text-cyan-500" : "text-zinc-500")} />
+          <span className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider">{title || "Code Example"}</span>
+        </div>
+        <CopyButton text={code} className="bg-transparent border-transparent hover:bg-white/5" />
+      </div>
+      <div className="p-6 overflow-x-auto no-scrollbar text-sm text-zinc-300 font-mono leading-relaxed">
+        <pre>{code}</pre>
+      </div>
+    </div>
+  );
+};
+
+
 export default function DocsPage() {
   const [activeSection, setActiveSection] = useState("introduction");
-  const [showScrollTop, setShowScrollTop] = useState(false);
 
   useEffect(() => {
     const handleScroll = () => {
-      setShowScrollTop(window.scrollY > 300);
-      
       const offset = 100;
       for (const section of sections) {
         const element = document.getElementById(section.id);
@@ -55,10 +164,6 @@ export default function DocsPage() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  const scrollToTop = () => {
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  };
-
   const scrollToSection = (id: string) => {
     const element = document.getElementById(id);
     if (element) {
@@ -71,7 +176,7 @@ export default function DocsPage() {
       <Header />
       
       <div className="flex-1 container max-w-7xl mx-auto px-4 md:px-6 py-8">
-        <div className="flex gap-8">
+        <div className="flex flex-col lg:flex-row gap-8">
           {/* Sidebar TOC */}
           <aside className="hidden lg:block w-64 shrink-0">
             <div className="sticky top-20">
@@ -96,12 +201,34 @@ export default function DocsPage() {
               </nav>
             </div>
           </aside>
+          {/* Mobile Section Selector */}
+          <div className="lg:hidden sticky top-[64px] z-30 bg-background/95 backdrop-blur-xl py-3 -mx-4 px-4 border-b border-border/30 overflow-x-auto no-scrollbar">
+            <div className="flex items-center gap-1.5 w-max">
+              {sections.map((section) => (
+                <button
+                  key={section.id}
+                  onClick={() => scrollToSection(section.id)}
+                  className={cn(
+                    "flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold transition-all whitespace-nowrap",
+                    activeSection === section.id
+                      ? "bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/20 shadow-sm"
+                      : "bg-secondary/40 text-muted-foreground border border-transparent hover:bg-secondary/60"
+                  )}
+                >
+                  <section.icon className="h-3.5 w-3.5" />
+                  {section.title}
+                </button>
+              ))}
+            </div>
+          </div>
 
           {/* Main Content */}
           <main className="flex-1 min-w-0">
-            <div className="mb-8">
-              <h1 className="text-4xl font-bold mb-2">Documentation</h1>
-              <p className="text-lg text-muted-foreground">
+            <div className="mb-10 sm:mb-12">
+              <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent mb-3 sm:mb-4">
+                Documentation
+              </h1>
+              <p className="text-base sm:text-lg text-muted-foreground max-w-2xl leading-relaxed">
                 Complete guide to deploying and managing Docker containers with Docklift.
               </p>
             </div>
@@ -179,35 +306,42 @@ export default function DocsPage() {
                 </p>
                 
                 <div className="bg-secondary/50 rounded-xl p-6 mb-4">
-                  <h4 className="font-semibold mb-3 text-emerald-500">📥 Install</h4>
-                  <div className="bg-zinc-900 rounded-lg p-3 font-mono text-sm text-zinc-300 mb-3">
-                    <div className="text-zinc-500 mb-2"># One-liner install (recommended)</div>
-                    <pre className="text-cyan-400">curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh | sudo bash</pre>
-                  </div>
-                  <div className="bg-zinc-900 rounded-lg p-3 font-mono text-sm text-zinc-300">
-                    <div className="text-zinc-500 mb-2"># Manual install</div>
-                    <pre>{`git clone https://github.com/SSujitX/docklift.git
-cd docklift
-docker compose up -d`}</pre>
-                  </div>
+                  <h4 className="font-semibold mb-4 text-emerald-500">📥 Install</h4>
+                  <CommandBlock 
+                    label="One-liner install (recommended)" 
+                    command="curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh | sudo bash" 
+                    color="emerald"
+                  />
+                  <TerminalWindow 
+                    title="Manual Installation"
+                    color="emerald"
+                    items={[
+                      { comment: "Clone the repository", cmd: "git clone https://github.com/SSujitX/docklift.git" },
+                      { comment: "Enter directory", cmd: "cd docklift" },
+                      { comment: "Start with Docker Compose", cmd: "docker compose up -d" }
+                    ]}
+                  />
                   <p className="text-sm text-muted-foreground mt-3">
                     Access Docklift at <code className="bg-primary/10 px-1.5 py-0.5 rounded text-primary">http://YOUR_SERVER_IP:8080</code>
                   </p>
                 </div>
 
                 <div className="bg-secondary/50 rounded-xl p-6 mb-4">
-                  <h4 className="font-semibold mb-3 text-red-500">🗑️ Uninstall</h4>
-                  <div className="bg-zinc-900 rounded-lg p-3 font-mono text-sm text-zinc-300 mb-3">
-                    <div className="text-zinc-500 mb-2"># One-liner uninstall</div>
-                    <pre className="text-red-400">curl -fsSL "https://raw.githubusercontent.com/SSujitX/docklift/master/uninstall.sh" | sudo bash -s -- -y</pre>
-                  </div>
-                  <div className="bg-zinc-900 rounded-lg p-3 font-mono text-sm text-zinc-300">
-                    <div className="text-zinc-500 mb-2"># Manual uninstall</div>
-                    <pre>{`cd docklift
-docker compose down -v     # Stop and remove containers
-cd ..
-rm -rf docklift            # Remove files`}</pre>
-                  </div>
+                  <h4 className="font-semibold mb-4 text-red-500">🗑️ Uninstall</h4>
+                  <CommandBlock 
+                    label="One-liner uninstall" 
+                    command='curl -fsSL "https://raw.githubusercontent.com/SSujitX/docklift/master/uninstall.sh" | sudo bash -s -- -y' 
+                    color="red"
+                  />
+                  <TerminalWindow 
+                    title="Manual Uninstall"
+                    color="red"
+                    items={[
+                      { comment: "Enter directory", cmd: "cd docklift" },
+                      { comment: "Stop and remove containers", cmd: "docker compose down -v" },
+                      { comment: "Remove project files", cmd: "cd .. && rm -rf docklift" }
+                    ]}
+                  />
                   <div className="mt-3 p-3 bg-amber-500/10 rounded-lg border border-amber-500/20">
                     <p className="text-sm text-amber-600 dark:text-amber-400">
                       <strong>Warning:</strong> This will delete all deployed projects and data!
@@ -216,11 +350,12 @@ rm -rf docklift            # Remove files`}</pre>
                 </div>
 
                 <div className="bg-gradient-to-r from-cyan-500/10 to-blue-500/10 rounded-xl p-6 border border-cyan-500/20 mb-4">
-                  <h4 className="font-semibold mb-3 text-cyan-500">⬆️ Upgrade (Preserves Data)</h4>
-                  <div className="bg-zinc-900 rounded-lg p-3 font-mono text-sm text-zinc-300 mb-3">
-                    <div className="text-zinc-500 mb-2"># Safe one-liner upgrade</div>
-                    <pre className="text-cyan-400">curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/upgrade.sh | sudo bash</pre>
-                  </div>
+                  <h4 className="font-semibold mb-4 text-cyan-500">⬆️ Upgrade (Preserves Data)</h4>
+                  <CommandBlock 
+                    label="Safe one-liner upgrade" 
+                    command="curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/upgrade.sh | sudo bash" 
+                    color="cyan"
+                  />
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
                       <span className="text-emerald-500">✓</span> Database preserved
@@ -238,17 +373,18 @@ rm -rf docklift            # Remove files`}</pre>
                 </div>
 
                 <div className="bg-secondary/50 rounded-xl p-6">
-                  <h4 className="font-semibold mb-3">🛠️ Development Mode</h4>
-                  <p className="text-sm text-muted-foreground mb-3">For contributing or local development:</p>
-                  <div className="bg-zinc-900 rounded-lg p-3 font-mono text-sm text-zinc-300">
-                    <pre>{`# Backend
-cd backend && bun install
-bun run dev
-
-# Frontend (new terminal)
-cd frontend && npm install
-npm run dev`}</pre>
-                  </div>
+                  <h4 className="font-semibold mb-4">🛠️ Development Mode</h4>
+                  <p className="text-sm text-muted-foreground mb-4">For contributing or local development:</p>
+                  <TerminalWindow 
+                    title="Local Development"
+                    color="amber"
+                    items={[
+                      { comment: "Setup Backend", cmd: "cd backend && bun install" },
+                      { cmd: "bun run dev" },
+                      { comment: "Setup Frontend (separate terminal)", cmd: "cd frontend && npm install" },
+                      { cmd: "npm run dev" }
+                    ]}
+                  />
                   <p className="text-sm text-muted-foreground mt-3">
                     Access at <code className="bg-primary/10 px-1.5 py-0.5 rounded text-primary">http://localhost:3000</code>
                   </p>
@@ -416,18 +552,21 @@ npm run dev`}</pre>
 
                 <div className="bg-secondary/50 rounded-xl p-6">
                   <h4 className="font-semibold mb-3">Multi-Service Projects</h4>
-                  <p className="text-sm text-muted-foreground mb-3">
+                  <p className="text-sm text-muted-foreground mb-4">
                     Docklift supports projects with multiple Dockerfiles. Each service gets its own port and can have custom domains.
                   </p>
-                  <div className="bg-zinc-900 rounded-lg p-3 font-mono text-sm text-zinc-300">
-                    <pre>{`my-project/
+                  <StaticCodeBlock 
+                    title="Project Structure"
+                    icon={FolderTree}
+                    color="blue"
+                    code={`my-project/
 ├── api/
 │   └── Dockerfile      # → Port 6001
 ├── frontend/
 │   └── Dockerfile      # → Port 6002
 └── worker/
-    └── Dockerfile      # → Port 6003`}</pre>
-                  </div>
+    └── Dockerfile      # → Port 6003`} 
+                  />
                 </div>
               </section>
 
@@ -441,26 +580,27 @@ npm run dev`}</pre>
                   Your project must include at least one Dockerfile. Docklift reads the <code className="bg-primary/10 px-1.5 py-0.5 rounded text-primary">EXPOSE</code> directive to set up port mapping.
                 </p>
                 
-                <div className="bg-zinc-900 rounded-xl p-4 font-mono text-sm text-zinc-300 overflow-x-auto mb-4">
-                  <div className="text-zinc-500 mb-2"># Example: Node.js Application</div>
-                  <pre>{`FROM node:20-alpine
+                <div className="space-y-6">
+                  <StaticCodeBlock 
+                    title="Example: Node.js Application" 
+                    code={`FROM node:20-alpine
 WORKDIR /app
 COPY package*.json ./
 RUN npm install
 COPY . .
 EXPOSE 3000
-CMD ["npm", "start"]`}</pre>
-                </div>
-
-                <div className="bg-zinc-900 rounded-xl p-4 font-mono text-sm text-zinc-300 overflow-x-auto mb-4">
-                  <div className="text-zinc-500 mb-2"># Example: Python Flask</div>
-                  <pre>{`FROM python:3.11-slim
+CMD ["npm", "start"]`} 
+                  />
+                  <StaticCodeBlock 
+                    title="Example: Python Flask" 
+                    code={`FROM python:3.11-slim
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 COPY . .
 EXPOSE 5000
-CMD ["python", "app.py"]`}</pre>
+CMD ["python", "app.py"]`} 
+                  />
                 </div>
 
                 <div className="bg-gradient-to-r from-cyan-500/10 to-blue-500/10 rounded-xl p-4 border border-cyan-500/20">
@@ -577,13 +717,14 @@ CMD ["python", "app.py"]`}</pre>
                   </ol>
                 </div>
 
-                <div className="bg-zinc-900 rounded-xl p-4 font-mono text-sm text-zinc-300 overflow-x-auto">
-                  <div className="text-zinc-500 mb-2"># Example variables</div>
-                  <pre>{`DATABASE_URL=postgresql://user:pass@host:5432/db
+                <StaticCodeBlock 
+                  title="Example .env file" 
+                  icon={Key}
+                  code={`DATABASE_URL=postgresql://user:pass@host:5432/db
 API_KEY=sk-123456789
 NODE_ENV=production
-PORT=3000`}</pre>
-                </div>
+PORT=3000`} 
+                />
               </section>
 
               {/* System Overview */}
@@ -690,13 +831,15 @@ PORT=3000`}</pre>
                   </ul>
                 </div>
 
-                <div className="bg-zinc-900 rounded-xl p-4 font-mono text-sm text-zinc-300">
-                  <div className="text-zinc-500 mb-2"># Example commands</div>
-                  <pre>{`docker ps                    # List running containers
-docker logs <container>      # View container logs
-docker stats                 # Live resource usage
-htop                         # System process monitor`}</pre>
-                </div>
+                <TerminalWindow 
+                  title="Common Docker Commands"
+                  items={[
+                    { comment: "List running containers", cmd: "docker ps" },
+                    { comment: "View container logs", cmd: "docker logs <container_id>" },
+                    { comment: "Live resource usage", cmd: "docker stats" },
+                    { comment: "System process monitor", cmd: "htop" }
+                  ]}
+                />
               </section>
 
               {/* API Reference */}
@@ -915,25 +1058,14 @@ htop                         # System process monitor`}</pre>
                     <h4 className="font-semibold mb-4 text-cyan-500 flex items-center gap-2">
                       📜 Check Infrastructure Logs
                     </h4>
-                    <div className="space-y-3">
+                    <div className="space-y-4">
                       {[
                         { cmd: "docker logs docklift-backend --tail 50 -f", desc: "View Backend logs" },
                         { cmd: "docker logs docklift-frontend --tail 50 -f", desc: "View Frontend logs" },
                         { cmd: "docker compose up -d --build", desc: "Build & run" },
                         { cmd: "docker logs docklift-nginx-proxy --tail 50 -f", desc: "View Nginx Proxy logs" },
                       ].map((item, i) => (
-                        <div key={i} className="group">
-                          <p className="text-xs text-muted-foreground mb-1"># {item.desc}</p>
-                          <button
-                            onClick={() => {
-                              copyToClipboard(item.cmd);
-                            }}
-                            className="w-full text-left font-mono text-sm bg-zinc-900 hover:bg-zinc-800 text-zinc-300 px-4 py-2.5 rounded-lg flex items-center justify-between group transition-colors"
-                          >
-                            <code className="text-cyan-400">{item.cmd}</code>
-                            <Copy className="h-4 w-4 text-zinc-500 group-hover:text-cyan-400 transition-colors" />
-                          </button>
-                        </div>
+                        <CommandBlock key={i} label={item.desc} command={item.cmd} color="cyan" />
                       ))}
                     </div>
                   </div>
@@ -943,23 +1075,12 @@ htop                         # System process monitor`}</pre>
                     <h4 className="font-semibold mb-4 text-violet-500 flex items-center gap-2">
                       🛰️ Project Debugging
                     </h4>
-                    <div className="space-y-3">
+                    <div className="space-y-4">
                       {[
                         { cmd: "docker ps --filter name=dl_ --filter name=docklift_", desc: "List all Docklift-related containers" },
                         { cmd: "docker logs dl_<container_name> --tail 100 -f", desc: "View logs for a specific project container" },
                       ].map((item, i) => (
-                        <div key={i} className="group">
-                          <p className="text-xs text-muted-foreground mb-1"># {item.desc}</p>
-                          <button
-                            onClick={() => {
-                              copyToClipboard(item.cmd);
-                            }}
-                            className="w-full text-left font-mono text-sm bg-zinc-900 hover:bg-zinc-800 text-zinc-300 px-4 py-2.5 rounded-lg flex items-center justify-between group transition-colors"
-                          >
-                            <code className="text-violet-400">{item.cmd}</code>
-                            <Copy className="h-4 w-4 text-zinc-500 group-hover:text-violet-400 transition-colors" />
-                          </button>
-                        </div>
+                        <CommandBlock key={i} label={item.desc} command={item.cmd} color="violet" />
                       ))}
                     </div>
                   </div>
@@ -969,24 +1090,13 @@ htop                         # System process monitor`}</pre>
                     <h4 className="font-semibold mb-4 text-red-500 flex items-center gap-2">
                       🧹 Cleaning & Resetting
                     </h4>
-                    <div className="space-y-3">
+                    <div className="space-y-4">
                       {[
                         { cmd: 'curl -fsSL "https://raw.githubusercontent.com/SSujitX/docklift/master/uninstall.sh" | sudo bash -s -- -y', desc: "Nuclear Uninstall (Force-kills everything & deletes all data)" },
                         { cmd: "sudo fuser -k 3001/tcp", desc: "Force-kill anything holding port 3001" },
                         { cmd: "for port in {3001..3050}; do sudo fuser -k ${port}/tcp 2>/dev/null; done", desc: "Force-kill ports 3001-3050 range" },
                       ].map((item, i) => (
-                        <div key={i} className="group">
-                          <p className="text-xs text-muted-foreground mb-1"># {item.desc}</p>
-                          <button
-                            onClick={() => {
-                              copyToClipboard(item.cmd);
-                            }}
-                            className="w-full text-left font-mono text-sm bg-zinc-900 hover:bg-zinc-800 text-zinc-300 px-4 py-2.5 rounded-lg flex items-center justify-between group transition-colors overflow-x-auto"
-                          >
-                            <code className="text-red-400 whitespace-nowrap">{item.cmd}</code>
-                            <Copy className="h-4 w-4 text-zinc-500 group-hover:text-red-400 transition-colors shrink-0 ml-2" />
-                          </button>
-                        </div>
+                        <CommandBlock key={i} label={item.desc} command={item.cmd} color="red" />
                       ))}
                     </div>
                   </div>
@@ -996,23 +1106,12 @@ htop                         # System process monitor`}</pre>
                     <h4 className="font-semibold mb-4 text-emerald-500 flex items-center gap-2">
                       🌐 Network & Port Check
                     </h4>
-                    <div className="space-y-3">
+                    <div className="space-y-4">
                       {[
                         { cmd: "sudo netstat -tulpn | grep 3001", desc: "Check if a port is in use and by what process" },
                         { cmd: "docker network inspect docklift_network", desc: "Inspect the Docklift internal network" },
                       ].map((item, i) => (
-                        <div key={i} className="group">
-                          <p className="text-xs text-muted-foreground mb-1"># {item.desc}</p>
-                          <button
-                            onClick={() => {
-                              copyToClipboard(item.cmd);
-                            }}
-                            className="w-full text-left font-mono text-sm bg-zinc-900 hover:bg-zinc-800 text-zinc-300 px-4 py-2.5 rounded-lg flex items-center justify-between group transition-colors"
-                          >
-                            <code className="text-emerald-400">{item.cmd}</code>
-                            <Copy className="h-4 w-4 text-zinc-500 group-hover:text-emerald-400 transition-colors" />
-                          </button>
-                        </div>
+                        <CommandBlock key={i} label={item.desc} command={item.cmd} color="emerald" />
                       ))}
                     </div>
                   </div>
@@ -1022,7 +1121,7 @@ htop                         # System process monitor`}</pre>
                     <h4 className="font-semibold mb-4 text-amber-500 flex items-center gap-2">
                       🚀 Development Commands (Bun)
                     </h4>
-                    <div className="space-y-3">
+                    <div className="space-y-4">
                       {[
                         { cmd: "bunx prisma studio", desc: "Open DB GUI" },
                         { cmd: "bunx prisma db push", desc: "Push schema changes" },
@@ -1032,18 +1131,7 @@ htop                         # System process monitor`}</pre>
                         { cmd: "bun run build", desc: "Build for production" },
                         { cmd: "bunx tsc --noEmit", desc: "TypeScript check" },
                       ].map((item, i) => (
-                        <div key={i} className="group">
-                          <p className="text-xs text-muted-foreground mb-1"># {item.desc}</p>
-                          <button
-                            onClick={() => {
-                              copyToClipboard(item.cmd);
-                            }}
-                            className="w-full text-left font-mono text-sm bg-zinc-900 hover:bg-zinc-800 text-zinc-300 px-4 py-2.5 rounded-lg flex items-center justify-between group transition-colors"
-                          >
-                            <code className="text-amber-400">{item.cmd}</code>
-                            <Copy className="h-4 w-4 text-zinc-500 group-hover:text-amber-400 transition-colors" />
-                          </button>
-                        </div>
+                        <CommandBlock key={i} label={item.desc} command={item.cmd} color="amber" />
                       ))}
                     </div>
                   </div>
@@ -1053,7 +1141,7 @@ htop                         # System process monitor`}</pre>
                     <h4 className="font-semibold mb-4 text-blue-500 flex items-center gap-2">
                       📦 Update & Version Management
                     </h4>
-                    <div className="space-y-3">
+                    <div className="space-y-4">
                       {[
                         { cmd: "bun outdated", desc: "Check outdated packages" },
                         { cmd: "bun update", desc: "Update packages" },
@@ -1062,18 +1150,7 @@ htop                         # System process monitor`}</pre>
                         { cmd: "bun version minor", desc: "Bump minor version (0.1.5 → 0.2.0)" },
                         { cmd: "bun version major", desc: "Bump major version (0.1.5 → 1.0.0)" },
                       ].map((item, i) => (
-                        <div key={i} className="group">
-                          <p className="text-xs text-muted-foreground mb-1"># {item.desc}</p>
-                          <button
-                            onClick={() => {
-                              copyToClipboard(item.cmd);
-                            }}
-                            className="w-full text-left font-mono text-sm bg-zinc-900 hover:bg-zinc-800 text-zinc-300 px-4 py-2.5 rounded-lg flex items-center justify-between group transition-colors"
-                          >
-                            <code className="text-blue-400">{item.cmd}</code>
-                            <Copy className="h-4 w-4 text-zinc-500 group-hover:text-blue-400 transition-colors" />
-                          </button>
-                        </div>
+                        <CommandBlock key={i} label={item.desc} command={item.cmd} color="blue" />
                       ))}
                     </div>
                   </div>
@@ -1134,17 +1211,6 @@ htop                         # System process monitor`}</pre>
           </main>
         </div>
       </div>
-
-      {/* Scroll to top button */}
-      {showScrollTop && (
-        <Button
-          onClick={scrollToTop}
-          className="fixed bottom-6 right-6 h-10 w-10 rounded-full shadow-lg bg-primary hover:bg-primary/90"
-          size="icon"
-        >
-          <ChevronUp className="h-5 w-5" />
-        </Button>
-      )}
 
       <Footer />
     </div>

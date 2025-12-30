@@ -462,21 +462,21 @@ function SettingsContent() {
             {/* Domain Tab */}
             {activeTab === 'domain' && (
               <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <Card className="p-6 border-indigo-500/20">
-                  <div className="flex items-center justify-between mb-6">
+                <Card className="p-4 sm:p-6 border-indigo-500/20">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
                     <div className="flex items-center gap-3">
-                      <div className="p-3 rounded-xl bg-indigo-500/10">
-                        <Globe className="h-6 w-6 text-indigo-500" />
+                      <div className="p-2 sm:p-3 rounded-xl bg-indigo-500/10 shrink-0">
+                        <Globe className="h-5 w-5 sm:h-6 sm:w-6 text-indigo-500" />
                       </div>
-                      <div>
-                        <h2 className="text-xl font-semibold">Server Domain</h2>
-                        <p className="text-sm text-muted-foreground">Access your Docklift panel via custom domain instead of IP</p>
+                      <div className="min-w-0">
+                        <h2 className="text-lg sm:text-xl font-semibold">Server Domain</h2>
+                        <p className="text-xs sm:text-sm text-muted-foreground">Access your Docklift panel via custom domain instead of IP</p>
                       </div>
                     </div>
                     
                     <Dialog open={showAddDomain} onOpenChange={setShowAddDomain}>
                       <DialogTrigger asChild>
-                        <Button className="bg-indigo-600 hover:bg-indigo-700">
+                        <Button className="bg-indigo-600 hover:bg-indigo-700 w-full sm:w-auto shrink-0">
                           <Plus className="h-4 w-4 mr-2" />
                           Add Domain
                         </Button>

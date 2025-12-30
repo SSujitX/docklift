@@ -336,41 +336,53 @@ function NewProjectContent() {
           {/* STEP 1: Source Selection */}
           {step === 1 && (
             <div className="space-y-8">
-              <div className="flex flex-wrap gap-4 p-1.5 bg-secondary/30 rounded-2xl border border-border/40 w-fit mx-auto">
-               <button
-                  onClick={() => setSourceType("public")}
-                  className={cn(
-                    "flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all",
-                    sourceType === "public" ? "bg-background text-foreground shadow-lg" : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  <Globe className="h-5 w-5" />
-                  Public Repository
-                </button>
-                <button
-                  onClick={() => setSourceType("github")}
-                  className={cn(
-                    "flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all",
-                    sourceType === "github" ? "bg-background text-foreground shadow-lg" : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  <GithubIcon className="h-5 w-5" />
-                  Private GitHub Repository
-                </button>
-                <button
-                  onClick={() => setSourceType("upload")}
-                  className={cn(
-                    "flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all",
-                    sourceType === "upload" ? "bg-background text-foreground shadow-lg" : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  <Upload className="h-5 w-5" />
-                  Direct Upload
-                </button>
+              {/* Modern Tab Selector */}
+              <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0 sm:flex sm:justify-center pb-4 -mb-4 no-scrollbar">
+                <div className="flex items-center gap-0.5 sm:gap-1 bg-background/80 backdrop-blur-xl border border-border/20 p-1 sm:p-1.5 rounded-full shadow-[0_10px_30px_-10px_rgba(0,0,0,0.1)] dark:shadow-[0_10px_30px_-10px_rgba(0,0,0,0.4)] w-max">
+                  <button
+                    onClick={() => setSourceType("public")}
+                    className={cn(
+                      "flex items-center gap-2 px-4 sm:px-5 py-2.5 rounded-full font-bold transition-all duration-300 whitespace-nowrap text-sm",
+                      sourceType === "public" 
+                        ? "bg-white dark:bg-cyan-500/20 text-cyan-600 dark:text-cyan-400 border border-cyan-200/50 dark:border-cyan-500/30 shadow-sm" 
+                        : "text-muted-foreground hover:text-foreground hover:bg-secondary/40"
+                    )}
+                  >
+                    <GithubIcon className="h-4 w-4" />
+                    <span className="hidden md:inline">Public Repository</span>
+                    <span className="md:hidden">Public</span>
+                  </button>
+                  <button
+                    onClick={() => setSourceType("github")}
+                    className={cn(
+                      "flex items-center gap-2 px-4 sm:px-5 py-2.5 rounded-full font-bold transition-all duration-300 whitespace-nowrap text-sm",
+                      sourceType === "github" 
+                        ? "bg-white dark:bg-cyan-500/20 text-cyan-600 dark:text-cyan-400 border border-cyan-200/50 dark:border-cyan-500/30 shadow-sm" 
+                        : "text-muted-foreground hover:text-foreground hover:bg-secondary/40"
+                    )}
+                  >
+                    <GithubIcon className="h-4 w-4" />
+                    <span className="hidden md:inline">Private Repository</span>
+                    <span className="md:hidden">Private</span>
+                  </button>
+                  <button
+                    onClick={() => setSourceType("upload")}
+                    className={cn(
+                      "flex items-center gap-2 px-4 sm:px-5 py-2.5 rounded-full font-bold transition-all duration-300 whitespace-nowrap text-sm",
+                      sourceType === "upload" 
+                        ? "bg-white dark:bg-cyan-500/20 text-cyan-600 dark:text-cyan-400 border border-cyan-200/50 dark:border-cyan-500/30 shadow-sm" 
+                        : "text-muted-foreground hover:text-foreground hover:bg-secondary/40"
+                    )}
+                  >
+                    <Upload className="h-4 w-4" />
+                    <span className="hidden md:inline">Direct Upload</span>
+                    <span className="md:hidden">Upload</span>
+                  </button>
+                </div>
               </div>
 
               {sourceType === "public" && (
-                <Card className="p-8 border-border/40 overflow-hidden rounded-3xl shadow-xl shadow-black/5 animate-in fade-in slide-in-from-bottom-2">
+                <Card className="p-6 sm:p-8 border-border/20 overflow-hidden rounded-3xl shadow-[0_4px_30px_-8px_rgba(0,0,0,0.08)] dark:shadow-[0_4px_30px_-8px_rgba(0,0,0,0.25)] animate-in fade-in slide-in-from-bottom-2">
                   <div className="space-y-6 max-w-xl">
                     <div className="space-y-2">
                       <label className="text-lg font-semibold">Repository URL</label>
@@ -405,7 +417,7 @@ function NewProjectContent() {
               {sourceType === "github" && (
                 <div className="grid grid-cols-1 gap-6 animate-in fade-in slide-in-from-bottom-2">
                   {!githubStatus?.connected ? (
-                    <Card className="p-12 text-center border-dashed border-2 rounded-3xl flex flex-col items-center">
+                    <Card className="p-8 sm:p-12 text-center border-dashed border-2 rounded-3xl flex flex-col items-center">
                       <div className="h-20 w-20 rounded-3xl bg-zinc-900 flex items-center justify-center mb-6 shadow-2xl">
                         <GithubIcon className="h-10 w-10 text-white" />
                       </div>
@@ -426,7 +438,7 @@ function NewProjectContent() {
                       />
                     </Card>
                   ) : (
-                    <Card className="p-0 border-border/40 overflow-hidden rounded-3xl shadow-xl shadow-black/5">
+                    <Card className="p-0 border-border/20 overflow-hidden rounded-3xl shadow-[0_4px_30px_-8px_rgba(0,0,0,0.08)] dark:shadow-[0_4px_30px_-8px_rgba(0,0,0,0.25)]">
                       <div className="bg-secondary/40 px-6 py-4 flex items-center justify-between border-b border-border/50">
                         <div className="flex items-center gap-3">
                           <div className="h-6 w-6 rounded-full bg-green-500/20 flex items-center justify-center">
@@ -555,18 +567,18 @@ function NewProjectContent() {
                 </Card>
 
                 {/* ENVIRONMENT VARIABLES MANAGER */}
-                <Card className="p-8 space-y-6 rounded-3xl shadow-xl shadow-black/5">
-                  <div className="flex items-center justify-between mb-2">
+                <Card className="p-6 sm:p-8 space-y-6 rounded-3xl shadow-xl shadow-black/5">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-0 mb-2">
                     <div className="flex items-center gap-3">
                       <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-500">
                         <Lock className="h-5 w-5" />
                       </div>
-                      <h3 className="text-xl font-bold">Environment Variables</h3>
+                      <h3 className="text-lg sm:text-xl font-bold">Environment Variables</h3>
                     </div>
 
                     <Dialog open={showAddEnv} onOpenChange={setShowAddEnv}>
                       <DialogTrigger asChild>
-                        <Button variant="outline" size="sm" className="h-9 px-4 rounded-xl font-bold border-emerald-500/20 text-emerald-600 hover:bg-emerald-500/5 hover:border-emerald-500/40">
+                        <Button variant="outline" size="sm" className="h-9 px-4 rounded-xl font-bold border-emerald-500/20 text-emerald-600 hover:bg-emerald-500/5 hover:border-emerald-500/40 w-full sm:w-auto">
                           <PlusIcon className="h-4 w-4 mr-2" /> Add Variable
                         </Button>
                       </DialogTrigger>

@@ -99,50 +99,53 @@ export function ProjectCard({ project, onRefresh }: ProjectCardProps) {
             handleCardClick();
           }
         }}
-        className="group relative flex items-center justify-between py-5 px-6 gap-6 bg-card hover:bg-secondary/20 border border-border/50 hover:border-cyan-500/30 rounded-xl transition-all duration-200 cursor-pointer overflow-hidden shadow-sm hover:shadow-cyan-500/5 min-h-[88px]"
+        className="group relative flex flex-col sm:flex-row sm:items-center justify-between py-4 sm:py-5 px-4 sm:px-6 gap-4 sm:gap-6 bg-card hover:bg-secondary/20 border border-border/50 hover:border-cyan-500/30 rounded-xl transition-all duration-200 cursor-pointer overflow-hidden shadow-sm hover:shadow-cyan-500/5"
       >
         {/* Left Gradient Accent Border */}
         <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-gradient-to-b from-cyan-400 to-purple-500" />
 
-        {/* Status Indicator (Dot) */}
-        <div className={`h-3 w-3 rounded-full shrink-0 shadow-[0_0_8px_currentColor] ml-1 ${
-           project.status === 'running' ? 'bg-emerald-500 text-emerald-500/50' :
-           project.status === 'building' ? 'bg-amber-500 text-amber-500/50 animate-pulse' :
-           project.status === 'error' ? 'bg-red-500 text-red-500/50' :
-           'bg-slate-400 text-slate-400/50'
-        }`} />
+        {/* Top Row: Status + Name */}
+        <div className="flex items-start sm:items-center gap-3 flex-1 min-w-0 pl-2">
+          {/* Status Indicator (Dot) */}
+          <div className={`h-3 w-3 rounded-full shrink-0 shadow-[0_0_8px_currentColor] mt-1.5 sm:mt-0 ${
+             project.status === 'running' ? 'bg-emerald-500 text-emerald-500/50' :
+             project.status === 'building' ? 'bg-amber-500 text-amber-500/50 animate-pulse' :
+             project.status === 'error' ? 'bg-red-500 text-red-500/50' :
+             'bg-slate-400 text-slate-400/50'
+          }`} />
 
-        {/* Identity Section */}
-        <div className="flex-1 min-w-[200px] flex flex-col justify-center gap-1">
-           <div className="flex items-center gap-3">
-             <h3 className="text-xl font-bold text-cyan-600 dark:text-cyan-400 truncate tracking-tight">
-               {project.name}
-             </h3>
+          {/* Identity Section */}
+          <div className="flex-1 min-w-0 flex flex-col justify-center gap-1">
+             <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+               <h3 className="text-lg sm:text-xl font-bold text-cyan-600 dark:text-cyan-400 truncate tracking-tight">
+                 {project.name}
+               </h3>
+               
+               {project.status === "running" && (
+                  <span className="text-[10px] font-extrabold px-2 py-0.5 rounded bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 uppercase tracking-widest shadow-sm">
+                    Running
+                  </span>
+               )}
+             </div>
+
+             <div className="flex flex-wrap items-center gap-x-3 sm:gap-x-4 gap-y-1 text-[9px] sm:text-[10px] text-muted-foreground/60 font-medium tracking-tight">
+               <div className="flex items-center gap-1.5">
+                 <Calendar className="h-3 w-3" />
+                 <span>Created: {new Date(project.created_at).toLocaleString([], { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+               </div>
+               <div className="flex items-center gap-1.5">
+                 <Clock className="h-3 w-3" />
+                 <span>Updated: {new Date(project.updated_at).toLocaleString([], { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+               </div>
+             </div>
              
-             {project.status === "running" && (
-                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 uppercase tracking-widest shadow-sm">
-                  Running
-                </span>
+             {project.domain && (
+               <div className="flex items-center gap-1.5 text-xs text-muted-foreground/80 hover:text-cyan-500 transition-colors mt-1">
+                 <Globe className="h-3 w-3" />
+                 <span className="truncate max-w-[200px]">{project.domain}</span>
+               </div>
              )}
-           </div>
-
-           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-muted-foreground/60 font-medium tracking-tight">
-             <div className="flex items-center gap-1.5">
-               <Calendar className="h-3 w-3" />
-               <span>Created: {new Date(project.created_at).toLocaleString([], { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
-             </div>
-             <div className="flex items-center gap-1.5">
-               <Clock className="h-3 w-3" />
-               <span>Updated: {new Date(project.updated_at).toLocaleString([], { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
-             </div>
-           </div>
-           
-           {project.domain && (
-             <div className="hidden lg:flex items-center gap-1.5 text-xs text-muted-foreground/80 hover:text-cyan-500 transition-colors mt-1">
-               <Globe className="h-3 w-3" />
-               <span className="truncate max-w-[200px]">{project.domain}</span>
-             </div>
-           )}
+          </div>
         </div>
 
         {/* Meta Info Section (Hidden on mobile) */}
@@ -161,7 +164,7 @@ export function ProjectCard({ project, onRefresh }: ProjectCardProps) {
         </div>
 
         {/* Actions Section */}
-        <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-2 sm:gap-3 pl-2 sm:pl-0" onClick={(e) => e.stopPropagation()}>
             {project.status === "running" ? (
               <>
                  <Button
