@@ -190,20 +190,7 @@ export function Header() {
               })}
             </nav>
 
-            <div className="mt-8 pt-8 border-t border-border/50">
-              <a 
-                href="https://github.com/SSujitX/docklift" 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="flex items-center gap-4 px-4 py-4 rounded-2xl hover:bg-secondary/50 transition-all"
-              >
-                <GithubIcon className="h-6 w-6" />
-                <div className="flex-1">
-                  <p className="font-bold">Star on GitHub</p>
-                  {stars !== null && <p className="text-sm text-muted-foreground">★ {stars} stars</p>}
-                </div>
-              </a>
-            </div>
+
           </div>
         </div>
       )}
