@@ -9,7 +9,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Server, Network, Container, Info, Loader2, Check, X, Sparkles, Globe, Plus, Trash2, ExternalLink, Copy } from "lucide-react";
+import { Server, Network, Container, Info, Loader2, Check, X, Sparkles, Globe, Plus, Trash2, ExternalLink, Copy, AlertTriangle } from "lucide-react";
 import { GithubIcon } from "@/components/icons/GithubIcon";
 import { toast } from "sonner";
 import { API_URL, copyToClipboard } from "@/lib/utils";
@@ -42,6 +42,11 @@ function SettingsContent() {
   const [newDomain, setNewDomain] = useState({ domain: '', port: '8080' });
   const [addingDomain, setAddingDomain] = useState(false);
   const [serverIP, setServerIP] = useState<string>('...');
+  
+  // Delete Confirmation State
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [domainToDelete, setDomainToDelete] = useState<string | null>(null);
+  const [deletingDomain, setDeletingDomain] = useState(false);
 
   const searchParams = useSearchParams();
 
@@ -157,20 +162,30 @@ function SettingsContent() {
     }
   };
 
-  const handleDeleteDomain = async (domain: string) => {
-    if (!confirm(`Are you sure you want to remove ${domain}?`)) return;
+  const handleDeleteDomain = (domain: string) => {
+    setDomainToDelete(domain);
+    setIsDeleteConfirmOpen(true);
+  };
 
+  const confirmDeleteDomain = async () => {
+    if (!domainToDelete) return;
+
+    setDeletingDomain(true);
     try {
-      const res = await fetch(`${API_URL}/api/domains/${domain}`, {
+      const res = await fetch(`${API_URL}/api/domains/${domainToDelete}`, {
         method: "DELETE"
       });
       
       if (!res.ok) throw new Error("Failed to delete domain");
       
       toast.success("Domain removed");
+      setIsDeleteConfirmOpen(false);
+      setDomainToDelete(null);
       fetchDomains();
     } catch (error: any) {
       toast.error(error.message);
+    } finally {
+      setDeletingDomain(false);
     }
   };
 
@@ -600,6 +615,39 @@ function SettingsContent() {
       </main>
 
       <Footer />
+
+      {/* Delete Domain Confirmation Dialog */}
+      <Dialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-500">
+              <AlertTriangle className="h-5 w-5" />
+              Remove Server Domain
+            </DialogTitle>
+            <DialogDescription className="pt-2">
+              Are you sure you want to remove <span className="font-mono font-bold text-foreground">{domainToDelete}</span>? 
+              This will stop access to the Docklift panel through this domain.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setIsDeleteConfirmOpen(false)}>
+              Cancel
+            </Button>
+            <Button 
+              variant="destructive"
+              onClick={confirmDeleteDomain}
+              disabled={deletingDomain}
+            >
+              {deletingDomain ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : (
+                <Trash2 className="h-4 w-4 mr-2" />
+              )}
+              Remove Domain
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
