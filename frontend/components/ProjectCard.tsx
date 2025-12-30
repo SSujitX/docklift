@@ -148,8 +148,8 @@ export function ProjectCard({ project, onRefresh }: ProjectCardProps) {
           </div>
         </div>
 
-        {/* Meta Info Section (Hidden on mobile) */}
-        <div className="hidden md:flex items-center gap-3 text-sm text-muted-foreground">
+        {/* Meta Info Section */}
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-sm text-muted-foreground pl-2 sm:pl-0">
            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-secondary/40 border border-border/50">
              <GitBranch className="h-3.5 w-3.5 opacity-70" />
              <span className="font-mono text-xs opacity-90">{project.github_branch}</span>
