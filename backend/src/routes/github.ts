@@ -122,8 +122,11 @@ router.post('/manifest', async (req: Request, res: Response) => {
     const sanitizedName = appName.toLowerCase().replace(/[^a-z0-9-]/g, '-').slice(0, 34);
     
     // Get server URL (from request or config)
-    const protocol = req.headers['x-forwarded-proto'] || 'http';
-    const host = req.headers['x-forwarded-host'] || req.headers.host || 'localhost:8000';
+    // Prefer HTTPS in production (non-localhost)
+    const host = (req.headers['x-forwarded-host'] || req.headers.host || 'localhost:8000') as string;
+    const isLocalhost = host.includes('localhost') || host.includes('127.0.0.1');
+    const forwardedProto = req.headers['x-forwarded-proto'] as string | undefined;
+    const protocol = forwardedProto || (isLocalhost ? 'http' : 'https');
     const serverUrl = `${protocol}://${host}`;
     
     // Build the manifest
