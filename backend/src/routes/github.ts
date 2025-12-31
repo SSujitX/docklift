@@ -833,6 +833,7 @@ router.post('/webhook', async (req: Request, res: Response) => {
       
       // Trigger deploy
       const deployUrl = `http://localhost:${process.env.PORT || 4000}/api/deployments/${project.id}/deploy`;
+      console.log(`[Auto-Deploy] Calling internal deploy URL: ${deployUrl}`);
       
       fetch(deployUrl, {
         method: 'POST',
@@ -841,6 +842,9 @@ router.post('/webhook', async (req: Request, res: Response) => {
           trigger: 'webhook',
           commit_message: commitMessage
         }),
+      }).then(async (response) => {
+        const text = await response.text().catch(() => '(no body)');
+        console.log(`[Auto-Deploy] Deploy response for ${project.name}: ${response.status} - ${text.substring(0, 100)}`);
       }).catch(err => {
         console.error(`[Auto-Deploy] Failed to trigger deploy for ${project.name}:`, err.message);
       });
