@@ -305,9 +305,9 @@ function ProfileMenu({ isMobile = false }: { isMobile?: boolean }) {
             </Button>
           </Link>
           <Button 
-            variant="ghost" 
+            variant="secondary" 
             onClick={logout}
-            className="flex-1 justify-center gap-2 rounded-xl h-10 text-sm font-bold text-red-500 hover:bg-red-500/10 active:scale-95 transition-all"
+            className="w-full justify-center gap-2 rounded-xl h-10 text-sm font-bold border border-red-500/20 bg-red-500/10 text-red-500 hover:bg-red-500/15 hover:text-red-500 active:scale-95 transition-all"
           >
             <LogOut className="h-4 w-4" />
             Sign Out
