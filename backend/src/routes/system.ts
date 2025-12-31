@@ -4,6 +4,12 @@ import si from 'systeminformation';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import os from 'os';
+import { readFileSync } from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
+
+const __filenameSystem = fileURLToPath(import.meta.url);
+const __dirnameSystem = dirname(__filenameSystem);
 
 const execAsync = promisify(exec);
 
@@ -566,8 +572,16 @@ let cachedVersionInfo: { current: string; latest: string; updateAvailable: boole
 let lastVersionCheck = 0;
 const VERSION_CACHE_TTL = 3600000; // 1 hour
 
-// Current installed version (read from package.json)
-const CURRENT_VERSION = '1.3.3';
+// Read current version from package.json dynamically
+function getCurrentVersion(): string {
+  try {
+    const packagePath = join(__dirnameSystem, '../../package.json');
+    const pkg = JSON.parse(readFileSync(packagePath, 'utf8'));
+    return pkg.version || '1.0.0';
+  } catch {
+    return '1.0.0';
+  }
+}
 
 // GET /api/system/version - Check for updates
 router.get('/version', async (req: Request, res: Response) => {
@@ -580,7 +594,8 @@ router.get('/version', async (req: Request, res: Response) => {
     }
 
     // Fetch latest release from GitHub
-    let latestVersion = CURRENT_VERSION;
+    const currentVersion = getCurrentVersion();
+    let latestVersion = currentVersion;
     try {
       const response = await fetch('https://api.github.com/repos/SSujitX/docklift/releases/latest', {
         headers: { 'User-Agent': 'Docklift' }
@@ -588,14 +603,14 @@ router.get('/version', async (req: Request, res: Response) => {
       if (response.ok) {
         const data = await response.json() as { tag_name?: string };
         // Remove 'v' prefix if present
-        latestVersion = data.tag_name?.replace(/^v/, '') || CURRENT_VERSION;
+        latestVersion = data.tag_name?.replace(/^v/, '') || currentVersion;
       }
     } catch {
       // If GitHub API fails, assume no updates
     }
 
     // Compare versions
-    const currentParts = CURRENT_VERSION.split('.').map(Number);
+    const currentParts = currentVersion.split('.').map(Number);
     const latestParts = latestVersion.split('.').map(Number);
     
     let updateAvailable = false;
@@ -609,7 +624,7 @@ router.get('/version', async (req: Request, res: Response) => {
     }
 
     cachedVersionInfo = {
-      current: CURRENT_VERSION,
+      current: currentVersion,
       latest: latestVersion,
       updateAvailable
     };
