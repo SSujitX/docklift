@@ -8,6 +8,7 @@ import { ProjectCard } from "@/components/ProjectCard";
 import { Button } from "@/components/ui/button";
 import { Project } from "@/lib/types";
 import { API_URL } from "@/lib/utils";
+import { getAuthHeaders } from "@/lib/auth";
 import { Plus, RefreshCw, Container, Sparkles } from "lucide-react";
 import { useRouter } from "next/navigation";
 
@@ -18,9 +19,8 @@ export default function Dashboard() {
 
   const fetchProjects = useCallback(async () => {
     try {
-      const token = localStorage.getItem("docklift_token");
       const res = await fetch(`${API_URL}/api/projects`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        headers: getAuthHeaders(),
       });
       
       if (res.status === 401) {

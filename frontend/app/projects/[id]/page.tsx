@@ -423,7 +423,10 @@ export default function ProjectDetail() {
 
       const res = await fetch(url, { 
         method,
-        headers: action === "deploy" ? { "Content-Type": "application/json" } : undefined,
+        headers: {
+          ...getAuthHeaders(),
+          ...(action === "deploy" ? { "Content-Type": "application/json" } : {})
+        },
         body: action === "deploy" ? JSON.stringify({ trigger: "manual" }) : undefined
       });
       

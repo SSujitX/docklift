@@ -236,7 +236,10 @@ function NewProjectContent() {
 
       // 1. Create Project
       const response = await axios.post(`${API_URL}/api/projects`, formData, {
-        headers: { "Content-Type": "multipart/form-data" },
+        headers: { 
+          "Content-Type": "multipart/form-data",
+          ...getAuthHeaders() 
+        } as any,
         timeout: 300000,
       });
 
@@ -545,24 +548,33 @@ function NewProjectContent() {
                   </div>
 
                   {sourceType === "github" && (
-                    <div className="p-4 rounded-2xl bg-secondary/20 border border-border/40 flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <GithubIcon className="h-5 w-5 text-muted-foreground" />
+                    <div className="p-5 rounded-2xl bg-secondary/40 border border-border/40 flex items-center justify-between group/repo">
+                      <div className="flex items-center gap-4">
+                        <div className="h-10 w-10 rounded-xl bg-background/50 flex items-center justify-center border border-border/30">
+                          <GithubIcon className="h-5 w-5" />
+                        </div>
                         <div>
-                          <p className="text-sm font-bold">{selectedRepo?.full_name}</p>
-                           <div className="flex items-center gap-2 mt-1">
-                            <span className="text-[10px] text-muted-foreground uppercase tracking-tighter">Branch:</span>
+                          <p className="text-sm font-bold tracking-tight">{selectedRepo?.full_name}</p>
+                           <div className="flex items-center gap-3 mt-1.5">
+                            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Branch:</span>
                             <BranchSelector
                                 branches={branches}
                                 value={githubBranch}
                                 onChange={setGithubBranch}
                                 loading={branchesLoading}
-                                className="h-8 text-xs w-[140px]"
+                                className="h-8 text-[11px] w-[160px] px-3"
                             />
                            </div>
                         </div>
                       </div>
-                      <Button variant="ghost" size="sm" onClick={() => setStep(1)} className="text-xs h-8 text-cyan-500">Change Repo</Button>
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        onClick={() => setStep(1)} 
+                        className="text-[11px] h-8 font-bold text-cyan-500 hover:text-cyan-600 hover:bg-cyan-500/5 rounded-lg border border-transparent hover:border-cyan-500/20 px-3"
+                      >
+                        Change Repo
+                      </Button>
                     </div>
                   )}
                 </Card>
@@ -865,7 +877,7 @@ function NewProjectContent() {
                         className="w-full h-14 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white rounded-2xl shadow-xl shadow-cyan-500/20 font-bold group"
                       >
                         {loading ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : <Sparkles className="h-5 w-5 mr-2 group-hover:rotate-12 transition-transform" />}
-                        Deploy Application
+                        Create Project
                       </Button>
                       <p className="text-[10px] text-center text-muted-foreground font-bold px-4">
                         By deploying, you agree to automate your workflow 🚀
