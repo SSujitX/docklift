@@ -60,13 +60,19 @@ export function TerminalView() {
   useEffect(() => {
     const action = searchParams.get('action');
     if (action === 'upgrade') {
-      const newLog: CommandLog = {
+      setLogs(prev => [...prev, {
         id: 'upgrade-init',
         command: 'system:upgrade',
-        output: 'System upgrade initiated from external trigger.\n\nProcess is running in background. Service may restart briefly.\nIf running in Development Mode (Windows/Mac), this is a simulation.',
+        output: 'System upgrade initiated.\n\nProcess is running in background. The server will restart automatically when finished.\nService temporary unavailability is expected.',
         timestamp: new Date(),
-      };
-      setLogs(prev => [...prev, newLog]);
+      }]);
+    } else if (action === 'upgrade_simulated') {
+      setLogs(prev => [...prev, {
+        id: 'upgrade-sim',
+        command: 'system:upgrade (simulation)',
+        output: 'Dev Mode: Simulated upgrade process completed successfully.\nNo changes were made to the system as you are running on a development environment (Windows/Mac).',
+        timestamp: new Date(),
+      }]);
     }
   }, [searchParams]);
 

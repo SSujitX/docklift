@@ -31,12 +31,15 @@ export function Footer() {
   const handleUpgrade = async () => {
     setUpgrading(true);
     try {
-      await fetch('/api/system/upgrade', { 
+      const res = await fetch('/api/system/upgrade', { 
         method: 'POST',
         headers: getAuthHeaders()
       });
+      const data = await res.json();
+      const action = data.message?.includes('Simulated') ? 'upgrade_simulated' : 'upgrade';
+      
       // Redirect to terminal to see the upgrade progress
-      router.push('/terminal?action=upgrade');
+      router.push(`/terminal?action=${action}`);
     } catch {
       setUpgrading(false);
     }
