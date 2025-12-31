@@ -1,0 +1,3 @@
+# Docklift Admin Panel - Block all crawlers
+User-agent: *
+Disallow: /

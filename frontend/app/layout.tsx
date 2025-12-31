@@ -11,6 +11,14 @@ export const metadata: Metadata = {
   description: "Open-source, self-hosted PaaS for Docker deployments. Deploy any application to your own server with one click. Free alternative to Heroku, Vercel, Netlify.",
   keywords: ["docker", "deployment", "self-hosted", "paas", "devops", "containers", "open-source"],
   authors: [{ name: "SSujitX" }],
+  robots: {
+    index: false,
+    follow: false,
+    googleBot: {
+      index: false,
+      follow: false,
+    },
+  },
   openGraph: {
     title: "Docklift - Self-hosted Docker Deployment Platform",
     description: "Deploy any application to your own server with one click. Open-source, self-hosted PaaS.",
