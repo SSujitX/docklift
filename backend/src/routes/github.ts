@@ -800,7 +800,7 @@ router.post('/webhook', async (req: Request, res: Response) => {
       }
     }
     
-    const triggered: string[] = [];
+    const triggered: { name: string; promise: Promise<any> }[] = [];
     const skipped: string[] = [];
     
     for (const project of projects) {
@@ -835,7 +835,8 @@ router.post('/webhook', async (req: Request, res: Response) => {
       const deployUrl = `http://localhost:${process.env.PORT || 4000}/api/deployments/${project.id}/deploy`;
       console.log(`[Auto-Deploy] Calling internal deploy URL: ${deployUrl}`);
       
-      fetch(deployUrl, {
+      // Create a promise for this deploy
+      const deployPromise = fetch(deployUrl, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -847,17 +848,31 @@ router.post('/webhook', async (req: Request, res: Response) => {
         }),
       }).then(async (response) => {
         const text = await response.text().catch(() => '(no body)');
-        console.log(`[Auto-Deploy] Deploy response for ${project.name}: ${response.status} - ${text.substring(0, 100)}`);
+        console.log(`[Auto-Deploy] Deploy response for ${project.name}: ${response.status} - ${text.substring(0, 200)}`);
+        return { project: project.name, success: response.ok, status: response.status };
       }).catch(err => {
         console.error(`[Auto-Deploy] Failed to trigger deploy for ${project.name}:`, err.message);
+        return { project: project.name, success: false, error: err.message };
       });
       
-      triggered.push(project.name);
+      triggered.push({ name: project.name, promise: deployPromise });
     }
     
+    // Wait for all deploys to complete (with 5 minute timeout for GitHub)
+    const deployResults = await Promise.race([
+      Promise.allSettled(triggered.map(t => t.promise)),
+      new Promise(resolve => setTimeout(() => resolve('timeout'), 290000)) // 4m50s timeout (GitHub has 10 min)
+    ]);
+    
+    const finalResults = deployResults === 'timeout' 
+      ? triggered.map(t => ({ project: t.name, status: 'timeout' }))
+      : (deployResults as PromiseSettledResult<any>[]).map((r, i) => 
+          r.status === 'fulfilled' ? r.value : { project: triggered[i].name, error: r.reason }
+        );
+    
     res.status(200).json({ 
-      message: triggered.length > 0 ? 'Auto-deploy triggered' : 'No deployments triggered',
-      triggered,
+      message: triggered.length > 0 ? 'Auto-deploy completed' : 'No deployments triggered',
+      results: finalResults,
       skipped,
       branch: pushedBranch,
       commit: payload.head_commit?.id?.substring(0, 7) || 'unknown',
