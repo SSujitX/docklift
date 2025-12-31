@@ -127,8 +127,18 @@ router.post('/manifest', async (req: Request, res: Response) => {
     const hostWithoutPort = host.split(':')[0];
     const isLocalhost = hostWithoutPort === 'localhost' || hostWithoutPort === '127.0.0.1';
     const isIPAddress = /^(\d{1,3}\.){3}\d{1,3}$/.test(hostWithoutPort);
+    
+    // Detect HTTPS: check x-forwarded-proto, then infer from domain (non-IP = likely HTTPS)
     const forwardedProto = req.headers['x-forwarded-proto'] as string | undefined;
-    const protocol = forwardedProto || (isLocalhost || isIPAddress ? 'http' : 'https');
+    let protocol: string;
+    if (forwardedProto) {
+      protocol = Array.isArray(forwardedProto) ? forwardedProto[0] : forwardedProto;
+    } else if (isLocalhost || isIPAddress) {
+      protocol = 'http';
+    } else {
+      // Domain name without explicit forwarded proto - default to HTTPS
+      protocol = 'https';
+    }
     const serverUrl = `${protocol}://${host}`;
     
     // Build the manifest
@@ -627,8 +637,8 @@ function mapRepo(repo: any) {
   };
 }
 
-// Helper: Get installation ID for a specific repository
-async function getInstallationIdForRepo(owner: string, repo: string): Promise<string> {
+// Helper: Get installation ID for a specific repository (exported for use in projects.ts)
+export async function getInstallationIdForRepo(owner: string, repo: string): Promise<string> {
   const jwtToken = await createJwtToken();
   const url = `${GITHUB_API_URL}/repos/${owner}/${repo}/installation`;
   

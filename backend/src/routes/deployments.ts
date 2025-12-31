@@ -180,6 +180,26 @@ router.post('/:projectId/deploy', async (req: Request, res: Response) => {
     
     // Pull latest if GitHub project
     if (project.source_type === 'github' && project.github_url) {
+      // Refresh the remote URL with a new token (tokens expire after 1 hour)
+      try {
+        const { getInstallationIdForRepo, getInstallationToken } = await import('./github.js');
+        const match = project.github_url.match(/github\.com[/:]([^/]+)\/([^/.]+)/);
+        if (match) {
+          const [, owner, repo] = match;
+          const installId = await getInstallationIdForRepo(owner, repo);
+          const token = await getInstallationToken(installId);
+          const urlObj = new URL(project.github_url);
+          urlObj.username = 'x-access-token';
+          urlObj.password = token;
+          const { simpleGit } = await import('simple-git');
+          const git = simpleGit(projectPath);
+          await git.remote(['set-url', 'origin', urlObj.toString()]);
+          writeLog(`🔑 Refreshed GitHub access token\\n`);
+        }
+      } catch (err: any) {
+        writeLog(`⚠️ Token refresh warning: ${err.message}\\n`);
+      }
+      
       // Create a wrapper for pullRepo to capture logs
       const pullResWrapper = {
         write: (text: string) => writeLog(text),
