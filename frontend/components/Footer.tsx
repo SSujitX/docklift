@@ -9,7 +9,10 @@ export function Footer() {
     <footer className="border-t border-border/40 bg-background/50 mt-auto">
       <div className="container max-w-7xl mx-auto px-4 md:px-6 py-6">
         <div className="flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-muted-foreground">
-          <p>© {new Date().getFullYear()} Docklift. Open source under MIT license.</p>
+          <div className="flex items-center gap-2">
+            <p>© {new Date().getFullYear()} Docklift. Open source under MIT license.</p>
+            <span className="text-[10px] font-bold text-cyan-500 bg-cyan-500/10 px-1.5 py-0.5 rounded border border-cyan-500/20">v{process.env.NEXT_PUBLIC_APP_VERSION || '1.3.3'}</span>
+          </div>
           <div className="flex items-center gap-4">
             <a 
               href="https://github.com/SSujitX/docklift" 
