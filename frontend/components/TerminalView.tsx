@@ -1,6 +1,7 @@
 // TerminalView component - interactive shell with system controls (reboot, reset, purge)
 "use client";
 
+import { useSearchParams } from "next/navigation";
 import { useState, useEffect, useRef } from "react";
 import { 
   Terminal as TerminalIcon, 
@@ -54,6 +55,20 @@ export function TerminalView() {
   
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const searchParams = useSearchParams();
+
+  useEffect(() => {
+    const action = searchParams.get('action');
+    if (action === 'upgrade') {
+      const newLog: CommandLog = {
+        id: 'upgrade-init',
+        command: 'system:upgrade',
+        output: 'System upgrade initiated from external trigger.\n\nProcess is running in background. Service may restart briefly.\nIf running in Development Mode (Windows/Mac), this is a simulation.',
+        timestamp: new Date(),
+      };
+      setLogs(prev => [...prev, newLog]);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     if (scrollRef.current) {

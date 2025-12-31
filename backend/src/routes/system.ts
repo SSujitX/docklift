@@ -684,12 +684,12 @@ router.post('/upgrade', async (req: Request, res: Response) => {
       // Dev environment simulation
       console.log('Docklift upgrade requested (Dev Mode: Simulation)');
       await new Promise(resolve => setTimeout(resolve, 2000));
-      return res.json({ message: 'Dev Mode: Simulated Docklift upgrade complete.' });
+      return res.json({ message: 'Dev Mode: Simulated upgrade complete. No changes made to system.' });
     }
 
     // Production: Run upgrade.sh on HOST via nsenter
     // upgrade.sh is at /opt/docklift/upgrade.sh on the host
-    const command = 'nsenter --target 1 --mount --uts --ipc --net --pid -- sh -c "cd /opt/docklift && ./upgrade.sh"';
+    const command = 'nsenter --target 1 --mount --uts --ipc --net --pid -- sh -c "cd /opt/docklift && bash upgrade.sh"';
     
     console.log('Docklift upgrade initiated on host');
     

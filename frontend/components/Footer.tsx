@@ -2,6 +2,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { ArrowUp, Loader2 } from "lucide-react";
 import { GithubIcon } from "./icons/GithubIcon";
 import { Button } from "./ui/button";
@@ -16,6 +17,8 @@ interface VersionInfo {
 export function Footer() {
   const [versionInfo, setVersionInfo] = useState<VersionInfo | null>(null);
   const [upgrading, setUpgrading] = useState(false);
+
+  const router = useRouter();
 
   useEffect(() => {
     // Check for updates on mount
@@ -33,7 +36,7 @@ export function Footer() {
         headers: getAuthHeaders()
       });
       // Redirect to terminal to see the upgrade progress
-      window.location.href = '/terminal';
+      router.push('/terminal?action=upgrade');
     } catch {
       setUpgrading(false);
     }
