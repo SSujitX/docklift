@@ -31,8 +31,17 @@ interface DomainConfig {
   port: number;
 }
 
+interface GitHubInstallation {
+  id: number;
+  login: string;
+  avatar_url: string;
+  type: 'User' | 'Organization';
+}
+
 function SettingsContent() {
   const [githubStatus, setGithubStatus] = useState<GitHubStatus | null>(null);
+  const [githubInstallations, setGithubInstallations] = useState<GitHubInstallation[]>([]);
+  const [installUrl, setInstallUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [disconnecting, setDisconnecting] = useState(false);
   const [showGitHubConnect, setShowGitHubConnect] = useState(false);
@@ -122,6 +131,20 @@ function SettingsContent() {
       clearTimeout(timeoutId);
       const data = await res.json();
       setGithubStatus(data);
+
+      // Also fetch all installations if connected
+      if (data.connected) {
+        try {
+          const instRes = await fetch(`${API_URL}/api/github/installations`, { headers: getAuthHeaders() });
+          if (instRes.ok) {
+            const instData = await instRes.json();
+            setGithubInstallations(instData.installations || []);
+            setInstallUrl(instData.installUrl || null);
+          }
+        } catch {
+          // Ignore installation fetch errors
+        }
+      }
     } catch {
       setGithubStatus({ connected: false });
     } finally {
@@ -489,28 +512,56 @@ function SettingsContent() {
                           </div>
                         ) : githubStatus?.connected ? (
                           <div className="flex flex-col items-center sm:items-end gap-3 w-full sm:w-auto">
-                            <div className="flex items-center gap-4 bg-green-500/10 border border-green-500/20 px-5 py-3 rounded-2xl w-full sm:w-auto">
-                              {githubStatus.avatar_url ? (
-                                <img 
-                                  src={githubStatus.avatar_url} 
-                                  alt={githubStatus.username} 
-                                  className="h-10 w-10 rounded-xl border border-green-500/20"
-                                />
+                            {/* Multi-account list */}
+                            <div className="flex flex-col gap-2 w-full sm:w-auto">
+                              {githubInstallations.length > 0 ? (
+                                githubInstallations.map((inst) => (
+                                  <div 
+                                    key={inst.id} 
+                                    className="flex items-center gap-3 bg-green-500/10 border border-green-500/20 px-4 py-2.5 rounded-xl"
+                                  >
+                                    {inst.avatar_url ? (
+                                      <img src={inst.avatar_url} alt={inst.login} className="h-8 w-8 rounded-lg border border-green-500/20" />
+                                    ) : (
+                                      <div className="h-8 w-8 rounded-lg bg-green-500/20 flex items-center justify-center font-bold text-green-500 text-sm">
+                                        {inst.login?.charAt(0).toUpperCase()}
+                                      </div>
+                                    )}
+                                    <div className="flex flex-col">
+                                      <span className="text-sm font-medium">@{inst.login}</span>
+                                      <span className="text-xs text-muted-foreground">
+                                        {inst.type === 'Organization' ? '🏢 Organization' : '👤 Personal'}
+                                      </span>
+                                    </div>
+                                    <Check className="h-4 w-4 text-green-500 ml-auto" />
+                                  </div>
+                                ))
                               ) : (
-                                <div className="h-10 w-10 rounded-xl bg-green-500/20 flex items-center justify-center font-bold text-green-500">
-                                  {githubStatus.username?.charAt(0).toUpperCase()}
+                                <div className="flex items-center gap-3 bg-green-500/10 border border-green-500/20 px-4 py-2.5 rounded-xl">
+                                  <Check className="h-5 w-5 text-green-500" />
+                                  <span className="text-sm font-medium text-green-500">Connected</span>
                                 </div>
                               )}
-                              <div className="flex flex-col">
-                                <div className="flex items-center gap-2">
-                                  <span className="font-bold text-green-500">Connected</span>
-                                  <Check className="h-4 w-4 text-green-500" />
-                                </div>
-                                <span className="text-sm text-muted-foreground font-medium truncate max-w-[150px]">@{githubStatus.username}</span>
-                              </div>
                             </div>
                             
                             <div className="flex items-center gap-2">
+                              {installUrl && (
+                                <a 
+                                  href={installUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  title="Add another account or organization — repos will be combined"
+                                >
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-9 px-3 rounded-xl border-cyan-500/20 text-cyan-500 hover:text-cyan-600 hover:bg-cyan-500/10"
+                                  >
+                                    <Plus className="h-4 w-4 mr-1.5" />
+                                    Add Account
+                                  </Button>
+                                </a>
+                              )}
                               <Button 
                                 variant="destructive" 
                                 size="sm"
@@ -525,23 +576,6 @@ function SettingsContent() {
                                 )}
                                 Disconnect
                               </Button>
-
-                              {githubStatus.installUrl && (
-                                <a 
-                                  href={githubStatus.installUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  title="Add another account or organization — repos will be combined"
-                                >
-                                  <Button
-                                    variant="outline"
-                                    size="icon"
-                                    className="h-9 w-9 rounded-xl border-cyan-500/20 text-cyan-500 hover:text-cyan-600 hover:bg-cyan-500/10"
-                                  >
-                                    <Plus className="h-4 w-4" />
-                                  </Button>
-                                </a>
-                              )}
                             </div>
                           </div>
                         ) : (

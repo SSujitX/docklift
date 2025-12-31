@@ -492,6 +492,49 @@ router.get('/status', async (req: Request, res: Response) => {
   }
 });
 
+// GET /installations - List ALL installations (accounts) for this GitHub App
+router.get('/installations', async (req: Request, res: Response) => {
+  try {
+    const jwtToken = await createJwtToken();
+    
+    const response = await fetch(`${GITHUB_API_URL}/app/installations`, {
+      headers: {
+        Authorization: `Bearer ${jwtToken}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+    });
+
+    if (!response.ok) {
+      return res.status(response.status).json({ error: 'Failed to fetch installations' });
+    }
+
+    const installations = await response.json() as Array<{
+      id: number;
+      account?: { 
+        login: string; 
+        avatar_url: string; 
+        type: string; // "User" or "Organization"
+      };
+    }>;
+
+    const appSlug = await getSetting('github_app_slug');
+
+    res.json({
+      installations: installations.map(inst => ({
+        id: inst.id,
+        login: inst.account?.login || 'Unknown',
+        avatar_url: inst.account?.avatar_url || '',
+        type: inst.account?.type || 'User' // "User" or "Organization"
+      })),
+      installUrl: appSlug ? `https://github.com/apps/${appSlug}/installations/new` : null
+    });
+  } catch (error) {
+    console.error('Failed to fetch installations:', error);
+    res.status(500).json({ error: 'Failed to fetch installations' });
+  }
+});
+
 // GET /repos - List repositories from ALL installations (User + Orgs)
 router.get('/repos', async (req: Request, res: Response) => {
   try {
