@@ -804,9 +804,12 @@ router.post('/webhook', async (req: Request, res: Response) => {
     const skipped: string[] = [];
     
     for (const project of projects) {
-      // Check branch match
-      if (project.github_branch && pushedBranch !== project.github_branch) {
+      console.log(`[Webhook] Checking project: ${project.name}, branch: ${project.github_branch || '(not set)'}`);
+      
+      // Check branch match (skip if branch is set and doesn't match)
+      if (project.github_branch && project.github_branch !== pushedBranch) {
         skipped.push(`${project.name} (branch mismatch: ${pushedBranch} != ${project.github_branch})`);
+        console.log(`[Webhook] Skipping ${project.name}: branch mismatch`);
         continue;
       }
       
@@ -816,6 +819,7 @@ router.post('/webhook', async (req: Request, res: Response) => {
       
       if (lastDeploy && (now - lastDeploy) < DEPLOY_COOLDOWN_MS) {
         skipped.push(`${project.name} (cooldown)`);
+        console.log(`[Webhook] Skipping ${project.name}: cooldown active`);
         continue;
       }
       
