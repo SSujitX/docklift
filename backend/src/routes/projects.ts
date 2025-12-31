@@ -164,6 +164,8 @@ router.post('/', upload.single('files'), async (req: Request, res: Response) => 
         project_type: project_type || 'app',
         domain: domain || null,
         status: 'pending',
+        auto_deploy: source_type === 'github',
+        webhook_secret: source_type === 'github' ? generateWebhookSecret() : null,
       },
     });
     
