@@ -161,23 +161,53 @@ function CircularProgress({
     <div className="relative flex flex-col items-center">
       <svg width={size} height={size} className="transform -rotate-90">
         <defs>
-          <linearGradient id="gradient-cyan" x1="0%" y1="0%" x2="100%" y2="100%">
+          <linearGradient
+            id="gradient-cyan"
+            x1="0%"
+            y1="0%"
+            x2="100%"
+            y2="100%"
+          >
             <stop offset="0%" stopColor="#06b6d4" />
             <stop offset="100%" stopColor="#3b82f6" />
           </linearGradient>
-          <linearGradient id="gradient-purple" x1="0%" y1="0%" x2="100%" y2="100%">
+          <linearGradient
+            id="gradient-purple"
+            x1="0%"
+            y1="0%"
+            x2="100%"
+            y2="100%"
+          >
             <stop offset="0%" stopColor="#a855f7" />
             <stop offset="100%" stopColor="#6366f1" />
           </linearGradient>
-          <linearGradient id="gradient-amber" x1="0%" y1="0%" x2="100%" y2="100%">
+          <linearGradient
+            id="gradient-amber"
+            x1="0%"
+            y1="0%"
+            x2="100%"
+            y2="100%"
+          >
             <stop offset="0%" stopColor="#f59e0b" />
             <stop offset="100%" stopColor="#ef4444" />
           </linearGradient>
-          <linearGradient id="gradient-emerald" x1="0%" y1="0%" x2="100%" y2="100%">
+          <linearGradient
+            id="gradient-emerald"
+            x1="0%"
+            y1="0%"
+            x2="100%"
+            y2="100%"
+          >
             <stop offset="0%" stopColor="#10b981" />
             <stop offset="100%" stopColor="#14b8a6" />
           </linearGradient>
-          <linearGradient id="gradient-rose" x1="0%" y1="0%" x2="100%" y2="100%">
+          <linearGradient
+            id="gradient-rose"
+            x1="0%"
+            y1="0%"
+            x2="100%"
+            y2="100%"
+          >
             <stop offset="0%" stopColor="#f43f5e" />
             <stop offset="100%" stopColor="#ec4899" />
           </linearGradient>
@@ -208,9 +238,13 @@ function CircularProgress({
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
         <span className="text-2xl font-bold">{value.toFixed(1)}%</span>
-        <span className="text-xs text-muted-foreground font-medium">{label}</span>
+        <span className="text-xs text-muted-foreground font-medium">
+          {label}
+        </span>
         {sublabel && (
-          <span className="text-[10px] text-muted-foreground/70">{sublabel}</span>
+          <span className="text-[10px] text-muted-foreground/70">
+            {sublabel}
+          </span>
         )}
       </div>
     </div>
@@ -257,7 +291,9 @@ export function SystemOverview() {
 
   const fetchStats = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/api/system/stats`, { headers: getAuthHeaders() });
+      const res = await fetch(`${API_URL}/api/system/stats`, {
+        headers: getAuthHeaders(),
+      });
       const data = await res.json();
       setStats(data);
       setLastUpdate(new Date());
@@ -278,11 +314,11 @@ export function SystemOverview() {
         headers: getAuthHeaders(),
       });
       const data = await res.json();
-      
+
       if (!res.ok) throw new Error(data.error || "Purge failed");
-      
+
       toast.success("Server resources purged successfully!");
-      fetchStats(); 
+      fetchStats();
     } catch (err: any) {
       toast.error(err.message || "Failed to purge server");
       console.error(err);
@@ -318,7 +354,9 @@ export function SystemOverview() {
         <div className="p-4 rounded-2xl bg-destructive/10 border border-destructive/20 mb-4">
           <Server className="h-8 w-8 text-destructive" />
         </div>
-        <h3 className="text-lg font-semibold mb-2">Unable to fetch system stats</h3>
+        <h3 className="text-lg font-semibold mb-2">
+          Unable to fetch system stats
+        </h3>
         <p className="text-muted-foreground text-sm mb-4">{error}</p>
         <button
           onClick={fetchStats}
@@ -334,7 +372,7 @@ export function SystemOverview() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold tracking-tight">System Overview</h2>
           <p className="text-muted-foreground text-sm mt-1">
@@ -342,33 +380,31 @@ export function SystemOverview() {
             {lastUpdate ? lastUpdate.toLocaleTimeString() : "now"}
           </p>
         </div>
-        <div className="flex items-center gap-2">
-        <div className="flex items-center gap-3">
-        <button
-          onClick={() => setShowPurgeDialog(true)}
-          disabled={purging}
-          className={cn(
-            "flex items-center gap-2 px-4 py-2 rounded-xl border text-xs font-bold transition-all active:scale-95 shadow-sm",
-            purging 
-              ? "bg-rose-500/10 text-rose-500/30 border-rose-500/20 cursor-not-allowed" 
-              : "bg-background hover:bg-rose-500/5 text-rose-500 border-rose-500/20 hover:border-rose-500/40"
-          )}
-        >
-          {purging ? (
-            <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <Trash2 className="h-3.5 w-3.5" />
-          )}
-          Purge Server
-        </button>
+        <div className="flex items-center gap-3 self-start sm:self-auto">
+            <button
+              onClick={() => setShowPurgeDialog(true)}
+              disabled={purging}
+              className={cn(
+                "flex items-center gap-2 px-4 py-2 rounded-xl border text-xs font-bold transition-all active:scale-95 shadow-sm",
+                purging
+                  ? "bg-rose-500/10 text-rose-500/30 border-rose-500/20 cursor-not-allowed"
+                  : "bg-background hover:bg-rose-500/5 text-rose-500 border-rose-500/20 hover:border-rose-500/40"
+              )}
+            >
+              {purging ? (
+                <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Trash2 className="h-3.5 w-3.5" />
+              )}
+              Purge Server
+            </button>
 
-        <button
-          onClick={fetchStats}
-          className="p-2.5 rounded-xl bg-secondary/50 hover:bg-secondary border border-border/50 transition-all active:scale-95 text-muted-foreground hover:text-foreground"
-        >
-          <RefreshCw className="h-4 w-4" />
-        </button>
-      </div>
+            <button
+              onClick={fetchStats}
+              className="p-2.5 rounded-xl bg-secondary/50 hover:bg-secondary border border-border/50 transition-all active:scale-95 text-muted-foreground hover:text-foreground"
+            >
+              <RefreshCw className="h-4 w-4" />
+            </button>
         </div>
       </div>
 
@@ -391,7 +427,10 @@ export function SystemOverview() {
             />
           </div>
           <div className="mt-4 pt-4 border-t border-border/50 space-y-1.5">
-            <p className="text-xs text-muted-foreground truncate" title={stats.cpu.model}>
+            <p
+              className="text-xs text-muted-foreground truncate"
+              title={stats.cpu.model}
+            >
               {stats.cpu.model}
             </p>
             <div className="flex justify-between text-xs">
@@ -419,18 +458,24 @@ export function SystemOverview() {
             <CircularProgress
               value={stats.memory.usedPercent}
               label="Used"
-              sublabel={`${formatBytes(stats.memory.used)} / ${formatBytes(stats.memory.total)}`}
+              sublabel={`${formatBytes(stats.memory.used)} / ${formatBytes(
+                stats.memory.total
+              )}`}
               color="purple"
             />
           </div>
           <div className="mt-4 pt-4 border-t border-border/50 space-y-1.5">
             <div className="flex justify-between text-xs">
               <span className="text-muted-foreground">Total</span>
-              <span className="font-medium">{formatBytes(stats.memory.total)}</span>
+              <span className="font-medium">
+                {formatBytes(stats.memory.total)}
+              </span>
             </div>
             <div className="flex justify-between text-xs">
               <span className="text-muted-foreground">Free</span>
-              <span className="font-medium text-emerald-500">{formatBytes(stats.memory.free)}</span>
+              <span className="font-medium text-emerald-500">
+                {formatBytes(stats.memory.free)}
+              </span>
             </div>
           </div>
         </div>
@@ -449,14 +494,18 @@ export function SystemOverview() {
                 <CircularProgress
                   value={stats.disk[0].usedPercent}
                   label={stats.disk[0].mount}
-                  sublabel={`${formatBytes(stats.disk[0].used)} / ${formatBytes(stats.disk[0].total)}`}
+                  sublabel={`${formatBytes(stats.disk[0].used)} / ${formatBytes(
+                    stats.disk[0].total
+                  )}`}
                   color="amber"
                 />
               </div>
               <div className="mt-4 pt-4 border-t border-border/50 space-y-1.5">
                 <div className="flex justify-between text-xs">
                   <span className="text-muted-foreground">Type</span>
-                  <span className="font-medium">{stats.disk[0].type || "Unknown"}</span>
+                  <span className="font-medium">
+                    {stats.disk[0].type || "Unknown"}
+                  </span>
                 </div>
                 {stats.disk.length > 1 && (
                   <p className="text-[10px] text-muted-foreground">
@@ -487,14 +536,18 @@ export function SystemOverview() {
                 <ArrowDownToLine className="h-3 w-3 text-emerald-500" />
                 Download
               </div>
-              <span className="font-medium">{formatSpeed(stats.network.rxSpeed)}</span>
+              <span className="font-medium">
+                {formatSpeed(stats.network.rxSpeed)}
+              </span>
             </div>
             <div className="flex items-center justify-between text-xs">
               <div className="flex items-center gap-1.5 text-muted-foreground">
                 <ArrowUpFromLine className="h-3 w-3 text-cyan-500" />
                 Upload
               </div>
-              <span className="font-medium">{formatSpeed(stats.network.txSpeed)}</span>
+              <span className="font-medium">
+                {formatSpeed(stats.network.txSpeed)}
+              </span>
             </div>
           </div>
         </div>
@@ -529,7 +582,9 @@ export function SystemOverview() {
               <span className="text-muted-foreground flex items-center gap-2">
                 <Server className="h-3.5 w-3.5" /> Operating System
               </span>
-              <span className="font-medium text-xs">{stats.server.distro || stats.server.platform}</span>
+              <span className="font-medium text-xs">
+                {stats.server.distro || stats.server.platform}
+              </span>
             </div>
             <div className="flex justify-between py-2 border-b border-border/30">
               <span className="text-muted-foreground flex items-center gap-2">
@@ -547,13 +602,17 @@ export function SystemOverview() {
               <span className="text-muted-foreground flex items-center gap-2">
                 <Calendar className="h-3.5 w-3.5" /> Server Time
               </span>
-              <span className="font-medium text-xs">{stats.server.serverTime}</span>
+              <span className="font-medium text-xs">
+                {stats.server.serverTime}
+              </span>
             </div>
             <div className="flex justify-between py-2 border-b border-border/30 md:border-b-0">
               <span className="text-muted-foreground flex items-center gap-2">
                 <Network className="h-3.5 w-3.5" /> Active Connections
               </span>
-              <span className="font-medium">{stats.server.activeConnections}</span>
+              <span className="font-medium">
+                {stats.server.activeConnections}
+              </span>
             </div>
           </div>
 
@@ -563,7 +622,10 @@ export function SystemOverview() {
               <span className="text-muted-foreground flex items-center gap-2">
                 <Cpu className="h-3.5 w-3.5" /> CPU
               </span>
-              <span className="font-medium text-xs truncate max-w-[200px]" title={stats.server.cpuModel}>
+              <span
+                className="font-medium text-xs truncate max-w-[200px]"
+                title={stats.server.cpuModel}
+              >
                 {stats.server.cpuCores}
               </span>
             </div>
@@ -572,11 +634,17 @@ export function SystemOverview() {
                 <Activity className="h-3.5 w-3.5" /> Load
               </span>
               <span className="font-medium">
-                <span className="text-cyan-500">{stats.server.loadAvg?.load1 || 0}</span>
+                <span className="text-cyan-500">
+                  {stats.server.loadAvg?.load1 || 0}
+                </span>
                 <span className="text-muted-foreground mx-1">|</span>
-                <span className="text-amber-500">{stats.server.loadAvg?.load5 || 0}</span>
+                <span className="text-amber-500">
+                  {stats.server.loadAvg?.load5 || 0}
+                </span>
                 <span className="text-muted-foreground mx-1">|</span>
-                <span className="text-emerald-500">{stats.server.loadAvg?.load15 || 0}</span>
+                <span className="text-emerald-500">
+                  {stats.server.loadAvg?.load15 || 0}
+                </span>
               </span>
             </div>
             {stats.gpu.available && (
@@ -584,7 +652,10 @@ export function SystemOverview() {
                 <span className="text-muted-foreground flex items-center gap-2">
                   <Gauge className="h-3.5 w-3.5" /> GPU
                 </span>
-                <span className="font-medium text-xs truncate max-w-[200px]" title={stats.gpu.model || ''}>
+                <span
+                  className="font-medium text-xs truncate max-w-[200px]"
+                  title={stats.gpu.model || ""}
+                >
                   {stats.gpu.model}
                 </span>
               </div>
@@ -594,16 +665,19 @@ export function SystemOverview() {
                 <CircuitBoard className="h-3.5 w-3.5" /> Swap
               </span>
               <span className="font-medium">
-                {formatBytes(stats.server.swap?.used || 0)} / {formatBytes(stats.server.swap?.total || 0)}
+                {formatBytes(stats.server.swap?.used || 0)} /{" "}
+                {formatBytes(stats.server.swap?.total || 0)}
               </span>
             </div>
             <div className="flex justify-between py-2 border-b border-border/30">
               <span className="text-muted-foreground flex items-center gap-2">
                 <Globe className="h-3.5 w-3.5" /> IP Address
               </span>
-              <span className="font-medium text-cyan-500">{stats.server.ipAddress}</span>
+              <span className="font-medium text-cyan-500">
+                {stats.server.ipAddress}
+              </span>
             </div>
-            {stats.server.location && stats.server.location !== 'N/A' ? (
+            {stats.server.location && stats.server.location !== "N/A" ? (
               <div className="flex justify-between py-2">
                 <span className="text-muted-foreground flex items-center gap-2">
                   <MapPin className="h-3.5 w-3.5" /> Location
@@ -615,7 +689,9 @@ export function SystemOverview() {
                 <span className="text-muted-foreground flex items-center gap-2">
                   <Globe className="h-3.5 w-3.5" /> IP Address
                 </span>
-                <span className="font-medium text-cyan-500">{stats.server.ipAddress}</span>
+                <span className="font-medium text-cyan-500">
+                  {stats.server.ipAddress}
+                </span>
               </div>
             )}
           </div>
@@ -626,11 +702,13 @@ export function SystemOverview() {
           <div className="mt-4 pt-4 border-t border-border/50">
             <div className="flex items-center gap-2 mb-3">
               <Activity className="h-4 w-4 text-blue-500" />
-              <span className="font-medium text-sm">Top Processes (by CPU)</span>
+              <span className="font-medium text-sm">
+                Top Processes (by CPU)
+              </span>
             </div>
-            
-            <div className="overflow-hidden rounded-xl border border-border/50">
-              <table className="w-full text-xs text-left">
+
+            <div className="overflow-x-auto rounded-xl border border-border/50">
+              <table className="w-full text-xs text-left min-w-[600px]">
                 <thead className="bg-secondary/50 text-muted-foreground font-medium">
                   <tr>
                     <th className="px-3 py-2">PID</th>
@@ -642,12 +720,22 @@ export function SystemOverview() {
                 </thead>
                 <tbody className="divide-y divide-border/30 bg-card">
                   {stats.processes.map((proc) => (
-                    <tr key={proc.pid} className="hover:bg-secondary/30 transition-colors">
-                      <td className="px-3 py-2 font-mono text-muted-foreground">{proc.pid}</td>
-                      <td className="px-3 py-2 font-medium truncate max-w-[150px]" title={proc.name}>
+                    <tr
+                      key={proc.pid}
+                      className="hover:bg-secondary/30 transition-colors"
+                    >
+                      <td className="px-3 py-2 font-mono text-muted-foreground">
+                        {proc.pid}
+                      </td>
+                      <td
+                        className="px-3 py-2 font-medium truncate max-w-[150px]"
+                        title={proc.name}
+                      >
                         {proc.name}
                       </td>
-                      <td className="px-3 py-2 text-muted-foreground">{proc.user}</td>
+                      <td className="px-3 py-2 text-muted-foreground">
+                        {proc.user}
+                      </td>
                       <td className="px-3 py-2 text-right font-medium text-cyan-500">
                         {proc.cpu.toFixed(1)}%
                       </td>
@@ -670,24 +758,32 @@ export function SystemOverview() {
             <div className="mx-auto w-12 h-12 rounded-2xl bg-rose-500/10 flex items-center justify-center mb-2">
               <Trash2 className="h-6 w-6 text-rose-500" />
             </div>
-            <DialogTitle className="text-center text-xl font-bold tracking-tight">Purge Server Resources</DialogTitle>
+            <DialogTitle className="text-center text-xl font-bold tracking-tight">
+              Purge Server Resources
+            </DialogTitle>
             <DialogDescription className="text-center text-muted-foreground text-sm">
               Deep clean Docker containers, image caches, and memory pages.
             </DialogDescription>
           </DialogHeader>
-          
+
           <div className="space-y-2.5 my-4">
             <div className="p-3 rounded-xl bg-secondary/30 border border-border flex items-center gap-3">
               <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-              <p className="text-xs font-semibold">Cleanup unused Docker volumes & networks</p>
+              <p className="text-xs font-semibold">
+                Cleanup unused Docker volumes & networks
+              </p>
             </div>
             <div className="p-3 rounded-xl bg-secondary/30 border border-border flex items-center gap-3">
               <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-              <p className="text-xs font-semibold">Remove dangling image layers</p>
+              <p className="text-xs font-semibold">
+                Remove dangling image layers
+              </p>
             </div>
             <div className="p-3 rounded-xl bg-secondary/30 border border-border flex items-center gap-3">
               <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-              <p className="text-xs font-semibold">Flush Linux PageCache (Free RAM)</p>
+              <p className="text-xs font-semibold">
+                Flush Linux PageCache (Free RAM)
+              </p>
             </div>
           </div>
 
