@@ -510,20 +510,39 @@ function SettingsContent() {
                               </div>
                             </div>
                             
-                            <Button 
-                              variant="destructive" 
-                              size="sm"
-                              onClick={handleDisconnectGitHub}
-                              disabled={disconnecting}
-                              className="h-9 px-4 text-xs font-semibold shadow-lg shadow-red-500/20 hover:bg-red-600 transition-all rounded-xl"
-                            >
-                              {disconnecting ? (
-                                <Loader2 className="h-3.5 w-3.5 animate-spin mr-2" />
-                              ) : (
-                                <X className="h-3.5 w-3.5 mr-2" />
+                            <div className="flex items-center gap-2">
+                              <Button 
+                                variant="destructive" 
+                                size="sm"
+                                onClick={handleDisconnectGitHub}
+                                disabled={disconnecting}
+                                className="h-9 px-4 text-xs font-semibold shadow-lg shadow-red-500/20 hover:bg-red-600 transition-all rounded-xl"
+                              >
+                                {disconnecting ? (
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin mr-2" />
+                                ) : (
+                                  <X className="h-3.5 w-3.5 mr-2" />
+                                )}
+                                Disconnect
+                              </Button>
+
+                              {githubStatus.installUrl && (
+                                <a 
+                                  href={githubStatus.installUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  title="Install on another account or organization"
+                                >
+                                  <Button
+                                    variant="outline"
+                                    size="icon"
+                                    className="h-9 w-9 rounded-xl border-cyan-500/20 text-cyan-500 hover:text-cyan-600 hover:bg-cyan-500/10"
+                                  >
+                                    <Plus className="h-4 w-4" />
+                                  </Button>
+                                </a>
                               )}
-                              Disconnect
-                            </Button>
+                            </div>
                           </div>
                         ) : (
                           <Button 
