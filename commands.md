@@ -58,6 +58,9 @@ curl -fsSL "https://raw.githubusercontent.com/SSujitX/docklift/master/uninstall.
 sudo fuser -k 3001/tcp
 # OR for the whole range:
 for port in {3001..3050}; do sudo fuser -k ${port}/tcp 2>/dev/null; done
+
+# Emergency Reset Password (Run inside backend folder)
+bun run reset-password
 ```
 
 ### 🌐 Network & Port Check
@@ -112,9 +115,10 @@ npm version major               # 0.1.5 → 1.0.0 (breaking changes)
 npm version 0.1.6               # Set specific version
 npm version patch --no-git-tag-version  # No git commit/tag
 
-# Version bumps
-bunx bumpp
-bunx bumpp --patch
-bunx bumpp --minor
-bunx bumpp --major
+# Version bumps (Sync both frontend and backend)
+# Run this inside the backend folder
+bunx bumpp package.json ../frontend/package.json
+
+# Quick patch & tag without menu
+bunx bumpp package.json ../frontend/package.json --patch --tag --commit "chore: release v%s"
 ```
