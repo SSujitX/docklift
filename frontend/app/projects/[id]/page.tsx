@@ -696,36 +696,39 @@ export default function ProjectDetail() {
                         className="group relative overflow-hidden p-0 border-border/40 hover:border-cyan-500/50 transition-all duration-300 shadow-sm hover:shadow-cyan-500/5"
                       >
                         <div className="absolute inset-y-0 left-0 w-1 bg-cyan-500 opacity-0 group-hover:opacity-100 transition-opacity" />
-                        <div className="flex items-center justify-between p-5">
-                          <div className="flex items-center gap-5">
-                            <div className="h-12 w-12 rounded-2xl bg-secondary/50 flex items-center justify-center group-hover:bg-cyan-500/10 transition-colors">
-                              <Server className="h-6 w-6 text-muted-foreground group-hover:text-cyan-500 transition-colors" />
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-5 p-4 sm:p-5">
+                          {/* Left: Icon + Name + Status */}
+                          <div className="flex items-start sm:items-center gap-3 sm:gap-5 min-w-0">
+                            <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-xl sm:rounded-2xl bg-secondary/50 flex items-center justify-center group-hover:bg-cyan-500/10 transition-colors shrink-0">
+                              <Server className="h-5 w-5 sm:h-6 sm:w-6 text-muted-foreground group-hover:text-cyan-500 transition-colors" />
                             </div>
-                            <div>
-                              <div className="flex items-center gap-3">
-                                <span className="font-bold text-lg">{svc.name}</span>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                                <span className="font-bold text-base sm:text-lg truncate">{svc.name}</span>
                                 <StatusBadge status={svc.status} />
                               </div>
-                              <p className="text-xs text-muted-foreground mt-1 flex items-center gap-2">
-                                <span className="font-mono bg-secondary/80 px-1.5 py-0.5 rounded">Port {svc.internal_port}</span>
-                                <span className="text-muted-foreground/30">/</span>
-                                <span className="flex items-center gap-1">
-                                  <FileCode className="h-3 w-3" />
-                                  {svc.dockerfile_path}
+                              <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5 sm:mt-1 flex flex-wrap items-center gap-1.5 sm:gap-2">
+                                <span className="font-mono bg-secondary/80 px-1 sm:px-1.5 py-0.5 rounded text-[9px] sm:text-xs">Port {svc.internal_port}</span>
+                                <span className="text-muted-foreground/30 hidden sm:inline">/</span>
+                                <span className="flex items-center gap-1 truncate">
+                                  <FileCode className="h-2.5 w-2.5 sm:h-3 sm:w-3 shrink-0" />
+                                  <span className="truncate">{svc.dockerfile_path}</span>
                                 </span>
                               </p>
                             </div>
                           </div>
-                          <div className="flex flex-col gap-2 items-end">
+                          
+                          {/* Right: Endpoint links */}
+                          <div className="flex flex-wrap gap-2 sm:flex-col sm:gap-2 sm:items-end ml-0 sm:ml-auto shrink-0">
                             {/* Always show IP:Port access */}
                             <a
                               href={portEndpoint.url}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="h-9 px-4 flex items-center gap-2 rounded-xl bg-secondary/50 hover:bg-cyan-500 text-muted-foreground hover:text-white font-mono text-xs font-bold transition-all duration-300 border border-border/50"
+                              className="h-7 sm:h-9 px-2.5 sm:px-4 flex items-center gap-1.5 sm:gap-2 rounded-lg sm:rounded-xl bg-secondary/50 hover:bg-cyan-500 text-muted-foreground hover:text-white font-mono text-[10px] sm:text-xs font-bold transition-all duration-300 border border-border/50"
                             >
-                              {portEndpoint.label}
-                              <ExternalLink className="h-3 w-3" />
+                              <span className="truncate max-w-[120px] sm:max-w-none">{portEndpoint.label}</span>
+                              <ExternalLink className="h-2.5 w-2.5 sm:h-3 sm:w-3 shrink-0" />
                             </a>
                             {/* Show domain links if configured */}
                             {domainLinks.map((link, idx) => (
@@ -734,10 +737,10 @@ export default function ProjectDetail() {
                                 href={link.url}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="h-9 px-4 flex items-center gap-2 rounded-xl bg-cyan-500/10 hover:bg-cyan-500 text-cyan-600 hover:text-white font-mono text-xs font-bold transition-all duration-300"
+                                className="h-7 sm:h-9 px-2.5 sm:px-4 flex items-center gap-1.5 sm:gap-2 rounded-lg sm:rounded-xl bg-cyan-500/10 hover:bg-cyan-500 text-cyan-600 hover:text-white font-mono text-[10px] sm:text-xs font-bold transition-all duration-300"
                               >
-                                {link.label}
-                                <ExternalLink className="h-3 w-3" />
+                                <span className="truncate max-w-[120px] sm:max-w-none">{link.label}</span>
+                                <ExternalLink className="h-2.5 w-2.5 sm:h-3 sm:w-3 shrink-0" />
                               </a>
                             ))}
                           </div>
@@ -750,56 +753,56 @@ export default function ProjectDetail() {
             )}
 
             {/* Quick Stats Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-              <Card className="p-6 border-border/40 hover:border-border transition-colors">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="p-2.5 rounded-xl bg-orange-500/10">
-                    <Activity className="h-5 w-5 text-orange-500" />
+            <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-5">
+              <Card className="p-4 sm:p-6 border-border/40 hover:border-border transition-colors">
+                <div className="flex items-center justify-between mb-2 sm:mb-4">
+                  <div className="p-2 sm:p-2.5 rounded-lg sm:rounded-xl bg-orange-500/10">
+                    <Activity className="h-4 w-4 sm:h-5 sm:w-5 text-orange-500" />
                   </div>
                   <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Health</span>
                 </div>
-                <div className="space-y-1">
-                  <p className="text-2xl font-bold tracking-tight capitalize">{project.status}</p>
-                  <p className="text-xs text-muted-foreground">Main service status</p>
+                <div className="space-y-0.5 sm:space-y-1">
+                  <p className="text-lg sm:text-2xl font-bold tracking-tight capitalize">{project.status}</p>
+                  <p className="text-[10px] sm:text-xs text-muted-foreground">Main service status</p>
                 </div>
               </Card>
 
-              <Card className="p-6 border-border/40 hover:border-border transition-colors">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="p-2.5 rounded-xl bg-purple-500/10">
-                    <History className="h-5 w-5 text-purple-500" />
+              <Card className="p-4 sm:p-6 border-border/40 hover:border-border transition-colors">
+                <div className="flex items-center justify-between mb-2 sm:mb-4">
+                  <div className="p-2 sm:p-2.5 rounded-lg sm:rounded-xl bg-purple-500/10">
+                    <History className="h-4 w-4 sm:h-5 sm:w-5 text-purple-500" />
                   </div>
                   <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Activity</span>
                 </div>
-                <div className="space-y-1">
-                  <p className="text-2xl font-bold tracking-tight">{deployments.length}</p>
-                  <p className="text-xs text-muted-foreground">Total deployments</p>
+                <div className="space-y-0.5 sm:space-y-1">
+                  <p className="text-lg sm:text-2xl font-bold tracking-tight">{deployments.length}</p>
+                  <p className="text-[10px] sm:text-xs text-muted-foreground">Total deployments</p>
                 </div>
               </Card>
 
-              <Card className="p-6 border-border/40 hover:border-border transition-colors">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="p-2.5 rounded-xl bg-blue-500/10">
-                    <Cpu className="h-5 w-5 text-blue-500" />
+              <Card className="p-4 sm:p-6 border-border/40 hover:border-border transition-colors">
+                <div className="flex items-center justify-between mb-2 sm:mb-4">
+                  <div className="p-2 sm:p-2.5 rounded-lg sm:rounded-xl bg-blue-500/10">
+                    <Cpu className="h-4 w-4 sm:h-5 sm:w-5 text-blue-500" />
                   </div>
                   <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Resource</span>
                 </div>
-                <div className="space-y-1">
-                  <p className="text-2xl font-bold tracking-tight">{project.source_type === "github" ? "GitHub" : "Upload"}</p>
-                  <p className="text-xs text-muted-foreground">Source type</p>
+                <div className="space-y-0.5 sm:space-y-1">
+                  <p className="text-lg sm:text-2xl font-bold tracking-tight">{project.source_type === "github" ? "GitHub" : "Upload"}</p>
+                  <p className="text-[10px] sm:text-xs text-muted-foreground">Source type</p>
                 </div>
               </Card>
 
-              <Card className="p-6 border-border/40 hover:border-border transition-colors">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="p-2.5 rounded-xl bg-cyan-500/10">
-                    <Shield className="h-5 w-5 text-cyan-500" />
+              <Card className="p-4 sm:p-6 border-border/40 hover:border-border transition-colors">
+                <div className="flex items-center justify-between mb-2 sm:mb-4">
+                  <div className="p-2 sm:p-2.5 rounded-lg sm:rounded-xl bg-cyan-500/10">
+                    <Shield className="h-4 w-4 sm:h-5 sm:w-5 text-cyan-500" />
                   </div>
                   <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Privacy</span>
                 </div>
-                <div className="space-y-1">
-                  <p className="text-2xl font-bold tracking-tight">Isolated</p>
-                  <p className="text-xs text-muted-foreground">Network namespace</p>
+                <div className="space-y-0.5 sm:space-y-1">
+                  <p className="text-lg sm:text-2xl font-bold tracking-tight">Isolated</p>
+                  <p className="text-[10px] sm:text-xs text-muted-foreground">Network namespace</p>
                 </div>
               </Card>
             </div>
@@ -837,15 +840,15 @@ export default function ProjectDetail() {
                 </div>
 
                 {/* Auto-Deploy Section */}
-                <div className="border-t border-border/40 p-6">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 rounded-lg bg-emerald-500/10">
+                <div className="border-t border-border/40 p-4 sm:p-6">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="p-2 rounded-lg bg-emerald-500/10 shrink-0">
                         <Rocket className="h-4 w-4 text-emerald-500" />
                       </div>
-                      <div>
-                        <span className="font-semibold">Auto-Deploy</span>
-                        <p className="text-xs text-muted-foreground">
+                      <div className="min-w-0">
+                        <span className="font-semibold text-sm sm:text-base">Auto-Deploy</span>
+                        <p className="text-[10px] sm:text-xs text-muted-foreground">
                           {autoDeploy 
                             ? "Pushes to this branch will trigger automatic deployment" 
                             : "Enable to auto-redeploy when commits are pushed"}
@@ -856,7 +859,7 @@ export default function ProjectDetail() {
                       onClick={() => handleAutoDeployToggle(!autoDeploy)}
                       disabled={autoDeployLoading}
                       className={cn(
-                        "relative h-6 w-11 rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500",
+                        "relative h-6 w-11 rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 shrink-0 self-end sm:self-auto",
                         autoDeploy ? "bg-emerald-500" : "bg-secondary"
                       )}
                     >
