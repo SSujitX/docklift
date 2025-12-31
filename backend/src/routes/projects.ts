@@ -186,12 +186,24 @@ router.post('/', upload.single('files'), async (req: Request, res: Response) => 
         const match = github_url.match(/github\.com[/:]([^/]+)\/([^/.]+)/);
         if (match) {
           const [, owner, repo] = match;
-          const installId = await getInstallationIdForRepo(owner, repo);
-          const token = await getInstallationToken(installId);
-          const urlObj = new URL(github_url);
-          urlObj.username = 'x-access-token';
-          urlObj.password = token;
-          authUrl = urlObj.toString();
+          let installId: string | null = null;
+          
+          try {
+            // Try to get installation ID for this specific repo
+            installId = await getInstallationIdForRepo(owner, repo);
+          } catch (err) {
+            // Fallback to saved installation ID
+            console.warn(`Dynamic installation lookup failed for ${owner}/${repo}, trying saved ID`);
+            installId = await getSetting('github_installation_id');
+          }
+          
+          if (installId) {
+            const token = await getInstallationToken(installId);
+            const urlObj = new URL(github_url);
+            urlObj.username = 'x-access-token';
+            urlObj.password = token;
+            authUrl = urlObj.toString();
+          }
         }
       } catch (err) {
         console.warn('Failed to inject GitHub token, trying public clone:', err);

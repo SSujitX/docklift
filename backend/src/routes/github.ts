@@ -141,6 +141,8 @@ router.post('/manifest', async (req: Request, res: Response) => {
     }
     const serverUrl = `${protocol}://${host}`;
     
+    console.log(`[Manifest] Host: ${host}, isIP: ${isIPAddress}, isLocalhost: ${isLocalhost}, forwardedProto: ${forwardedProto}, protocol: ${protocol}`);
+    
     // Build the manifest
     const manifest = {
       name: `docklift-${sanitizedName}`,
