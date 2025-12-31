@@ -837,7 +837,10 @@ router.post('/webhook', async (req: Request, res: Response) => {
       
       fetch(deployUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'X-Internal-Secret': process.env.INTERNAL_API_SECRET || 'docklift-internal-secret'
+        },
         body: JSON.stringify({ 
           trigger: 'webhook',
           commit_message: commitMessage

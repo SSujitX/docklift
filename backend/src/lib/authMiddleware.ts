@@ -14,6 +14,13 @@ export interface AuthenticatedRequest extends Request {
 
 export const authMiddleware = (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
+    // Allow internal API calls with shared secret (for webhook auto-deploy)
+    const internalSecret = req.headers['x-internal-secret'];
+    if (internalSecret === (process.env.INTERNAL_API_SECRET || 'docklift-internal-secret')) {
+      req.user = { userId: 'internal', email: 'internal@docklift', role: 'admin' };
+      return next();
+    }
+
     const authHeader = req.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
