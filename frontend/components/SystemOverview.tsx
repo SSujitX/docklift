@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { API_URL, cn } from "@/lib/utils";
+import { getAuthHeaders } from "@/lib/auth";
 import {
   Dialog,
   DialogContent,
@@ -256,7 +257,7 @@ export function SystemOverview() {
 
   const fetchStats = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/api/system/stats`);
+      const res = await fetch(`${API_URL}/api/system/stats`, { headers: getAuthHeaders() });
       const data = await res.json();
       setStats(data);
       setLastUpdate(new Date());
@@ -274,6 +275,7 @@ export function SystemOverview() {
     try {
       const res = await fetch(`${API_URL}/api/system/purge`, {
         method: "POST",
+        headers: getAuthHeaders(),
       });
       const data = await res.json();
       

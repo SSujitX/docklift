@@ -35,6 +35,7 @@ import {
   EyeOff,
 } from "lucide-react";
 import { API_URL, cn } from "@/lib/utils";
+import { getAuthHeaders } from "@/lib/auth";
 import { toast } from "sonner";
 import axios from "axios";
 import { Project } from "@/lib/types";
@@ -135,7 +136,7 @@ function NewProjectContent() {
   const fetchBranches = async (repoIdentifier: string, type: "public" | "private") => {
     setBranchesLoading(true);
     try {
-      const res = await fetch(`${API_URL}/api/github/branches?repo=${repoIdentifier}&type=${type}`);
+      const res = await fetch(`${API_URL}/api/github/branches?repo=${repoIdentifier}&type=${type}`, { headers: getAuthHeaders() });
       if (!res.ok) throw new Error("Failed");
       const data = await res.json();
       setBranches(data);
@@ -157,7 +158,7 @@ function NewProjectContent() {
   const fetchGitHubStatus = async () => {
     setGithubLoading(true);
     try {
-      const res = await fetch(`${API_URL}/api/github/status`);
+      const res = await fetch(`${API_URL}/api/github/status`, { headers: getAuthHeaders() });
       const data = await res.json();
       setGithubStatus(data);
       if (data.connected) {
@@ -173,7 +174,7 @@ function NewProjectContent() {
   const fetchRepos = async () => {
     setReposLoading(true);
     try {
-      const res = await fetch(`${API_URL}/api/github/repos?per_page=50`);
+      const res = await fetch(`${API_URL}/api/github/repos?per_page=50`, { headers: getAuthHeaders() });
       const data = await res.json();
       setRepos(data);
     } catch {
@@ -185,7 +186,7 @@ function NewProjectContent() {
 
   const fetchExistingDatabases = async () => {
     try {
-      const res = await fetch(`${API_URL}/api/projects`);
+      const res = await fetch(`${API_URL}/api/projects`, { headers: getAuthHeaders() });
       const data: Project[] = await res.json();
       setExistingDbs(data.filter(p => p.project_type === "database"));
     } catch (error) {
@@ -255,7 +256,7 @@ function NewProjectContent() {
       for (const env of varsToInject) {
         await fetch(`${API_URL}/api/projects/${newProject.id}/env`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...getAuthHeaders() },
           body: JSON.stringify(env),
         });
       }

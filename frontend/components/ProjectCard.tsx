@@ -30,6 +30,7 @@ import {
   Clock
 } from "lucide-react";
 import { API_URL } from "@/lib/utils";
+import { getAuthHeaders } from "@/lib/auth";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
@@ -51,7 +52,7 @@ export function ProjectCard({ project, onRefresh }: ProjectCardProps) {
     setLoading(true);
     setActionType(action);
     try {
-      await fetch(`${API_URL}/api/deployments/${project.id}/${action}`, { method: "POST" });
+      await fetch(`${API_URL}/api/deployments/${project.id}/${action}`, { method: "POST", headers: getAuthHeaders() });
       setTimeout(onRefresh, 2000);
     } catch (error) {
       console.error(error);
@@ -71,7 +72,7 @@ export function ProjectCard({ project, onRefresh }: ProjectCardProps) {
     if (e) e.stopPropagation();
     setDeleting(true);
     try {
-      await fetch(`${API_URL}/api/projects/${project.id}`, { method: "DELETE" });
+      await fetch(`${API_URL}/api/projects/${project.id}`, { method: "DELETE", headers: getAuthHeaders() });
       setDeleteDialogOpen(false);
       onRefresh();
     } catch (error) {

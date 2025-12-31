@@ -31,7 +31,8 @@ import {
   DialogFooter 
 } from "@/components/ui/dialog";
 import { API_URL } from "@/lib/utils";
-import { toast } from "sonner";
+import { getAuthHeaders } from "@/lib/auth";
+import { toast } from "sonner";;
 import { cn } from "@/lib/utils";
 
 interface CommandLog {
@@ -78,7 +79,7 @@ export function TerminalView() {
     try {
       const res = await fetch(`${API_URL}/api/system/execute`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         body: JSON.stringify({ command: currentCommand }),
       });
       
@@ -109,6 +110,7 @@ export function TerminalView() {
     try {
       const res = await fetch(`${API_URL}/api/system/${action}`, {
         method: "POST",
+        headers: getAuthHeaders(),
       });
       const data = await res.json();
       

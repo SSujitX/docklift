@@ -17,6 +17,8 @@ import portsRouter from './routes/ports.js';
 import githubRouter from './routes/github.js';
 import systemRouter from './routes/system.js';
 import domainRouter from './routes/domains.js';
+import authRouter from './routes/auth.js';
+import { authMiddleware } from './lib/authMiddleware.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -39,19 +41,22 @@ if (!fs.existsSync(deploymentsDir)) {
   fs.mkdirSync(deploymentsDir, { recursive: true });
 }
 
-// Health check
+// Health check (public)
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Routes
-app.use('/api/projects', projectsRouter);
-app.use('/api/deployments', deploymentsRouter);
-app.use('/api/files', filesRouter);
-app.use('/api/ports', portsRouter);
-app.use('/api/github', githubRouter);
-app.use('/api/system', systemRouter);
-app.use('/api/domains', domainRouter);
+// Auth routes (public)
+app.use('/api/auth', authRouter);
+
+// Protected routes - apply auth middleware
+app.use('/api/projects', authMiddleware, projectsRouter);
+app.use('/api/deployments', authMiddleware, deploymentsRouter);
+app.use('/api/files', authMiddleware, filesRouter);
+app.use('/api/ports', authMiddleware, portsRouter);
+app.use('/api/github', authMiddleware, githubRouter);
+app.use('/api/system', authMiddleware, systemRouter);
+app.use('/api/domains', authMiddleware, domainRouter);
 
 // Error handler
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {

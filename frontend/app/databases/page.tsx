@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
 import { Project } from "@/lib/types";
 import { API_URL } from "@/lib/utils";
+import { getAuthHeaders } from "@/lib/auth";
 import { Plus, RefreshCw, Database, Sparkles } from "lucide-react";
 
 export default function DatabasesPage() {
@@ -17,10 +18,10 @@ export default function DatabasesPage() {
 
   const fetchProjects = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/api/projects`);
+      const res = await fetch(`${API_URL}/api/projects`, { headers: getAuthHeaders() });
       const data = await res.json();
       // Filter only database projects
-      const databaseProjects = data.filter((p: Project) => p.project_type === "database");
+      const databaseProjects = Array.isArray(data) ? data.filter((p: Project) => p.project_type === "database") : [];
       setProjects(databaseProjects);
     } catch (error) {
       console.error("Failed to fetch database services:", error);

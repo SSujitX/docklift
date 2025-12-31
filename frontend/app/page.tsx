@@ -18,9 +18,19 @@ export default function Dashboard() {
 
   const fetchProjects = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/api/projects`);
+      const token = localStorage.getItem("docklift_token");
+      const res = await fetch(`${API_URL}/api/projects`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      
+      if (res.status === 401) {
+        // Not authenticated, AuthProvider will handle redirect
+        return;
+      }
+      
       const data = await res.json();
-      setProjects(data);
+      // Ensure we always have an array
+      setProjects(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error("Failed to fetch projects:", error);
     } finally {

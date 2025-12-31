@@ -15,6 +15,7 @@ import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Project, ProjectFile, Deployment, Service } from "@/lib/types";
 import { API_URL, cn, copyToClipboard } from "@/lib/utils";
+import { getAuthHeaders } from "@/lib/auth";
 import {
   ArrowLeft,
   Play,
@@ -95,7 +96,7 @@ function ServiceDomainManager({ service, projectId, onUpdate }: { service: Servi
     try {
       const res = await fetch(`${API_URL}/api/deployments/${projectId}/services/${service.id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         body: JSON.stringify({ domain: domainString }),
       });
       
@@ -224,7 +225,7 @@ export default function ProjectDetail() {
   useEffect(() => {
     const fetchServerIP = async () => {
       try {
-        const res = await fetch(`${API_URL}/api/system/ip`);
+        const res = await fetch(`${API_URL}/api/system/ip`, { headers: getAuthHeaders() });
         if (res.ok) {
           const data = await res.json();
           setServerIP(data.ip || 'N/A');
@@ -239,10 +240,10 @@ export default function ProjectDetail() {
   const fetchProject = useCallback(async () => {
     try {
       const [projectRes, filesRes, deploymentsRes, servicesRes] = await Promise.all([
-        fetch(`${API_URL}/api/projects/${projectId}`),
-        fetch(`${API_URL}/api/files/${projectId}`),
-        fetch(`${API_URL}/api/deployments/${projectId}?limit=${historyLimit}`),
-        fetch(`${API_URL}/api/deployments/${projectId}/services`),
+        fetch(`${API_URL}/api/projects/${projectId}`, { headers: getAuthHeaders() }),
+        fetch(`${API_URL}/api/files/${projectId}`, { headers: getAuthHeaders() }),
+        fetch(`${API_URL}/api/deployments/${projectId}?limit=${historyLimit}`, { headers: getAuthHeaders() }),
+        fetch(`${API_URL}/api/deployments/${projectId}/services`, { headers: getAuthHeaders() }),
       ]);
 
       if (!projectRes.ok) {
@@ -296,7 +297,7 @@ export default function ProjectDetail() {
     
     const fetchAutoDeploy = async () => {
       try {
-        const res = await fetch(`${API_URL}/api/projects/${projectId}/auto-deploy`);
+        const res = await fetch(`${API_URL}/api/projects/${projectId}/auto-deploy`, { headers: getAuthHeaders() });
         if (res.ok) {
           const data = await res.json();
           setAutoDeploy(data.auto_deploy || false);
@@ -315,7 +316,7 @@ export default function ProjectDetail() {
     try {
       const res = await fetch(`${API_URL}/api/projects/${projectId}/auto-deploy`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ enabled }),
       });
       
@@ -477,7 +478,7 @@ export default function ProjectDetail() {
 
   const openFileEditor = async (filePath: string) => {
     try {
-      const res = await fetch(`${API_URL}/api/files/${projectId}/content?path=${encodeURIComponent(filePath)}`);
+      const res = await fetch(`${API_URL}/api/files/${projectId}/content?path=${encodeURIComponent(filePath)}`, { headers: getAuthHeaders() });
       if (!res.ok) throw new Error("Failed to fetch file content");
       const data = await res.json();
       setEditingFile({ name: filePath, content: data.content });

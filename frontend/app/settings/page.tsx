@@ -9,11 +9,13 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Server, Network, Container, Info, Loader2, Check, X, Sparkles, Globe, Plus, Trash2, ExternalLink, Copy, AlertTriangle } from "lucide-react";
+import { Server, Network, Container, Info, Loader2, Check, X, Sparkles, Globe, Plus, Trash2, ExternalLink, Copy, AlertTriangle, User, Lock, ShieldCheck, KeyRound, Mail, UserCircle } from "lucide-react";
 import { GithubIcon } from "@/components/icons/GithubIcon";
 import { toast } from "sonner";
 import { API_URL, copyToClipboard } from "@/lib/utils";
 import { GitHubConnect } from "@/components/GitHubConnect";
+import { getAuthHeaders } from "@/lib/auth";
+import { useAuth } from "@/components/AuthProvider";
 
 interface GitHubStatus {
   connected: boolean;
@@ -33,7 +35,18 @@ function SettingsContent() {
   const [loading, setLoading] = useState(true);
   const [disconnecting, setDisconnecting] = useState(false);
   const [showGitHubConnect, setShowGitHubConnect] = useState(false);
-  const [activeTab, setActiveTab] = useState('github');
+  const [activeTab, setActiveTab] = useState('profile');
+  
+  // Profile State
+  const { user, updateUser } = useAuth();
+  const [profileData, setProfileData] = useState({ name: user?.name || '', email: user?.email || '' });
+  const [updatingProfile, setUpdatingProfile] = useState(false);
+  
+  // Password State
+  const [passwordData, setPasswordData] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
+  const [updatingPassword, setUpdatingPassword] = useState(false);
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
   
   // Domain State
   const [domains, setDomains] = useState<DomainConfig[]>([]);
@@ -49,26 +62,44 @@ function SettingsContent() {
   const [deletingDomain, setDeletingDomain] = useState(false);
 
   const searchParams = useSearchParams();
+  const router = useRouter();
 
+  // Sync activeTab with URL query parameter
   useEffect(() => {
-    fetchGitHubStatus();
+    const tab = searchParams.get("tab");
+    const validTabs = ['github', 'server', 'port', 'docker', 'domain', 'profile'];
     
+    if (tab && validTabs.includes(tab)) {
+      setActiveTab(tab);
+    } else if (!tab) {
+      setActiveTab('profile');
+    }
+
     if (searchParams.get("github") === "connected") {
       toast.success("GitHub account connected successfully!");
     }
+  }, [searchParams]);
 
-    if (activeTab === 'domain') {
-      fetchDomains();
-    }
+  // Fetch data based on active tab
+  useEffect(() => {
+    if (activeTab === 'github') fetchGitHubStatus();
+    if (activeTab === 'domain') fetchDomains();
+    if (activeTab === 'server') fetchServerIP();
+  }, [activeTab]);
 
-    if (activeTab === 'server') {
-      fetchServerIP();
+  useEffect(() => {
+    if (user) {
+      setProfileData({ name: user.name || '', email: user.email || '' });
     }
-  }, [searchParams, activeTab]);
+  }, [user]);
+
+  const handleTabChange = (tabId: string) => {
+    router.push(`/settings?tab=${tabId}`, { scroll: false });
+  };
 
   const fetchServerIP = async () => {
     try {
-      const res = await fetch(`${API_URL}/api/system/ip`);
+      const res = await fetch(`${API_URL}/api/system/ip`, { headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setServerIP(data.ip || 'N/A');
@@ -84,7 +115,8 @@ function SettingsContent() {
       const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
       
       const res = await fetch(`${API_URL}/api/github/status`, {
-        signal: controller.signal
+        signal: controller.signal,
+        headers: getAuthHeaders()
       });
       clearTimeout(timeoutId);
       const data = await res.json();
@@ -103,7 +135,7 @@ function SettingsContent() {
   const handleDisconnectGitHub = async () => {
     setDisconnecting(true);
     try {
-      await fetch(`${API_URL}/api/github/disconnect`, { method: "POST" });
+      await fetch(`${API_URL}/api/github/disconnect`, { method: "POST", headers: getAuthHeaders() });
       setGithubStatus({ connected: false });
       toast.success("GitHub disconnected");
     } catch {
@@ -116,7 +148,7 @@ function SettingsContent() {
   const fetchDomains = async () => {
     setLoadingDomains(true);
     try {
-      const res = await fetch(`${API_URL}/api/domains`);
+      const res = await fetch(`${API_URL}/api/domains`, { headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setDomains(data);
@@ -140,7 +172,7 @@ function SettingsContent() {
     try {
       const res = await fetch(`${API_URL}/api/domains`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         body: JSON.stringify({
           domain: newDomain.domain,
           port: parseInt(port)
@@ -173,7 +205,8 @@ function SettingsContent() {
     setDeletingDomain(true);
     try {
       const res = await fetch(`${API_URL}/api/domains/${domainToDelete}`, {
-        method: "DELETE"
+        method: "DELETE",
+        headers: getAuthHeaders()
       });
       
       if (!res.ok) throw new Error("Failed to delete domain");
@@ -182,10 +215,63 @@ function SettingsContent() {
       setIsDeleteConfirmOpen(false);
       setDomainToDelete(null);
       fetchDomains();
+    } finally {
+      setDeletingDomain(false);
+    }
+  };
+
+  const handleUpdateProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setUpdatingProfile(true);
+    try {
+      const res = await fetch(`${API_URL}/api/auth/profile`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify({
+          name: profileData.name,
+          email: profileData.email
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to update profile");
+      
+      updateUser(data.user);
+      toast.success("Profile updated successfully");
     } catch (error: any) {
       toast.error(error.message);
     } finally {
-      setDeletingDomain(false);
+      setUpdatingProfile(false);
+    }
+  };
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (passwordData.newPassword !== passwordData.confirmPassword) {
+      toast.error("Passwords do not match");
+      return;
+    }
+
+    setUpdatingPassword(true);
+    try {
+      const res = await fetch(`${API_URL}/api/auth/change-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify({
+          currentPassword: passwordData.currentPassword,
+          newPassword: passwordData.newPassword
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to change password");
+      
+      toast.success("Password changed successfully");
+      setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
+    } catch (error: any) {
+      toast.error(error.message);
+    } finally {
+      setUpdatingPassword(false);
     }
   };
 
@@ -204,6 +290,7 @@ function SettingsContent() {
           <aside className="w-full md:w-64 shrink-0 space-y-2">
             <nav className="flex md:flex-col overflow-x-auto md:overflow-visible gap-2 p-1">
               {[
+                { id: 'profile', label: 'Profile', icon: User },
                 { id: 'github', label: 'GitHub', icon: GithubIcon },
                 { id: 'server', label: 'Server', icon: Server },
                 { id: 'port', label: 'Port', icon: Network },
@@ -215,7 +302,7 @@ function SettingsContent() {
                 return (
                   <button
                     key={item.id}
-                    onClick={() => setActiveTab(item.id)}
+                    onClick={() => handleTabChange(item.id)}
                     className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all whitespace-nowrap
                       ${isActive 
                         ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20 scale-[1.02]" 
@@ -232,6 +319,146 @@ function SettingsContent() {
 
           {/* Main Content Area */}
           <div className="flex-1 min-w-0">
+            {/* Profile Tab */}
+            {activeTab === 'profile' && (
+              <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <div className="grid gap-6">
+                  {/* Account Info */}
+                  <Card className="p-6 border-cyan-500/10 bg-card/50 backdrop-blur-sm">
+                    <div className="flex items-center gap-4 mb-6">
+                      <div className="p-3 rounded-2xl bg-cyan-500/10 border border-cyan-500/20">
+                        <UserCircle className="h-6 w-6 text-cyan-500" />
+                      </div>
+                      <div>
+                        <h2 className="text-xl font-black">Account Profile</h2>
+                        <p className="text-xs text-muted-foreground uppercase tracking-widest font-bold mt-0.5">Personal Identity</p>
+                      </div>
+                    </div>
+                    
+                    <form onSubmit={handleUpdateProfile} className="space-y-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <label className="text-xs font-black uppercase tracking-wider text-muted-foreground ml-1">Full Name</label>
+                          <Input 
+                            value={profileData.name}
+                            onChange={(e) => setProfileData({ ...profileData, name: e.target.value })}
+                            placeholder="John Doe"
+                            className="bg-secondary/30 h-11 border-border/40 focus:border-cyan-500/50 transition-all font-medium"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-xs font-black uppercase tracking-wider text-muted-foreground ml-1">Email Address</label>
+                          <div className="relative">
+                            <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/50" />
+                            <Input 
+                              type="email"
+                              value={profileData.email}
+                              onChange={(e) => setProfileData({ ...profileData, email: e.target.value })}
+                              placeholder="john@example.com"
+                              className="bg-secondary/30 h-11 pl-10 border-border/40 focus:border-cyan-500/50 transition-all font-medium"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex justify-end pt-2">
+                        <Button 
+                          type="submit" 
+                          disabled={updatingProfile}
+                          className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white font-black px-6 rounded-xl shadow-lg shadow-cyan-500/20"
+                        >
+                          {updatingProfile ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Check className="h-4 w-4 mr-2" />}
+                          Update Profile
+                        </Button>
+                      </div>
+                    </form>
+                  </Card>
+
+                  {/* Security Section */}
+                  <Card className="p-6 border-red-500/10 bg-card/50 backdrop-blur-sm">
+                    <div className="flex items-center gap-4 mb-6">
+                      <div className="p-3 rounded-2xl bg-red-500/10 border border-red-500/20">
+                        <ShieldCheck className="h-6 w-6 text-red-500" />
+                      </div>
+                      <div>
+                        <h2 className="text-xl font-black">Security</h2>
+                        <p className="text-xs text-muted-foreground uppercase tracking-widest font-bold mt-0.5">Password Management</p>
+                      </div>
+                    </div>
+
+                    <form onSubmit={handleChangePassword} className="space-y-4">
+                      <div className="space-y-2">
+                        <label className="text-xs font-black uppercase tracking-wider text-muted-foreground ml-1">Current Password</label>
+                        <div className="relative">
+                          <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/50" />
+                          <Input 
+                            type={showCurrentPassword ? "text" : "password"}
+                            value={passwordData.currentPassword}
+                            onChange={(e) => setPasswordData({ ...passwordData, currentPassword: e.target.value })}
+                            placeholder="Current Password"
+                            className="bg-secondary/30 h-11 pl-10 pr-10 border-border/40 focus:border-red-500/30 transition-all font-medium"
+                          />
+                          <button 
+                            type="button" 
+                            onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                          >
+                            {showCurrentPassword ? <Lock className="h-4 w-4" /> : <ShieldCheck className="h-4 w-4" />}
+                          </button>
+                        </div>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <label className="text-xs font-black uppercase tracking-wider text-muted-foreground ml-1">New Password</label>
+                          <div className="relative">
+                            <KeyRound className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/50" />
+                            <Input 
+                              type={showNewPassword ? "text" : "password"}
+                              value={passwordData.newPassword}
+                              onChange={(e) => setPasswordData({ ...passwordData, newPassword: e.target.value })}
+                              placeholder="New Password"
+                              className="bg-secondary/30 h-11 pl-10 pr-10 border-border/40 focus:border-cyan-500/30 transition-all font-medium"
+                            />
+                            <button 
+                              type="button" 
+                              onClick={() => setShowNewPassword(!showNewPassword)}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                            >
+                              {showNewPassword ? <Lock className="h-4 w-4" /> : <ShieldCheck className="h-4 w-4" />}
+                            </button>
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-xs font-black uppercase tracking-wider text-muted-foreground ml-1">Confirm New Password</label>
+                          <div className="relative">
+                            <KeyRound className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/50" />
+                            <Input 
+                              type="password"
+                              value={passwordData.confirmPassword}
+                              onChange={(e) => setPasswordData({ ...passwordData, confirmPassword: e.target.value })}
+                              placeholder="Confirm Password"
+                              className="bg-secondary/30 h-11 pl-10 border-border/40 focus:border-cyan-500/30 transition-all font-medium"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex justify-end pt-2">
+                        <Button 
+                          type="submit" 
+                          disabled={updatingPassword || !passwordData.newPassword}
+                          className="bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white font-black px-6 rounded-xl shadow-lg shadow-violet-500/20 active:scale-95 transition-all border-none"
+                        >
+                          {updatingPassword ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <ShieldCheck className="h-4 w-4 mr-2" />}
+                          Change Password
+                        </Button>
+                      </div>
+                    </form>
+                  </Card>
+                </div>
+              </div>
+            )}
+
             {/* GitHub Tab */}
             {activeTab === 'github' && (
               <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">

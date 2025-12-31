@@ -2,25 +2,36 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Container, Settings, Moon, Sun, Monitor, BookOpen, Anchor, LayoutGrid, ChevronDown, Gauge, Menu, X } from "lucide-react";
+import { Container, Settings, Moon, Sun, Monitor, BookOpen, Anchor, LayoutGrid, ChevronDown, Gauge, Menu, X, LogOut } from "lucide-react";
 import { GithubIcon } from "./icons/GithubIcon";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTheme } from "@/lib/theme";
 import { Button } from "./ui/button";
 import { cn } from "@/lib/utils";
+import { useAuth } from "./AuthProvider";
+
+// Global cache for star count to prevent flickering during theme changes or rerenders
+let cachedStars: number | null = null;
 
 export function Header() {
   const { theme, setTheme } = useTheme();
-  const [stars, setStars] = useState<number | null>(null);
+  const { isAuthenticated, logout } = useAuth();
+  const [stars, setStars] = useState<number | null>(cachedStars);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const pathname = usePathname();
 
   useEffect(() => {
-    fetch("https://api.github.com/repos/SSujitX/docklift")
-      .then(res => res.json())
-      .then(data => setStars(data.stargazers_count))
-      .catch(() => setStars(null));
+    // Only fetch if not already cached to prevent unnecessary requests and flickering
+    if (cachedStars === null) {
+      fetch("https://api.github.com/repos/SSujitX/docklift")
+        .then(res => res.json())
+        .then(data => {
+          setStars(data.stargazers_count);
+          cachedStars = data.stargazers_count;
+        })
+        .catch(() => setStars(null));
+    }
   }, []);
 
   // Close mobile menu on route change
@@ -43,7 +54,7 @@ export function Header() {
 
   return (
     <>
-      <header className="sticky top-0 z-50 w-full border-b border-white/10 dark:border-white/5 bg-background/60 backdrop-blur-2xl transition-all duration-300">
+      <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/60 backdrop-blur-2xl">
         <div className="container flex h-16 items-center justify-between px-4 md:px-6 max-w-7xl mx-auto">
           <div className="flex items-center gap-4 lg:gap-8">
             {/* Mobile Menu Button */}
@@ -95,73 +106,80 @@ export function Header() {
             </nav>
           </div>
           
-          <nav className="flex items-center gap-1 sm:gap-2">
-            {/* GitHub Star Button - Hidden on mobile */}
+          <nav className="flex items-center gap-1.5 sm:gap-3">
+            {/* GitHub Star Button - New pill layout: [Icon] Stars {Count} */}
             <a 
               href="https://github.com/SSujitX/docklift" 
               target="_blank" 
               rel="noopener noreferrer"
-              className="mr-1 sm:mr-2 hidden sm:block"
+              className="hidden md:block"
             >
-              <div className="flex items-center gap-2 bg-secondary/50 hover:bg-secondary border border-border/40 rounded-xl px-3 sm:px-4 py-1.5 transition-all duration-300 group cursor-pointer hover:border-cyan-500/30">
-                <GithubIcon className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
-                <div className="flex flex-col items-start leading-none gap-0.5">
-                  <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest group-hover:text-cyan-500 transition-colors">Star on</span>
-                  <span className="text-[11px] font-black">GitHub</span>
-                </div>
-                {stars !== null && (
-                  <div className="ml-2 flex items-center gap-1 bg-background/50 px-1.5 py-0.5 rounded-lg border border-border/20 text-[10px] font-bold">
-                    <span className="text-amber-500">★</span>
-                    <span>{stars}</span>
+              <div className="flex items-center group cursor-pointer h-9 active:scale-95 transition-transform duration-200">
+                <div className="flex items-center gap-2.5 bg-secondary/40 hover:bg-secondary/60 border border-border/40 rounded-full pl-1.5 pr-4 h-full transition-all group-hover:border-cyan-500/30 group-hover:shadow-[0_0_15px_rgba(6,182,212,0.1)]">
+                  <div className="flex items-center justify-center h-6 w-6 rounded-full bg-black shadow-sm ring-1 ring-white/10 group-hover:scale-110 transition-transform">
+                    <GithubIcon className="h-3.5 w-3.5 text-white" />
                   </div>
-                )}
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-black tracking-tight text-muted-foreground group-hover:text-foreground transition-colors">Stars</span>
+                    <span className="text-sm font-black text-foreground">
+                      {stars !== null ? stars : "..."}
+                    </span>
+                  </div>
+                </div>
               </div>
             </a>
 
-            <div className="flex items-center bg-secondary/30 p-1 rounded-xl border border-border/40">
-              {/* GitHub Star - Mobile only compact version */}
+            <div className="flex items-center bg-secondary/30 p-1 sm:p-1.5 rounded-2xl border border-border/40 backdrop-blur-md shadow-sm">
+              {/* GitHub Star - Mobile only compact pill version */}
               <a 
                 href="https://github.com/SSujitX/docklift" 
                 target="_blank" 
                 rel="noopener noreferrer"
-                className="sm:hidden"
+                className="md:hidden"
               >
-                <div className="flex items-center gap-1 text-muted-foreground hover:text-foreground hover:bg-background/80 h-8 px-2 rounded-lg transition-all active:scale-90">
-                  {stars !== null && (
-                    <span className="text-[10px] font-bold text-amber-500">★{stars}</span>
-                  )}
-                  <GithubIcon className="h-4 w-4" />
+                <div className="flex items-center gap-2 bg-background/50 border border-border/20 h-9 px-2.5 rounded-full transition-all active:scale-90">
+                  <div className="flex items-center justify-center h-5 w-5 rounded-full bg-black">
+                    <GithubIcon className="h-3 w-3 text-white" />
+                  </div>
+                  <span className="text-[11px] font-black">{stars !== null ? stars : "..."}</span>
                 </div>
               </a>
 
-              <div className="w-px h-4 bg-border/50 mx-0.5 sm:hidden" />
+              <div className="w-px h-5 bg-border/50 mx-1 md:hidden" />
 
               <Link href="/docs">
-                <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground hover:bg-background/80 h-8 w-8 sm:h-9 sm:w-9 rounded-lg transition-all active:scale-90" title="Documentation">
+                <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground hover:bg-background/80 h-9 w-9 rounded-xl transition-all active:scale-90" title="Documentation">
                   <BookOpen className="h-4 w-4 sm:h-[18px] sm:w-[18px]" />
                 </Button>
               </Link>
 
-              <div className="w-px h-4 bg-border/50 mx-0.5 sm:mx-1" />
+              <div className="w-px h-5 bg-border/50 mx-1" />
 
               <Link href="/settings">
-                <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground hover:bg-background/80 h-8 w-8 sm:h-9 sm:w-9 rounded-lg transition-all active:scale-90" title="Settings">
+                <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground hover:bg-background/80 h-9 w-9 rounded-xl transition-all active:scale-90" title="Settings">
                   <Settings className="h-4 w-4 sm:h-[18px] sm:w-[18px]" />
                 </Button>
               </Link>
               
-              <div className="w-px h-4 bg-border/50 mx-0.5 sm:mx-1" />
+              <div className="w-px h-5 bg-border/50 mx-1" />
               
               <Button 
                 variant="ghost" 
                 size="icon" 
                 onClick={cycleTheme}
-                className="text-muted-foreground hover:text-foreground hover:bg-background/80 h-8 w-8 sm:h-9 sm:w-9 rounded-lg transition-all active:scale-90"
+                className="text-muted-foreground hover:text-foreground hover:bg-background/80 h-9 w-9 rounded-xl transition-all active:scale-90"
               >
-                {theme === "light" && <Sun className="h-4 w-4 sm:h-[18px] sm:w-[18px] text-amber-500" />}
-                {theme === "dark" && <Moon className="h-4 w-4 sm:h-[18px] sm:w-[18px] text-cyan-400" />}
-                {theme === "system" && <Monitor className="h-4 w-4 sm:h-[18px] sm:w-[18px]" />}
+                {theme === "light" && <Sun className="h-4 w-4 sm:h-[18px] sm:w-[18px] text-amber-500 transition-transform duration-500 hover:rotate-45" />}
+                {theme === "dark" && <Moon className="h-4 w-4 sm:h-[18px] sm:w-[18px] text-cyan-400 transition-transform duration-500 hover:-rotate-12" />}
+                {theme === "system" && <Monitor className="h-4 w-4 sm:h-[18px] sm:w-[18px] transition-transform duration-300" />}
               </Button>
+
+              {isAuthenticated && (
+                <>
+                  <div className="w-px h-5 bg-border/50 mx-1" />
+                  <ProfileMenu />
+                </>
+              )}
             </div>
           </nav>
         </div>
@@ -169,31 +187,133 @@ export function Header() {
 
       {/* Mobile Navigation Overlay */}
       {mobileMenuOpen && (
-        <div className="lg:hidden fixed inset-0 z-40 bg-background/95 backdrop-blur-xl">
-          <div className="flex flex-col h-full pt-20 px-6">
-            <nav className="flex flex-col gap-2">
+        <div className="lg:hidden fixed inset-0 z-40 bg-background/98 backdrop-blur-2xl animate-in fade-in duration-300">
+          <div className="flex flex-col h-full pt-20 px-6 max-w-lg mx-auto">
+            <nav className="flex flex-col gap-3">
               {navItems.map((item) => {
                 const isActive = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
                 return (
                   <Link key={item.name} href={item.href} onClick={() => setMobileMenuOpen(false)}>
                     <div className={cn(
-                      "flex items-center gap-4 px-4 py-4 rounded-2xl text-lg font-bold transition-all duration-200",
+                      "flex items-center gap-5 px-6 py-5 rounded-[2rem] text-xl font-black transition-all duration-300",
                       isActive 
-                        ? "bg-cyan-500/10 text-cyan-500 border border-cyan-500/20" 
+                        ? "bg-gradient-to-r from-cyan-500/10 to-blue-500/10 text-cyan-500 border border-cyan-500/20 shadow-lg shadow-cyan-500/5 scale-[1.02]" 
                         : "text-foreground hover:bg-secondary/50"
                     )}>
-                      <item.icon className={cn("h-6 w-6", isActive ? "text-cyan-500" : "text-muted-foreground")} />
+                      <item.icon className={cn("h-7 w-7 transition-colors", isActive ? "text-cyan-500" : "text-muted-foreground/60")} strokeWidth={isActive ? 3 : 2} />
                       {item.name}
                     </div>
                   </Link>
                 );
               })}
             </nav>
-
-
+            
+            <div className="mt-auto mb-12 pt-12 border-t border-border/50">
+              <ProfileMenu isMobile />
+            </div>
           </div>
         </div>
       )}
     </>
+  );
+}
+
+function ProfileMenu({ isMobile = false }: { isMobile?: boolean }) {
+  const { user, logout } = useAuth();
+  const [isOpen, setIsOpen] = useState(false);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (!target.closest('.profile-dropdown')) {
+        setIsOpen(false);
+      }
+    };
+
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isOpen]);
+
+  if (isMobile) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center gap-5 px-6 py-3">
+          <div className="h-20 w-20 rounded-full bg-gradient-to-br from-cyan-500 via-cyan-400 to-blue-600 flex items-center justify-center text-white font-black text-3xl shadow-[0_12px_40px_rgb(6,182,212,0.4)] border-4 border-background ring-2 ring-cyan-500/20">
+            {user?.name?.charAt(0).toUpperCase() || "U"}
+          </div>
+          <div className="flex flex-col gap-0.5">
+            <span className="text-2xl font-black text-foreground tracking-tight leading-none mb-1">{user?.name}</span>
+            <span className="text-sm font-bold text-muted-foreground uppercase tracking-widest opacity-60">{user?.email}</span>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-4 px-2">
+          <Link href="/settings?tab=profile" className="flex-1">
+            <Button variant="secondary" className="w-full justify-center gap-3 rounded-[1.5rem] h-14 text-base font-black border border-border/50 shadow-sm active:scale-95 transition-all">
+              <Settings className="h-5 w-5 opacity-70" />
+              Settings
+            </Button>
+          </Link>
+          <Button 
+            variant="ghost" 
+            onClick={logout}
+            className="flex-1 justify-center gap-3 rounded-[1.5rem] h-14 text-base font-black text-red-500 hover:bg-red-500/10 active:scale-95 transition-all"
+          >
+            <LogOut className="h-5 w-5" />
+            Sign Out
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative profile-dropdown flex items-center">
+      <Button 
+        variant="ghost" 
+        onClick={() => setIsOpen(!isOpen)}
+        className={cn(
+          "h-10 px-2 rounded-xl transition-all active:scale-95 flex items-center gap-3 group",
+          isOpen ? "bg-secondary/80 text-foreground ring-1 ring-border/50 shadow-inner" : "text-muted-foreground hover:text-foreground hover:bg-background/80"
+        )}
+      >
+        <div className="h-8 w-8 rounded-full bg-gradient-to-br from-cyan-500 via-cyan-400 to-blue-600 flex items-center justify-center text-white text-base font-black shadow-[0_4px_12px_rgba(6,182,212,0.3)] group-hover:shadow-[0_4px_20px_rgba(6,182,212,0.5)] transition-all group-hover:scale-105 border-2 border-white/20 shrink-0">
+          {user?.name?.charAt(0).toUpperCase() || "U"}
+        </div>
+        <span className="hidden lg:inline text-[15px] font-black tracking-tight leading-none pt-0.5">{user?.name?.split(' ')[0]}</span>
+        <ChevronDown className={cn("h-4 w-4 transition-transform duration-500 opacity-60 group-hover:opacity-100", isOpen ? "rotate-180" : "")} />
+      </Button>
+
+      {isOpen && (
+        <div className="absolute right-0 top-full mt-3 w-64 rounded-[2rem] bg-card/80 backdrop-blur-2xl border border-border/50 shadow-[0_20px_50px_rgba(0,0,0,0.3)] p-3 animate-in fade-in zoom-in-95 duration-300 z-[100] origin-top-right">
+          <div className="px-4 py-4 mb-2 bg-secondary/30 rounded-[1.5rem] border border-border/20">
+            <p className="text-base font-black text-foreground tracking-tight leading-none mb-1.5">{user?.name}</p>
+            <p className="text-[10px] font-black text-muted-foreground/60 truncate uppercase tracking-[0.15em]">{user?.email}</p>
+          </div>
+          
+          <div className="space-y-1">
+            <Link href="/settings?tab=profile" onClick={() => setIsOpen(false)}>
+              <div className="flex items-center gap-3.5 px-3 py-3 rounded-2xl text-sm font-black text-muted-foreground/80 hover:text-foreground hover:bg-secondary/80 transition-all cursor-pointer group">
+                <div className="flex items-center justify-center h-10 w-10 rounded-xl bg-secondary/50 group-hover:bg-cyan-500/10 group-hover:text-cyan-500 transition-all group-hover:scale-110 group-hover:rotate-6 border border-border/20 group-hover:border-cyan-500/30">
+                  <Settings className="h-5 w-5" />
+                </div>
+                <span>Profile Settings</span>
+              </div>
+            </Link>
+            
+            <div 
+              onClick={() => { logout(); setIsOpen(false); }}
+              className="flex items-center gap-3.5 px-3 py-3 rounded-2xl text-sm font-black text-red-500/80 hover:text-red-500 hover:bg-red-500/10 transition-all cursor-pointer group"
+            >
+              <div className="flex items-center justify-center h-10 w-10 rounded-xl bg-red-500/5 group-hover:bg-red-500/10 transition-all group-hover:scale-110 group-hover:-rotate-6 border border-red-500/10 group-hover:border-red-500/20">
+                <LogOut className="h-5 w-5" />
+              </div>
+              <span>Sign Out</span>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

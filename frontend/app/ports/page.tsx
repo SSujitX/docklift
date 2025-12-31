@@ -8,16 +8,17 @@ import { Port } from "@/lib/types";
 import { API_URL } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { Lock, Unlock, Network } from "lucide-react";
+import { getAuthHeaders } from "@/lib/auth";
 
 export default function PortsPage() {
   const [ports, setPorts] = useState<Port[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch(`${API_URL}/api/ports`)
+    fetch(`${API_URL}/api/ports`, { headers: getAuthHeaders() })
       .then((res) => res.json())
       .then((data) => {
-        setPorts(data);
+        setPorts(Array.isArray(data) ? data : []);
         setLoading(false);
       })
       .catch(() => setLoading(false));
