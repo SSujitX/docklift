@@ -13,6 +13,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Loader2, CheckCircle, ExternalLink } from "lucide-react";
 import { GithubIcon } from "./icons/GithubIcon";
+import { getAuthHeaders } from "@/lib/auth";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -49,7 +50,7 @@ export function GitHubConnect({ open, onOpenChange, onConnected }: GitHubConnect
 
   const fetchStatus = async () => {
     try {
-      const res = await fetch(`${API_URL}/api/github/app-status`);
+      const res = await fetch(`${API_URL}/api/github/app-status`, { headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setStatus(data);
@@ -66,7 +67,7 @@ export function GitHubConnect({ open, onOpenChange, onConnected }: GitHubConnect
     try {
       const res = await fetch(`${API_URL}/api/github/manifest`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         body: JSON.stringify({ 
           appName: appName.trim(),
           returnUrl: window.location.href
@@ -113,7 +114,7 @@ export function GitHubConnect({ open, onOpenChange, onConnected }: GitHubConnect
     setLoading(true);
     setIsPolling(false);
     try {
-      await fetch(`${API_URL}/api/github/disconnect`, { method: "POST" });
+      await fetch(`${API_URL}/api/github/disconnect`, { method: "POST", headers: getAuthHeaders() });
       setStatus(null);
       setAppName("");
     } catch (error) {
@@ -133,7 +134,7 @@ export function GitHubConnect({ open, onOpenChange, onConnected }: GitHubConnect
 
     const pollInterval = setInterval(async () => {
       try {
-        const res = await fetch(`${API_URL}/api/github/check-installation`, { method: "POST" });
+        const res = await fetch(`${API_URL}/api/github/check-installation`, { method: "POST", headers: getAuthHeaders() });
         const data = await res.json();
         if (data.found) {
           setIsPolling(false);
@@ -152,7 +153,7 @@ export function GitHubConnect({ open, onOpenChange, onConnected }: GitHubConnect
     setLoading(true);
     setCheckMessage(null);
     try {
-      const res = await fetch(`${API_URL}/api/github/check-installation`, { method: "POST" });
+      const res = await fetch(`${API_URL}/api/github/check-installation`, { method: "POST", headers: getAuthHeaders() });
       const data = await res.json();
       if (data.found) {
         setIsPolling(false);
