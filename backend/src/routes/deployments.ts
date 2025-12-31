@@ -80,6 +80,11 @@ router.put('/:projectId/services/:serviceId', async (req: Request, res: Response
     const { projectId, serviceId } = req.params;
     const { domain } = req.body;
 
+    // Validate domain format to prevent Nginx config injection
+    if (domain && !/^[a-zA-Z0-9., -]+$/.test(domain)) {
+      return res.status(400).json({ error: 'Invalid domain format. Only letters, numbers, dots, hyphens, and commas are allowed.' });
+    }
+
     const count = await prisma.service.updateMany({
       where: { id: serviceId, project_id: projectId },
       data: { domain },
