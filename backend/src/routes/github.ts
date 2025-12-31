@@ -759,6 +759,10 @@ router.post('/webhook', async (req: Request, res: Response) => {
     // Normalize URL for matching (remove .git suffix if present)
     const normalizedUrl = repoUrl.replace(/\.git$/, '');
     
+    console.log(`[Webhook] Received push for: ${repoUrl}`);
+    console.log(`[Webhook] Normalized URL: ${normalizedUrl}`);
+    console.log(`[Webhook] Branch pushed: ${pushedBranch}`);
+    
     // Find all projects that match this repo URL
     const projects = await prisma.project.findMany({
       where: {
@@ -772,7 +776,16 @@ router.post('/webhook', async (req: Request, res: Response) => {
       },
     });
     
+    console.log(`[Webhook] Found ${projects.length} matching projects with auto-deploy`);
+    
     if (projects.length === 0) {
+      // Debug: Log all github projects to see what URLs are stored
+      const allGithubProjects = await prisma.project.findMany({
+        where: { source_type: 'github' },
+        select: { id: true, name: true, github_url: true, github_branch: true, auto_deploy: true }
+      });
+      console.log(`[Webhook] All GitHub projects in DB:`, JSON.stringify(allGithubProjects, null, 2));
+      
       console.log(`[Webhook] No projects with auto-deploy enabled for repo: ${repoUrl}`);
       return res.status(200).json({ message: 'No matching projects with auto-deploy enabled' });
     }
