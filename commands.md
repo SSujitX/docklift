@@ -119,6 +119,6 @@ npm version patch --no-git-tag-version  # No git commit/tag
 To update versions for both `frontend` and `backend` simultaneously, run this from the **project root**:
 
 ```bash
-bunx bumpp frontend/package.json backend/package.json --patch --tag --commit "chore: release v%s"
+cd frontend && bunx bumpp package.json ../backend/package.json --patch --tag --commit "chore: release v%s"
 ```
 ```
