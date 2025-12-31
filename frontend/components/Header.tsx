@@ -188,33 +188,33 @@ export function Header() {
         </div>
       </header>
 
-      {/* Mobile Navigation Overlay - Redesigned */}
+      {/* Mobile Navigation Overlay - Compact */}
       {mobileMenuOpen && (
         <div className="lg:hidden fixed inset-0 z-40 bg-background/98 backdrop-blur-2xl animate-in fade-in duration-200">
-          <div className="flex flex-col h-full pt-20 pb-8 px-5">
-            {/* Version Badge */}
-            <div className="flex items-center gap-2 mb-6 px-2">
-              <span className="text-xs font-bold text-muted-foreground">VERSION</span>
-              <span className="text-xs font-bold text-cyan-500 bg-cyan-500/10 px-2 py-1 rounded-lg border border-cyan-500/20">v{process.env.NEXT_PUBLIC_APP_VERSION || '1.3.3'}</span>
+          <div className="flex flex-col h-full pt-16 pb-4 px-4">
+            {/* Version Badge - Compact */}
+            <div className="flex items-center gap-2 mb-4 px-1">
+              <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Version</span>
+              <span className="text-[10px] font-bold text-cyan-500 bg-cyan-500/10 px-1.5 py-0.5 rounded border border-cyan-500/20">v{process.env.NEXT_PUBLIC_APP_VERSION || '1.3.3'}</span>
             </div>
 
-            {/* Main Navigation */}
-            <nav className="flex flex-col gap-2">
+            {/* Main Navigation - Compact */}
+            <nav className="flex flex-col gap-1">
               {navItems.map((item) => {
                 const isActive = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
                 return (
                   <Link key={item.name} href={item.href} onClick={() => setMobileMenuOpen(false)}>
                     <div className={cn(
-                      "flex items-center gap-4 px-5 py-4 rounded-2xl text-lg font-black transition-all duration-200 active:scale-[0.98]",
+                      "flex items-center gap-3 px-3 py-2.5 rounded-xl text-base font-bold transition-all duration-200 active:scale-[0.98]",
                       isActive 
                         ? "bg-gradient-to-r from-cyan-500/15 to-blue-500/10 text-cyan-500 border border-cyan-500/20" 
                         : "text-foreground hover:bg-secondary/50"
                     )}>
                       <div className={cn(
-                        "flex items-center justify-center h-11 w-11 rounded-xl",
+                        "flex items-center justify-center h-9 w-9 rounded-lg",
                         isActive ? "bg-cyan-500/20" : "bg-secondary/50"
                       )}>
-                        <item.icon className={cn("h-5 w-5", isActive ? "text-cyan-500" : "text-muted-foreground")} strokeWidth={isActive ? 2.5 : 2} />
+                        <item.icon className={cn("h-4 w-4", isActive ? "text-cyan-500" : "text-muted-foreground")} strokeWidth={isActive ? 2.5 : 2} />
                       </div>
                       {item.name}
                     </div>
@@ -223,41 +223,41 @@ export function Header() {
               })}
 
               {/* Divider */}
-              <div className="h-px bg-border/50 my-4" />
+              <div className="h-px bg-border/50 my-2" />
 
-              {/* Quick Links */}
+              {/* Quick Links - Compact */}
               <Link href="/docs" onClick={() => setMobileMenuOpen(false)}>
-                <div className="flex items-center gap-4 px-5 py-4 rounded-2xl text-lg font-black text-foreground hover:bg-secondary/50 transition-all active:scale-[0.98]">
-                  <div className="flex items-center justify-center h-11 w-11 rounded-xl bg-secondary/50">
-                    <BookOpen className="h-5 w-5 text-muted-foreground" />
+                <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-base font-bold text-foreground hover:bg-secondary/50 transition-all active:scale-[0.98]">
+                  <div className="flex items-center justify-center h-9 w-9 rounded-lg bg-secondary/50">
+                    <BookOpen className="h-4 w-4 text-muted-foreground" />
                   </div>
                   Documentation
                 </div>
               </Link>
 
               <Link href="/settings" onClick={() => setMobileMenuOpen(false)}>
-                <div className="flex items-center gap-4 px-5 py-4 rounded-2xl text-lg font-black text-foreground hover:bg-secondary/50 transition-all active:scale-[0.98]">
-                  <div className="flex items-center justify-center h-11 w-11 rounded-xl bg-secondary/50">
-                    <Settings className="h-5 w-5 text-muted-foreground" />
+                <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-base font-bold text-foreground hover:bg-secondary/50 transition-all active:scale-[0.98]">
+                  <div className="flex items-center justify-center h-9 w-9 rounded-lg bg-secondary/50">
+                    <Settings className="h-4 w-4 text-muted-foreground" />
                   </div>
                   Settings
                 </div>
               </Link>
 
-              {/* GitHub Link */}
+              {/* GitHub Link - Compact */}
               <a href="https://github.com/SSujitX/docklift" target="_blank" rel="noopener noreferrer" onClick={() => setMobileMenuOpen(false)}>
-                <div className="flex items-center gap-4 px-5 py-4 rounded-2xl text-lg font-black text-foreground hover:bg-secondary/50 transition-all active:scale-[0.98]">
-                  <div className="flex items-center justify-center h-11 w-11 rounded-xl bg-black">
-                    <GithubIcon className="h-5 w-5 text-white" />
+                <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-base font-bold text-foreground hover:bg-secondary/50 transition-all active:scale-[0.98]">
+                  <div className="flex items-center justify-center h-9 w-9 rounded-lg bg-black">
+                    <GithubIcon className="h-4 w-4 text-white" />
                   </div>
                   <span className="flex-1">GitHub</span>
-                  <span className="text-sm font-bold text-muted-foreground bg-secondary/50 px-2.5 py-1 rounded-lg">{stars || "..."} ⭐</span>
+                  <span className="text-xs font-bold text-muted-foreground bg-secondary/50 px-2 py-0.5 rounded">{stars || "..."} ⭐</span>
                 </div>
               </a>
             </nav>
             
-            {/* Profile Section at Bottom */}
-            <div className="mt-auto pt-6 border-t border-border/50">
+            {/* Profile Section at Bottom - Compact */}
+            <div className="mt-auto pt-4 border-t border-border/50">
               <ProfileMenu isMobile />
             </div>
           </div>
@@ -287,29 +287,29 @@ function ProfileMenu({ isMobile = false }: { isMobile?: boolean }) {
 
   if (isMobile) {
     return (
-      <div className="space-y-6">
-        <div className="flex items-center gap-5 px-6 py-3">
-          <div className="h-20 w-20 rounded-full bg-gradient-to-br from-cyan-500 via-cyan-400 to-blue-600 flex items-center justify-center text-white font-black text-3xl shadow-[0_12px_40px_rgb(6,182,212,0.4)] border-4 border-background ring-2 ring-cyan-500/20">
+      <div className="space-y-3">
+        <div className="flex items-center gap-3 px-3 py-2">
+          <div className="h-12 w-12 rounded-full bg-gradient-to-br from-cyan-500 via-cyan-400 to-blue-600 flex items-center justify-center text-white font-black text-lg shadow-lg border-2 border-background">
             {user?.name?.charAt(0).toUpperCase() || "U"}
           </div>
-          <div className="flex flex-col gap-0.5">
-            <span className="text-2xl font-black text-foreground tracking-tight leading-none mb-1">{user?.name}</span>
-            <span className="text-sm font-bold text-muted-foreground uppercase tracking-widest opacity-60">{user?.email}</span>
+          <div className="flex flex-col min-w-0">
+            <span className="text-base font-black text-foreground tracking-tight leading-none truncate">{user?.name}</span>
+            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider truncate">{user?.email}</span>
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-4 px-2">
+        <div className="grid grid-cols-2 gap-2 px-1">
           <Link href="/settings?tab=profile" className="flex-1">
-            <Button variant="secondary" className="w-full justify-center gap-3 rounded-[1.5rem] h-14 text-base font-black border border-border/50 shadow-sm active:scale-95 transition-all">
-              <Settings className="h-5 w-5 opacity-70" />
+            <Button variant="secondary" className="w-full justify-center gap-2 rounded-xl h-10 text-sm font-bold border border-border/50 active:scale-95 transition-all">
+              <Settings className="h-4 w-4 opacity-70" />
               Settings
             </Button>
           </Link>
           <Button 
             variant="ghost" 
             onClick={logout}
-            className="flex-1 justify-center gap-3 rounded-[1.5rem] h-14 text-base font-black text-red-500 hover:bg-red-500/10 active:scale-95 transition-all"
+            className="flex-1 justify-center gap-2 rounded-xl h-10 text-sm font-bold text-red-500 hover:bg-red-500/10 active:scale-95 transition-all"
           >
-            <LogOut className="h-5 w-5" />
+            <LogOut className="h-4 w-4" />
             Sign Out
           </Button>
         </div>
@@ -335,7 +335,7 @@ function ProfileMenu({ isMobile = false }: { isMobile?: boolean }) {
       </Button>
 
       {isOpen && (
-        <div className="absolute right-0 top-full mt-3 w-64 rounded-[2rem] bg-card/80 backdrop-blur-2xl border border-border/50 shadow-[0_20px_50px_rgba(0,0,0,0.3)] p-3 animate-in fade-in zoom-in-95 duration-300 z-[100] origin-top-right">
+        <div className="absolute right-0 top-full mt-3 w-64 rounded-2xl bg-card border border-border shadow-2xl p-3 animate-in fade-in zoom-in-95 duration-300 z-[100] origin-top-right">
           <div className="px-4 py-4 mb-2 bg-secondary/30 rounded-[1.5rem] border border-border/20">
             <p className="text-base font-black text-foreground tracking-tight leading-none mb-1.5">{user?.name}</p>
             <p className="text-[10px] font-black text-muted-foreground/60 truncate uppercase tracking-[0.15em]">{user?.email}</p>
