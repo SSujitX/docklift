@@ -26,6 +26,11 @@ export function BranchSelector({
   const [search, setSearch] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
 
+  const containerClasses = className || "";
+  const heightClass = containerClasses.split(' ').find(c => c.startsWith('h-')) || "h-12";
+  const textClass = containerClasses.split(' ').find(c => c.startsWith('text-')) || "text-sm";
+  const widthClass = containerClasses.split(' ').find(c => c.startsWith('w-')) || "w-full";
+
   // Close when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -48,13 +53,15 @@ export function BranchSelector({
         onClick={() => !disabled && setIsOpen(!isOpen)}
         disabled={disabled}
         className={cn(
-          "flex items-center justify-between w-full h-12 px-4 rounded-xl bg-secondary/30 border border-border/40 hover:border-cyan-500/50 transition-all font-medium text-sm",
+          "flex items-center justify-between w-full rounded-xl bg-secondary/30 border border-border/40 hover:border-cyan-500/50 transition-all font-medium",
+          heightClass,
+          textClass,
           disabled && "opacity-50 cursor-not-allowed",
           isOpen && "border-cyan-500 ring-2 ring-cyan-500/10"
         )}
       >
         <div className="flex items-center gap-2 truncate">
-          <GitBranch className="h-4 w-4 text-muted-foreground" />
+          <GitBranch className={cn("text-muted-foreground shrink-0", heightClass === "h-8" ? "h-3 w-3" : "h-4 w-4")} />
           <span className="truncate">
             {value || "Select branch..."}
           </span>
@@ -67,7 +74,10 @@ export function BranchSelector({
       </button>
 
       {isOpen && (
-        <div className="absolute z-50 mt-2 w-full bg-card/95 backdrop-blur-xl border border-border/50 rounded-xl shadow-2xl p-2 animate-in fade-in zoom-in-95 duration-200">
+        <div className={cn(
+          "absolute z-50 mt-2 bg-card/95 backdrop-blur-xl border border-border/50 rounded-xl shadow-2xl p-2 animate-in fade-in zoom-in-95 duration-200",
+          widthClass === "w-full" ? "w-full" : "min-w-[200px]"
+        )}>
           <div className="relative mb-2">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
             <input
