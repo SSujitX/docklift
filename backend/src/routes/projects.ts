@@ -152,6 +152,11 @@ router.get('/:id', async (req: Request, res: Response) => {
 router.post('/', upload.single('files'), async (req: Request, res: Response) => {
   try {
     const { name, description, source_type, github_url, project_type, github_branch, domain } = req.body;
+
+    // Validate domain format to prevent Nginx config injection
+    if (domain && !/^[a-zA-Z0-9., -]+$/.test(domain)) {
+      return res.status(400).json({ error: 'Invalid domain format. Only letters, numbers, dots, hyphens, and commas are allowed.' });
+    }
     
     // Create project record
     const project = await prisma.project.create({
@@ -210,6 +215,11 @@ router.post('/', upload.single('files'), async (req: Request, res: Response) => 
 router.patch('/:id', async (req: Request, res: Response) => {
   try {
     const { name, description, github_url, project_type, domain } = req.body;
+
+    // Validate domain format if provided
+    if (domain && !/^[a-zA-Z0-9., -]+$/.test(domain)) {
+      return res.status(400).json({ error: 'Invalid domain format. Only letters, numbers, dots, hyphens, and commas are allowed.' });
+    }
     
     const project = await prisma.project.update({
       where: { id: req.params.id },
