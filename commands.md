@@ -115,10 +115,10 @@ npm version major               # 0.1.5 → 1.0.0 (breaking changes)
 npm version 0.1.6               # Set specific version
 npm version patch --no-git-tag-version  # No git commit/tag
 
-# Version bumps (Sync both frontend and backend)
-# Run this inside the backend folder
-bunx bumpp package.json ../frontend/package.json
+### Version Management (Multi-Package)
+To update versions for both `frontend` and `backend` simultaneously, run this from the **project root**:
 
-# Quick patch & tag without menu
-bunx bumpp package.json ../frontend/package.json --patch --tag --commit "chore: release v%s"
+```bash
+bunx bumpp frontend/package.json backend/package.json --patch --tag --commit "chore: release v%s"
+```
 ```
