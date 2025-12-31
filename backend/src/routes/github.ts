@@ -461,6 +461,7 @@ router.get('/status', async (req: Request, res: Response) => {
     const installationId = await getSetting('github_installation_id');
     const username = await getSetting('github_username');
     const avatarUrl = await getSetting('github_avatar_url');
+    const appSlug = await getSetting('github_app_slug');
     
     if (!installationId) {
       return res.json({ connected: false, username: null });
@@ -483,6 +484,7 @@ router.get('/status', async (req: Request, res: Response) => {
       username,
       avatar_url: avatarUrl,
       installation_id: installationId,
+      installUrl: appSlug ? `https://github.com/apps/${appSlug}/installations/new` : null
     });
   } catch (error) {
     console.error(error);

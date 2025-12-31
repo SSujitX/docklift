@@ -23,6 +23,7 @@ interface GitHubStatus {
   avatar_url?: string;
   name?: string;
   error?: string;
+  installUrl?: string; // URL to configure/install app on more accounts
 }
 
 interface DomainConfig {
@@ -521,8 +522,20 @@ function SettingsContent() {
                               ) : (
                                 <X className="h-3.5 w-3.5 mr-2 group-hover/btn:rotate-90 transition-transform" />
                               )}
-                              Disconnect GitHub Account
+                              Disconnect
                             </Button>
+                            
+                            {githubStatus.installUrl && (
+                              <a 
+                                href={githubStatus.installUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center justify-center h-8 px-3 text-xs font-medium text-cyan-500 hover:text-cyan-600 hover:bg-cyan-500/10 rounded-lg transition-colors"
+                              >
+                                <Plus className="h-3.5 w-3.5 mr-1.5" />
+                                Add Organization
+                              </a>
+                            )}
                           </div>
                         ) : (
                           <Button 
