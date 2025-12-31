@@ -1,6 +1,6 @@
 {
   "name": "docklift-frontend",
-  "version": "1.3.2",
+  "version": "1.3.3",
   "description": "Docklift frontend - Modern dashboard for Docker management",
   "private": true,
   "scripts": {
