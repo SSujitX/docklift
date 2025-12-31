@@ -511,31 +511,19 @@ function SettingsContent() {
                             </div>
                             
                             <Button 
-                              variant="ghost" 
+                              variant="destructive" 
                               size="sm"
                               onClick={handleDisconnectGitHub}
                               disabled={disconnecting}
-                              className="h-8 text-xs text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg group/btn"
+                              className="h-9 px-4 text-xs font-semibold shadow-lg shadow-red-500/20 hover:bg-red-600 transition-all rounded-xl"
                             >
                               {disconnecting ? (
                                 <Loader2 className="h-3.5 w-3.5 animate-spin mr-2" />
                               ) : (
-                                <X className="h-3.5 w-3.5 mr-2 group-hover/btn:rotate-90 transition-transform" />
+                                <X className="h-3.5 w-3.5 mr-2" />
                               )}
                               Disconnect
                             </Button>
-                            
-                            {githubStatus.installUrl && (
-                              <a 
-                                href={githubStatus.installUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center justify-center h-8 px-3 text-xs font-medium text-cyan-500 hover:text-cyan-600 hover:bg-cyan-500/10 rounded-lg transition-colors"
-                              >
-                                <Plus className="h-3.5 w-3.5 mr-1.5" />
-                                Add Organization
-                              </a>
-                            )}
                           </div>
                         ) : (
                           <Button 
