@@ -140,7 +140,7 @@ router.post('/manifest', async (req: Request, res: Response) => {
         active: true
       },
       default_events: ['push'],
-      public: false,
+      public: true,
       default_permissions: {
         contents: 'read',
         metadata: 'read'
@@ -579,6 +579,28 @@ function mapRepo(repo: any) {
   };
 }
 
+// Helper: Get installation ID for a specific repository
+async function getInstallationIdForRepo(owner: string, repo: string): Promise<string> {
+  const jwtToken = await createJwtToken();
+  const url = `${GITHUB_API_URL}/repos/${owner}/${repo}/installation`;
+  
+  const response = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${jwtToken}`,
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+    },
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Could not find installation for ${owner}/${repo}: ${response.status} ${text}`);
+  }
+
+  const data = await response.json() as { id: number };
+  return data.id.toString();
+}
+
 // GET /branches - List branches for a repository
 router.get('/branches', async (req: Request, res: Response) => {
   try {
@@ -588,6 +610,11 @@ router.get('/branches', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Repo parameter is required (owner/name)' });
     }
 
+    const [owner, repoName] = repo.split('/');
+    if (!owner || !repoName) {
+      return res.status(400).json({ error: 'Invalid repo format. Expected owner/name' });
+    }
+
     let url = `${GITHUB_API_URL}/repos/${repo}/branches`;
     let headers: Record<string, string> = {
       Accept: 'application/vnd.github+json',
@@ -595,14 +622,19 @@ router.get('/branches', async (req: Request, res: Response) => {
       'User-Agent': 'Docklift-App'
     };
 
-    // If private/app repository, use installation token
-    if (type === 'private') {
-      const installationId = await getSetting('github_installation_id');
-      if (!installationId) {
-        return res.status(401).json({ error: 'GitHub not connected' });
-      }
+    // If private/app repository, try to get a token
+    // We try to find the installation ID dynamically for this repo
+    try {
+      const installationId = await getInstallationIdForRepo(owner, repoName);
       const token = await getInstallationToken(installationId);
       headers = { ...headers, Authorization: `token ${token}` };
+    } catch (err) {
+      // Fallback: If public repo, we might not need auth, or we might fail. 
+      // But if 'type' is private, this failure is fatal.
+      console.warn(`Could not resolve installation for ${repo}:`, err);
+      if (type === 'private') {
+         return res.status(403).json({ error: 'Access denied: Could not verify GitHub App installation for this repository.' });
+      }
     }
 
     const response = await fetch(url, { headers });
