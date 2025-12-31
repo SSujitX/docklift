@@ -54,7 +54,14 @@ app.use('/api/projects', authMiddleware, projectsRouter);
 app.use('/api/deployments', authMiddleware, deploymentsRouter);
 app.use('/api/files', authMiddleware, filesRouter);
 app.use('/api/ports', authMiddleware, portsRouter);
-app.use('/api/github', authMiddleware, githubRouter);
+app.use('/api/github', (req, res, next) => {
+  // Allow public access for webhooks and callbacks
+  const publicPaths = ['/webhook', '/callback', '/manifest/callback', '/setup'];
+  if (publicPaths.some(p => req.path.startsWith(p))) {
+    return next();
+  }
+  return authMiddleware(req, res, next);
+}, githubRouter);
 app.use('/api/system', authMiddleware, systemRouter);
 app.use('/api/domains', authMiddleware, domainRouter);
 
