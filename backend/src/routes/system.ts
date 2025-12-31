@@ -557,4 +557,88 @@ router.post('/execute', async (req: Request, res: Response) => {
   }
 });
 
+// ========================================
+// Version Check & Upgrade
+// ========================================
+
+// Cache for version check (1 hour)
+let cachedVersionInfo: { current: string; latest: string; updateAvailable: boolean } | null = null;
+let lastVersionCheck = 0;
+const VERSION_CACHE_TTL = 3600000; // 1 hour
+
+// Current installed version (read from package.json)
+const CURRENT_VERSION = '1.3.3';
+
+// GET /api/system/version - Check for updates
+router.get('/version', async (req: Request, res: Response) => {
+  try {
+    const now = Date.now();
+    
+    // Return cached result if still valid
+    if (cachedVersionInfo && (now - lastVersionCheck) < VERSION_CACHE_TTL) {
+      return res.json(cachedVersionInfo);
+    }
+
+    // Fetch latest release from GitHub
+    let latestVersion = CURRENT_VERSION;
+    try {
+      const response = await fetch('https://api.github.com/repos/SSujitX/docklift/releases/latest', {
+        headers: { 'User-Agent': 'Docklift' }
+      });
+      if (response.ok) {
+        const data = await response.json() as { tag_name?: string };
+        // Remove 'v' prefix if present
+        latestVersion = data.tag_name?.replace(/^v/, '') || CURRENT_VERSION;
+      }
+    } catch {
+      // If GitHub API fails, assume no updates
+    }
+
+    // Compare versions
+    const currentParts = CURRENT_VERSION.split('.').map(Number);
+    const latestParts = latestVersion.split('.').map(Number);
+    
+    let updateAvailable = false;
+    for (let i = 0; i < 3; i++) {
+      if ((latestParts[i] || 0) > (currentParts[i] || 0)) {
+        updateAvailable = true;
+        break;
+      } else if ((latestParts[i] || 0) < (currentParts[i] || 0)) {
+        break;
+      }
+    }
+
+    cachedVersionInfo = {
+      current: CURRENT_VERSION,
+      latest: latestVersion,
+      updateAvailable
+    };
+    lastVersionCheck = now;
+
+    res.json(cachedVersionInfo);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/system/upgrade - Run upgrade script
+router.post('/upgrade', async (req: Request, res: Response) => {
+  try {
+    // Run upgrade.sh in background (non-blocking since it restarts the containers)
+    exec('cd /app && ./upgrade.sh', { timeout: 300000 }, (error, stdout, stderr) => {
+      if (error) {
+        console.error('Upgrade error:', error);
+      }
+    });
+
+    res.json({ message: 'Upgrade initiated. The application will restart shortly.' });
+  } catch (error: any) {
+    console.error('Upgrade error:', error);
+    res.status(500).json({ 
+      error: 'Failed to start upgrade', 
+      details: error.message 
+    });
+  }
+});
+
 export default router;
