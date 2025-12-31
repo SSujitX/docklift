@@ -3,6 +3,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useAuth } from "@/components/AuthProvider";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -11,6 +12,7 @@ import { API_URL } from "@/lib/utils";
 
 export default function SetupPage() {
   const router = useRouter();
+  const auth = useAuth();
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -61,9 +63,8 @@ export default function SetupPage() {
         throw new Error(data.error || "Registration failed");
       }
 
-      // Store token
-      localStorage.setItem("docklift_token", data.token);
-      localStorage.setItem("docklift_user", JSON.stringify(data.user));
+      // Store token and user in global auth state
+      auth.login(data.token, data.user);
 
       // Redirect to dashboard
       router.push("/");
