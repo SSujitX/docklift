@@ -490,56 +490,92 @@ router.get('/status', async (req: Request, res: Response) => {
   }
 });
 
-// GET /repos - List repositories accessible to the GitHub App
+// GET /repos - List repositories from ALL installations (User + Orgs)
 router.get('/repos', async (req: Request, res: Response) => {
   try {
-    const installationId = await getSetting('github_installation_id');
+    const jwtToken = await createJwtToken();
     
-    if (!installationId) {
-      return res.status(401).json({ error: 'GitHub not connected' });
+    // 1. Get all installations for this App
+    const installationsResponse = await fetch(`${GITHUB_API_URL}/app/installations`, {
+      headers: {
+        Authorization: `Bearer ${jwtToken}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+    });
+
+    if (!installationsResponse.ok) {
+        // Fallback to single saved installation if list fails
+        const installationId = await getSetting('github_installation_id');
+        if (!installationId) return res.status(401).json({ error: 'GitHub not connected' });
+        
+        const token = await getInstallationToken(installationId);
+        const response = await fetch(`${GITHUB_API_URL}/installation/repositories`, {
+            headers: { Authorization: `token ${token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' }
+        });
+        const data = await response.json() as any;
+        return res.json((data.repositories || []).map(mapRepo));
     }
+
+    const installations = await installationsResponse.json() as Array<{ id: number; account?: { login: string } }>;
     
-    const page = parseInt(req.query.page as string) || 1;
-    const perPage = Math.min(parseInt(req.query.per_page as string) || 30, 100);
-    
-    const token = await getInstallationToken(installationId);
-    
-    const response = await fetch(
-      `${GITHUB_API_URL}/installation/repositories?page=${page}&per_page=${perPage}`,
-      {
-        headers: {
-          Authorization: `token ${token}`,
-          Accept: 'application/vnd.github+json',
-          'X-GitHub-Api-Version': '2022-11-28',
-        },
+    if (installations.length === 0) {
+      return res.json([]);
+    }
+
+    // 2. Fetch repos for EACH installation in parallel
+    const allReposPromise = installations.map(async (inst) => {
+      try {
+        const token = await getInstallationToken(inst.id.toString());
+        const page = parseInt(req.query.page as string) || 1;
+        const perPage = Math.min(parseInt(req.query.per_page as string) || 30, 100);
+
+        const repoRes = await fetch(
+          `${GITHUB_API_URL}/installation/repositories?page=${page}&per_page=${perPage}`, 
+          {
+            headers: {
+              Authorization: `token ${token}`,
+              Accept: 'application/vnd.github+json',
+              'X-GitHub-Api-Version': '2022-11-28',
+            }
+          }
+        );
+        
+        if (!repoRes.ok) return [];
+        const data = await repoRes.json() as { repositories?: any[] };
+        return data.repositories || [];
+      } catch (err) {
+        console.error(`Failed to fetch repos for installation ${inst.id}:`, err);
+        return [];
       }
-    );
-    
-    if (!response.ok) {
-      return res.status(response.status).json({ error: 'Failed to fetch repos' });
-    }
-    
-    const data = await response.json() as { repositories?: Record<string, unknown>[] };
-    const repos = data.repositories || [];
-    
-    res.json(
-      repos.map((repo: Record<string, unknown>) => ({
-        id: repo.id,
-        name: repo.name,
-        full_name: repo.full_name,
-        private: repo.private,
-        clone_url: repo.clone_url,
-        html_url: repo.html_url,
-        description: repo.description,
-        default_branch: repo.default_branch,
-        updated_at: repo.updated_at,
-      }))
-    );
+    });
+
+    const results = await Promise.all(allReposPromise);
+    const flatRepos = results.flat();
+
+    // 3. Map and return
+    res.json(flatRepos.map(mapRepo));
+
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Failed to fetch repositories' });
   }
 });
+
+function mapRepo(repo: any) {
+  return {
+    id: repo.id,
+    name: repo.name,
+    full_name: repo.full_name,
+    private: repo.private,
+    clone_url: repo.clone_url,
+    html_url: repo.html_url,
+    description: repo.description,
+    default_branch: repo.default_branch,
+    updated_at: repo.updated_at,
+    permissions: repo.permissions // useful to filter push access
+  };
+}
 
 // GET /branches - List branches for a repository
 router.get('/branches', async (req: Request, res: Response) => {
