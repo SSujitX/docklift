@@ -689,16 +689,17 @@ router.post('/upgrade', async (req: Request, res: Response) => {
 
     // Production: Run upgrade.sh on HOST via nsenter
     // upgrade.sh is at /opt/docklift/upgrade.sh on the host
-    const command = 'nsenter --target 1 --mount --uts --ipc --net --pid -- sh -c "cd /opt/docklift && nohup bash upgrade.sh > /dev/null 2>&1 &"';
+    // We add --cgroup to ensure the process joins the host's cgroup and doesn't get killed when the container stops
+    const command = 'nsenter --target 1 --mount --uts --ipc --net --pid --cgroup -- sh -c "cd /opt/docklift && nohup bash upgrade.sh > /dev/null 2>&1 & disown"';
     
     console.log('Docklift upgrade initiated on host');
     
-    exec(command, { timeout: 600000 }, (error, stdout, stderr) => {
-      if (error) {
-        console.error('Upgrade error:', error.message);
-        console.error('STDERR:', stderr);
+    // Set a short timeout because we expect the command to detach immediately
+    exec(command, { timeout: 5000 }, (error, stdout, stderr) => {
+      if (error && !error.killed) { // Ignore timeout/killed errors as they might happen on quick detach
+        console.error('Upgrade initiation error (might be benign if process detached):', error.message);
       } else {
-        console.log('Docklift upgrade completed');
+        console.log('Docklift upgrade initiated successfully');
       }
     });
 

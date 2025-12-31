@@ -82,11 +82,11 @@ echo -e "        ${DIM}➞ User project containers are untouched${NC}"
 BUILD_ST=$(date +%s)
 echo -e "\n  ${CYAN}[4/5]${NC} Rebuilding Docklift..."
 echo -e "        ${DIM}This may take a few minutes...${NC}"
-LOG=$(mktemp)
-if ! docker compose up -d --build docklift-backend docklift-frontend docklift-nginx docklift-nginx-proxy > "$LOG" 2>&1; then
+LOG="/opt/docklift/upgrade.log"
+echo "--- Upgrade started at $(date) ---" > "$LOG"
+if ! docker compose up -d --build docklift-backend docklift-frontend docklift-nginx docklift-nginx-proxy >> "$LOG" 2>&1; then
     echo -e "\n  ${RED}Build failed! Rolling back...${NC}"
-    cat "$LOG"
-    rm "$LOG"
+    echo -e "  ${RED}Check $LOG for details.${NC}"
     # Restore backup
     if [ -f "$BACKUP_FILE" ]; then
         cp "$BACKUP_FILE" "$INSTALL_DIR/data/docklift.db"
@@ -94,7 +94,6 @@ if ! docker compose up -d --build docklift-backend docklift-frontend docklift-ng
     fi
     exit 1
 fi
-rm "$LOG"
 echo -e "        ${GREEN}done${NC} ${DIM}($(format_time $(($(date +%s) - BUILD_ST))))$NC"
 
 # Step 5: Health check
