@@ -621,17 +621,73 @@ router.get('/version', async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/system/upgrade - Run upgrade script
-router.post('/upgrade', async (req: Request, res: Response) => {
+// POST /api/system/update-system - Run apt update and upgrade on HOST
+router.post('/update-system', async (req: Request, res: Response) => {
   try {
-    // Run upgrade.sh in background (non-blocking since it restarts the containers)
-    exec('cd /app && ./upgrade.sh', { timeout: 300000 }, (error, stdout, stderr) => {
+    const isWindows = os.platform() === "win32";
+    const isMac = os.platform() === "darwin";
+
+    if (isWindows || isMac) {
+      // Dev environment simulation
+      console.log('System update requested (Dev Mode: Simulation)');
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      return res.json({ message: 'Dev Mode: Simulated system update complete.' });
+    }
+
+    // Production: Run apt update/upgrade on HOST via nsenter
+    // nsenter --target 1 lets us escape the container and run on the host
+    const command = 'nsenter --target 1 --mount --uts --ipc --net --pid -- sh -c "apt update -y && DEBIAN_FRONTEND=noninteractive apt upgrade -y && apt autoremove -y"';
+    
+    console.log('System update initiated on host');
+    
+    exec(command, { timeout: 900000 }, (error, stdout, stderr) => {
       if (error) {
-        console.error('Upgrade error:', error);
+        console.error('System update error:', error.message);
+        console.error('STDERR:', stderr);
+      } else {
+        console.log('System update completed successfully');
       }
     });
 
-    res.json({ message: 'Upgrade initiated. The application will restart shortly.' });
+    res.json({ message: 'System update started on host. This may take several minutes.' });
+  } catch (error: any) {
+    console.error('System update error:', error);
+    res.status(500).json({ 
+      error: 'Failed to start system update', 
+      details: error.message 
+    });
+  }
+});
+
+// POST /api/system/upgrade - Run upgrade script on HOST
+router.post('/upgrade', async (req: Request, res: Response) => {
+  try {
+    const isWindows = os.platform() === "win32";
+    const isMac = os.platform() === "darwin";
+
+    if (isWindows || isMac) {
+      // Dev environment simulation
+      console.log('Docklift upgrade requested (Dev Mode: Simulation)');
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      return res.json({ message: 'Dev Mode: Simulated Docklift upgrade complete.' });
+    }
+
+    // Production: Run upgrade.sh on HOST via nsenter
+    // upgrade.sh is at /opt/docklift/upgrade.sh on the host
+    const command = 'nsenter --target 1 --mount --uts --ipc --net --pid -- sh -c "cd /opt/docklift && ./upgrade.sh"';
+    
+    console.log('Docklift upgrade initiated on host');
+    
+    exec(command, { timeout: 600000 }, (error, stdout, stderr) => {
+      if (error) {
+        console.error('Upgrade error:', error.message);
+        console.error('STDERR:', stderr);
+      } else {
+        console.log('Docklift upgrade completed');
+      }
+    });
+
+    res.json({ message: 'Docklift upgrade started. The application will restart shortly.' });
   } catch (error: any) {
     console.error('Upgrade error:', error);
     res.status(500).json({ 
