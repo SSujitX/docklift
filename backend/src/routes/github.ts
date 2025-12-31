@@ -484,7 +484,7 @@ router.get('/status', async (req: Request, res: Response) => {
       username,
       avatar_url: avatarUrl,
       installation_id: installationId,
-      installUrl: appSlug ? `https://github.com/apps/${appSlug}` : null
+      installUrl: appSlug ? `https://github.com/apps/${appSlug}/installations/new` : null
     });
   } catch (error) {
     console.error(error);
