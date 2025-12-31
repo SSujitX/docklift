@@ -203,10 +203,28 @@ export function GitHubConnect({ open, onOpenChange, onConnected }: GitHubConnect
                   </p>
                 </div>
               </div>
+
+              {/* Multi-account info */}
+              <div className="p-3 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-xs space-y-1">
+                <p className="text-cyan-400 font-medium">💡 Multi-Account Support</p>
+                <p className="text-gray-600 dark:text-gray-300">
+                  You can install this app on multiple accounts (Personal + Organizations). 
+                  All repositories will appear together in one list.
+                </p>
+              </div>
+
+              <Button
+                className="w-full bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700"
+                onClick={() => status.installUrl && window.open(status.installUrl, '_blank')}
+                disabled={!status.installUrl}
+              >
+                <ExternalLink className="h-4 w-4 mr-2" />
+                Add Another Account
+              </Button>
               
               <Button
                 variant="outline"
-                className="w-full"
+                className="w-full text-destructive hover:bg-destructive/10"
                 onClick={handleDisconnect}
                 disabled={loading}
               >

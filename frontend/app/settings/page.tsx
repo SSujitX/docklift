@@ -531,7 +531,7 @@ function SettingsContent() {
                                   href={githubStatus.installUrl}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  title="Install on another account or organization"
+                                  title="Add another account or organization — repos will be combined"
                                 >
                                   <Button
                                     variant="outline"
