@@ -689,8 +689,9 @@ router.post('/upgrade', async (req: Request, res: Response) => {
 
     // Production: Run upgrade.sh on HOST via nsenter
     // upgrade.sh is at /opt/docklift/upgrade.sh on the host
-    // We add --cgroup to ensure the process joins the host's cgroup and doesn't get killed when the container stops
-    const command = 'nsenter --target 1 --mount --uts --ipc --net --pid --cgroup -- sh -c "cd /opt/docklift && nohup bash upgrade.sh > /dev/null 2>&1 & disown"';
+    // We remove --cgroup as it's not supported by all nsenter versions (e.g. busybox)
+    // We use systemd-run to escape the container's cgroup to prevent being killed during restart
+    const command = 'nsenter --target 1 --mount --uts --ipc --net --pid -- sh -c "cd /opt/docklift && (systemd-run --unit=docklift-upgrade-$(date +%s) --scope bash upgrade.sh > /dev/null 2>&1 || nohup bash upgrade.sh > /dev/null 2>&1) &"';
     
     console.log('Docklift upgrade initiated on host');
     
