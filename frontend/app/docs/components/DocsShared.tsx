@@ -30,7 +30,7 @@ export const CopyButton = ({ text, className }: { text: string, className?: stri
 export const CommandBlock = ({ command, label, color = "cyan" }: { command: string, label?: string, color?: string }) => {
   return (
     <div className="group mb-4 last:mb-0">
-      {label && <p className="text-xs font-bold text-muted-foreground/80 uppercase tracking-wider mb-2 ml-1"># {label}</p>}
+      {label && <p className="text-xs font-bold text-muted-foreground/80 uppercase tracking-wider mb-2 ml-1 selection:bg-slate-700 selection:text-white"># {label}</p>}
       <div className="relative group/btn">
         <div className="flex items-center gap-3 bg-zinc-900 border border-white/5 rounded-xl px-4 py-2.5 group-hover/btn:border-white/10 transition-all shadow-inner">
           <Terminal className="h-4 w-4 text-zinc-600 shrink-0" />

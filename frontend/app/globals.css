@@ -69,9 +69,19 @@
   }
 
   body {
-    @apply bg-background text-foreground antialiased selection:bg-cyan-500/30;
+    @apply bg-background text-foreground antialiased;
     font-family: 'Inter', system-ui, sans-serif;
     scroll-behavior: smooth;
+  }
+
+  /* Selection colors - dark background with white text for maximum visibility */
+  ::selection {
+    background-color: rgba(30, 41, 59, 0.9); /* slate-800 */
+    color: #fff;
+  }
+  ::-moz-selection {
+    background-color: rgba(30, 41, 59, 0.9);
+    color: #fff;
   }
 }
 

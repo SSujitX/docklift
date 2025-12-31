@@ -14,7 +14,7 @@ export const UsefulCommands = () => (
     <div className="space-y-8">
       {/* Infrastructure Logs */}
       <div className="bg-secondary/50 rounded-xl p-6">
-        <h4 className="font-semibold mb-4 text-cyan-500 flex items-center gap-2">
+        <h4 className="font-semibold mb-4 text-cyan-500 flex items-center gap-2 selection:bg-slate-700 selection:text-white">
           📜 Check Infrastructure Logs
         </h4>
         <div className="space-y-4">
@@ -31,7 +31,7 @@ export const UsefulCommands = () => (
 
       {/* Project Debugging */}
       <div className="bg-secondary/50 rounded-xl p-6">
-        <h4 className="font-semibold mb-4 text-violet-500 flex items-center gap-2">
+        <h4 className="font-semibold mb-4 text-violet-500 flex items-center gap-2 selection:bg-slate-700 selection:text-white">
           🛰️ Project Debugging
         </h4>
         <div className="space-y-4">
@@ -46,7 +46,7 @@ export const UsefulCommands = () => (
 
       {/* Cleaning & Resetting */}
       <div className="bg-secondary/50 rounded-xl p-6">
-        <h4 className="font-semibold mb-4 text-red-500 flex items-center gap-2">
+        <h4 className="font-semibold mb-4 text-red-500 flex items-center gap-2 selection:bg-slate-700 selection:text-white">
           🧹 Cleaning & Resetting
         </h4>
         <div className="space-y-4">
@@ -62,7 +62,7 @@ export const UsefulCommands = () => (
 
       {/* Network & Port Check */}
       <div className="bg-secondary/50 rounded-xl p-6">
-        <h4 className="font-semibold mb-4 text-emerald-500 flex items-center gap-2">
+        <h4 className="font-semibold mb-4 text-emerald-500 flex items-center gap-2 selection:bg-slate-700 selection:text-white">
           🌐 Network & Port Check
         </h4>
         <div className="space-y-4">
@@ -77,7 +77,7 @@ export const UsefulCommands = () => (
 
       {/* Development Commands */}
       <div className="bg-secondary/50 rounded-xl p-6">
-        <h4 className="font-semibold mb-4 text-amber-500 flex items-center gap-2">
+        <h4 className="font-semibold mb-4 text-amber-500 flex items-center gap-2 selection:bg-slate-700 selection:text-white">
           🚀 Development Commands (Bun)
         </h4>
         <div className="space-y-4">
@@ -97,7 +97,7 @@ export const UsefulCommands = () => (
 
       {/* Version Management */}
       <div className="bg-secondary/50 rounded-xl p-6">
-        <h4 className="font-semibold mb-4 text-blue-500 flex items-center gap-2">
+        <h4 className="font-semibold mb-4 text-blue-500 flex items-center gap-2 selection:bg-slate-700 selection:text-white">
           📦 Update & Version Management
         </h4>
         <div className="space-y-4">
