@@ -101,7 +101,7 @@ export function TerminalView() {
     }
   };
 
-  const handleSystemAction = async (action: 'reboot' | 'reset' | 'purge') => {
+  const handleSystemAction = async (action: 'reboot' | 'reset' | 'purge' | 'update-system' | 'upgrade') => {
     setIsProcessing(true);
     setShowRebootDialog(false);
     setShowResetDialog(false);
@@ -135,17 +135,65 @@ export function TerminalView() {
 
   return (
     <div className="flex flex-col gap-5 animate-in fade-in slide-in-from-bottom-4 duration-700">
-      {/* Control Center - Ultra Compact */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      {/* Control Center - Action Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        {/* System Update Card */}
+        <Card className="p-3 bg-background border-border shadow-sm hover:shadow-md transition-shadow duration-300 rounded-xl group border-l-4 border-l-cyan-500">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-cyan-500/10">
+                <RefreshCw className="h-4 w-4 text-cyan-500" />
+              </div>
+              <div className="flex flex-col">
+                <h3 className="font-bold text-sm">Update System</h3>
+                <p className="text-[10px] text-muted-foreground leading-tight">apt update & upgrade</p>
+              </div>
+            </div>
+            <Button 
+              variant="secondary"
+              size="sm"
+              onClick={() => handleSystemAction('update-system')}
+              disabled={isProcessing}
+              className="font-bold h-8 px-3 rounded-lg shadow-sm bg-cyan-500/10 text-cyan-500 hover:bg-cyan-500/20 border border-cyan-500/20"
+            >
+              Update
+            </Button>
+          </div>
+        </Card>
+
+        {/* Docklift Upgrade Card */}
+        <Card className="p-3 bg-background border-border shadow-sm hover:shadow-md transition-shadow duration-300 rounded-xl group border-l-4 border-l-emerald-500">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-emerald-500/10">
+                <TerminalIcon className="h-4 w-4 text-emerald-500" />
+              </div>
+              <div className="flex flex-col">
+                <h3 className="font-bold text-sm">Upgrade Docklift</h3>
+                <p className="text-[10px] text-muted-foreground leading-tight">Latest version</p>
+              </div>
+            </div>
+            <Button 
+              variant="secondary"
+              size="sm"
+              onClick={() => handleSystemAction('upgrade')}
+              disabled={isProcessing}
+              className="font-bold h-8 px-3 rounded-lg shadow-sm bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 border border-emerald-500/20"
+            >
+              Upgrade
+            </Button>
+          </div>
+        </Card>
+
         {/* Reboot Card */}
         <Card className="p-3 bg-background border-border shadow-sm hover:shadow-md transition-shadow duration-300 rounded-xl group border-l-4 border-l-rose-500">
-          <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <div className="p-2 rounded-lg bg-rose-500/10">
                 <Power className="h-4 w-4 text-rose-500" />
               </div>
               <div className="flex flex-col">
-                <h3 className="font-bold text-sm">Reboot</h3>
+                <h3 className="font-bold text-sm">Reboot Server</h3>
                 <p className="text-[10px] text-muted-foreground leading-tight">Full system restart</p>
               </div>
             </div>
@@ -153,30 +201,30 @@ export function TerminalView() {
               variant="destructive"
               size="sm"
               onClick={() => setShowRebootDialog(true)}
-              className="font-bold h-8 px-4 rounded-lg shadow-sm"
+              className="font-bold h-8 px-3 rounded-lg shadow-sm"
             >
-              Restart
+              Reboot
             </Button>
           </div>
         </Card>
 
         {/* Reset Card */}
         <Card className="p-3 bg-background border-border shadow-sm hover:shadow-md transition-shadow duration-300 rounded-xl group border-l-4 border-l-amber-500">
-          <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <div className="p-2 rounded-lg bg-amber-500/10">
                 <RefreshCw className="h-4 w-4 text-amber-500" />
               </div>
               <div className="flex flex-col">
-                <h3 className="font-bold text-sm">Reset</h3>
-                <p className="text-[10px] text-muted-foreground leading-tight">Service refresh</p>
+                <h3 className="font-bold text-sm">Reset Services</h3>
+                <p className="text-[10px] text-muted-foreground leading-tight">Docker restart</p>
               </div>
             </div>
             <Button 
-              variant="warning"
+              variant="outline"
               size="sm"
               onClick={() => setShowResetDialog(true)}
-              className="font-bold h-8 px-4 rounded-lg shadow-sm"
+              className="font-bold h-8 px-3 rounded-lg shadow-sm border-amber-500/30 text-amber-500 hover:bg-amber-500/10"
             >
               Reset
             </Button>
