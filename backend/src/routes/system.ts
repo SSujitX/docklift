@@ -689,7 +689,7 @@ router.post('/upgrade', async (req: Request, res: Response) => {
 
     // Production: Run upgrade.sh on HOST via nsenter
     // upgrade.sh is at /opt/docklift/upgrade.sh on the host
-    const command = 'nsenter --target 1 --mount --uts --ipc --net --pid -- sh -c "cd /opt/docklift && bash upgrade.sh"';
+    const command = 'nsenter --target 1 --mount --uts --ipc --net --pid -- sh -c "cd /opt/docklift && nohup bash upgrade.sh > /dev/null 2>&1 &"';
     
     console.log('Docklift upgrade initiated on host');
     
