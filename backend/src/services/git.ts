@@ -44,8 +44,43 @@ export async function pullRepo(projectPath: string, res: Response): Promise<void
       res.write(`   Already up to date\n`);
     }
     res.write(`\n`);
-  } catch (error) {
-    res.write(`   ⚠️ Git pull warning: ${error}\n\n`);
+  } catch (error: any) {
+    const errorMsg = error?.message || String(error);
+    
+    // Check if it's a merge conflict / local changes issue
+    if (errorMsg.includes('overwritten by merge') || 
+        errorMsg.includes('local changes') || 
+        errorMsg.includes('Please commit your changes') ||
+        errorMsg.includes('Aborting')) {
+      res.write(`   ⚠️ Local changes detected, resetting to remote...\n`);
+      
+      try {
+        // Get current branch
+        const branch = await git.revparse(['--abbrev-ref', 'HEAD']);
+        const cleanBranch = branch.trim();
+        
+        // Reset hard to discard local changes
+        await git.reset(['--hard', 'HEAD']);
+        res.write(`   🔄 Reset local changes\n`);
+        
+        // Pull again
+        const retryResult = await git.pull('origin', cleanBranch);
+        
+        if (retryResult.summary.changes > 0) {
+          res.write(`   ✅ ${retryResult.summary.changes} file(s) changed\n`);
+          res.write(`   ↓ ${retryResult.summary.insertions} insertions\n`);
+          res.write(`   ✗ ${retryResult.summary.deletions} deletions\n`);
+        } else {
+          res.write(`   Already up to date\n`);
+        }
+        res.write(`\n`);
+        return;
+      } catch (resetError: any) {
+        res.write(`   ❌ Reset failed: ${resetError?.message || resetError}\n\n`);
+      }
+    } else {
+      res.write(`   ⚠️ Git pull warning: ${error}\n\n`);
+    }
   }
 }
 

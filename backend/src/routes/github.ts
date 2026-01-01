@@ -851,25 +851,28 @@ router.post('/webhook', async (req: Request, res: Response) => {
       triggered.push({ name: project.name, promise: deployPromise });
     }
     
-    // Wait for all deploys to complete (with 5 minute timeout for GitHub)
-    const deployResults = await Promise.race([
-      Promise.allSettled(triggered.map(t => t.promise)),
-      new Promise(resolve => setTimeout(() => resolve('timeout'), 290000)) // 4m50s timeout (GitHub has 10 min)
-    ]);
-    
-    const finalResults = deployResults === 'timeout' 
-      ? triggered.map(t => ({ project: t.name, status: 'timeout' }))
-      : (deployResults as PromiseSettledResult<any>[]).map((r, i) => 
-          r.status === 'fulfilled' ? r.value : { project: triggered[i].name, error: r.reason }
-        );
-    
+    // IMPORTANT: Respond immediately to avoid GitHub webhook timeout (10 seconds)
+    // Deployments run asynchronously in the background
     res.status(200).json({ 
-      message: triggered.length > 0 ? 'Auto-deploy completed' : 'No deployments triggered',
-      results: finalResults,
+      message: triggered.length > 0 ? 'Auto-deploy triggered' : 'No deployments triggered',
+      triggered: triggered.map(t => t.name),
       skipped,
       branch: pushedBranch,
       commit: payload.head_commit?.id?.substring(0, 7) || 'unknown',
     });
+    
+    // Log deployment results in background (don't block response)
+    if (triggered.length > 0) {
+      Promise.allSettled(triggered.map(t => t.promise)).then(results => {
+        results.forEach((r, i) => {
+          if (r.status === 'fulfilled') {
+            console.log(`[Auto-Deploy] ${triggered[i].name}: ${r.value.success ? '✅ Success' : '❌ Failed'}`);
+          } else {
+            console.error(`[Auto-Deploy] ${triggered[i].name}: Error - ${r.reason}`);
+          }
+        });
+      });
+    }
     
   } catch (error) {
     console.error('Webhook error:', error);
