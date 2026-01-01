@@ -1,86 +1,104 @@
+<h1 align="center">🐳 Docklift</h1>
+
 <p align="center">
-  <a href="https://nextjs.org"><img src="https://img.shields.io/badge/Next.js-16-black" alt="Next.js"></a>
-  <a href="https://expressjs.com"><img src="https://img.shields.io/badge/Express-Node.js-green" alt="Express"></a>
-  <a href="https://docker.com"><img src="https://img.shields.io/badge/Docker-Compose-blue" alt="Docker"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow" alt="License"></a>
+  <strong>Self-hosted Docker deployment platform</strong><br>
+  Open-source alternative to Coolify, Dokploy, Dokku, CapRover, Vercel, Netlify & Heroku.
 </p>
 
-# 🐳 Docklift
+<p align="center">
+  <a href="https://github.com/SSujitX/docklift/stargazers"><img src="https://img.shields.io/github/stars/SSujitX/docklift?style=flat-square&color=cyan" alt="Stars"></a>
+  <a href="https://github.com/SSujitX/docklift/releases"><img src="https://img.shields.io/github/v/release/SSujitX/docklift?style=flat-square&color=green" alt="Release"></a>
+  <a href="https://nextjs.org"><img src="https://img.shields.io/badge/Next.js-16-black" alt="Next.js"></a>
+  <a href="https://expressjs.com"><img src="https://img.shields.io/badge/Express-Node.js-green" alt="Express"></a>
+  <img src="https://img.shields.io/badge/Docker-Compose-blue?style=flat-square" alt="Docker">
+</p>
 
-**Docklift is an open-source & self-hostable alternative to Coolify / Dokploy / Heroku / Netlify / Vercel / etc.**
-
-It helps you deploy and manage your applications on your own hardware - you only need a VPS with Docker installed. Deploy from GitHub or upload files directly, manage custom domains, monitor system resources, and access your server terminal - all from a beautiful web interface.
-
-**Imagine having the ease of a cloud platform but on your own servers. That is Docklift.**
-
-No vendor lock-in, which means all your application data, configurations, and Docker containers live on your server. If you decide to stop using Docklift, your apps keep running - you just lose the beautiful dashboard and automations. 🪄
+<p align="center">
+  <a href="#-quick-start">Quick Start</a> •
+  <a href="#-features">Features</a> •
+  <a href="#-commands">Commands</a> •
+  <a href="#-contributing">Contributing</a>
+</p>
 
 ---
 
-> 🚀 **Self-hosted deployment platform** • Deploy Docker containers from GitHub or ZIP upload • Real-time build logs • Automatic port management • Custom domains • System monitoring • Web terminal • Built with Next.js 16 & Express
+## 📖 What is Docklift?
+
+Docklift lets you deploy and manage Docker containers on your own server with a beautiful web UI. Connect GitHub repos or upload files, get auto-deployments, custom domains, and full system monitoring — without vendor lock-in.
+
+**Your server. Your rules. Your apps.**
 
 ![Docklift Dashboard](screenshots/home.png)
-
-## ✨ Key Features
-
-- **📦 One-Click Deployment** - Simply connect a GitHub repository or upload a ZIP file.
-- **🐳 Docker Native** - Requires a `Dockerfile` in your project; Docklift generates `docker-compose.yml` automatically. 
-- **🌐 Automatic Port Management** - No need to worry about port conflicts; Docklift handles them.
-- **🔄 Zero-Downtime Redeploys** - Rebuild and restart containers seamlessly.
-- **Live Build Logs** - Watch your application build in real-time.
-- **🔄 Auto-Deploy (Webhooks)** - Automatically redeploy when you push code to GitHub.
-- **🐙 GitHub Integration** - Private repository support via GitHub Apps.
-- **📊 System Monitoring** - Real-time CPU, RAM, GPU, disk, and network stats.
-- **💻 Web Terminal** - Full SSH-like terminal access in your browser.
-
-![Deployment In Progress](screenshots/deploy.png)
 
 ---
 
 ## 🆚 Why Docklift?
 
-There are great tools out there like **Coolify**, **Dokploy**, **Dokku**, and **CapRover** - but they often come with a learning curve, complex configurations, or feel heavy for simple use cases. Docklift is built to be **lightweight, minimal, and easy to understand**. It focuses purely on Docker deployments without the bloat, while offering features others don't - like full **system monitoring** (CPU, RAM, GPU, disk, network) and a **web terminal** right in your browser. If you want to deploy Docker containers quickly without wrestling with configurations, Docklift is for you.
+There are great tools out there like **Coolify**, **Dokploy**, **Dokku**, and **CapRover** — but they often come with a learning curve, complex configurations, or feel heavy for simple use cases. 
+
+Docklift is built to be **lightweight, minimal, and easy to understand**. It focuses purely on Docker deployments without the bloat, while offering features others don't — like full **system monitoring** (CPU, RAM, GPU, disk, network) and a **web terminal** right in your browser. 
+
+If you want to deploy Docker containers quickly without wrestling with configurations, **Docklift is for you**.
 
 ---
 
-## 🛠️ Prerequisites
+## 📑 Table of Contents
 
-To run Docklift locally or on a server, you need:
+- [Quick Start](#-quick-start)
+- [Why Docklift](#-why-docklift)
+- [Features](#-features)
+- [Installation](#-installation)
+- [Development Setup](#-development-setup)
+- [Deploy Your First App](#-deploy-your-first-app)
+- [Commands Reference](#-commands-reference)
+- [Contributing](#-contributing)
+- [License](#-license)
 
-1.  **Docker & Docker Compose** installed and running.
-2.  **[Bun](https://bun.sh/)** (for local development) - Install with: `curl -fsSL https://bun.sh/install | bash`
 
 ---
 
-## 🚀 Getting Started
-
-### 1. One-Command Install (Recommended for Production)
-
-Run this on your Ubuntu server to set up everything automatically:
-
-#### Install
+## 🚀 Quick Start
 
 ```bash
+# One-command install on Ubuntu/Debian
 curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh | sudo bash
 ```
 
-#### Uninstall
+Access your dashboard at `http://your-ip:3000`
+
+---
+
+## ✨ Features
+
+| Feature | Description |
+|---------|-------------|
+| 📦 **One-Click Deploy** | Push code → Docklift builds & runs it |
+| 🐙 **GitHub Integration** | Connect private repos via GitHub Apps |
+| 🔄 **Auto-Deploy** | Webhook-triggered redeploys on push |
+| 🌐 **Custom Domains** | Automatic Nginx proxy & SSL ready |
+| 📊 **System Monitoring** | CPU, RAM, GPU, disk & network stats |
+| 💻 **Web Terminal** | SSH-like access in your browser |
+| 📜 **Live Build Logs** | Real-time streaming output |
+| 🔐 **Env Variables** | Secure build-time & runtime secrets |
+
+---
+
+## 📦 Installation
+
+### Production (Recommended)
 
 ```bash
-curl -fsSL "https://raw.githubusercontent.com/SSujitX/docklift/master/uninstall.sh?nocache=1" | sudo bash -s -- -y
-```
+# Install
+curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh | sudo bash
 
-#### Upgrade (Preserves Data)
-
-```bash
+# Upgrade (preserves data)
 curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/upgrade.sh | sudo bash
+
+# Uninstall
+curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/uninstall.sh | sudo bash -s -- -y
 ```
 
-> ⬆️ **Safe Upgrade**: This command backs up your database, updates Docklift to the latest version, and preserves all your projects, containers, and configurations. Database migrations are applied automatically.
-
-### 2. Run with Docker Compose
-
-The easiest way to run Docklift without development setup:
+### Docker Compose
 
 ```bash
 git clone https://github.com/SSujitX/docklift.git
@@ -88,143 +106,121 @@ cd docklift
 docker compose up -d
 ```
 
-Access the dashboard at: `http://localhost:3000`
-
 ---
 
-## 💻 Local Development Setup
+## 💻 Development Setup
 
-If you want to contribute or modify code, follow these steps:
-
-### 1. Clone & Configure
+**Prerequisites:** Docker, [Bun](https://bun.sh/)
 
 ```bash
+# Clone & setup
 git clone https://github.com/SSujitX/docklift.git
 cd docklift
 
-# Setup backend environment
-cd backend
-cp .env.example .env
-```
-
-### 2. Install Dependencies
-
-```bash
-# Backend (from /backend directory)
+# Backend
+cd backend && cp .env.example .env
 bun install
-
-# Frontend (from /frontend directory)
-cd ../frontend
-bun install
-```
-
-### 3. Initialize Database (Required)
-
-After installing dependencies, you **must** run these commands:
-
-```bash
-cd backend
-
-# Generate Prisma client from schema
-bun run db:generate
-
-# Create/sync database tables
-bun run db:push
-```
-
-> [!IMPORTANT]
-> Run these commands after every fresh clone or when pulling new schema changes.
-
-### 4. Start Development Servers
-
-```bash
-# Terminal 1 - Backend (runs on port 8000)
-cd backend
+bun run db:generate && bun run db:push
 bun run dev
 
-# Terminal 2 - Frontend (runs on port 3000)
-cd frontend
-bun run dev
+# Frontend (new terminal)
+cd frontend && bun install && bun run dev
 ```
 
-### 5. Useful Development Commands
+**Dev URLs:** Frontend `localhost:3000` | Backend `localhost:4000`
+
+---
+
+## 🐳 Deploy Your First App
+
+1. Open Docklift → Click **New Project**
+2. Choose source: GitHub URL, Private Repo, or ZIP Upload
+3. Add environment variables (optional)
+4. Click **Deploy** → Watch live build logs
+5. Access at `http://your-ip:<assigned-port>`
+
+> **Requirement:** Your project must have a `Dockerfile`
+
+---
+
+## 📋 Commands Reference
+
+### 🔍 Logs
 
 | Command | Description |
 |---------|-------------|
-| `bun run dev` | Start development server |
-| `bun run build` | Build for production |
-| `bun run db:generate` | Regenerate Prisma client |
-| `bun run db:push` | Push schema changes to DB |
+| `docker logs docklift-backend -f` | Backend logs |
+| `docker logs docklift-frontend -f` | Frontend logs |
+| `docker logs docklift-nginx-proxy -f` | Nginx proxy logs |
+| `docker ps --filter name=dl_` | List project containers |
+
+### 🗄️ Database
+
+| Command | Description |
+|---------|-------------|
 | `bun run db:studio` | Open Prisma Studio GUI |
+| `bun run db:push` | Push schema changes |
+| `bun run db:generate` | Regenerate Prisma client |
 
----
+### 🏷️ Versioning
 
-## 🐳 Deploying Your First App
+| Command | Description |
+|---------|-------------|
+| `npm version patch` | 0.1.5 → 0.1.6 (bug fixes) |
+| `npm version minor` | 0.1.5 → 0.2.0 (features) |
+| `npm version major` | 0.1.5 → 1.0.0 (breaking) |
 
-1.  Open Docklift (`http://localhost:3000`).
-2.  Click **"New Project"**.
-3.  Choose a source:
-    *   **Public GitHub**: Paste a repo URL.
-    *   **Private GitHub**: Connect the Docklift GitHub App.
-    *   **Direct Upload**: Upload a ZIP file of your code (must include a `Dockerfile`).
-4.  Docklift will detect the branch (defaults to `main`).
-5.  **Enable Auto-Deploy (Optional)**: In project settings, toggle "Auto-Deploy" to automatically rebuild on every GitHub push.
-6.  Click **Deploy**.
-7.  Your app will be live at `http://localhost:<ASSIGNED_PORT>` or your custom domain.
+### 🧹 Cleanup
 
----
+| Command | Description |
+|---------|-------------|
+| `for port in {3001..3050}; do sudo fuser -k ${port}/tcp 2>/dev/null; done` | Kill ports 3001-3050 |
+| `cd backend && bun run reset-password` | Reset admin password |
 
-## 📂 Project Structure Guide
-
-Docklift is designed to be flexible. It automatically scans your project for `Dockerfile` files. 
-
-### 1. Single-Service Project (Recommended for simple apps)
-Use this for a standard Next.js, Python, or Go application.
-
-```text
-my-cool-app/
-├── Dockerfile          <-- Required (at the root)
-├── package.json        (or requirements.txt, main.go, etc.)
-├── src/
-└── ...
-```
-
-### 2. Multi-Service Project (Mono-repo style)
-Docklift will detect each `Dockerfile` and create separate services for them within the same project.
-
-```text
-my-complex-app/
-├── api/
-│   ├── Dockerfile     <-- Service 1 (e.g. FastAPI)
-│   ├── main.py
-│   └── requirements.txt
-├── dashboard/
-│   ├── Dockerfile     <-- Service 2 (e.g. Next.js)
-│   ├── package.json
-│   └── ...
-└── README.md
-```
-
-> [!TIP]
-> **Docklift Tip**: Each subdirectory containing a `Dockerfile` becomes an independent container with its own internal port and optional custom domain.
+> 📖 Full commands guide: [commands.md](commands.md)
 
 ---
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please open an issue to discuss proposed changes or features.
+Contributions welcome! Please:
+
+1. Fork the repo
+2. Create a feature branch (`git checkout -b feature/amazing`)
+3. Commit changes (`git commit -m 'feat: add amazing feature'`)
+4. Push to branch (`git push origin feature/amazing`)
+5. Open a Pull Request
+
+### Commit Convention
+
+```
+feat:     New feature
+fix:      Bug fix
+docs:     Documentation
+style:    Formatting (no code change)
+refactor: Code restructure
+test:     Add tests
+chore:    Maintenance
+```
+
+---
 
 ## 📄 License
 
-MIT License - see [LICENSE](LICENSE)
+MIT License — see [LICENSE](LICENSE)
 
-***
+---
 
-**Made with ❤️ for developers who take control.**
+<p align="center">
+  <b>Made with ❤️ for developers who take control</b>
+</p>
 
+<p align="center">
+  <a href="https://www.star-history.com/#SSujitX/docklift&Date">
+    <img src="https://api.star-history.com/svg?repos=SSujitX/docklift&type=Date" width="500" alt="Star History">
+  </a>
+</p>
 
-## Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=SSujitX/docklift&type=date&legend=top-left)](https://www.star-history.com/#SSujitX/docklift&type=date&legend=top-left)
-
-![Visitors](https://api.visitorbadge.io/api/visitors?path=https%3A%2F%2Fgithub.com%2FSSujitX%2Fdocklift&countColor=%23263759)
+<p align="center">
+  <img src="https://api.visitorbadge.io/api/visitors?path=https%3A%2F%2Fgithub.com%2FSSujitX%2Fdocklift&countColor=%23263759" alt="Visitors">
+</p>
