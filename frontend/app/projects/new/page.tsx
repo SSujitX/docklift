@@ -294,6 +294,9 @@ function NewProjectContent() {
 
   const handlePublicSubmit = () => {
     if (!githubUrl) return toast.error("Please enter a repository URL");
+    if (!githubUrl.match(/^https?:\/\/(www\.)?github\.com\//)) {
+      return toast.error("Please enter a valid GitHub repository URL (e.g., https://github.com/user/repo)");
+    }
     if (!name) setName(githubUrl.split("/").pop()?.replace(".git", "") || "my-app");
     setStep(2);
   };
