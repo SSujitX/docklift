@@ -30,6 +30,10 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Trust proxy - CRITICAL for reading X-Forwarded-Proto when behind Nginx
+// Without this, req.headers['x-forwarded-proto'] is ignored and HTTPS detection fails
+app.set('trust proxy', true);
+
 // Ensure directories exist
 const dataDir = path.resolve('./data');
 const deploymentsDir = config.deploymentsPath;
