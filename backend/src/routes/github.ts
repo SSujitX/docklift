@@ -645,13 +645,21 @@ export async function getInstallationIdForRepo(owner: string, repo: string): Pro
     },
   });
 
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Could not find installation for ${owner}/${repo}: ${response.status} ${text}`);
+  if (response.ok) {
+    const data = await response.json() as { id: number };
+    return data.id.toString();
   }
 
-  const data = await response.json() as { id: number };
-  return data.id.toString();
+  // Fallback: If per-repo lookup fails, try the global installation ID from settings
+  // This handles cases where app is installed on "All repositories"
+  const globalInstallationId = await getSetting('github_installation_id');
+  if (globalInstallationId) {
+    return globalInstallationId;
+  }
+
+  // If no fallback available, throw the original error
+  const text = await response.text();
+  throw new Error(`Could not find installation for ${owner}/${repo}: ${response.status} ${text}`);
 }
 
 // GET /branches - List branches for a repository
