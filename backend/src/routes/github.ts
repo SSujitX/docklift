@@ -121,18 +121,14 @@ router.post('/manifest', async (req: Request, res: Response) => {
     // Sanitize app name
     const sanitizedName = appName.toLowerCase().replace(/[^a-z0-9-]/g, '-').slice(0, 34);
     
-    // Get server URL (from request or config)
-    // Use HTTPS for domains, HTTP for localhost and IP addresses
     const host = (req.headers['x-forwarded-host'] || req.headers.host || 'localhost:8000') as string;
     const hostWithoutPort = host.split(':')[0];
     const isLocalhost = hostWithoutPort === 'localhost' || hostWithoutPort === '127.0.0.1';
     const isIPAddress = /^(\d{1,3}\.){3}\d{1,3}$/.test(hostWithoutPort);
     
-    // Detect HTTPS: check x-forwarded-proto, then infer from domain (non-IP = likely HTTPS)
     const forwardedProto = req.headers['x-forwarded-proto'] as string | undefined;
     let protocol: string;
     
-    // For domain names (not IPs), ALWAYS use HTTPS (ignore incorrect forwarded proto)
     if (!isLocalhost && !isIPAddress) {
       protocol = 'https';
     } else if (forwardedProto) {
@@ -142,17 +138,13 @@ router.post('/manifest', async (req: Request, res: Response) => {
     }
     const serverUrl = `${protocol}://${host}`;
     
-    console.log(`[Manifest] Host: ${host}, isIP: ${isIPAddress}, isLocalhost: ${isLocalhost}, forwardedProto: ${forwardedProto}, protocol: ${protocol}`);
-    
     // Build the manifest
     const manifest = {
       name: `docklift-${sanitizedName}`,
       url: 'https://github.com/SSujitX/docklift',
       redirect_url: `${serverUrl}/api/github/manifest/callback`,
       callback_urls: [`${serverUrl}/api/github/manifest/callback`],
-      // setup_url is called after app installation - redirects user back to Docklift
       setup_url: `${serverUrl}/api/github/setup`,
-      // Webhook configuration - receives push events for auto-deploy
       hook_attributes: {
         url: `${serverUrl}/api/github/webhook`,
         active: true
