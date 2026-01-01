@@ -131,13 +131,14 @@ router.post('/manifest', async (req: Request, res: Response) => {
     // Detect HTTPS: check x-forwarded-proto, then infer from domain (non-IP = likely HTTPS)
     const forwardedProto = req.headers['x-forwarded-proto'] as string | undefined;
     let protocol: string;
-    if (forwardedProto) {
-      protocol = Array.isArray(forwardedProto) ? forwardedProto[0] : forwardedProto;
-    } else if (isLocalhost || isIPAddress) {
-      protocol = 'http';
-    } else {
-      // Domain name without explicit forwarded proto - default to HTTPS
+    
+    // For domain names (not IPs), ALWAYS use HTTPS (ignore incorrect forwarded proto)
+    if (!isLocalhost && !isIPAddress) {
       protocol = 'https';
+    } else if (forwardedProto) {
+      protocol = Array.isArray(forwardedProto) ? forwardedProto[0] : forwardedProto;
+    } else {
+      protocol = 'http';
     }
     const serverUrl = `${protocol}://${host}`;
     
