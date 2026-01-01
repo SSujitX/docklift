@@ -59,8 +59,9 @@ If you want to deploy Docker containers quickly without wrestling with configura
 
 ## 🚀 Quick Start
 
+One-command install on Ubuntu/Debian:
+
 ```bash
-# One-command install on Ubuntu/Debian
 curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh | sudo bash
 ```
 
@@ -87,14 +88,18 @@ Access your dashboard at `http://your-ip:3000`
 
 ### Production (Recommended)
 
+**Install:**
 ```bash
-# Install
 curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh | sudo bash
+```
 
-# Upgrade (preserves data)
+**Upgrade (preserves data):**
+```bash
 curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/upgrade.sh | sudo bash
+```
 
-# Uninstall
+**Uninstall:**
+```bash
 curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/uninstall.sh | sudo bash -s -- -y
 ```
 
@@ -112,18 +117,22 @@ docker compose up -d
 
 **Prerequisites:** Docker, [Bun](https://bun.sh/)
 
+**Clone & setup:**
 ```bash
-# Clone & setup
 git clone https://github.com/SSujitX/docklift.git
 cd docklift
+```
 
-# Backend
+**Backend:**
+```bash
 cd backend && cp .env.example .env
 bun install
 bun run db:generate && bun run db:push
 bun run dev
+```
 
-# Frontend (new terminal)
+**Frontend (new terminal):**
+```bash
 cd frontend && bun install && bun run dev
 ```
 
