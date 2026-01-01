@@ -838,7 +838,11 @@ router.post('/webhook', async (req: Request, res: Response) => {
           commit_message: commitMessage
         }),
       }).then(async (response) => {
-        return { project: project.name, success: response.ok, status: response.status };
+        // CRITICAL: Must consume entire stream to wait for build completion
+        // The deploy endpoint streams logs, so we need to read the whole body
+        const text = await response.text();
+        const success = response.ok && text.includes('DEPLOY SUCCESSFUL');
+        return { project: project.name, success, status: response.status };
       }).catch(err => {
         console.error(`[Auto-Deploy] Failed to trigger deploy for ${project.name}:`, err.message);
         return { project: project.name, success: false, error: err.message };
