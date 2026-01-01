@@ -28,7 +28,7 @@ Docklift lets you deploy and manage Docker containers on your own server with a 
 
 **Your server. Your rules. Your apps.**
 
-![Docklift Dashboard](screenshots/home.png)
+![Docklift Dashboard](screenshots/project.png)
 
 ---
 
