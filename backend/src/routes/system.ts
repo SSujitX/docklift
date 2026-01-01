@@ -175,11 +175,7 @@ async function getLinuxTopProcesses() {
     // Run top in batch mode, 1 iteration, sorted by CPU
     // -b: batch mode, -n 1: 1 iteration, -w 512: wide output to prevent truncation
     // -o %CPU: sort by CPU
-    const { stdout } = await execAsync('top -b -n 1 -w 512 -o %CPU | head -n 20');
-    console.log('--- TOP RAW OUTPUT START ---');
-    console.log(stdout); 
-    console.log('--- TOP RAW OUTPUT END ---');
-    
+    const { stdout } = await execAsync('top -b -n 1 -w 512 -o %CPU | head -n 20');    
     const lines = stdout.split('\n');
     // Find header line to identify columns
     const headerIndex = lines.findIndex(l => l.includes('PID') && l.includes('COMMAND'));

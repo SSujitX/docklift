@@ -764,10 +764,6 @@ router.post('/webhook', async (req: Request, res: Response) => {
     // Normalize URL for matching (remove .git suffix if present)
     const normalizedUrl = repoUrl.replace(/\.git$/, '');
     
-    console.log(`[Webhook] Received push for: ${repoUrl}`);
-    console.log(`[Webhook] Normalized URL: ${normalizedUrl}`);
-    console.log(`[Webhook] Branch pushed: ${pushedBranch}`);
-    
     // Find all projects that match this repo URL
     const projects = await prisma.project.findMany({
       where: {
@@ -781,17 +777,13 @@ router.post('/webhook', async (req: Request, res: Response) => {
       },
     });
     
-    console.log(`[Webhook] Found ${projects.length} matching projects with auto-deploy`);
-    
     if (projects.length === 0) {
       // Debug: Log all github projects to see what URLs are stored
       const allGithubProjects = await prisma.project.findMany({
         where: { source_type: 'github' },
         select: { id: true, name: true, github_url: true, github_branch: true, auto_deploy: true }
       });
-      console.log(`[Webhook] All GitHub projects in DB:`, JSON.stringify(allGithubProjects, null, 2));
-      
-      console.log(`[Webhook] No projects with auto-deploy enabled for repo: ${repoUrl}`);
+      console.log(`[Webhook] No projects found for ${repoUrl}, all GitHub projects:`, JSON.stringify(allGithubProjects));
       return res.status(200).json({ message: 'No matching projects with auto-deploy enabled' });
     }
     
@@ -809,12 +801,10 @@ router.post('/webhook', async (req: Request, res: Response) => {
     const skipped: string[] = [];
     
     for (const project of projects) {
-      console.log(`[Webhook] Checking project: ${project.name}, branch: ${project.github_branch || '(not set)'}`);
       
       // Check branch match (skip if branch is set and doesn't match)
       if (project.github_branch && project.github_branch !== pushedBranch) {
         skipped.push(`${project.name} (branch mismatch: ${pushedBranch} != ${project.github_branch})`);
-        console.log(`[Webhook] Skipping ${project.name}: branch mismatch`);
         continue;
       }
       
@@ -824,21 +814,17 @@ router.post('/webhook', async (req: Request, res: Response) => {
       
       if (lastDeploy && (now - lastDeploy) < DEPLOY_COOLDOWN_MS) {
         skipped.push(`${project.name} (cooldown)`);
-        console.log(`[Webhook] Skipping ${project.name}: cooldown active`);
         continue;
       }
       
       // Mark deploy time
       recentDeploys.set(project.id, now);
       
-      // Log the trigger
       const commitMessage = payload.head_commit?.message || 'No message';
       const pusher = payload.pusher?.name || 'Unknown';
-      console.log(`[Auto-Deploy] Triggered for ${project.name} by ${pusher}: "${commitMessage.substring(0, 50)}..."`);
+      console.log(`[Auto-Deploy] ${project.name} by ${pusher}`);
       
-      // Trigger deploy
       const deployUrl = `http://localhost:${process.env.PORT || 4000}/api/deployments/${project.id}/deploy`;
-      console.log(`[Auto-Deploy] Calling internal deploy URL: ${deployUrl}`);
       
       // Create a promise for this deploy
       const deployPromise = fetch(deployUrl, {
@@ -852,8 +838,6 @@ router.post('/webhook', async (req: Request, res: Response) => {
           commit_message: commitMessage
         }),
       }).then(async (response) => {
-        const text = await response.text().catch(() => '(no body)');
-        console.log(`[Auto-Deploy] Deploy response for ${project.name}: ${response.status} - ${text.substring(0, 200)}`);
         return { project: project.name, success: response.ok, status: response.status };
       }).catch(err => {
         console.error(`[Auto-Deploy] Failed to trigger deploy for ${project.name}:`, err.message);
