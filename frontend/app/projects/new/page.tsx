@@ -98,6 +98,8 @@ function NewProjectContent() {
   const [existingDbs, setExistingDbs] = useState<Project[]>([]);
   const [showDbAssistant, setShowDbAssistant] = useState(false);
   const [showAddEnv, setShowAddEnv] = useState(false);
+  const [showBulkEnv, setShowBulkEnv] = useState(false);
+  const [bulkEnvContent, setBulkEnvContent] = useState("");
   const [revealedEnvs, setRevealedEnvs] = useState<number[]>([]);
 
   // GitHub state
@@ -589,6 +591,7 @@ function NewProjectContent() {
                       <h3 className="text-lg sm:text-xl font-bold">Environment Variables</h3>
                     </div>
 
+                    <div className="flex items-center gap-2 w-full sm:w-auto">
                     <Dialog open={showAddEnv} onOpenChange={setShowAddEnv}>
                       <DialogTrigger asChild>
                         <Button variant="outline" size="sm" className="h-9 px-4 rounded-xl font-bold border-emerald-500/20 text-emerald-600 hover:bg-emerald-500/5 hover:border-emerald-500/40 w-full sm:w-auto">
@@ -678,6 +681,67 @@ function NewProjectContent() {
                         </div>
                       </DialogContent>
                     </Dialog>
+
+                    <Dialog open={showBulkEnv} onOpenChange={setShowBulkEnv}>
+                      <DialogTrigger asChild>
+                        <Button variant="outline" size="sm" className="h-9 px-4 rounded-xl font-bold border-cyan-500/20 text-cyan-600 hover:bg-cyan-500/5 hover:border-cyan-500/40 w-full sm:w-auto">
+                          <Upload className="h-4 w-4 mr-2" /> Bulk Import
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent className="sm:max-w-lg">
+                        <DialogHeader>
+                          <DialogTitle>Bulk Import Environment Variables</DialogTitle>
+                        </DialogHeader>
+                        <div className="space-y-4 pt-4">
+                          <div className="space-y-2">
+                            <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest ml-1">
+                              Paste KEY=VALUE pairs (one per line)
+                            </label>
+                            <textarea
+                              placeholder={`ADMIN_USERNAME=admin
+DATABASE_URL=postgresql://user:pass@host:5432/db
+SESSION_SECRET=your-secret-here
+# Lines starting with # are ignored`}
+                              value={bulkEnvContent}
+                              onChange={(e) => setBulkEnvContent(e.target.value)}
+                              className="w-full h-40 p-4 font-mono text-sm bg-secondary/20 border border-border/40 rounded-xl resize-none focus:outline-none focus:border-cyan-500/50"
+                            />
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            {bulkEnvContent.split('\n').filter(l => l.trim() && !l.trim().startsWith('#') && l.includes('=')).length} variables detected
+                          </p>
+                          <div className="flex justify-end gap-3 pt-2">
+                            <Button variant="ghost" onClick={() => setShowBulkEnv(false)} className="rounded-xl font-bold">Cancel</Button>
+                            <Button 
+                              disabled={!bulkEnvContent.trim()}
+                              onClick={() => {
+                                const lines = bulkEnvContent.split('\n').filter(l => l.trim() && !l.trim().startsWith('#'));
+                                const newVars: typeof envVars = [];
+                                for (const line of lines) {
+                                  const eqIndex = line.indexOf('=');
+                                  if (eqIndex === -1) continue;
+                                  const key = line.substring(0, eqIndex).trim();
+                                  const value = line.substring(eqIndex + 1).trim();
+                                  if (key) {
+                                    newVars.push({ key, value, is_build_arg: true, is_runtime: true });
+                                  }
+                                }
+                                if (newVars.length > 0) {
+                                  setEnvVars([...envVars, ...newVars]);
+                                  toast.success(`Added ${newVars.length} environment variable(s)`);
+                                }
+                                setBulkEnvContent("");
+                                setShowBulkEnv(false);
+                              }}
+                              className="bg-cyan-500 hover:bg-cyan-600 text-white h-11 px-8 rounded-xl font-bold shadow-lg disabled:opacity-50"
+                            >
+                              Import All
+                            </Button>
+                          </div>
+                        </div>
+                      </DialogContent>
+                    </Dialog>
+                    </div>
                   </div>
 
                   <div className="space-y-4">

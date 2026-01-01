@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { EnvVariable } from "@/lib/types";
 import { API_URL } from "@/lib/utils";
+import { getAuthHeaders } from "@/lib/auth";
 import { Plus, Trash2, Eye, EyeOff, Key, Loader2, RotateCw, Shield, FlaskConical, Globe, AlertCircle, Info } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -25,10 +26,15 @@ export function EnvVarsManager({ projectId }: EnvVarsManagerProps) {
   const [isBuildArg, setIsBuildArg] = useState(true);
   const [isRuntime, setIsRuntime] = useState(true);
   const [visibleValues, setVisibleValues] = useState<Set<string>>(new Set());
+  const [showBulkImport, setShowBulkImport] = useState(false);
+  const [bulkContent, setBulkContent] = useState("");
+  const [bulkAdding, setBulkAdding] = useState(false);
 
   const fetchEnvVars = async () => {
     try {
-      const res = await fetch(`${API_URL}/api/projects/${projectId}/env`);
+      const res = await fetch(`${API_URL}/api/projects/${projectId}/env`, {
+        headers: getAuthHeaders(),
+      });
       if (res.ok) {
         setEnvVars(await res.json());
       }
@@ -53,7 +59,7 @@ export function EnvVarsManager({ projectId }: EnvVarsManagerProps) {
     try {
       const res = await fetch(`${API_URL}/api/projects/${projectId}/env`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         body: JSON.stringify({
           key: newKey.trim(),
           value: newValue.trim(),
@@ -77,10 +83,46 @@ export function EnvVarsManager({ projectId }: EnvVarsManagerProps) {
     }
   };
 
+  const handleBulkImport = async () => {
+    if (!bulkContent.trim()) {
+      toast.error("Paste your environment variables");
+      return;
+    }
+
+    setBulkAdding(true);
+    try {
+      const res = await fetch(`${API_URL}/api/projects/${projectId}/env/bulk`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify({
+          content: bulkContent,
+          is_build_arg: isBuildArg,
+          is_runtime: isRuntime,
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setBulkContent("");
+        setShowBulkImport(false);
+        fetchEnvVars();
+        toast.success(data.message);
+      } else {
+        const err = await res.json();
+        toast.error(err.error || "Failed to import");
+      }
+    } catch (error) {
+      toast.error("Failed to import variables");
+    } finally {
+      setBulkAdding(false);
+    }
+  };
+
   const handleDelete = async (envId: string, key: string) => {
     try {
       const res = await fetch(`${API_URL}/api/projects/${projectId}/env/${envId}`, {
         method: "DELETE",
+        headers: getAuthHeaders(),
       });
       if (res.ok) {
         fetchEnvVars();
@@ -119,14 +161,58 @@ export function EnvVarsManager({ projectId }: EnvVarsManagerProps) {
         <div className="bg-secondary/40 px-5 py-3 border-b border-border/50 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Plus className="h-4 w-4 text-cyan-500" />
-            <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Add New Secret</span>
+            <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+              {showBulkImport ? "Bulk Import" : "Add New Secret"}
+            </span>
           </div>
-          <div className="text-[10px] font-bold text-muted-foreground/60 flex items-center gap-1">
-            <Shield className="h-3 w-3" /> SECURE STORAGE
+          <div className="flex items-center gap-3">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowBulkImport(!showBulkImport)}
+              className="h-7 px-3 text-xs font-medium"
+            >
+              {showBulkImport ? "Single Mode" : "Bulk Import"}
+            </Button>
+            <div className="text-[10px] font-bold text-muted-foreground/60 flex items-center gap-1">
+              <Shield className="h-3 w-3" /> SECURE STORAGE
+            </div>
           </div>
         </div>
         
         <div className="p-6 space-y-6">
+          {showBulkImport ? (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider ml-1">
+                  Paste KEY=VALUE pairs (one per line)
+                </label>
+                <textarea
+                  placeholder={`ADMIN_USERNAME=admin
+DATABASE_URL=postgresql://user:pass@host:5432/db
+SESSION_SECRET=your-secret-here
+# Lines starting with # are ignored`}
+                  value={bulkContent}
+                  onChange={(e) => setBulkContent(e.target.value)}
+                  className="w-full h-40 p-4 font-mono text-sm bg-background/50 border border-border/60 rounded-xl resize-none focus:outline-none focus:border-cyan-500/50"
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-muted-foreground">
+                  {bulkContent.split('\n').filter(l => l.trim() && !l.trim().startsWith('#') && l.includes('=')).length} variables detected
+                </p>
+                <Button 
+                  onClick={handleBulkImport} 
+                  disabled={bulkAdding} 
+                  className="px-8 h-11 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl shadow-lg shadow-cyan-600/20 font-bold transition-all"
+                >
+                  {bulkAdding ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Plus className="h-4 w-4 mr-2" />}
+                  Import All
+                </Button>
+              </div>
+            </div>
+          ) : (
+          <>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-2">
               <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider ml-1">Key Name</label>
@@ -187,6 +273,8 @@ export function EnvVarsManager({ projectId }: EnvVarsManagerProps) {
               Save Variable
             </Button>
           </div>
+          </>
+          )}
         </div>
       </Card>
 

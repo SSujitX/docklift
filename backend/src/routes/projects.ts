@@ -334,6 +334,53 @@ router.post('/:id/env', async (req: Request, res: Response) => {
   }
 });
 
+router.post('/:id/env/bulk', async (req: Request, res: Response) => {
+  try {
+    const { content, is_build_arg, is_runtime } = req.body;
+    
+    if (!content || typeof content !== 'string') {
+      return res.status(400).json({ error: 'Content is required' });
+    }
+    
+    const lines = content.split('\n').filter((line: string) => line.trim());
+    const envVars: { key: string; value: string }[] = [];
+    
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      
+      const eqIndex = trimmed.indexOf('=');
+      if (eqIndex === -1) continue;
+      
+      const key = trimmed.substring(0, eqIndex).trim();
+      const value = trimmed.substring(eqIndex + 1).trim();
+      
+      if (key) {
+        envVars.push({ key, value });
+      }
+    }
+    
+    if (envVars.length === 0) {
+      return res.status(400).json({ error: 'No valid KEY=VALUE pairs found' });
+    }
+    
+    const created = await prisma.envVariable.createMany({
+      data: envVars.map(({ key, value }) => ({
+        project_id: req.params.id,
+        key,
+        value,
+        is_build_arg: is_build_arg ?? true,
+        is_runtime: is_runtime ?? true,
+      })),
+    });
+    
+    res.status(201).json({ count: created.count, message: `Added ${created.count} environment variable(s)` });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to bulk import environment variables' });
+  }
+});
+
 router.delete('/:id/env/:envId', async (req: Request, res: Response) => {
   try {
     await prisma.envVariable.delete({
