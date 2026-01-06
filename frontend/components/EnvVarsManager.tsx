@@ -285,6 +285,13 @@ SESSION_SECRET=your-secret-here
         </div>
       </div>
 
+      <div className="bg-blue-500/5 border border-blue-500/10 p-4 rounded-xl flex items-start gap-3">
+        <Info className="h-5 w-5 text-blue-500 shrink-0 mt-0.5" />
+        <div className="text-xs text-blue-600/80 leading-relaxed font-medium">
+          <span className="font-bold text-blue-600">Docker Build & Runtime:</span> If you are using these variables during build (e.g. Prisma), ensure you add <code className="bg-blue-500/10 px-1 rounded border border-blue-500/20">ARG VARIABLE_NAME</code> in your Dockerfile. For runtime access, consider adding <code className="bg-blue-500/10 px-1 rounded border border-blue-500/20">ENV VARIABLE_NAME=$VARIABLE_NAME</code> if your framework requires it.
+        </div>
+      </div>
+
       {/* Modern List Header */}
       <div className="flex items-center justify-between px-1">
         <h4 className="text-sm font-bold text-muted-foreground/80 flex items-center gap-2 uppercase tracking-widest">

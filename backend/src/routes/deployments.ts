@@ -6,7 +6,7 @@ import fs from 'fs';
 import prisma from '../lib/prisma.js';
 import { config } from '../lib/config.js';
 import * as dockerService from '../services/docker.js';
-import { scanDockerfiles, generateCompose } from '../services/compose.js';
+import { scanDockerfiles, generateCompose, validateDockerBuildArgs } from '../services/compose.js';
 import { pullRepo, getLastCommitMessage } from '../services/git.js';
 import { patchMiddlewareHosts, logMiddlewareBypassResult } from '../lib/middlewareBypass.js';
 
@@ -300,6 +300,19 @@ router.post('/:projectId/deploy', async (req: Request, res: Response) => {
     
     if (envVars.length > 0) {
       writeLog(`   🔐 Including ${envVars.length} environment variable(s)\n`);
+    }
+    
+    // Validate build args against Dockerfiles
+    const buildArgKeys = envVars.filter(v => v.is_build_arg).map(v => v.key);
+    if (buildArgKeys.length > 0) {
+      for (const df of dockerfiles) {
+         const missingArgs = validateDockerBuildArgs(path.join(projectPath, df.dockerfile_path), buildArgKeys);
+         if (missingArgs.length > 0) {
+           writeLog(`\n⚠️  WARNING: The following build arguments are configured but missing 'ARG' instructions in ${df.dockerfile_path}:\n`);
+           missingArgs.forEach(arg => writeLog(`    - ${arg}\n`));
+           writeLog(`    These variables will NOT be available during the build process! Please add "ARG ${missingArgs[0]}" to your Dockerfile.\n\n`);
+         }
+      }
     }
     
     generateCompose(projectId, projectPath, servicesData, envVars.map(v => ({

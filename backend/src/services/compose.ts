@@ -151,3 +151,34 @@ export function generateCompose(
 export function checkComposeExists(projectPath: string): boolean {
   return fs.existsSync(path.join(projectPath, 'docker-compose.yml'));
 }
+
+// Validate that build args are declared in Dockerfile
+export function validateDockerBuildArgs(dockerfilePath: string, buildArgs: string[]): string[] {
+  try {
+    if (!fs.existsSync(dockerfilePath)) return [];
+    
+    const content = fs.readFileSync(dockerfilePath, 'utf-8');
+    const missingArgs: string[] = [];
+    
+    // Simple regex to find ARG instructions
+    // Matches: ARG variable_name or ARG variable_name=default
+    const argRegex = /^\s*ARG\s+([a-zA-Z0-9_]+)/gm;
+    const declaredArgs = new Set<string>();
+    
+    let match;
+    while ((match = argRegex.exec(content)) !== null) {
+      declaredArgs.add(match[1]);
+    }
+    
+    for (const arg of buildArgs) {
+      if (!declaredArgs.has(arg)) {
+        missingArgs.push(arg);
+      }
+    }
+    
+    return missingArgs;
+  } catch (error) {
+    console.warn('Failed to validate Dockerfile args:', error);
+    return [];
+  }
+}

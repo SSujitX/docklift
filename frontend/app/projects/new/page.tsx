@@ -780,8 +780,20 @@ SESSION_SECRET=your-secret-here
                                 <div className="flex items-center gap-2">
                                   <span className="text-sm font-mono font-bold tracking-tight truncate">{env.key}</span>
                                   <div className="flex gap-1.5">
-                                    {env.is_build_arg && <span className="text-[8px] font-bold uppercase tracking-widest bg-cyan-500/10 text-cyan-500 px-1.5 py-0.5 rounded border border-cyan-500/20">Build</span>}
-                                    {env.is_runtime && <span className="text-[8px] font-bold uppercase tracking-widest bg-emerald-500/10 text-emerald-500 px-1.5 py-0.5 rounded border border-emerald-500/20">Runtime</span>}
+                                    <div className={cn(
+                                      "h-5 px-1.5 rounded-full flex items-center gap-1 text-[8px] font-bold uppercase tracking-widest",
+                                      env.is_build_arg ? "bg-cyan-500/10 text-cyan-500 border border-cyan-500/20" : "bg-muted/10 text-muted-foreground/30 grayscale opacity-50"
+                                    )}>
+                                      <FlaskConical className="h-2.5 w-2.5" />
+                                      Bld
+                                    </div>
+                                    <div className={cn(
+                                      "h-5 px-1.5 rounded-full flex items-center gap-1 text-[8px] font-bold uppercase tracking-widest",
+                                      env.is_runtime ? "bg-blue-500/10 text-blue-500 border border-blue-500/20" : "bg-muted/10 text-muted-foreground/30 grayscale opacity-50"
+                                    )}>
+                                      <Globe className="h-2.5 w-2.5" />
+                                      Run
+                                    </div>
                                   </div>
                                 </div>
                                 <span className="text-xs font-mono text-muted-foreground truncate opacity-80 mt-0.5">
@@ -936,9 +948,14 @@ SESSION_SECRET=your-secret-here
 
                         <div className="flex items-start gap-3 p-4 rounded-2xl bg-blue-500/5 border border-blue-500/10">
                           <Info className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
-                          <p className="text-[10px] leading-relaxed text-blue-700/80 font-medium italic">
-                            Prisma and Next.js Static Generation often require the database URL at build time. Selecting "Inject in Build" will pass this as a Docker build-arg.
-                          </p>
+                          <div className="space-y-1">
+                            <p className="text-[10px] leading-relaxed text-blue-700/80 font-medium italic">
+                              Prisma and Next.js Static Generation often require the database URL at build time. Selecting "Inject in Build" will pass this as a Docker build-arg.
+                            </p>
+                            <p className="text-[10px] leading-relaxed text-blue-700/80 font-bold">
+                              Ensure your Dockerfile includes <code className="bg-blue-500/10 px-1 rounded border border-blue-500/20 not-italic">ARG DATABASE_URL</code> and optionally <code className="bg-blue-500/10 px-1 rounded border border-blue-500/20 not-italic">ENV DATABASE_URL=$DATABASE_URL</code>
+                            </p>
+                          </div>
                         </div>
                       </div>
                     )}
