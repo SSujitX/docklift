@@ -78,7 +78,7 @@ import { updateServiceDomain } from '../services/nginx.js';
 router.put('/:projectId/services/:serviceId', async (req: Request, res: Response) => {
   try {
     const { projectId, serviceId } = req.params;
-    const { domain } = req.body;
+    const { domain } = req.body || {};
 
     // Validate domain format to prevent Nginx config injection
     if (domain && !/^[a-zA-Z0-9., -]+$/.test(domain)) {
@@ -135,7 +135,7 @@ router.post('/:projectId/deploy', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'No Dockerfile found in project. Docklift is based on Docker and requires a Dockerfile to automatically build and run your application.' });
     }
     
-    const { trigger, commit_message } = req.body;
+    const { trigger, commit_message } = req.body || {};
 
     // Auto-fetch commit message if not provided (manual deploy)
     let finalCommitMessage = commit_message;
