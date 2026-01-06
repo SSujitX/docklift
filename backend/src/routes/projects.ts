@@ -323,7 +323,17 @@ router.post('/:id/env', async (req: Request, res: Response) => {
       data: {
         project_id: req.params.id,
         key,
-        value,
+        value: (() => {
+          let v = value.trim();
+          if (v.length >= 2) {
+            const first = v.charAt(0);
+            const last = v.charAt(v.length - 1);
+            if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
+              v = v.substring(1, v.length - 1);
+            }
+          }
+          return v;
+        })(),
         is_build_arg: is_build_arg ?? false,
         is_runtime: is_runtime ?? true,
       },
@@ -353,7 +363,16 @@ router.post('/:id/env/bulk', async (req: Request, res: Response) => {
       if (eqIndex === -1) continue;
       
       const key = trimmed.substring(0, eqIndex).trim();
-      const value = trimmed.substring(eqIndex + 1).trim();
+      let value = trimmed.substring(eqIndex + 1).trim();
+      
+      // Remove surrounding quotes if present
+      if (value.length >= 2) {
+        const first = value.charAt(0);
+        const last = value.charAt(value.length - 1);
+        if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
+          value = value.substring(1, value.length - 1);
+        }
+      }
       
       if (key) {
         envVars.push({ key, value });

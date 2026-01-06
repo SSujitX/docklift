@@ -671,7 +671,15 @@ function NewProjectContent() {
                               disabled={!newEnvKey || !newEnvValue || (!newEnvIsBuild && !newEnvIsRuntime)}
                               onClick={() => {
                                 if (!newEnvKey || !newEnvValue) return;
-                                setEnvVars([...envVars, {key: newEnvKey, value: newEnvValue, is_build_arg: newEnvIsBuild, is_runtime: newEnvIsRuntime}]);
+                                let value = newEnvValue.trim();
+                                if (value.length >= 2) {
+                                  const first = value.charAt(0);
+                                  const last = value.charAt(value.length - 1);
+                                  if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
+                                    value = value.substring(1, value.length - 1);
+                                  }
+                                }
+                                setEnvVars([...envVars, {key: newEnvKey, value, is_build_arg: newEnvIsBuild, is_runtime: newEnvIsRuntime}]);
                                 setNewEnvKey("");
                                 setNewEnvValue("");
                                 setShowAddEnv(false);
@@ -724,7 +732,14 @@ SESSION_SECRET=your-secret-here
                                   const eqIndex = line.indexOf('=');
                                   if (eqIndex === -1) continue;
                                   const key = line.substring(0, eqIndex).trim();
-                                  const value = line.substring(eqIndex + 1).trim();
+                                  let value = line.substring(eqIndex + 1).trim();
+                                  if (value.length >= 2) {
+                                    const first = value.charAt(0);
+                                    const last = value.charAt(value.length - 1);
+                                    if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
+                                      value = value.substring(1, value.length - 1);
+                                    }
+                                  }
                                   if (key) {
                                     newVars.push({ key, value, is_build_arg: true, is_runtime: true });
                                   }
@@ -849,7 +864,17 @@ SESSION_SECRET=your-secret-here
                             <Input 
                               placeholder="postgresql://user:pass@host:port/dbname" 
                               value={dbUrl}
-                              onChange={(e) => setDbUrl(e.target.value)}
+                              onChange={(e) => {
+                                let val = e.target.value;
+                                if (val.length >= 2) {
+                                  const first = val.charAt(0);
+                                  const last = val.charAt(val.length - 1);
+                                  if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
+                                    val = val.substring(1, val.length - 1);
+                                  }
+                                }
+                                setDbUrl(val);
+                              }}
                               className="h-14 pl-11 bg-background border-blue-500/20 focus:border-blue-500 rounded-2xl shadow-inner font-mono text-sm" 
                             />
                           </div>
