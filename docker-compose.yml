@@ -38,6 +38,7 @@ services:
       - "3000"
     environment:
       - NEXT_PUBLIC_API_URL=http://docklift-backend:8000
+      - NEXT_SERVER_ACTIONS_ENCRYPTION_KEY=fa01ca8c16303047bcac2a2edb322ae53aa755b4ba1d20875e41ff4f2c1a2fb7
     networks:
       - docklift_network
     depends_on:
