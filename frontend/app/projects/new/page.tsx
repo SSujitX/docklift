@@ -649,7 +649,7 @@ function NewProjectContent() {
                                 onClick={() => setNewEnvIsRuntime(!newEnvIsRuntime)}
                                 className={cn(
                                   "flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all text-[10px] font-bold uppercase tracking-wider w-fit",
-                                  newEnvIsRuntime ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-500" : "bg-transparent border-border/40 text-muted-foreground hover:border-border"
+                                  newEnvIsRuntime ? "bg-blue-500/10 border-blue-500/30 text-blue-500" : "bg-transparent border-border/40 text-muted-foreground hover:border-border"
                                 )}
                               >
                                 <Globe className="h-3 w-3" /> Inject in Runtime
@@ -684,7 +684,7 @@ function NewProjectContent() {
                                 setNewEnvValue("");
                                 setShowAddEnv(false);
                               }}
-                              className="bg-emerald-500 hover:bg-emerald-600 text-white h-11 px-8 rounded-xl font-bold shadow-lg disabled:opacity-50"
+                              className="bg-blue-600 hover:bg-blue-500 text-white h-11 px-8 rounded-xl font-bold shadow-lg disabled:opacity-50"
                             >
                               Add Variable
                             </Button>
