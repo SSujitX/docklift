@@ -6,6 +6,7 @@ import jwt from 'jsonwebtoken';
 import prisma from '../lib/prisma.js';
 import { config } from '../lib/config.js';
 import crypto from 'crypto';
+import { INTERNAL_API_SECRET } from '../lib/authMiddleware.js';
 
 const router = Router();
 const GITHUB_API_URL = 'https://api.github.com';
@@ -797,12 +798,20 @@ router.post('/webhook', async (req: Request, res: Response) => {
     
     // Verify webhook signature using the global webhook secret
     const webhookSecret = await getSetting('github_webhook_secret');
-    if (webhookSecret && signature) {
+    if (webhookSecret) {
+      // Secret is configured - signature MUST be present and valid
+      if (!signature) {
+        console.warn(`[Webhook] Missing signature header`);
+        return res.status(401).json({ error: 'Missing webhook signature' });
+      }
       const rawBody = JSON.stringify(req.body);
       if (!verifyWebhookSignature(rawBody, signature, webhookSecret)) {
         console.warn(`[Webhook] Signature verification failed`);
         return res.status(401).json({ error: 'Invalid signature' });
       }
+    } else {
+      // No secret configured - warn but allow (for initial setup only)
+      console.warn(`[Webhook] No webhook secret configured - signature verification skipped`);
     }
     
     const triggered: { name: string; promise: Promise<any> }[] = [];
@@ -839,7 +848,7 @@ router.post('/webhook', async (req: Request, res: Response) => {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
-          'X-Internal-Secret': process.env.INTERNAL_API_SECRET || 'docklift-internal-secret'
+          'X-Internal-Secret': INTERNAL_API_SECRET
         },
         body: JSON.stringify({ 
           trigger: 'webhook',
