@@ -100,129 +100,124 @@ export function ProjectCard({ project, onRefresh }: ProjectCardProps) {
             handleCardClick();
           }
         }}
-        className="group relative flex flex-col sm:flex-row sm:items-center justify-between py-4 sm:py-5 px-4 sm:px-6 gap-4 sm:gap-6 bg-card hover:bg-secondary/20 border border-border/50 hover:border-cyan-500/30 rounded-xl transition-all duration-200 cursor-pointer overflow-hidden shadow-sm hover:shadow-cyan-500/5"
+        className="group relative flex flex-col md:flex-row md:items-center justify-between p-4 gap-4 bg-card hover:bg-secondary/40 border border-border/60 dark:border-white/5 hover:border-foreground/20 dark:hover:border-white/20 rounded-xl transition-all duration-200 cursor-pointer shadow-sm hover:shadow-md"
       >
-        {/* Left Gradient Accent Border */}
-        <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-gradient-to-b from-cyan-400 to-purple-500" />
-
-        {/* Top Row: Status + Name */}
-        <div className="flex items-start sm:items-center gap-3 flex-1 min-w-0 pl-2">
-          {/* Status Indicator (Dot) */}
-          <div className={`h-3 w-3 rounded-full shrink-0 shadow-[0_0_8px_currentColor] mt-1.5 sm:mt-0 ${
-             project.status === 'running' ? 'bg-emerald-500 text-emerald-500/50' :
-             project.status === 'building' ? 'bg-amber-500 text-amber-500/50 animate-pulse' :
-             project.status === 'error' ? 'bg-red-500 text-red-500/50' :
-             'bg-slate-400 text-slate-400/50'
+        {/* Main Info Section */}
+        <div className="flex items-center gap-4 flex-1 min-w-0">
+          <div className={`h-2 w-2 rounded-full shrink-0 shadow-sm ${
+             project.status === 'running' ? 'bg-emerald-500 shadow-emerald-500/50' :
+             project.status === 'building' ? 'bg-amber-500 shadow-amber-500/50 animate-pulse' :
+             project.status === 'error' ? 'bg-red-500 shadow-red-500/50' :
+             'bg-zinc-400'
           }`} />
 
-          {/* Identity Section */}
-          <div className="flex-1 min-w-0 flex flex-col justify-center gap-1">
-             <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-               <h3 className="text-lg sm:text-xl font-bold text-cyan-600 dark:text-cyan-400 truncate tracking-tight">
+          <div className="flex-1 min-w-0 grid gap-1">
+             <div className="flex items-center gap-3">
+               <h3 className="text-base font-bold tracking-tight text-foreground/90 group-hover:text-foreground transition-colors">
                  {project.name}
                </h3>
                
-               {project.status === "running" && (
-                  <span className="text-[10px] font-extrabold px-2 py-0.5 rounded bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 uppercase tracking-widest shadow-sm">
+               {project.status === "running" ? (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 uppercase tracking-wide">
                     Running
+                  </span>
+               ) : project.status === "building" ? (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 uppercase tracking-wide">
+                    Building
+                  </span>
+               ) : project.status === "error" ? (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20 uppercase tracking-wide">
+                    Error
+                  </span>
+               ) : (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-zinc-500/10 text-zinc-500 dark:text-zinc-400 border border-zinc-500/20 uppercase tracking-wide">
+                    Stopped
                   </span>
                )}
              </div>
 
-             <div className="flex flex-wrap items-center gap-x-3 sm:gap-x-4 gap-y-1 text-[9px] sm:text-[10px] text-muted-foreground/60 font-medium tracking-tight">
-               <div className="flex items-center gap-1.5">
-                 <Calendar className="h-3 w-3" />
-                 <span>Created: {new Date(project.created_at).toLocaleString([], { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+             <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground font-medium">
+               <div className="flex items-center gap-1.5 text-foreground/70">
+                 <GitBranch className="h-3.5 w-3.5" />
+                 <span>{project.github_branch}</span>
                </div>
-               <div className="flex items-center gap-1.5">
-                 <Clock className="h-3 w-3" />
-                 <span>Updated: {new Date(project.updated_at).toLocaleString([], { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+               
+               {project.port && (
+                 <div className="flex items-center gap-1.5 text-foreground/70">
+                   <Server className="h-3.5 w-3.5" />
+                   <span>:{project.port}</span>
+                 </div>
+               )}
+               
+               <span className="text-border mx-1 hidden sm:inline">|</span>
+               
+               <div className="flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
+                 <span title={new Date(project.created_at).toLocaleString()}>Created {new Date(project.created_at).toLocaleDateString()}</span>
+                 <span className="hidden sm:inline">•</span>
+                 <span title={new Date(project.updated_at).toLocaleString()}>Updated {new Date(project.updated_at).toLocaleDateString()}</span>
                </div>
              </div>
-             
-             {project.domain && (
-               <div className="flex items-center gap-1.5 text-xs text-muted-foreground/80 hover:text-cyan-500 transition-colors mt-1">
-                 <Globe className="h-3 w-3" />
-                 <span className="truncate max-w-[200px]">{project.domain}</span>
-               </div>
-             )}
           </div>
         </div>
 
-        {/* Meta Info Section */}
-        <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-sm text-muted-foreground pl-2 sm:pl-0">
-           <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-secondary/40 border border-border/50">
-             <GitBranch className="h-3.5 w-3.5 opacity-70" />
-             <span className="font-mono text-xs opacity-90">{project.github_branch}</span>
-           </div>
-           
-           {project.port && (
-             <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-secondary/40 border border-border/50 font-mono text-xs">
-               <Server className="h-3.5 w-3.5 opacity-70" />
-               <span>:{project.port}</span>
-             </div>
-           )}
-        </div>
-
         {/* Actions Section */}
-        <div className="flex items-center gap-2 sm:gap-3 pl-2 sm:pl-0" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-2 pl-6 md:pl-0 border-t md:border-t-0 border-border/40 pt-3 md:pt-0 mt-1 md:mt-0" onClick={(e) => e.stopPropagation()}>
             {project.status === "running" ? (
               <>
                  <Button
                    size="icon"
-                   variant="secondary"
-                   className="h-11 w-11 rounded-2xl !bg-slate-100 dark:!bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 shadow-lg shadow-slate-300/30 dark:shadow-black/30 hover:!bg-gradient-to-br hover:!from-indigo-500 hover:!to-purple-600 hover:text-white hover:border-transparent hover:shadow-indigo-500/40 transition-all duration-300"
+                   variant="ghost"
+                   className="h-8 w-8 rounded-lg bg-secondary/70 text-muted-foreground hover:text-cyan-500 hover:bg-cyan-500/10 dark:hover:text-cyan-400 dark:hover:bg-cyan-500/20 border border-border/30 hover:border-cyan-500/20 transition-all hover:scale-105"
                    onClick={(e) => handleAction("restart", e)}
                    disabled={loading}
                    title="Restart"
                  >
-                   {loading && actionType === "restart" ? <Loader2 className="h-5 w-5 animate-spin" /> : <RotateCw className="h-5 w-5" />}
+                   {loading && actionType === "restart" ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCw className="h-4 w-4" />}
                  </Button>
                  <Button
                    size="icon"
-                   variant="secondary"
-                   className="h-11 w-11 rounded-2xl !bg-slate-100 dark:!bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 shadow-lg shadow-slate-300/30 dark:shadow-black/30 hover:!bg-gradient-to-br hover:!from-indigo-500 hover:!to-purple-600 hover:text-white hover:border-transparent hover:shadow-indigo-500/40 transition-all duration-300"
+                   variant="ghost"
+                   className="h-8 w-8 rounded-lg bg-secondary/70 text-muted-foreground hover:text-red-600 hover:bg-red-500/20 dark:hover:text-red-400 dark:hover:bg-red-500/30 border border-border/30 hover:border-red-500/20 transition-all hover:scale-105"
                    onClick={(e) => handleAction("stop", e)}
                    disabled={loading}
                    title="Stop"
                  >
-                   {loading && actionType === "stop" ? <Loader2 className="h-5 w-5 animate-spin" /> : <Square className="h-4 w-4 fill-current" />}
+                   {loading && actionType === "stop" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Square className="h-3.5 w-3.5 fill-current" />}
                  </Button>
               </>
             ) : project.status === "building" ? (
                <Button
                  size="sm"
-                 variant="secondary"
-                 className="rounded-2xl h-10 px-5 text-xs gap-2 !bg-slate-100 dark:!bg-slate-800 text-red-500 border border-slate-200 dark:border-slate-700 shadow-lg hover:!bg-red-500 hover:text-white hover:border-transparent transition-all duration-300"
+                 variant="outline"
+                 className="rounded-lg h-8 px-3 text-xs font-semibold gap-1.5 border-red-500/20 bg-red-500/5 text-red-600 hover:bg-red-500/10 transition-colors"
                  onClick={(e) => handleAction("cancel", e)}
                  disabled={loading}
                >
-                 <XCircle className="h-4 w-4" />
+                 <XCircle className="h-3.5 w-3.5" />
                  Cancel
                </Button>
             ) : (
                 <Button
                  size="sm"
-                 variant="secondary"
-                 className="rounded-2xl h-11 px-6 text-sm font-bold gap-2 !bg-slate-100 dark:!bg-slate-800 text-cyan-600 dark:text-cyan-400 border border-slate-200 dark:border-slate-700 shadow-lg shadow-slate-300/30 dark:shadow-black/30 hover:!bg-gradient-to-br hover:!from-cyan-500 hover:!to-blue-600 hover:text-white hover:border-transparent hover:shadow-cyan-500/40 transition-all duration-300"
+                 className="rounded-lg h-8 px-4 text-xs font-semibold gap-1.5 bg-zinc-900 hover:bg-zinc-800 hover:scale-105 active:scale-95 text-white shadow-sm hover:shadow-lg transition-all duration-200"
                  onClick={(e) => handleAction("deploy", e)}
                  disabled={loading}
                >
-                 {loading && actionType === "deploy" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4 fill-current" />}
+                 {loading && actionType === "deploy" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3 fill-current" />}
                  Deploy
                </Button>
             )}
 
-            <div className="w-px h-8 bg-border/30 mx-1 hidden sm:block" />
+            <div className="w-px h-5 bg-border/40 mx-1 hidden md:block" />
 
             <Button
                size="icon"
-               variant="secondary"
-               className="h-11 w-11 rounded-2xl !bg-slate-100 dark:!bg-slate-800 text-slate-400 dark:text-slate-500 border border-slate-200 dark:border-slate-700 shadow-lg shadow-slate-300/30 dark:shadow-black/30 hover:!bg-gradient-to-br hover:!from-red-500 hover:!to-rose-600 hover:text-white hover:border-transparent hover:shadow-red-500/40 transition-all duration-300"
+               variant="ghost"
+               className="h-8 w-8 rounded-lg bg-secondary/40 text-muted-foreground/70 hover:text-red-600 hover:bg-red-500/20 dark:hover:text-red-400 dark:hover:bg-red-500/30 border border-transparent hover:border-red-500/20 transition-all duration-200 hover:scale-110"
                onClick={handleDeleteClick}
                title="Delete"
              >
-               <Trash2 className="h-5 w-5" />
+               <Trash2 className="h-3.5 w-3.5" />
              </Button>
         </div>
       </div>
