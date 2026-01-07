@@ -5,7 +5,7 @@ import { useState, useEffect } from "react";
 import { Container, Settings, Moon, Sun, Monitor, BookOpen, Anchor, LayoutGrid, ChevronDown, Gauge, Menu, X, LogOut } from "lucide-react";
 import { GithubIcon } from "./icons/GithubIcon";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "@/lib/theme";
 import { Button } from "./ui/button";
 import { cn } from "@/lib/utils";
@@ -39,10 +39,8 @@ export function Header() {
     setMobileMenuOpen(false);
   }, [pathname]);
 
-  const cycleTheme = () => {
-    if (theme === "light") setTheme("dark");
-    else if (theme === "dark") setTheme("system");
-    else setTheme("light");
+  const toggleTheme = () => {
+    setTheme(theme === "dark" ? "light" : "dark");
   };
 
   const navItems = [
@@ -133,38 +131,43 @@ export function Header() {
             </a>
 
             {/* Desktop Action Bar */}
-            <div className="hidden md:flex items-center bg-secondary/30 p-1.5 rounded-2xl border border-border/40 backdrop-blur-md shadow-sm">
+            <div className="hidden md:flex items-center bg-secondary/50 dark:bg-zinc-900 border border-border/40 dark:border-white/10 p-1 rounded-full shadow-sm">
               <Link href="/docs">
-                <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground hover:bg-background/80 h-9 w-9 rounded-xl transition-all active:scale-90" title="Documentation">
+                <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground hover:bg-background/60 dark:hover:bg-white/5 h-9 w-9 rounded-full transition-all active:scale-95" title="Documentation">
                   <BookOpen className="h-[18px] w-[18px]" />
                 </Button>
               </Link>
 
-              <div className="w-px h-5 bg-border/50 mx-1" />
+              <div className="w-px h-4 bg-border/40 dark:bg-white/10 mx-0.5" />
 
               <Link href="/settings">
-                <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground hover:bg-background/80 h-9 w-9 rounded-xl transition-all active:scale-90" title="Settings">
+                <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground hover:bg-background/60 dark:hover:bg-white/5 h-9 w-9 rounded-full transition-all active:scale-95" title="Settings">
                   <Settings className="h-[18px] w-[18px]" />
                 </Button>
               </Link>
               
-              <div className="w-px h-5 bg-border/50 mx-1" />
+              <div className="w-px h-4 bg-border/40 dark:bg-white/10 mx-0.5" />
               
               <Button 
                 variant="ghost" 
                 size="icon" 
-                onClick={cycleTheme}
-                className="text-muted-foreground hover:text-foreground hover:bg-background/80 h-9 w-9 rounded-xl transition-all active:scale-90"
+                onClick={toggleTheme}
+                className="text-muted-foreground hover:text-foreground hover:bg-background/60 dark:hover:bg-white/5 h-9 w-9 rounded-full transition-all active:scale-95"
+                title={theme === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode"}
               >
-                {theme === "light" && <Sun className="h-[18px] w-[18px] text-amber-500 transition-transform duration-500 hover:rotate-45" />}
-                {theme === "dark" && <Moon className="h-[18px] w-[18px] text-cyan-400 transition-transform duration-500 hover:-rotate-12" />}
-                {theme === "system" && <Monitor className="h-[18px] w-[18px] transition-transform duration-300" />}
+                {theme === "dark" ? (
+                  <Moon className="h-[18px] w-[18px] text-cyan-400 transition-transform duration-500 hover:-rotate-12" />
+                ) : (
+                  <Sun className="h-[18px] w-[18px] text-amber-500 transition-transform duration-500 hover:rotate-45" />
+                )}
               </Button>
 
               {isAuthenticated && (
                 <>
-                  <div className="w-px h-5 bg-border/50 mx-1" />
-                  <ProfileMenu />
+                  <div className="w-px h-4 bg-border/40 dark:bg-white/10 mx-0.5" />
+                  <div className="pl-0.5 pr-0.5">
+                    <ProfileMenu />
+                  </div>
                 </>
               )}
             </div>
@@ -174,12 +177,14 @@ export function Header() {
               <Button 
                 variant="ghost" 
                 size="icon" 
-                onClick={cycleTheme}
+                onClick={toggleTheme}
                 className="h-10 w-10 rounded-xl bg-secondary/50 border border-border/40"
               >
-                {theme === "light" && <Sun className="h-5 w-5 text-amber-500" />}
-                {theme === "dark" && <Moon className="h-5 w-5 text-cyan-400" />}
-                {theme === "system" && <Monitor className="h-5 w-5" />}
+                {theme === "dark" ? (
+                  <Moon className="h-5 w-5 text-cyan-400" />
+                ) : (
+                  <Sun className="h-5 w-5 text-amber-500" />
+                )}
               </Button>
 
               {isAuthenticated && <ProfileMenu />}
@@ -270,6 +275,7 @@ export function Header() {
 function ProfileMenu({ isMobile = false }: { isMobile?: boolean }) {
   const { user, logout } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
+  const router = useRouter();
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -289,27 +295,29 @@ function ProfileMenu({ isMobile = false }: { isMobile?: boolean }) {
     return (
       <div className="space-y-3">
         <div className="flex items-center gap-3 px-3 py-2">
-          <div className="h-12 w-12 rounded-full bg-gradient-to-br from-cyan-500 via-cyan-400 to-blue-600 flex items-center justify-center text-white font-black text-lg shadow-lg border-2 border-background">
+          <div className="h-10 w-10 rounded-full bg-gradient-to-br from-zinc-800 to-zinc-950 flex items-center justify-center text-white font-bold text-sm shadow-md border border-white/10">
             {user?.name?.charAt(0).toUpperCase() || "U"}
           </div>
           <div className="flex flex-col min-w-0">
-            <span className="text-base font-black text-foreground tracking-tight leading-none truncate">{user?.name}</span>
-            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider truncate">{user?.email}</span>
+            <span className="text-sm font-bold text-foreground truncate">{user?.name}</span>
+            <span className="text-xs text-muted-foreground truncate">{user?.email}</span>
           </div>
         </div>
         <div className="grid grid-cols-2 gap-2 px-1">
-          <Link href="/settings?tab=profile" className="flex-1">
-            <Button variant="secondary" className="w-full justify-center gap-2 rounded-xl h-10 text-sm font-bold border border-border/50 active:scale-95 transition-all">
-              <Settings className="h-4 w-4 opacity-70" />
-              Settings
-            </Button>
-          </Link>
           <Button 
-            variant="secondary" 
-            onClick={logout}
-            className="w-full justify-center gap-2 rounded-xl h-10 text-sm font-bold border border-red-500/20 bg-red-500/10 text-red-500 hover:bg-red-500/15 hover:text-red-500 active:scale-95 transition-all"
+            variant="outline" 
+            className="w-full justify-center gap-2 rounded-lg h-9 text-xs font-semibold"
+            onClick={() => router.push("/settings?tab=profile")}
           >
-            <LogOut className="h-4 w-4" />
+            <Settings className="h-3.5 w-3.5" />
+            Settings
+          </Button>
+          <Button 
+            variant="outline" 
+            onClick={logout}
+            className="w-full justify-center gap-2 rounded-lg h-9 text-xs font-semibold text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 border-red-200 dark:border-red-900/30"
+          >
+            <LogOut className="h-3.5 w-3.5" />
             Sign Out
           </Button>
         </div>
@@ -323,41 +331,44 @@ function ProfileMenu({ isMobile = false }: { isMobile?: boolean }) {
         variant="ghost" 
         onClick={() => setIsOpen(!isOpen)}
         className={cn(
-          "h-10 px-2 rounded-xl transition-all active:scale-95 flex items-center gap-3 group",
-          isOpen ? "bg-secondary/80 text-foreground ring-1 ring-border/50 shadow-inner" : "text-muted-foreground hover:text-foreground hover:bg-background/80"
+          "h-9 pl-1 pr-3 rounded-full transition-all active:scale-95 flex items-center gap-2 border border-transparent",
+          isOpen ? "bg-secondary text-foreground border-border/50" : "text-muted-foreground hover:text-foreground hover:bg-secondary/50"
         )}
       >
-        <div className="h-8 w-8 rounded-full bg-gradient-to-br from-cyan-500 via-cyan-400 to-blue-600 flex items-center justify-center text-white text-base font-black shadow-[0_4px_12px_rgba(6,182,212,0.3)] group-hover:shadow-[0_4px_20px_rgba(6,182,212,0.5)] transition-all group-hover:scale-105 border-2 border-white/20 shrink-0">
+        <div className="h-7 w-7 rounded-full bg-zinc-900 dark:bg-zinc-50 flex items-center justify-center text-white dark:text-zinc-900 text-xs font-bold shadow-sm">
           {user?.name?.charAt(0).toUpperCase() || "U"}
         </div>
-        <span className="hidden lg:inline text-[15px] font-black tracking-tight leading-none pt-0.5">{user?.name?.split(' ')[0]}</span>
-        <ChevronDown className={cn("h-4 w-4 transition-transform duration-500 opacity-60 group-hover:opacity-100", isOpen ? "rotate-180" : "")} />
+        <span className="hidden lg:inline text-sm font-medium">{user?.name?.split(' ')[0]}</span>
+        <ChevronDown className={cn("h-3.5 w-3.5 transition-transform duration-300 opacity-50", isOpen ? "rotate-180" : "")} />
       </Button>
 
       {isOpen && (
-        <div className="absolute right-0 top-full mt-3 w-64 rounded-2xl bg-card border border-border shadow-2xl p-3 animate-in fade-in zoom-in-95 duration-300 z-[100] origin-top-right">
-          <div className="px-4 py-4 mb-2 bg-secondary/30 rounded-[1.5rem] border border-border/20">
-            <p className="text-base font-black text-foreground tracking-tight leading-none mb-1.5">{user?.name}</p>
-            <p className="text-[10px] font-black text-muted-foreground/60 truncate uppercase tracking-[0.15em]">{user?.email}</p>
+        <div className="absolute right-0 top-full mt-2 w-60 rounded-xl bg-popover/95 dark:bg-zinc-950/95 backdrop-blur-xl border border-border/50 dark:border-white/10 shadow-xl shadow-black/10 dark:shadow-black/40 p-1.5 animate-in fade-in zoom-in-95 duration-200 z-[100] origin-top-right ring-1 ring-black/5 dark:ring-white/5">
+          <div className="px-3 py-2.5 mb-1 flex items-center gap-3 border-b border-border/40 dark:border-white/5 pb-3 mx-1">
+             <div className="h-10 w-10 rounded-full bg-gradient-to-br from-zinc-100 to-zinc-200 dark:from-zinc-800 dark:to-zinc-900 flex items-center justify-center text-zinc-900 dark:text-zinc-100 text-sm font-bold shadow-inner border border-white/20 dark:border-white/5">
+              {user?.name?.charAt(0).toUpperCase() || "U"}
+            </div>
+            <div className="flex flex-col min-w-0">
+              <span className="text-sm font-semibold text-foreground truncate leading-tight">{user?.name}</span>
+              <span className="text-[11px] text-muted-foreground truncate leading-tight mt-0.5 opacity-80">{user?.email}</span>
+            </div>
           </div>
           
-          <div className="space-y-1">
-            <Link href="/settings?tab=profile" onClick={() => setIsOpen(false)}>
-              <div className="flex items-center gap-3.5 px-3 py-3 rounded-2xl text-sm font-black text-muted-foreground/80 hover:text-foreground hover:bg-secondary/80 transition-all cursor-pointer group">
-                <div className="flex items-center justify-center h-10 w-10 rounded-xl bg-secondary/50 group-hover:bg-cyan-500/10 group-hover:text-cyan-500 transition-all group-hover:scale-110 group-hover:rotate-6 border border-border/20 group-hover:border-cyan-500/30">
-                  <Settings className="h-5 w-5" />
-                </div>
-                <span>Profile Settings</span>
-              </div>
+          <div className="space-y-0.5 mt-1">
+            <Link 
+              href="/settings?tab=profile" 
+              onClick={() => setIsOpen(false)}
+              className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-foreground/80 hover:text-foreground hover:bg-secondary/60 transition-colors cursor-pointer"
+            >
+              <Settings className="h-4 w-4 text-muted-foreground" />
+              <span>Profile Settings</span>
             </Link>
             
             <div 
               onClick={() => { logout(); setIsOpen(false); }}
-              className="flex items-center gap-3.5 px-3 py-3 rounded-2xl text-sm font-black text-red-500/80 hover:text-red-500 hover:bg-red-500/10 transition-all cursor-pointer group"
+              className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors cursor-pointer mt-1"
             >
-              <div className="flex items-center justify-center h-10 w-10 rounded-xl bg-red-500/5 group-hover:bg-red-500/10 transition-all group-hover:scale-110 group-hover:-rotate-6 border border-red-500/10 group-hover:border-red-500/20">
-                <LogOut className="h-5 w-5" />
-              </div>
+              <LogOut className="h-4 w-4" />
               <span>Sign Out</span>
             </div>
           </div>
