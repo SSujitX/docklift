@@ -65,7 +65,7 @@ One-command install on Ubuntu/Debian:
 curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh | sudo bash
 ```
 
-Access your dashboard at `http://your-ip:3000`
+Access your dashboard at `http://your-ip:8080`
 
 ---
 
