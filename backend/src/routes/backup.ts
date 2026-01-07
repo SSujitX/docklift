@@ -711,13 +711,24 @@ router.post('/restore-upload', uploadBackup.single('backup'), async (req: Reques
     // Clean up temp directory
     await fsp.rm(tempDir, { recursive: true, force: true });
 
-    // Delete uploaded restore file (only from uploads directory, not server backups)
-    writeLog(`\n[7/7] Cleaning up uploaded file...\n`);
+    // Mark file as restored by renaming (keep file for manual deletion)
+    writeLog(`\n[7/7] Marking file as restored...\n`);
     try {
-      await fsp.unlink(backupPath);
-      writeLog(`      - Removed: ${filename}\n`);
-    } catch (cleanupError: any) {
-      writeLog(`      ! Failed to remove uploaded file: ${cleanupError.message}\n`);
+      // Add restored timestamp to filename: file.zip -> file.restored-2024-01-08.zip
+      const timestamp = new Date().toISOString().slice(0, 10);
+      const baseName = filename.replace('.zip', '');
+      const newFilename = `${baseName}.restored-${timestamp}.zip`;
+      const newPath = path.join(UPLOADS_DIR, newFilename);
+
+      // Only rename if not already marked as restored
+      if (!filename.includes('.restored-')) {
+        await fsp.rename(backupPath, newPath);
+        writeLog(`      + Marked as restored: ${newFilename}\n`);
+      } else {
+        writeLog(`      - Already marked as restored\n`);
+      }
+    } catch (renameError: any) {
+      writeLog(`      ! Could not mark file: ${renameError.message}\n`);
     }
 
     writeLog(`\n${'='.repeat(50)}\n`);
@@ -725,6 +736,7 @@ router.post('/restore-upload', uploadBackup.single('backup'), async (req: Reques
     writeLog(`${'='.repeat(50)}\n`);
     writeLog(`\n  [!] Please restart Docklift services to apply changes.\n`);
     writeLog(`      You may need to redeploy your projects.\n`);
+    writeLog(`\n  The uploaded file has been kept. You can delete it manually from Settings.\n`);
 
     res.end();
   } catch (error: any) {
@@ -874,13 +886,24 @@ router.post('/restore-from-upload/:filename', async (req: Request, res: Response
     // Clean up temp directory
     await fsp.rm(tempDir, { recursive: true, force: true });
 
-    // Delete the uploaded file after successful restore
-    writeLog(`\n[7/7] Cleaning up uploaded file...\n`);
+    // Mark file as restored by renaming (keep file for manual deletion)
+    writeLog(`\n[7/7] Marking file as restored...\n`);
     try {
-      await fsp.unlink(backupPath);
-      writeLog(`      - Removed: ${filename}\n`);
-    } catch (cleanupError: any) {
-      writeLog(`      ! Failed to remove uploaded file: ${cleanupError.message}\n`);
+      // Add restored timestamp to filename: file.zip -> file.restored-2024-01-08.zip
+      const timestamp = new Date().toISOString().slice(0, 10);
+      const baseName = filename.replace('.zip', '');
+      const newFilename = `${baseName}.restored-${timestamp}.zip`;
+      const newPath = path.join(UPLOADS_DIR, newFilename);
+
+      // Only rename if not already marked as restored
+      if (!filename.includes('.restored-')) {
+        await fsp.rename(backupPath, newPath);
+        writeLog(`      + Marked as restored: ${newFilename}\n`);
+      } else {
+        writeLog(`      - Already marked as restored\n`);
+      }
+    } catch (renameError: any) {
+      writeLog(`      ! Could not mark file: ${renameError.message}\n`);
     }
 
     writeLog(`\n${'='.repeat(50)}\n`);
@@ -888,6 +911,7 @@ router.post('/restore-from-upload/:filename', async (req: Request, res: Response
     writeLog(`${'='.repeat(50)}\n`);
     writeLog(`\n  [!] Please restart Docklift services to apply changes.\n`);
     writeLog(`      You may need to redeploy your projects.\n`);
+    writeLog(`\n  The uploaded file has been kept. You can delete it manually from Settings.\n`);
 
     res.end();
   } catch (error: any) {
