@@ -11,7 +11,7 @@
     "db:generate": "bunx prisma generate",
     "db:push": "bunx prisma db push",
     "db:studio": "bunx prisma studio",
-    "reset-password": "tsx scripts/reset-password.ts"
+    "reset-password": "tsx src/scripts/reset-password.ts"
   },
   "dependencies": {
     "@prisma/client": "6",
