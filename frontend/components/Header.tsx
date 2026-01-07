@@ -109,22 +109,25 @@ export function Header() {
           {/* Right: Actions */}
           <div className="flex items-center gap-2 md:gap-3">
             {/* GitHub Star Button - Desktop only */}
-            <a 
-              href="https://github.com/SSujitX/docklift" 
-              target="_blank" 
+            <a
+              href="https://github.com/SSujitX/docklift"
+              target="_blank"
               rel="noopener noreferrer"
               className="hidden md:block"
             >
               <div className="flex items-center group cursor-pointer h-9 active:scale-95 transition-transform duration-200">
-                <div className="flex items-center gap-2.5 bg-secondary/40 hover:bg-secondary/60 border border-border/40 rounded-full pl-1.5 pr-4 h-full transition-all group-hover:border-cyan-500/30 group-hover:shadow-[0_0_15px_rgba(6,182,212,0.1)]">
-                  <div className="flex items-center justify-center h-6 w-6 rounded-full bg-black shadow-sm ring-1 ring-white/10 group-hover:scale-110 transition-transform">
-                    <GithubIcon className="h-3.5 w-3.5 text-white" />
+                <div className="flex items-center gap-0 bg-gradient-to-r from-zinc-900 to-zinc-800 dark:from-zinc-800 dark:to-zinc-900 border border-white/10 rounded-full overflow-hidden shadow-lg shadow-black/20 group-hover:shadow-xl group-hover:shadow-black/30 transition-all">
+                  <div className="flex items-center justify-center h-9 w-9 bg-zinc-950 border-r border-white/10">
+                    <GithubIcon className="h-4 w-4 text-white group-hover:scale-110 transition-transform" />
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-black tracking-tight text-muted-foreground group-hover:text-foreground transition-colors">Stars</span>
-                    <span className="text-sm font-black text-foreground">
-                      {stars !== null ? stars : "..."}
-                    </span>
+                  <div className="flex items-center gap-1.5 px-3 h-full">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 group-hover:text-zinc-300 transition-colors">Star</span>
+                    <div className="flex items-center gap-1 bg-white/10 rounded-full px-2 py-0.5">
+                      <span className="text-yellow-400 text-xs">&#9733;</span>
+                      <span className="text-xs font-bold text-white">
+                        {stars !== null ? stars : "..."}
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -335,7 +338,7 @@ function ProfileMenu({ isMobile = false }: { isMobile?: boolean }) {
           isOpen ? "bg-secondary text-foreground border-border/50" : "text-muted-foreground hover:text-foreground hover:bg-secondary/50"
         )}
       >
-        <div className="h-7 w-7 rounded-full bg-zinc-900 dark:bg-zinc-50 flex items-center justify-center text-white dark:text-zinc-900 text-xs font-bold shadow-sm">
+        <div className="h-7 w-7 rounded-full bg-zinc-900 dark:bg-zinc-100 flex items-center justify-center text-white dark:text-zinc-900 text-xs font-bold">
           {user?.name?.charAt(0).toUpperCase() || "U"}
         </div>
         <span className="hidden lg:inline text-sm font-medium">{user?.name?.split(' ')[0]}</span>
@@ -343,30 +346,30 @@ function ProfileMenu({ isMobile = false }: { isMobile?: boolean }) {
       </Button>
 
       {isOpen && (
-        <div className="absolute right-0 top-full mt-2 w-60 rounded-xl bg-popover/95 dark:bg-zinc-950/95 backdrop-blur-xl border border-border/50 dark:border-white/10 shadow-xl shadow-black/10 dark:shadow-black/40 p-1.5 animate-in fade-in zoom-in-95 duration-200 z-[100] origin-top-right ring-1 ring-black/5 dark:ring-white/5">
-          <div className="px-3 py-2.5 mb-1 flex items-center gap-3 border-b border-border/40 dark:border-white/5 pb-3 mx-1">
-             <div className="h-10 w-10 rounded-full bg-gradient-to-br from-zinc-100 to-zinc-200 dark:from-zinc-800 dark:to-zinc-900 flex items-center justify-center text-zinc-900 dark:text-zinc-100 text-sm font-bold shadow-inner border border-white/20 dark:border-white/5">
+        <div className="absolute right-0 top-full mt-2 w-56 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-xl shadow-black/10 dark:shadow-black/50 p-1.5 animate-in fade-in zoom-in-95 duration-200 z-[100] origin-top-right">
+          <div className="px-3 py-3 flex items-center gap-3 border-b border-zinc-100 dark:border-zinc-800 mb-1">
+            <div className="h-9 w-9 rounded-full bg-zinc-900 dark:bg-zinc-100 flex items-center justify-center text-white dark:text-zinc-900 text-sm font-bold">
               {user?.name?.charAt(0).toUpperCase() || "U"}
             </div>
             <div className="flex flex-col min-w-0">
-              <span className="text-sm font-semibold text-foreground truncate leading-tight">{user?.name}</span>
-              <span className="text-[11px] text-muted-foreground truncate leading-tight mt-0.5 opacity-80">{user?.email}</span>
+              <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 truncate">{user?.name}</span>
+              <span className="text-xs text-zinc-500 dark:text-zinc-400 truncate">{user?.email}</span>
             </div>
           </div>
-          
-          <div className="space-y-0.5 mt-1">
-            <Link 
-              href="/settings?tab=profile" 
+
+          <div className="space-y-0.5">
+            <Link
+              href="/settings"
               onClick={() => setIsOpen(false)}
-              className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-foreground/80 hover:text-foreground hover:bg-secondary/60 transition-colors cursor-pointer"
+              className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
             >
-              <Settings className="h-4 w-4 text-muted-foreground" />
-              <span>Profile Settings</span>
+              <Settings className="h-4 w-4" />
+              <span>Settings</span>
             </Link>
-            
-            <div 
+
+            <div
               onClick={() => { logout(); setIsOpen(false); }}
-              className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors cursor-pointer mt-1"
+              className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-red-600 dark:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors cursor-pointer"
             >
               <LogOut className="h-4 w-4" />
               <span>Sign Out</span>
