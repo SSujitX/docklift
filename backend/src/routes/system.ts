@@ -5,6 +5,7 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import os from 'os';
 import { readFileSync } from 'fs';
+import { readFile } from 'fs/promises';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -138,11 +139,10 @@ function formatUptime(seconds: number): string {
   return parts.length > 0 ? parts.join(', ') : '< 1 Min';
 }
 
-// Helper to read host file content safely
+// Helper to read host file content safely (uses ESM import)
 async function readHostFile(path: string): Promise<string | null> {
   try {
-    const fs = require('fs/promises');
-    const content = await fs.readFile(path, 'utf8');
+    const content = await readFile(path, 'utf8');
     console.log(`[HOST] Read ${path}: ${content.substring(0, 50)}...`);
     return content.trim();
   } catch (e: any) {
