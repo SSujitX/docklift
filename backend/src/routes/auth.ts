@@ -3,22 +3,30 @@ import express, { Request, Response, NextFunction } from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import prisma from '../lib/prisma.js';
+import { JWT_SECRET } from '../lib/authMiddleware.js';
 
 const router = express.Router();
 
-// JWT secret - should be in env for production
-const JWT_SECRET = process.env.JWT_SECRET || 'docklift-secret-key-change-in-production';
 const JWT_EXPIRES_IN = '7d';
 
 // Check if setup is complete (any users exist)
 router.get('/status', async (req: Request, res: Response) => {
   try {
     const userCount = await prisma.user.count();
-    res.json({ 
+    res.json({
       setupComplete: userCount > 0,
-      userCount 
+      userCount
     });
   } catch (error: any) {
+    // If database doesn't exist or table missing, setup is not complete
+    // This allows restore from backup on fresh install
+    if (error.message?.includes('does not exist') || error.code === 'P2021') {
+      return res.json({
+        setupComplete: false,
+        userCount: 0,
+        needsRestore: true
+      });
+    }
     res.status(500).json({ error: error.message });
   }
 });
