@@ -613,7 +613,7 @@ export default function ProjectDetail() {
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <div className="sticky top-[72px] z-10 -mx-4 px-4 md:mx-0 md:px-0 overflow-x-auto md:overflow-visible md:flex md:justify-center">
-            <TabsList className="w-max flex justify-start md:justify-center bg-background/80 backdrop-blur-xl border border-border/30 p-1 sm:p-1.5 rounded-full shadow-[0_4px_20px_-4px_rgba(0,0,0,0.1)] dark:shadow-[0_4px_20px_-4px_rgba(0,0,0,0.3)] inline-flex items-center gap-0.5 sm:gap-1">
+            <TabsList className="w-max flex justify-start md:justify-center bg-secondary/50 dark:bg-zinc-900 backdrop-blur-xl border border-border/40 dark:border-white/10 p-1 rounded-full shadow-sm inline-flex items-center gap-1">
             <TabsTrigger 
               value="overview" 
               className="gap-1.5 sm:gap-2 rounded-full px-3 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-bold transition-all duration-300 data-[state=active]:bg-white data-[state=active]:dark:bg-cyan-500/20 data-[state=active]:text-cyan-600 data-[state=active]:dark:text-cyan-400 data-[state=active]:shadow-sm data-[state=active]:border-cyan-200/50 data-[state=active]:dark:border-cyan-500/30 border border-transparent hover:bg-secondary/50 whitespace-nowrap"

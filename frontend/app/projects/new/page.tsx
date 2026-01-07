@@ -100,6 +100,8 @@ function NewProjectContent() {
   const [showAddEnv, setShowAddEnv] = useState(false);
   const [showBulkEnv, setShowBulkEnv] = useState(false);
   const [bulkEnvContent, setBulkEnvContent] = useState("");
+  const [bulkIsBuild, setBulkIsBuild] = useState(true);
+  const [bulkIsRuntime, setBulkIsRuntime] = useState(true);
   const [revealedEnvs, setRevealedEnvs] = useState<number[]>([]);
 
   // GitHub state
@@ -112,6 +114,7 @@ function NewProjectContent() {
   const [showGitHubConnect, setShowGitHubConnect] = useState(false);
   const [branches, setBranches] = useState<string[]>([]);
   const [branchesLoading, setBranchesLoading] = useState(false);
+  const [repoAccessError, setRepoAccessError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchGitHubStatus();
@@ -120,28 +123,48 @@ function NewProjectContent() {
 
   // Debounced branch fetch for public repo
   useEffect(() => {
-    if (sourceType === "public" && githubUrl) {
+    if (sourceType === "public" && githubUrl && isValidGithubUrl(githubUrl)) {
       setBranches([]); // Clear previous branches
       setGithubBranch(""); // Clear previous selection
+      setRepoAccessError(null); // Clear previous error
       const timer = setTimeout(() => {
         const match = githubUrl.match(/github\.com\/([^\/]+\/[^\/]+)/);
         if (match) {
-          fetchBranches(match[1], "public");
+          const repoPath = match[1].replace(/\.git$/, "").replace(/\/$/, "");
+          fetchBranches(repoPath, "public");
         }
       }, 600);
       return () => clearTimeout(timer);
     } else {
         setBranches([]);
+        setRepoAccessError(null);
     }
   }, [githubUrl, sourceType]);
 
   const fetchBranches = async (repoIdentifier: string, type: "public" | "private") => {
     setBranchesLoading(true);
+    setRepoAccessError(null);
     try {
       const res = await fetch(`${API_URL}/api/github/branches?repo=${repoIdentifier}&type=${type}`, { headers: getAuthHeaders() });
-      if (!res.ok) throw new Error("Failed");
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        if (res.status === 404) {
+          if (type === "public") {
+            setRepoAccessError("Repository not found or is private. For private repos, use the 'Private Repository' tab.");
+          }
+          throw new Error("Not found");
+        }
+        if (res.status === 403) {
+          if (type === "public") {
+            setRepoAccessError("Cannot access this repository. It may be private - please use the 'Private Repository' tab.");
+          }
+          throw new Error("Forbidden");
+        }
+        throw new Error(errorData.error || "Failed");
+      }
       const data = await res.json();
       setBranches(data);
+      setRepoAccessError(null);
       
       // Auto-select default branch if current selection is invalid
       if (!data.includes(githubBranch)) {
@@ -294,201 +317,234 @@ function NewProjectContent() {
 
   const handlePublicSubmit = () => {
     if (!githubUrl) return toast.error("Please enter a repository URL");
-    if (!githubUrl.match(/^https?:\/\/(www\.)?github\.com\//)) {
-      return toast.error("Please enter a valid GitHub repository URL (e.g., https://github.com/user/repo)");
+    
+    // Strict GitHub URL validation
+    const githubPattern = /^https:\/\/github\.com\/[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+(\.git)?\/?$/;
+    if (!githubPattern.test(githubUrl.trim())) {
+      return toast.error("Please enter a valid public GitHub repository URL (e.g., https://github.com/username/repo)");
     }
+    
     if (!name) setName(githubUrl.split("/").pop()?.replace(".git", "") || "my-app");
     setStep(2);
   };
 
+  // Check if URL is a valid GitHub format
+  const isValidGithubUrl = (url: string) => {
+    if (!url) return null; // neutral
+    const pattern = /^https:\/\/github\.com\/[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+(\.git)?\/?$/;
+    return pattern.test(url.trim());
+  };
+
   return (
-    <div className="min-h-screen flex flex-col bg-background selection:bg-cyan-500/30">
+    <div className="min-h-screen flex flex-col bg-background">
       <Header />
 
-      <main className="flex-1 container max-w-5xl mx-auto px-4 py-12 md:py-20">
-        <div className="mb-12">
+      <main className="flex-1 container max-w-4xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
+        {/* Navigation & Header */}
+        <div className="mb-8 sm:mb-10">
           <button 
             onClick={() => step > 1 ? setStep(step - 1) : router.push("/")}
-            className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors mb-6 group"
+            className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors mb-4 group"
           >
-            <ArrowLeft className="h-4 w-4 group-hover:-translate-x-1 transition-transform" />
-            {step === 1 ? "Back to Dashboard" : "Previous Step"}
+            <ArrowLeft className="h-4 w-4 group-hover:-translate-x-0.5 transition-transform" />
+            {step === 1 ? "Dashboard" : "Back"}
           </button>
           
-          <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
-              <h1 className="text-4xl font-extrabold tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
-                Create New Project
+              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">
+                New Project
               </h1>
-              <p className="text-muted-foreground text-lg mt-2 font-medium">
-                {step === 1 && "Connect your code source"}
-                {step === 2 && "Configure your application environment"}
+              <p className="text-muted-foreground text-sm mt-1">
+                {step === 1 && "Select your code source"}
+                {step === 2 && "Configure environment"}
               </p>
             </div>
             
-            <div className="flex items-center gap-3">
-              {[1, 2].map((s) => (
-                <div 
-                  key={s} 
-                  className={cn(
-                    "h-2 rounded-full transition-all duration-500",
-                    step === s ? "w-12 bg-cyan-500 shadow-[0_0_10px_rgba(6,182,212,0.3)]" : 
-                    step > s ? "w-6 bg-cyan-500/40" : "w-6 bg-secondary"
-                  )}
-                />
-              ))}
+            {/* Step Indicator */}
+            <div className="flex items-center gap-2 bg-secondary/50 rounded-full px-3 py-1.5">
+              <div className={cn(
+                "flex items-center justify-center h-6 w-6 rounded-full text-xs font-bold transition-all",
+                step >= 1 ? "bg-foreground text-background" : "bg-muted text-muted-foreground"
+              )}>1</div>
+              <div className={cn("w-6 h-0.5 rounded-full", step >= 2 ? "bg-foreground" : "bg-muted")} />
+              <div className={cn(
+                "flex items-center justify-center h-6 w-6 rounded-full text-xs font-bold transition-all",
+                step >= 2 ? "bg-foreground text-background" : "bg-muted text-muted-foreground"
+              )}>2</div>
             </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <div className="space-y-6">
           {/* STEP 1: Source Selection */}
           {step === 1 && (
-            <div className="space-y-8">
-              {/* Modern Tab Selector */}
-              <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0 sm:flex sm:justify-center pb-4 -mb-4 no-scrollbar">
-                <div className="flex items-center gap-0.5 sm:gap-1 bg-background/80 backdrop-blur-xl border border-border/20 p-1 sm:p-1.5 rounded-full shadow-[0_10px_30px_-10px_rgba(0,0,0,0.1)] dark:shadow-[0_10px_30px_-10px_rgba(0,0,0,0.4)] w-max">
+            <div className="space-y-6">
+              {/* Source Type Tabs */}
+              <div className="flex justify-center">
+                <div className="inline-flex flex-wrap justify-center gap-2">
                   <button
                     onClick={() => setSourceType("public")}
                     className={cn(
-                      "flex items-center gap-2 px-4 sm:px-5 py-2.5 rounded-full font-bold transition-all duration-300 whitespace-nowrap text-sm",
+                      "flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all",
                       sourceType === "public" 
-                        ? "bg-white dark:bg-cyan-500/20 text-cyan-600 dark:text-cyan-400 border border-cyan-200/50 dark:border-cyan-500/30 shadow-sm" 
-                        : "text-muted-foreground hover:text-foreground hover:bg-secondary/40"
+                        ? "bg-foreground text-background shadow-md" 
+                        : "bg-secondary/50 text-muted-foreground hover:text-foreground hover:bg-secondary"
                     )}
                   >
-                    <GithubIcon className="h-4 w-4" />
-                    <span className="hidden md:inline">Public Repository</span>
-                    <span className="md:hidden">Public</span>
+                    <Globe className="h-4 w-4" />
+                    <span className="hidden sm:inline">Public Repository</span>
+                    <span className="sm:hidden">Public</span>
                   </button>
                   <button
                     onClick={() => setSourceType("github")}
                     className={cn(
-                      "flex items-center gap-2 px-4 sm:px-5 py-2.5 rounded-full font-bold transition-all duration-300 whitespace-nowrap text-sm",
+                      "flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all",
                       sourceType === "github" 
-                        ? "bg-white dark:bg-cyan-500/20 text-cyan-600 dark:text-cyan-400 border border-cyan-200/50 dark:border-cyan-500/30 shadow-sm" 
-                        : "text-muted-foreground hover:text-foreground hover:bg-secondary/40"
+                        ? "bg-foreground text-background shadow-md" 
+                        : "bg-secondary/50 text-muted-foreground hover:text-foreground hover:bg-secondary"
                     )}
                   >
-                    <GithubIcon className="h-4 w-4" />
-                    <span className="hidden md:inline">Private Repository</span>
-                    <span className="md:hidden">Private</span>
+                    <Lock className="h-4 w-4" />
+                    <span className="hidden sm:inline">Private Repository</span>
+                    <span className="sm:hidden">Private</span>
                   </button>
                   <button
                     onClick={() => setSourceType("upload")}
                     className={cn(
-                      "flex items-center gap-2 px-4 sm:px-5 py-2.5 rounded-full font-bold transition-all duration-300 whitespace-nowrap text-sm",
+                      "flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all",
                       sourceType === "upload" 
-                        ? "bg-white dark:bg-cyan-500/20 text-cyan-600 dark:text-cyan-400 border border-cyan-200/50 dark:border-cyan-500/30 shadow-sm" 
-                        : "text-muted-foreground hover:text-foreground hover:bg-secondary/40"
+                        ? "bg-foreground text-background shadow-md" 
+                        : "bg-secondary/50 text-muted-foreground hover:text-foreground hover:bg-secondary"
                     )}
                   >
                     <Upload className="h-4 w-4" />
-                    <span className="hidden md:inline">Direct Upload</span>
-                    <span className="md:hidden">Upload</span>
+                    Direct Upload
                   </button>
                 </div>
               </div>
 
               {sourceType === "public" && (
-                <Card className="p-6 sm:p-8 border-border/20 overflow-hidden rounded-3xl shadow-[0_4px_30px_-8px_rgba(0,0,0,0.08)] dark:shadow-[0_4px_30px_-8px_rgba(0,0,0,0.25)] animate-in fade-in slide-in-from-bottom-2">
-                  <div className="space-y-6 max-w-xl">
+                <Card className="p-5 sm:p-6 border-border/30 rounded-2xl">
+                  <div className="space-y-5">
                     <div className="space-y-2">
-                      <label className="text-lg font-semibold">Repository URL</label>
+                      <label className="text-sm font-medium">Repository URL</label>
                       <Input 
                         placeholder="https://github.com/username/repo" 
                         value={githubUrl}
                         onChange={(e) => setGithubUrl(e.target.value)}
-                        className="h-12 text-base bg-secondary/30"
+                        className={cn(
+                          "h-11 bg-secondary/30",
+                          githubUrl && isValidGithubUrl(githubUrl) === false && "border-red-500 focus-visible:ring-red-500",
+                          githubUrl && isValidGithubUrl(githubUrl) === true && "border-green-500 focus-visible:ring-green-500"
+                        )}
                       />
+                      {githubUrl && isValidGithubUrl(githubUrl) === false && (
+                        <p className="text-xs text-red-500 flex items-center gap-1">
+                          <X className="h-3 w-3" /> Invalid URL format
+                        </p>
+                      )}
+                      {githubUrl && isValidGithubUrl(githubUrl) === true && (
+                        <p className="text-xs text-green-500 flex items-center gap-1">
+                          <Check className="h-3 w-3" /> Valid URL
+                        </p>
+                      )}
                     </div>
-                     <div className="space-y-2">
-                      <label className="text-lg font-semibold">Branch</label>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Branch</label>
                       <BranchSelector
                         branches={branches}
                         value={githubBranch}
                         onChange={setGithubBranch}
                         loading={branchesLoading}
-                        disabled={!githubUrl}
+                        disabled={!githubUrl || isValidGithubUrl(githubUrl) !== true}
                       />
+                      {repoAccessError && (
+                        <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-start gap-2">
+                          <Lock className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+                          <span className="text-xs text-amber-600 dark:text-amber-400">{repoAccessError}</span>
+                        </div>
+                      )}
                     </div>
                     <Button 
                       onClick={handlePublicSubmit} 
-                      size="lg" 
-                      className="w-full h-12 text-base gap-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white shadow-lg shadow-cyan-500/25"
+                      disabled={!githubUrl || isValidGithubUrl(githubUrl) !== true}
+                      className="w-full h-11 bg-zinc-900 hover:bg-zinc-800 text-white font-medium"
                     >
-                      Continue <ArrowRight className="h-5 w-5" />
+                      Continue <ArrowRight className="h-4 w-4 ml-2" />
                     </Button>
                   </div>
                 </Card>
               )}
 
               {sourceType === "github" && (
-                <div className="grid grid-cols-1 gap-6 animate-in fade-in slide-in-from-bottom-2">
+                <div className="space-y-4">
                   {!githubStatus?.connected ? (
-                    <Card className="p-8 sm:p-12 text-center border-dashed border-2 rounded-3xl flex flex-col items-center">
-                      <div className="h-20 w-20 rounded-3xl bg-zinc-900 flex items-center justify-center mb-6 shadow-2xl">
-                        <GithubIcon className="h-10 w-10 text-white" />
+                    <Card className="p-8 text-center border-dashed border-2 rounded-2xl flex flex-col items-center">
+                      <div className="h-14 w-14 rounded-xl bg-zinc-900 flex items-center justify-center mb-4">
+                        <GithubIcon className="h-7 w-7 text-white" />
                       </div>
-                      <h3 className="text-2xl font-bold mb-3">Connect your GitHub account</h3>
-                      <p className="text-muted-foreground max-w-sm mb-8 font-medium">
-                        Create a GitHub App to access your public and private repositories.
+                      <h3 className="text-lg font-bold mb-2">Connect GitHub</h3>
+                      <p className="text-sm text-muted-foreground max-w-xs mb-6">
+                        Create a GitHub App to access your repositories.
                       </p>
-                      <Button onClick={() => setShowGitHubConnect(true)} size="lg" className="h-12 px-8 bg-zinc-900 hover:bg-zinc-800 text-white rounded-xl">
-                        Create GitHub App
+                      <Button onClick={() => setShowGitHubConnect(true)} className="h-10 px-6 bg-zinc-900 hover:bg-zinc-800 text-white">
+                        Connect GitHub
                       </Button>
                       <GitHubConnect 
                         open={showGitHubConnect} 
                         onOpenChange={setShowGitHubConnect}
                         onConnected={() => {
                           fetchGitHubStatus();
-                          setSourceType("github"); // Stay on github tab
+                          setSourceType("github");
                         }}
                       />
                     </Card>
                   ) : (
-                    <Card className="p-0 border-border/20 overflow-hidden rounded-3xl shadow-[0_4px_30px_-8px_rgba(0,0,0,0.08)] dark:shadow-[0_4px_30px_-8px_rgba(0,0,0,0.25)]">
-                      <div className="bg-secondary/40 px-6 py-4 flex items-center justify-between border-b border-border/50">
-                        <div className="flex items-center gap-3">
-                          <div className="h-6 w-6 rounded-full bg-green-500/20 flex items-center justify-center">
-                            <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-                          </div>
-                          <span className="text-sm font-bold text-muted-foreground uppercase tracking-widest">Connected as @{githubStatus.username}</span>
+                    <Card className="border-border/30 rounded-2xl overflow-hidden">
+                      {/* Header */}
+                      <div className="bg-secondary/30 px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/30">
+                        <div className="flex items-center gap-2">
+                          <div className="h-2 w-2 rounded-full bg-green-500" />
+                          <span className="text-xs font-medium text-muted-foreground">@{githubStatus.username}</span>
                         </div>
-                        <div className="relative w-72">
-                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                        <div className="relative w-full sm:w-56">
+                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                           <Input 
                             placeholder="Search repos..." 
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-                            className="pl-9 h-9 text-sm bg-background/50 border-border/40 focus:border-cyan-500/50" 
+                            className="pl-9 h-9 text-sm bg-background/50 border-border/40" 
                           />
                         </div>
                       </div>
-                      <div className="max-h-[500px] overflow-y-auto divide-y divide-border/30 no-scrollbar">
+                      {/* Repo List */}
+                      <div className="max-h-80 overflow-y-auto divide-y divide-border/20">
                         {reposLoading ? (
-                          <div className="p-20 flex flex-col items-center gap-4 text-muted-foreground">
-                            <Loader2 className="h-8 w-8 animate-spin" />
-                            <span className="font-medium">Fetching repositories...</span>
+                          <div className="p-12 flex flex-col items-center gap-3 text-muted-foreground">
+                            <Loader2 className="h-6 w-6 animate-spin" />
+                            <span className="text-sm">Loading repos...</span>
+                          </div>
+                        ) : filteredRepos.length === 0 ? (
+                          <div className="p-12 text-center text-sm text-muted-foreground">
+                            No repositories found
                           </div>
                         ) : filteredRepos.map(repo => (
                           <div 
                             key={repo.id}
                             onClick={() => handleSelectRepo(repo)}
-                            className="group flex items-center justify-between p-5 hover:bg-cyan-500/[0.02] cursor-pointer transition-colors"
+                            className="group flex items-center justify-between p-4 hover:bg-secondary/30 cursor-pointer transition-colors"
                           >
-                            <div className="flex items-center gap-4">
-                              <div className="h-12 w-12 rounded-xl bg-secondary/50 flex items-center justify-center group-hover:bg-cyan-500/10 transition-colors">
-                                {repo.private ? <Lock className="h-5 w-5 text-muted-foreground group-hover:text-cyan-500" /> : <Globe className="h-5 w-5 text-muted-foreground group-hover:text-cyan-500" />}
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="h-9 w-9 rounded-lg bg-secondary/50 flex items-center justify-center shrink-0">
+                                {repo.private ? <Lock className="h-4 w-4 text-muted-foreground" /> : <Globe className="h-4 w-4 text-muted-foreground" />}
                               </div>
-                              <div>
-                                <h4 className="font-bold group-hover:text-cyan-500 transition-colors">{repo.name}</h4>
-                                <p className="text-xs text-muted-foreground mt-0.5 truncate max-w-[400px]">{repo.description || "No description provided"}</p>
+                              <div className="min-w-0">
+                                <h4 className="font-medium text-sm truncate">{repo.name}</h4>
+                                <p className="text-xs text-muted-foreground truncate">{repo.description || "No description"}</p>
                               </div>
                             </div>
-                            <Button variant="ghost" className="opacity-0 group-hover:opacity-100 transition-opacity gap-2 font-bold text-cyan-500">
-                              Import <ArrowRight className="h-4 w-4" />
-                            </Button>
+                            <ArrowRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 shrink-0 ml-2" />
                           </div>
                         ))}
                       </div>
@@ -498,107 +554,100 @@ function NewProjectContent() {
               )}
 
               {sourceType === "upload" && (
-                <div 
+                <Card 
                   onDragEnter={handleDrag}
                   onDragLeave={handleDrag}
                   onDragOver={handleDrag}
                   onDrop={handleDrop}
                   className={cn(
-                    "border-4 border-dashed rounded-[40px] p-20 text-center transition-all duration-300 flex flex-col items-center group cursor-pointer animate-in fade-in slide-in-from-bottom-2",
-                    dragActive ? "border-cyan-500 bg-cyan-500/[0.05] scale-[1.01]" : "border-border/60 hover:border-cyan-500/40 hover:bg-secondary/20",
-                    files && "border-cyan-500/50 bg-cyan-500/[0.02]"
+                    "border-2 border-dashed rounded-2xl p-10 sm:p-12 text-center cursor-pointer transition-all",
+                    dragActive ? "border-cyan-500 bg-cyan-500/5" : "border-border/50 hover:border-cyan-500/40 hover:bg-secondary/20",
+                    files && "border-cyan-500/50 bg-cyan-500/5"
                   )}
                   onClick={() => document.getElementById("file-upload-input")?.click()}
                 >
                   <input id="file-upload-input" type="file" multiple className="hidden" onChange={(e) => { setFiles(e.target.files); setStep(2); }} />
-                  <div className="h-24 w-24 rounded-full bg-secondary flex items-center justify-center mb-8 group-hover:scale-110 transition-transform shadow-inner">
-                    <FolderUp className="h-10 w-10 text-muted-foreground group-hover:text-cyan-500 transition-colors" />
-                  </div>
-                  <h3 className="text-3xl font-extrabold mb-3">Drop your project</h3>
-                  <p className="text-muted-foreground text-lg max-w-sm font-medium leading-relaxed">
-                    Drag and drop your project folder or click to browse. <span className="text-cyan-500 font-bold">Please upload a ZIP file containing the root directory</span> of your project.
-                  </p>
-
-                  {files && (
-                    <div className="mt-8 px-6 py-2 rounded-full bg-cyan-500/10 text-cyan-500 font-bold border border-cyan-500/20 flex items-center gap-2">
-                       <Check className="h-4 w-4" strokeWidth={3} /> {files.length} Files Selected
+                  <div className="flex flex-col items-center">
+                    <div className="h-14 w-14 rounded-xl bg-secondary flex items-center justify-center mb-4">
+                      <FolderUp className="h-7 w-7 text-muted-foreground" />
                     </div>
-                  )}
-                </div>
+                    <h3 className="text-lg font-bold mb-2">Upload Project</h3>
+                    <p className="text-sm text-muted-foreground max-w-sm">
+                      Drop a ZIP file or click to browse
+                    </p>
+                    {files && (
+                      <div className="mt-4 px-4 py-1.5 rounded-full bg-cyan-500/10 text-cyan-500 text-sm font-medium flex items-center gap-2">
+                        <Check className="h-4 w-4" /> {files.length} file(s) selected
+                      </div>
+                    )}
+                  </div>
+                </Card>
               )}
             </div>
           )}
           {step === 2 && (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              <div className="lg:col-span-2 space-y-8">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-2 space-y-6">
                 {/* General Config */}
-                <Card className="p-8 space-y-6 rounded-3xl shadow-xl shadow-black/5">
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="p-2 rounded-lg bg-cyan-500/10 text-cyan-500">
-                      <Sparkles className="h-5 w-5" />
-                    </div>
-                    <h3 className="text-xl font-bold font-display">General Configuration</h3>
-                  </div>
+                <Card className="p-5 space-y-4 rounded-2xl border-border/30">
+                  <h3 className="text-base font-semibold flex items-center gap-2">
+                    <Sparkles className="h-4 w-4 text-cyan-500" />
+                    Configuration
+                  </h3>
                   
-                  <div className="grid grid-cols-1 gap-6">
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest ml-1 text-xs">Project Name</label>
-                      <Input 
-                        placeholder="my-cool-app" 
-                        value={name}
-                        onChange={(e) => setName(e.target.value)}
-                        className="h-12 bg-secondary/30 border-border/40 focus:border-cyan-500/50 rounded-xl px-4 font-bold" 
-                      />
-                    </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Project Name</label>
+                    <Input 
+                      placeholder="my-app" 
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      className="h-10 bg-secondary/30" 
+                    />
                   </div>
 
-                  {sourceType === "github" && (
-                    <div className="p-5 rounded-2xl bg-secondary/40 border border-border/40 flex items-center justify-between group/repo">
-                      <div className="flex items-center gap-4">
-                        <div className="h-10 w-10 rounded-xl bg-background/50 flex items-center justify-center border border-border/30">
-                          <GithubIcon className="h-5 w-5" />
-                        </div>
-                        <div>
-                          <p className="text-sm font-bold tracking-tight">{selectedRepo?.full_name}</p>
-                           <div className="flex items-center gap-3 mt-1.5">
-                            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Branch:</span>
+                  {sourceType === "github" && selectedRepo && (
+                    <div className="p-4 rounded-xl bg-secondary/30 border border-border/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <GithubIcon className="h-5 w-5 shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate">{selectedRepo?.full_name}</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="text-xs text-muted-foreground">Branch:</span>
                             <BranchSelector
                                 branches={branches}
                                 value={githubBranch}
                                 onChange={setGithubBranch}
                                 loading={branchesLoading}
-                                className="h-8 text-[11px] w-[160px] px-3"
+                                className="h-8 text-xs w-36"
                             />
-                           </div>
+                          </div>
                         </div>
                       </div>
                       <Button 
                         variant="ghost" 
                         size="sm" 
                         onClick={() => setStep(1)} 
-                        className="text-[11px] h-8 font-bold text-cyan-500 hover:text-cyan-600 hover:bg-cyan-500/5 rounded-lg border border-transparent hover:border-cyan-500/20 px-3"
+                        className="text-xs text-cyan-500 hover:text-cyan-600"
                       >
-                        Change Repo
+                        Change
                       </Button>
                     </div>
                   )}
                 </Card>
 
                 {/* ENVIRONMENT VARIABLES MANAGER */}
-                <Card className="p-6 sm:p-8 space-y-6 rounded-3xl shadow-xl shadow-black/5">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-0 mb-2">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-500">
-                        <Lock className="h-5 w-5" />
-                      </div>
-                      <h3 className="text-lg sm:text-xl font-bold">Environment Variables</h3>
-                    </div>
+                <Card className="p-5 space-y-4 rounded-2xl border-border/30">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <h3 className="text-base font-semibold flex items-center gap-2">
+                      <Lock className="h-4 w-4 text-emerald-500" />
+                      Environment Variables
+                    </h3>
 
-                    <div className="flex items-center gap-2 w-full sm:w-auto">
+                    <div className="flex items-center gap-2">
                     <Dialog open={showAddEnv} onOpenChange={setShowAddEnv}>
                       <DialogTrigger asChild>
-                        <Button variant="outline" size="sm" className="h-9 px-4 rounded-xl font-bold border-emerald-500/20 text-emerald-600 hover:bg-emerald-500/5 hover:border-emerald-500/40 w-full sm:w-auto">
-                          <PlusIcon className="h-4 w-4 mr-2" /> Add Variable
+                        <Button variant="outline" size="sm" className="h-8 text-xs">
+                          <PlusIcon className="h-3.5 w-3.5 mr-1.5" /> Add
                         </Button>
                       </DialogTrigger>
                       <DialogContent className="sm:max-w-md">
@@ -718,6 +767,36 @@ SESSION_SECRET=your-secret-here
                               className="w-full h-40 p-4 font-mono text-sm bg-secondary/20 border border-border/40 rounded-xl resize-none focus:outline-none focus:border-cyan-500/50"
                             />
                           </div>
+                          
+                          {/* Build/Runtime Toggles for Bulk Import */}
+                          <div className="flex items-center gap-6 p-3 rounded-xl bg-secondary/30 border border-border/40">
+                            <div className="flex items-center gap-2 group cursor-pointer" onClick={() => setBulkIsBuild(!bulkIsBuild)}>
+                              <div className={cn(
+                                "h-4 w-4 rounded border transition-colors flex items-center justify-center",
+                                bulkIsBuild ? "bg-orange-500 border-orange-500" : "bg-transparent border-muted-foreground/40"
+                              )}>
+                                {bulkIsBuild && <Check className="h-3 w-3 text-white" strokeWidth={4} />}
+                              </div>
+                              <div className="flex flex-col">
+                                <span className="text-xs font-semibold">Build Argument</span>
+                                <span className="text-[10px] text-muted-foreground">Used during Docker build</span>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 group cursor-pointer" onClick={() => setBulkIsRuntime(!bulkIsRuntime)}>
+                              <div className={cn(
+                                "h-4 w-4 rounded border transition-colors flex items-center justify-center",
+                                bulkIsRuntime ? "bg-orange-500 border-orange-500" : "bg-transparent border-muted-foreground/40"
+                              )}>
+                                {bulkIsRuntime && <Check className="h-3 w-3 text-white" strokeWidth={4} />}
+                              </div>
+                              <div className="flex flex-col">
+                                <span className="text-xs font-semibold">Runtime Variable</span>
+                                <span className="text-[10px] text-muted-foreground">Available to your app</span>
+                              </div>
+                            </div>
+                          </div>
+
                           <p className="text-xs text-muted-foreground">
                             {bulkEnvContent.split('\n').filter(l => l.trim() && !l.trim().startsWith('#') && l.includes('=')).length} variables detected
                           </p>
@@ -741,7 +820,7 @@ SESSION_SECRET=your-secret-here
                                     }
                                   }
                                   if (key) {
-                                    newVars.push({ key, value, is_build_arg: true, is_runtime: true });
+                                    newVars.push({ key, value, is_build_arg: bulkIsBuild, is_runtime: bulkIsRuntime });
                                   }
                                 }
                                 if (newVars.length > 0) {
@@ -781,15 +860,19 @@ SESSION_SECRET=your-secret-here
                                   <span className="text-sm font-mono font-bold tracking-tight truncate">{env.key}</span>
                                   <div className="flex gap-1.5">
                                     <div className={cn(
-                                      "h-5 px-1.5 rounded-full flex items-center gap-1 text-[8px] font-bold uppercase tracking-widest",
-                                      env.is_build_arg ? "bg-cyan-500/10 text-cyan-500 border border-cyan-500/20" : "bg-muted/10 text-muted-foreground/30 grayscale opacity-50"
+                                      "h-5 px-1.5 rounded-full flex items-center gap-1 text-[8px] font-bold uppercase tracking-widest transition-all",
+                                      env.is_build_arg 
+                                        ? "bg-orange-100 text-orange-600 border border-orange-300" 
+                                        : "bg-gray-100 text-gray-400 border border-gray-200"
                                     )}>
                                       <FlaskConical className="h-2.5 w-2.5" />
                                       Bld
                                     </div>
                                     <div className={cn(
-                                      "h-5 px-1.5 rounded-full flex items-center gap-1 text-[8px] font-bold uppercase tracking-widest",
-                                      env.is_runtime ? "bg-blue-500/10 text-blue-500 border border-blue-500/20" : "bg-muted/10 text-muted-foreground/30 grayscale opacity-50"
+                                      "h-5 px-1.5 rounded-full flex items-center gap-1 text-[8px] font-bold uppercase tracking-widest transition-all",
+                                      env.is_runtime 
+                                        ? "bg-orange-100 text-orange-600 border border-orange-300" 
+                                        : "bg-gray-100 text-gray-400 border border-gray-200"
                                     )}>
                                       <Globe className="h-2.5 w-2.5" />
                                       Run
@@ -963,35 +1046,30 @@ SESSION_SECRET=your-secret-here
                 </Card>
               </div>
 
-              <div className="space-y-8">
-                <Card className="p-6 bg-secondary/20 border-border/40 rounded-3xl sticky top-24">
-                  <h4 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-6">Deployment Summary</h4>
-                  <div className="space-y-6">
-                    <div className="flex items-center justify-between py-2 border-b border-border/30">
-                      <span className="text-xs font-bold text-muted-foreground uppercase">Resource</span>
-                      <span className="text-xs font-bold bg-muted px-2 py-0.5 rounded capitalize">Application</span>
+              <div>
+                <Card className="p-5 bg-secondary/20 border-border/30 rounded-2xl sticky top-24">
+                  <h4 className="text-xs font-semibold text-muted-foreground mb-4">Summary</h4>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">Type</span>
+                      <span className="font-medium">Application</span>
                     </div>
-                    <div className="flex items-center justify-between py-2 border-b border-border/30">
-                      <span className="text-xs font-bold text-muted-foreground uppercase">Source</span>
-                      <span className="text-xs font-bold bg-muted px-2 py-0.5 rounded capitalize">{sourceType}</span>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">Source</span>
+                      <span className="font-medium capitalize">{sourceType}</span>
                     </div>
-                    <div className="pt-2">
-                       <p className="text-[10px] text-muted-foreground font-medium mb-1">PROJECT NAME</p>
-                       <p className="font-bold text-base truncate">{name || "Untitled Project"}</p>
+                    <div className="pt-2 border-t border-border/30">
+                       <p className="text-xs text-muted-foreground mb-1">Project</p>
+                       <p className="font-semibold truncate">{name || "Untitled"}</p>
                     </div>
-                    <div className="space-y-4 pt-4">
-                      <Button 
-                        onClick={handleSubmit} 
-                        disabled={loading}
-                        className="w-full h-14 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white rounded-2xl shadow-xl shadow-cyan-500/20 font-bold group"
-                      >
-                        {loading ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : <Sparkles className="h-5 w-5 mr-2 group-hover:rotate-12 transition-transform" />}
-                        Create Project
-                      </Button>
-                      <p className="text-[10px] text-center text-muted-foreground font-bold px-4">
-                        By deploying, you agree to automate your workflow 🚀
-                      </p>
-                    </div>
+                    <Button 
+                      onClick={handleSubmit} 
+                      disabled={loading}
+                      className="w-full h-10 mt-2 bg-zinc-900 hover:bg-zinc-800 text-white shadow-lg shadow-zinc-900/10"
+                    >
+                      {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Sparkles className="h-4 w-4 mr-2" />}
+                      Create Project
+                    </Button>
                   </div>
                 </Card>
               </div>

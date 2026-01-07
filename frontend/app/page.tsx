@@ -51,13 +51,24 @@ export default function Dashboard() {
     <div className="min-h-screen flex flex-col">
       <Header />
 
-      <main className="flex-1 container max-w-7xl mx-auto px-4 md:px-6 py-8">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+      <main className="flex-1 container max-w-7xl mx-auto px-4 md:px-6 py-8 sm:py-12">
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-10">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Projects</h1>
-            <p className="text-muted-foreground mt-1">
-              {projects.length} total · <span className="text-emerald-500">{runningCount} running</span> · {stoppedCount} stopped
-            </p>
+            <h1 className="text-3xl font-bold tracking-tight mb-4">Projects</h1>
+            <div className="flex flex-wrap gap-3">
+              <div className="px-4 py-2 rounded-xl bg-secondary/50 dark:bg-zinc-900/50 border border-border/50 dark:border-white/10 text-sm font-medium shadow-sm">
+                <span className="text-muted-foreground mr-2">Total</span>
+                <span className="font-bold text-foreground">{projects.length}</span>
+              </div>
+              <div className="px-4 py-2 rounded-xl bg-emerald-500/10 dark:bg-emerald-500/5 border border-emerald-500/20 dark:border-emerald-500/30 text-sm font-medium text-emerald-600 dark:text-emerald-400 shadow-sm shadow-emerald-500/5">
+                <span className="mr-2 opacity-70">Running</span>
+                <span className="font-bold">{runningCount}</span>
+              </div>
+              <div className="px-4 py-2 rounded-xl bg-secondary/50 dark:bg-zinc-900/50 border border-border/50 dark:border-white/10 text-sm font-medium shadow-sm">
+                <span className="text-muted-foreground mr-2 opacity-70">Stopped</span>
+                <span className="font-bold text-foreground">{stoppedCount}</span>
+              </div>
+            </div>
           </div>
           
           <div className="flex items-center gap-3">
@@ -65,15 +76,15 @@ export default function Dashboard() {
               variant="outline" 
               size="icon" 
               onClick={fetchProjects}
-              className="hover:bg-secondary"
+              className="h-10 w-10 rounded-xl border-border/60 hover:bg-secondary/80 bg-background"
             >
-              <RefreshCw className="h-4 w-4" />
+              <RefreshCw className="h-4 w-4 text-muted-foreground" />
             </Button>
             <Button 
               onClick={() => router.push("/projects/new")} 
-              className="gap-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white shadow-lg shadow-cyan-500/25"
+              className="h-10 px-6 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white shadow-lg shadow-zinc-900/10 font-medium"
             >
-              <Plus className="h-4 w-4" />
+              <Plus className="h-4 w-4 mr-2" />
               New Project
             </Button>
           </div>
@@ -82,32 +93,29 @@ export default function Dashboard() {
         {loading ? (
           <div className="flex flex-col gap-4">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="h-24 rounded-xl bg-card border border-border shimmer" />
+              <div key={i} className="h-28 rounded-2xl bg-secondary/20 border border-border/40 animate-pulse" />
             ))}
           </div>
         ) : projects.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-24">
-            <div className="relative mb-6">
-              <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/30 to-blue-500/30 rounded-3xl blur-2xl" />
-              <div className="relative bg-gradient-to-br from-card to-secondary p-8 rounded-3xl border border-border shadow-xl">
-                <Container className="h-12 w-12 text-cyan-500 animate-float" />
-              </div>
+          <div className="flex flex-col items-center justify-center py-20 px-4 text-center">
+            <div className="h-24 w-24 rounded-[32px] bg-secondary/30 flex items-center justify-center mb-6">
+              <Container className="h-10 w-10 text-muted-foreground/40" />
             </div>
-            <h2 className="text-2xl font-bold mb-2">No projects yet</h2>
-            <p className="text-muted-foreground text-center mb-8 max-w-md">
-              Deploy your first app in seconds. Just upload your project with a Dockerfile and we handle the rest.
+            <h2 className="text-2xl font-bold mb-3">No projects found</h2>
+            <p className="text-muted-foreground mb-8 max-w-sm leading-relaxed">
+              Get started by creating your first project. We'll handle the build and deployment for you.
             </p>
             <Button 
               onClick={() => router.push("/projects/new")} 
               size="lg" 
-              className="gap-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white shadow-lg shadow-cyan-500/25"
+              className="h-12 px-8 rounded-2xl bg-zinc-900 hover:bg-zinc-800 text-white shadow-xl shadow-zinc-900/10 font-bold"
             >
-              <Sparkles className="h-5 w-5" />
-              Create Your First Project
+              <Sparkles className="h-4 w-4 mr-2" />
+              Create Project
             </Button>
           </div>
         ) : (
-          <div className="flex flex-col gap-4">
+          <div className="grid grid-cols-1 gap-4">
             {projects.map((project) => (
               <ProjectCard key={project.id} project={project} onRefresh={fetchProjects} />
             ))}
