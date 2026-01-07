@@ -27,13 +27,17 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 
-// Rate limiting for auth endpoints (prevent brute force)
+// Rate limiting for auth endpoints (light protection for self-hosted)
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // 5 attempts per window (stricter brute force protection)
+  max: 100, // 100 attempts per window (flexible for self-hosted, still prevents automated attacks)
   message: { error: 'Too many attempts, please try again later' },
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => {
+    // Skip rate limiting for status check (doesn't need protection)
+    return req.path === '/status';
+  },
 });
 
 // Security headers middleware
