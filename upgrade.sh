@@ -53,12 +53,19 @@ else
     echo -e "        ${YELLOW}No existing database found (fresh install?)${NC}"
 fi
 
-# Step 2: Fetch latest code
+# Step 2: Fetch latest release
 FETCH_ST=$(date +%s)
-printf "  ${CYAN}[2/5]${NC} Fetching latest code..."
+printf "  ${CYAN}[2/5]${NC} Fetching latest release..."
 {
-    git fetch origin master -q
-    git reset --hard origin/master -q
+    # Get latest release tag from GitHub API
+    LATEST_TAG=$(curl -s https://api.github.com/repos/SSujitX/docklift/releases/latest | grep '"tag_name"' | cut -d'"' -f4 || echo "")
+    git fetch origin --tags -q
+    if [ -n "$LATEST_TAG" ]; then
+        git checkout "$LATEST_TAG" -q 2>/dev/null || git checkout "tags/$LATEST_TAG" -q
+    else
+        # Fallback to master if no releases exist
+        git fetch origin master -q && git reset --hard origin/master -q
+    fi
 } >/dev/null 2>&1
 echo -e " ${GREEN}done${NC} ${DIM}($(format_time $(($(date +%s) - FETCH_ST))))$NC"
 
