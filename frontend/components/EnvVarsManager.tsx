@@ -197,6 +197,36 @@ SESSION_SECRET=your-secret-here
                   className="w-full h-40 p-4 font-mono text-sm bg-background/50 border border-border/60 rounded-xl resize-none focus:outline-none focus:border-cyan-500/50"
                 />
               </div>
+              
+              {/* Build/Runtime Toggles for Bulk Import */}
+              <div className="flex items-center gap-6 p-3 rounded-xl bg-secondary/30 border border-border/40">
+                <div className="flex items-center gap-2 group cursor-pointer" onClick={() => setIsBuildArg(!isBuildArg)}>
+                  <div className={cn(
+                    "h-4 w-4 rounded border transition-colors flex items-center justify-center",
+                    isBuildArg ? "bg-orange-500 border-orange-500" : "bg-transparent border-muted-foreground/40"
+                  )}>
+                    {isBuildArg && <Check className="h-3 w-3 text-white" strokeWidth={4} />}
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-xs font-semibold">Build Argument</span>
+                    <span className="text-[10px] text-muted-foreground">Used during Docker build</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 group cursor-pointer" onClick={() => setIsRuntime(!isRuntime)}>
+                  <div className={cn(
+                    "h-4 w-4 rounded border transition-colors flex items-center justify-center",
+                    isRuntime ? "bg-orange-500 border-orange-500" : "bg-transparent border-muted-foreground/40"
+                  )}>
+                    {isRuntime && <Check className="h-3 w-3 text-white" strokeWidth={4} />}
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-xs font-semibold">Runtime Variable</span>
+                    <span className="text-[10px] text-muted-foreground">Available to your app</span>
+                  </div>
+                </div>
+              </div>
+
               <div className="flex items-center justify-between">
                 <p className="text-xs text-muted-foreground">
                   {bulkContent.split('\n').filter(l => l.trim() && !l.trim().startsWith('#') && l.includes('=')).length} variables detected
@@ -347,15 +377,19 @@ SESSION_SECRET=your-secret-here
               <div className="flex items-center justify-between sm:justify-end gap-6 sm:pl-4 border-t sm:border-t-0 pt-4 sm:pt-0 border-border/20">
                 <div className="flex items-center gap-3">
                   <div className={cn(
-                    "h-6 px-2.5 rounded-full flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-widest",
-                    env.is_build_arg ? "bg-cyan-500/10 text-cyan-500 border border-cyan-500/20" : "bg-muted/10 text-muted-foreground/30 grayscale"
+                    "h-6 px-2.5 rounded-full flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-widest transition-all",
+                    env.is_build_arg 
+                      ? "bg-orange-100 text-orange-600 border border-orange-300" 
+                      : "bg-gray-100 text-gray-400 border border-gray-200"
                   )}>
                     <FlaskConical className="h-3 w-3" />
                     Bld
                   </div>
                   <div className={cn(
-                    "h-6 px-2.5 rounded-full flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-widest",
-                    env.is_runtime ? "bg-blue-500/10 text-blue-500 border border-blue-500/20" : "bg-muted/10 text-muted-foreground/30 grayscale"
+                    "h-6 px-2.5 rounded-full flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-widest transition-all",
+                    env.is_runtime 
+                      ? "bg-orange-100 text-orange-600 border border-orange-300" 
+                      : "bg-gray-100 text-gray-400 border border-gray-200"
                   )}>
                     <Globe className="h-3 w-3" />
                     Run
