@@ -30,6 +30,11 @@ ENV/
 *.sqlite3
 data/*.db
 
+# Secrets (auto-generated, never commit)
+.secrets
+data/.secrets
+backend/data/.secrets
+
 # Environment
 .env.local
 .env.*.local
