@@ -12,6 +12,7 @@ services:
       - ./data:/app/data
       - ./deployments:/deployments
       - ./nginx-proxy/conf.d:/nginx-conf
+      - ./backups:/data/backups
       - /etc/hostname:/host/hostname:ro
       - /etc/os-release:/host/os-release:ro
       - /proc:/host/proc:ro
@@ -22,13 +23,16 @@ services:
       - DEPLOYMENTS_PATH=/deployments
       - NGINX_CONF_PATH=/nginx-conf
       - DOCKER_NETWORK=docklift_network
+      # Security: Generate new secrets with: node -e "require('crypto').randomBytes(64).toString('hex')"
+      - JWT_SECRET=${JWT_SECRET:-}
+      - INTERNAL_API_SECRET=${INTERNAL_API_SECRET:-}
     networks:
       - docklift_network
     depends_on:
       - docklift-nginx-proxy
 
   docklift-frontend:
-    build: 
+    build:
       context: ./frontend
       args:
         - NEXT_PUBLIC_API_URL=http://localhost:8000
@@ -38,7 +42,7 @@ services:
       - "3000"
     environment:
       - NEXT_PUBLIC_API_URL=http://docklift-backend:8000
-      - NEXT_SERVER_ACTIONS_ENCRYPTION_KEY=fa01ca8c16303047bcac2a2edb322ae53aa755b4ba1d20875e41ff4f2c1a2fb7
+      - NEXT_SERVER_ACTIONS_ENCRYPTION_KEY=${NEXT_SERVER_ACTIONS_ENCRYPTION_KEY:-3781fa1fc5bbf228bb728620c7a2fedc751660f5216243b56185346bdbcf8249}
     networks:
       - docklift_network
     depends_on:
