@@ -288,6 +288,7 @@ export function SystemOverview() {
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [purging, setPurging] = useState(false);
   const [showPurgeDialog, setShowPurgeDialog] = useState(false);
+  const [processSortBy, setProcessSortBy] = useState<'cpu' | 'mem'>('cpu');
 
   const fetchStats = useCallback(async () => {
     try {
@@ -710,11 +711,37 @@ export function SystemOverview() {
         {/* Top Processes - Full Width Below */}
         {stats.processes && stats.processes.length > 0 && (
           <div className="mt-4 pt-4 border-t border-border/50">
-            <div className="flex items-center gap-2 mb-3">
-              <Activity className="h-4 w-4 text-blue-500" />
-              <span className="font-medium text-sm">
-                Top Processes (by CPU)
-              </span>
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <div className="flex items-center gap-2">
+                <Activity className="h-4 w-4 text-blue-500" />
+                <span className="font-medium text-sm">
+                  Top Processes
+                </span>
+              </div>
+              <div className="flex items-center gap-1 bg-secondary/50 rounded-lg p-0.5">
+                <button
+                  onClick={() => setProcessSortBy('cpu')}
+                  className={cn(
+                    "px-2 py-1 text-xs font-medium rounded-md transition-all",
+                    processSortBy === 'cpu'
+                      ? "bg-cyan-500/20 text-cyan-500"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  by CPU
+                </button>
+                <button
+                  onClick={() => setProcessSortBy('mem')}
+                  className={cn(
+                    "px-2 py-1 text-xs font-medium rounded-md transition-all",
+                    processSortBy === 'mem'
+                      ? "bg-purple-500/20 text-purple-500"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  by Memory
+                </button>
+              </div>
             </div>
 
             <div className="overflow-x-auto rounded-xl border border-border/50">
@@ -729,7 +756,9 @@ export function SystemOverview() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/30 bg-card">
-                  {stats.processes.map((proc) => (
+                  {[...stats.processes]
+                    .sort((a, b) => processSortBy === 'cpu' ? b.cpu - a.cpu : b.mem - a.mem)
+                    .map((proc) => (
                     <tr
                       key={proc.pid}
                       className="hover:bg-secondary/30 transition-colors"
@@ -753,7 +782,7 @@ export function SystemOverview() {
                         {proc.mem.toFixed(1)}%
                       </td>
                     </tr>
-                  ))}
+                    ))}
                 </tbody>
               </table>
             </div>

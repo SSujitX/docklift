@@ -143,10 +143,8 @@ function formatUptime(seconds: number): string {
 async function readHostFile(path: string): Promise<string | null> {
   try {
     const content = await readFile(path, 'utf8');
-    console.log(`[HOST] Read ${path}: ${content.substring(0, 50)}...`);
     return content.trim();
   } catch (e: any) {
-    console.error(`[HOST] Failed to read ${path}:`, e.message);
     return null;
   }
 }
@@ -154,10 +152,7 @@ async function readHostFile(path: string): Promise<string | null> {
 // Helper to parse os-release file
 async function readHostOSInfo() {
   const content = await readHostFile('/host/os-release');
-  if (!content) {
-    console.error('[HOST] os-release content is null');
-    return null;
-  }
+  if (!content) return null;
   
   const info: any = {};
   content.split('\n').forEach((line: string) => {
@@ -166,8 +161,6 @@ async function readHostOSInfo() {
       info[key] = value.replace(/"/g, '');
     }
   });
-  
-  console.log('[HOST] Parsed OS info:', info.PRETTY_NAME);
   
   return {
     platform: 'linux',
@@ -382,12 +375,6 @@ async function getSystemStats(): Promise<SystemStats> {
       // Try to get HOST processes via nsenter if on Linux, fallback to top
       (process.platform === 'linux') ? getHostProcesses().then(p => p || getLinuxTopProcesses()) : Promise.resolve(null)
     ]);
-
-    // Debug logging for HOST data
-    console.log('[HOST DEBUG] hostname:', hostHostname);
-    console.log('[HOST DEBUG] hostOS:', hostOS);
-    console.log('[HOST DEBUG] hostCpuInfo:', hostCpuInfo);
-    console.log('[HOST DEBUG] hostMemInfo:', hostMemInfo ? 'loaded' : 'null');
 
     // Process GPU data
     const gpuController = graphics.controllers?.[0];
