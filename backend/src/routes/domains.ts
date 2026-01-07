@@ -114,7 +114,8 @@ router.post('/', async (req: Request, res: Response) => {
 router.delete('/:domain', async (req: Request, res: Response) => {
   const { domain } = req.params;
 
-  if (!domain || !/^[a-zA-Z0-9.-]+$/.test(domain)) {
+  // Strict domain validation - must be valid hostname format
+  if (!domain || !/^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)+$/.test(domain)) {
     return res.status(400).json({ error: 'Invalid domain format' });
   }
 
