@@ -1434,12 +1434,21 @@ function SettingsContent() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-border/50">
-                          {uploadedFiles.map((file) => (
+                          {uploadedFiles.map((file) => {
+                            const isRestored = file.filename.includes('.restored-');
+                            return (
                             <tr key={file.filename} className="hover:bg-secondary/20">
                               <td className="px-4 py-3">
-                                <span className="font-medium font-mono text-xs block truncate max-w-[200px]">
-                                  {file.filename}
-                                </span>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-medium font-mono text-xs block truncate max-w-[180px]">
+                                    {file.filename}
+                                  </span>
+                                  {isRestored && (
+                                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 whitespace-nowrap">
+                                      Restored
+                                    </span>
+                                  )}
+                                </div>
                                 <span className="text-xs text-muted-foreground sm:hidden">
                                   {formatBytes(file.size)}
                                 </span>
@@ -1478,7 +1487,8 @@ function SettingsContent() {
                                 </Button>
                               </td>
                             </tr>
-                          ))}
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>
