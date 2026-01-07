@@ -767,35 +767,6 @@ router.post('/reset', async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/system/execute - Execute a command and return output
-router.post('/execute', async (req: Request, res: Response) => {
-  const { command } = req.body;
-  
-  if (!command) {
-    return res.status(400).json({ error: 'No command provided' });
-  }
-
-  try {
-    // Basic security: avoid obviously destructive commands if possible
-    const forbidden = ['rm -rf /', ':(){ :|:& };:', 'mv /dev/null'];
-    if (forbidden.some(b => command.includes(b))) {
-      return res.status(403).json({ error: 'Command forbidden for safety' });
-    }
-
-    const { stdout, stderr } = await execAsync(command, { timeout: 30000 });
-    res.json({ 
-      output: stdout,
-      error: stderr || null
-    });
-  } catch (error: any) {
-    res.status(500).json({ 
-      error: error.message,
-      output: error.stdout || '',
-      stderr: error.stderr || ''
-    });
-  }
-});
-
 // ========================================
 // Version Check & Upgrade
 // ========================================
