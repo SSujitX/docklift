@@ -351,8 +351,15 @@ router.post('/restore/:filename', async (req: Request, res: Response) => {
     writeLog(`\n[4/7] Restoring deployments...\n`);
     const tempDeploymentsPath = path.join(tempDir, 'deployments');
     if (fs.existsSync(tempDeploymentsPath)) {
-      // Remove existing deployments and copy new ones
-      await fsp.rm(DEPLOYMENTS_PATH, { recursive: true, force: true });
+      // Clear existing deployments contents (don't remove the mount point itself)
+      try {
+        const existingItems = await fsp.readdir(DEPLOYMENTS_PATH);
+        for (const item of existingItems) {
+          await fsp.rm(path.join(DEPLOYMENTS_PATH, item), { recursive: true, force: true });
+        }
+      } catch {
+        // Directory might not exist yet
+      }
       await fsp.mkdir(DEPLOYMENTS_PATH, { recursive: true });
       await execAsync(`cp -r "${tempDeploymentsPath}/." "${DEPLOYMENTS_PATH}/"`);
       writeLog(`      + Deployments restored\n`);
@@ -592,7 +599,15 @@ router.post('/restore-upload', uploadBackup.single('backup'), async (req: Reques
     writeLog(`\n[4/7] Restoring deployments...\n`);
     const tempDeploymentsPath = path.join(tempDir, 'deployments');
     if (fs.existsSync(tempDeploymentsPath)) {
-      await fsp.rm(DEPLOYMENTS_PATH, { recursive: true, force: true });
+      // Clear existing deployments contents (don't remove the mount point itself)
+      try {
+        const existingItems = await fsp.readdir(DEPLOYMENTS_PATH);
+        for (const item of existingItems) {
+          await fsp.rm(path.join(DEPLOYMENTS_PATH, item), { recursive: true, force: true });
+        }
+      } catch {
+        // Directory might not exist yet
+      }
       await fsp.mkdir(DEPLOYMENTS_PATH, { recursive: true });
       await execAsync(`cp -r "${tempDeploymentsPath}/." "${DEPLOYMENTS_PATH}/"`);
       writeLog(`      + Deployments restored\n`);
