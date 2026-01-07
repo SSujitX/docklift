@@ -627,6 +627,44 @@ router.post('/purge', async (req: Request, res: Response) => {
       results.push('○ Swap clearing only supported on Linux');
     }
 
+    // 4. HOST-LEVEL CLEANUP (runs on host via nsenter, not inside container)
+    if (process.platform === 'linux') {
+      // 4a. Clear PAGE CACHE on HOST (safe - Linux rebuilds as needed)
+      try {
+        // sync first to write dirty pages, then clear cache
+        await execAsync('nsenter --target 1 --mount --uts --ipc --net --pid -- sh -c "sync && echo 3 > /proc/sys/vm/drop_caches"', { timeout: 15000 });
+        results.push('✓ HOST page cache cleared (safe - will rebuild as needed)');
+      } catch (err: any) {
+        console.error('Host cache clearing failed:', err);
+        results.push('○ HOST cache clearing skipped');
+      }
+
+      // 4b. Clear old SYSTEMD JOURNAL logs (can grow large)
+      try {
+        await execAsync('nsenter --target 1 --mount --uts --ipc --net --pid -- journalctl --vacuum-time=3d', { timeout: 30000 });
+        results.push('✓ HOST journal logs cleaned (kept 3 days)');
+      } catch (err: any) {
+        // journalctl might not exist or permission denied
+        results.push('○ HOST journal cleanup skipped');
+      }
+
+      // 4c. Clear APT cache (Debian/Ubuntu)
+      try {
+        await execAsync('nsenter --target 1 --mount --uts --ipc --net --pid -- apt-get clean 2>/dev/null || true', { timeout: 30000 });
+        results.push('✓ HOST apt cache cleared');
+      } catch (err: any) {
+        results.push('○ HOST apt cleanup skipped');
+      }
+
+      // 4d. Clear tmp files older than 7 days (safe)
+      try {
+        await execAsync('nsenter --target 1 --mount --uts --ipc --net --pid -- find /tmp -type f -atime +7 -delete 2>/dev/null || true', { timeout: 30000 });
+        results.push('✓ HOST temp files cleaned (7+ days old)');
+      } catch (err: any) {
+        results.push('○ HOST temp cleanup skipped');
+      }
+    }
+
     // 4. Reset system stats cache to reflect changes immediately
     cachedStats = null;
     lastFetch = 0;

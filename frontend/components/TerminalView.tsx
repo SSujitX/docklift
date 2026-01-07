@@ -458,7 +458,7 @@ export function TerminalView() {
             <div className="text-center space-y-1">
               <DialogTitle className="text-xl font-bold tracking-tight">Purge Resources</DialogTitle>
               <DialogDescription className="text-muted-foreground text-sm">
-                Aggressive cleanup to truly free CPU and RAM. User containers will restart briefly.
+                Complete cleanup: Docker + HOST system. Safe operations only.
               </DialogDescription>
             </div>
           </DialogHeader>
@@ -466,11 +466,11 @@ export function TerminalView() {
           <div className="space-y-2 my-2">
             <div className="p-3 rounded-xl bg-secondary/50 border border-border flex items-center gap-3">
               <CheckCircle2 className="h-4 w-4 text-cyan-500" />
-              <p className="text-xs font-bold">Docker cleanup (unused images, networks)</p>
+              <p className="text-xs font-bold">Docker cleanup + Restart user containers</p>
             </div>
             <div className="p-3 rounded-xl bg-secondary/50 border border-border flex items-center gap-3">
               <CheckCircle2 className="h-4 w-4 text-cyan-500" />
-              <p className="text-xs font-bold">Restart user containers (Docklift safe)</p>
+              <p className="text-xs font-bold">HOST cleanup (cache, logs, apt, temp)</p>
             </div>
             <div className="p-3 rounded-xl bg-secondary/50 border border-border flex items-center gap-3">
               <CheckCircle2 className="h-4 w-4 text-cyan-500" />
