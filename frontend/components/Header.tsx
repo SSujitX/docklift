@@ -14,9 +14,18 @@ import { useAuth } from "./AuthProvider";
 // Global cache for star count to prevent flickering during theme changes or rerenders
 let cachedStars: number | null = null;
 
+// Format star count: 2000 → 2k, 2669 → 2.6k, 12500 → 12.5k
+function formatStars(count: number | null): string {
+  if (count === null) return "...";
+  if (count < 1000) return count.toString();
+  const k = count / 1000;
+  return k % 1 === 0 ? `${k}k` : `${k.toFixed(1)}k`;
+}
+
 export function Header() {
-  const { theme, setTheme } = useTheme();
+  const { theme, setTheme, resolvedTheme } = useTheme();
   const { isAuthenticated, logout } = useAuth();
+  const isDark = resolvedTheme === "dark";
   const [stars, setStars] = useState<number | null>(cachedStars);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const pathname = usePathname();
@@ -116,16 +125,24 @@ export function Header() {
               className="hidden md:block"
             >
               <div className="flex items-center group cursor-pointer h-9 active:scale-95 transition-transform duration-200">
-                <div className="flex items-center gap-0 bg-gradient-to-r from-zinc-900 to-zinc-800 dark:from-zinc-800 dark:to-zinc-900 border border-white/10 rounded-full overflow-hidden shadow-lg shadow-black/20 group-hover:shadow-xl group-hover:shadow-black/30 transition-all">
-                  <div className="flex items-center justify-center h-9 w-9 bg-zinc-950 border-r border-white/10">
-                    <GithubIcon className="h-4 w-4 text-white group-hover:scale-110 transition-transform" />
+                <div className={cn(
+                  "flex items-center gap-0 rounded-full overflow-hidden transition-all",
+                  isDark
+                    ? "bg-black border border-zinc-700 shadow-lg shadow-black/50 hover:border-zinc-600"
+                    : "bg-white border border-zinc-200 shadow-sm hover:shadow-md hover:border-zinc-300"
+                )}>
+                  <div className={cn(
+                    "flex items-center justify-center h-9 w-9 border-r",
+                    isDark ? "bg-zinc-900 border-zinc-700" : "bg-zinc-100 border-zinc-200"
+                  )}>
+                    <GithubIcon className={cn("h-4 w-4 group-hover:scale-110 transition-transform", isDark ? "text-white" : "text-zinc-900")} />
                   </div>
                   <div className="flex items-center gap-1.5 px-3 h-full">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 group-hover:text-zinc-300 transition-colors">Star</span>
-                    <div className="flex items-center gap-1 bg-white/10 rounded-full px-2 py-0.5">
-                      <span className="text-yellow-400 text-xs">&#9733;</span>
-                      <span className="text-xs font-bold text-white">
-                        {stars !== null ? stars : "..."}
+                    <span className={cn("text-[10px] font-bold uppercase tracking-wider transition-colors", isDark ? "text-zinc-400" : "text-zinc-500")}>Star</span>
+                    <div className={cn("flex items-center gap-1 rounded-full px-2 py-0.5", isDark ? "bg-zinc-800" : "bg-zinc-100")}>
+                      <span className={cn("text-xs", isDark ? "text-yellow-400" : "text-yellow-500")}>&#9733;</span>
+                      <span className={cn("text-xs font-bold", isDark ? "text-zinc-100" : "text-zinc-900")}>
+                        {formatStars(stars)}
                       </span>
                     </div>
                   </div>
@@ -259,7 +276,7 @@ export function Header() {
                     <GithubIcon className="h-4 w-4 text-white" />
                   </div>
                   <span className="flex-1">GitHub</span>
-                  <span className="text-xs font-bold text-muted-foreground bg-secondary/50 px-2 py-0.5 rounded">{stars || "..."} ⭐</span>
+                  <span className="text-xs font-bold text-muted-foreground bg-secondary/50 px-2 py-0.5 rounded">{formatStars(stars)} ⭐</span>
                 </div>
               </a>
             </nav>
@@ -277,6 +294,8 @@ export function Header() {
 
 function ProfileMenu({ isMobile = false }: { isMobile?: boolean }) {
   const { user, logout } = useAuth();
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === "dark";
   const [isOpen, setIsOpen] = useState(false);
   const router = useRouter();
 
@@ -338,7 +357,7 @@ function ProfileMenu({ isMobile = false }: { isMobile?: boolean }) {
           isOpen ? "bg-secondary text-foreground border-border/50" : "text-muted-foreground hover:text-foreground hover:bg-secondary/50"
         )}
       >
-        <div className="h-7 w-7 rounded-full bg-zinc-900 dark:bg-zinc-100 flex items-center justify-center text-white dark:text-zinc-900 text-xs font-bold">
+        <div className="h-7 w-7 rounded-full bg-gradient-to-br from-zinc-700 to-zinc-900 flex items-center justify-center text-white text-xs font-bold shadow-sm border border-white/10">
           {user?.name?.charAt(0).toUpperCase() || "U"}
         </div>
         <span className="hidden lg:inline text-sm font-medium">{user?.name?.split(' ')[0]}</span>
@@ -346,14 +365,19 @@ function ProfileMenu({ isMobile = false }: { isMobile?: boolean }) {
       </Button>
 
       {isOpen && (
-        <div className="absolute right-0 top-full mt-2 w-56 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-xl shadow-black/10 dark:shadow-black/50 p-1.5 animate-in fade-in zoom-in-95 duration-200 z-[100] origin-top-right">
-          <div className="px-3 py-3 flex items-center gap-3 border-b border-zinc-100 dark:border-zinc-800 mb-1">
-            <div className="h-9 w-9 rounded-full bg-zinc-900 dark:bg-zinc-100 flex items-center justify-center text-white dark:text-zinc-900 text-sm font-bold">
+        <div className={cn(
+          "absolute right-0 top-full mt-2 w-56 rounded-xl p-1.5 animate-in fade-in zoom-in-95 duration-200 z-[100] origin-top-right shadow-xl",
+          isDark
+            ? "bg-black border border-zinc-700 shadow-black/50"
+            : "bg-white border border-zinc-200 shadow-black/10"
+        )}>
+          <div className={cn("px-3 py-3 flex items-center gap-3 border-b mb-1", isDark ? "border-zinc-700" : "border-zinc-100")}>
+            <div className="h-9 w-9 rounded-full bg-gradient-to-br from-zinc-700 to-zinc-900 flex items-center justify-center text-white text-sm font-bold shadow-sm border border-white/10">
               {user?.name?.charAt(0).toUpperCase() || "U"}
             </div>
             <div className="flex flex-col min-w-0">
-              <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 truncate">{user?.name}</span>
-              <span className="text-xs text-zinc-500 dark:text-zinc-400 truncate">{user?.email}</span>
+              <span className={cn("text-sm font-semibold truncate", isDark ? "text-zinc-100" : "text-zinc-900")}>{user?.name}</span>
+              <span className={cn("text-xs truncate", isDark ? "text-zinc-400" : "text-zinc-500")}>{user?.email}</span>
             </div>
           </div>
 
@@ -361,7 +385,10 @@ function ProfileMenu({ isMobile = false }: { isMobile?: boolean }) {
             <Link
               href="/settings"
               onClick={() => setIsOpen(false)}
-              className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+              className={cn(
+                "flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer",
+                isDark ? "text-zinc-300 hover:bg-zinc-800" : "text-zinc-700 hover:bg-zinc-100"
+              )}
             >
               <Settings className="h-4 w-4" />
               <span>Settings</span>
@@ -369,7 +396,10 @@ function ProfileMenu({ isMobile = false }: { isMobile?: boolean }) {
 
             <div
               onClick={() => { logout(); setIsOpen(false); }}
-              className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-red-600 dark:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors cursor-pointer"
+              className={cn(
+                "flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer",
+                isDark ? "text-red-500 hover:bg-red-900/30" : "text-red-600 hover:bg-red-50"
+              )}
             >
               <LogOut className="h-4 w-4" />
               <span>Sign Out</span>
