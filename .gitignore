@@ -59,3 +59,7 @@ backend/deployments/*
 nginx-proxy/conf.d/*
 !nginx-proxy/conf.d/.gitkeep
 !nginx-proxy/conf.d/default.conf
+
+.claude/
+AGENTS.md
+CODEBASE_SUMMARY.md
