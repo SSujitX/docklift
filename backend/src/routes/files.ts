@@ -30,13 +30,20 @@ router.get('/:projectId/content', (req: Request, res: Response) => {
     const relativePath = req.query.path as string || '';
     const filePath = path.join(projectPath, relativePath);
 
-    // Security check - prevent path traversal
+    // Security check - prevent path traversal (basic check)
     if (!filePath.startsWith(projectPath)) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
     if (!fs.existsSync(filePath)) {
       return res.status(404).json({ error: 'File not found' });
+    }
+
+    // Security check - resolve symlinks and verify real path is within project
+    const realProjectPath = fs.realpathSync(projectPath);
+    const realFilePath = fs.realpathSync(filePath);
+    if (!realFilePath.startsWith(realProjectPath)) {
+      return res.status(403).json({ error: 'Access denied - symlink outside project' });
     }
 
     const stat = fs.statSync(filePath);
@@ -59,9 +66,20 @@ router.put('/:projectId/content', (req: Request, res: Response) => {
     const relativePath = req.query.path as string || '';
     const filePath = path.join(projectPath, relativePath);
 
-    // Security check
+    // Security check - prevent path traversal (basic check)
     if (!filePath.startsWith(projectPath)) {
       return res.status(403).json({ error: 'Access denied' });
+    }
+
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+
+    // Security check - resolve symlinks and verify real path is within project
+    const realProjectPath = fs.realpathSync(projectPath);
+    const realFilePath = fs.realpathSync(filePath);
+    if (!realFilePath.startsWith(realProjectPath)) {
+      return res.status(403).json({ error: 'Access denied - symlink outside project' });
     }
 
     const { content } = req.body;
