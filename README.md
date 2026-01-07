@@ -103,6 +103,16 @@ curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/upgrade.sh 
 curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/uninstall.sh | sudo bash -s -- -y
 ```
 
+### Development Build (Latest Master)
+
+For testing the latest features before release:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install-dev.sh | sudo bash
+```
+
+> ⚠️ **Warning:** This installs unreleased code from master branch. Use production install for stable deployments.
+
 ### Docker Compose
 
 ```bash

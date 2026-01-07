@@ -78,10 +78,25 @@ export const Installation = () => (
       </div>
     </div>
 
+    <div className="bg-secondary/50 rounded-xl p-6 mb-4">
+      <h4 className="font-semibold mb-4 text-amber-500">🧪 Development Build (Latest Master)</h4>
+      <p className="text-sm text-muted-foreground mb-4">For testing the latest features before release:</p>
+      <CommandBlock
+        label="Install from master branch"
+        command="curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install-dev.sh | sudo bash"
+        color="amber"
+      />
+      <div className="mt-3 p-3 bg-amber-500/10 rounded-lg border border-amber-500/20">
+        <p className="text-sm text-amber-600 dark:text-amber-400">
+          <strong>Warning:</strong> This installs unreleased code from master branch. Use production install for stable deployments.
+        </p>
+      </div>
+    </div>
+
     <div className="bg-secondary/50 rounded-xl p-6">
-      <h4 className="font-semibold mb-4">🛠️ Development Mode</h4>
+      <h4 className="font-semibold mb-4">🛠️ Local Development</h4>
       <p className="text-sm text-muted-foreground mb-4">For contributing or local development:</p>
-      <TerminalWindow 
+      <TerminalWindow
         title="Local Development"
         color="amber"
         items={[
