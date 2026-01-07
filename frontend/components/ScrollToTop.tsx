@@ -36,9 +36,9 @@ export function ScrollToTop() {
       <Button
         onClick={scrollToTop}
         size="icon"
-        className="h-12 w-12 rounded-full shadow-2xl bg-primary hover:bg-primary/90 border border-white/10 flex items-center justify-center group"
+        className="h-12 w-12 rounded-full shadow-2xl bg-zinc-900 dark:bg-zinc-100 hover:bg-zinc-800 dark:hover:bg-zinc-200 border border-white/20 dark:border-zinc-300 flex items-center justify-center group transition-all"
       >
-        <ChevronUp className="h-6 w-6 transition-transform group-hover:-translate-y-1" />
+        <ChevronUp className="h-6 w-6 text-white dark:text-zinc-900 transition-transform group-hover:-translate-y-1" />
       </Button>
     </div>
   );
