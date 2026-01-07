@@ -115,7 +115,7 @@ export const ApiReference = () => (
               <tr className="border-b border-border/50">
                 <td className="py-2 text-blue-500">POST</td>
                 <td className="py-2">/api/system/purge</td>
-                <td className="py-2 font-sans">Clean Docker caches</td>
+                <td className="py-2 font-sans">Aggressive cleanup: restart containers, clear swap, free memory</td>
               </tr>
               <tr className="border-b border-border/50">
                 <td className="py-2 text-blue-500">POST</td>

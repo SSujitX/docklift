@@ -317,7 +317,17 @@ export function SystemOverview() {
 
       if (!res.ok) throw new Error(data.error || "Purge failed");
 
-      toast.success("Server resources purged successfully!");
+      // Show detailed success message with memory savings if available
+      let message = "Server resources purged successfully!";
+      if (data.memorySaved && data.memorySaved !== "0%") {
+        message += ` Memory reduced: ${data.memoryBefore}% → ${data.memoryAfter}% (${data.memorySaved} saved)`;
+      }
+      
+      toast.success(message, {
+        description: data.details?.join(" • ") || undefined,
+        duration: 5000,
+      });
+      
       fetchStats();
     } catch (err: any) {
       toast.error(err.message || "Failed to purge server");
@@ -762,7 +772,7 @@ export function SystemOverview() {
               Purge Server Resources
             </DialogTitle>
             <DialogDescription className="text-center text-muted-foreground text-sm">
-              Deep clean Docker containers, image caches, and memory pages.
+              Aggressive cleanup to truly free CPU and RAM. User containers will restart briefly.
             </DialogDescription>
           </DialogHeader>
 
@@ -770,19 +780,19 @@ export function SystemOverview() {
             <div className="p-3 rounded-xl bg-secondary/30 border border-border flex items-center gap-3">
               <CheckCircle2 className="h-4 w-4 text-emerald-500" />
               <p className="text-xs font-semibold">
-                Cleanup unused Docker volumes & networks
+                Aggressive Docker cleanup (unused images, networks)
               </p>
             </div>
             <div className="p-3 rounded-xl bg-secondary/30 border border-border flex items-center gap-3">
               <CheckCircle2 className="h-4 w-4 text-emerald-500" />
               <p className="text-xs font-semibold">
-                Remove dangling image layers
+                Restart user containers to free memory (Docklift safe)
               </p>
             </div>
             <div className="p-3 rounded-xl bg-secondary/30 border border-border flex items-center gap-3">
               <CheckCircle2 className="h-4 w-4 text-emerald-500" />
               <p className="text-xs font-semibold">
-                Flush Linux PageCache (Free RAM)
+                Clear swap if safe (30%+ RAM free required)
               </p>
             </div>
           </div>

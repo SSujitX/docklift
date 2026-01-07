@@ -415,42 +415,122 @@ router.get('/ip', async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/system/purge - Clean up system resources and free memory
+// POST /api/system/purge - Clean up system resources and free memory (ENHANCED + SAFE)
 router.post('/purge', async (req: Request, res: Response) => {
   try {
     const results: string[] = [];
+    let memoryBefore = 0;
+    let memoryAfter = 0;
     
-    // 1. Docker Cleanup
+    // Capture memory before purge
     try {
-      const { stdout: dockerOutput } = await execAsync('docker system prune -f');
-      results.push('Docker cleanup successful');
-      // console.log('Docker Prune:', dockerOutput);
-    } catch (err: any) {
-      console.error('Docker prune failed:', err);
-      results.push('Docker cleanup skipped or failed');
+      const memData = await si.mem();
+      memoryBefore = Math.round((memData.used / memData.total) * 100);
+    } catch (err) {
+      // Non-critical, continue
     }
 
-    // 2. Clear Linux Memory Caches (Drop PageCache, dentries and inodes)
-    // Only works on Linux and requires root
+    // 1. Aggressive Docker Cleanup (SAFE: removed --volumes to protect user data)
+    try {
+      // Using -a to remove all unused images, but NOT --volumes for safety
+      const { stdout: dockerOutput } = await execAsync('docker system prune -af', { timeout: 60000 });
+      results.push('✓ Aggressive Docker cleanup completed (unused images, networks removed)');
+    } catch (err: any) {
+      console.error('Docker prune failed:', err);
+      results.push('✗ Docker cleanup failed');
+    }
+
+    // 2. Restart User Containers (Exclude Docklift containers)
+    // This frees memory from long-running containers with memory leaks
     if (process.platform === 'linux') {
       try {
-        await execAsync('sync && echo 3 > /proc/sys/vm/drop_caches');
-        results.push('System memory caches cleared');
+        // Get all running container IDs
+        const { stdout: containerList } = await execAsync('docker ps -q', { timeout: 10000 });
+        const allContainerIds = containerList.trim().split('\n').filter(id => id.length > 0);
         
-        // Reset system stats cache to reflect changes immediately
-        cachedStats = null;
-        lastFetch = 0;
+        if (allContainerIds.length > 0) {
+          // Get container names to filter out Docklift containers
+          const { stdout: containerNames } = await execAsync(`docker inspect --format='{{.Id}} {{.Name}}' ${allContainerIds.join(' ')}`, { timeout: 10000 });
+          
+          // Filter out Docklift containers
+          const dockliftContainers = ['docklift-backend', 'docklift-frontend', 'docklift-nginx', 'docklift-nginx-proxy'];
+          const userContainers = containerNames
+            .trim()
+            .split('\n')
+            .filter(line => {
+              const [id, name] = line.split(' ');
+              const containerName = name.replace(/^\//, ''); // Remove leading slash from name
+              return !dockliftContainers.some(dc => containerName.includes(dc));
+            })
+            .map(line => line.split(' ')[0]);
+          
+          if (userContainers.length > 0) {
+            await execAsync(`docker restart ${userContainers.join(' ')}`, { timeout: 120000 });
+            results.push(`✓ Restarted ${userContainers.length} user container(s) to free memory`);
+          } else {
+            results.push('○ No user containers to restart (only Docklift services running)');
+          }
+        } else {
+          results.push('○ No containers to restart');
+        }
       } catch (err: any) {
-        console.error('Failed to clear memory caches:', err);
-        results.push('Memory cache clearing failed (requires root)');
+        console.error('Container restart failed:', err);
+        results.push('✗ Container restart failed');
       }
     } else {
-      results.push('Memory cache clearing only supported on Linux');
+      results.push('○ Container restart only supported on Linux');
+    }
+
+    // 3. Clear Swap Memory (SAFE: Only if sufficient RAM available)
+    // SAFETY CHECK: Only clear swap if we have at least 30% free RAM
+    if (process.platform === 'linux') {
+      try {
+        // Get memory stats first
+        const memData = await si.mem();
+        const freeMemoryPercent = ((memData.free + memData.available) / memData.total) * 100;
+        
+        // Check if swap is enabled
+        const { stdout: swapInfo } = await execAsync('cat /proc/swaps');
+        const swapLines = swapInfo.trim().split('\n');
+        
+        if (swapLines.length > 1) { // More than just header line
+          // SAFETY CHECK: Only clear swap if we have enough free RAM
+          if (freeMemoryPercent >= 30) {
+            await execAsync('swapoff -a && swapon -a', { timeout: 60000 });
+            results.push('✓ Swap memory cleared and re-enabled (safe - sufficient RAM available)');
+          } else {
+            results.push(`⚠ Swap clearing skipped (low RAM: ${freeMemoryPercent.toFixed(1)}% free, need 30%+)`);
+          }
+        } else {
+          results.push('○ No swap configured');
+        }
+      } catch (err: any) {
+        console.error('Swap clearing failed:', err);
+        results.push('✗ Swap clearing failed');
+      }
+    } else {
+      results.push('○ Swap clearing only supported on Linux');
+    }
+
+    // 4. Reset system stats cache to reflect changes immediately
+    cachedStats = null;
+    lastFetch = 0;
+
+    // Capture memory after purge (give it a moment to settle)
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    try {
+      const memData = await si.mem();
+      memoryAfter = Math.round((memData.used / memData.total) * 100);
+    } catch (err) {
+      // Non-critical
     }
 
     res.json({ 
-      message: 'Purge operation completed', 
-      details: results 
+      message: 'Enhanced purge operation completed', 
+      details: results,
+      memoryBefore: memoryBefore || null,
+      memoryAfter: memoryAfter || null,
+      memorySaved: (memoryBefore && memoryAfter) ? `${memoryBefore - memoryAfter}%` : null
     });
   } catch (error) {
     console.error('Purge error:', error);

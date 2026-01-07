@@ -12,6 +12,53 @@ import { patchMiddlewareHosts, logMiddlewareBypassResult } from '../lib/middlewa
 
 const router = Router();
 
+// Auto-purge helper function (runs after successful deployments)
+async function runPostDeploymentPurge(): Promise<{ success: boolean; message: string }> {
+  try {
+    const { exec } = await import('child_process');
+    const { promisify } = await import('util');
+    const execAsync = promisify(exec);
+    const si = await import('systeminformation');
+    
+    const results: string[] = [];
+
+    // 1. Docker cleanup (remove build artifacts)
+    try {
+      await execAsync('docker system prune -af', { timeout: 30000 });
+      results.push('✓ Docker cleanup');
+    } catch (err) {
+      results.push('○ Docker cleanup skipped');
+    }
+
+    // 2. Swap clearing (with safety check - only on Linux)
+    if (process.platform === 'linux') {
+      try {
+        const memData = await si.default.mem();
+        const freeMemoryPercent = ((memData.free + memData.available) / memData.total) * 100;
+        
+        if (freeMemoryPercent >= 30) {
+          await execAsync('swapoff -a && swapon -a', { timeout: 30000 });
+          results.push('✓ Swap cleared');
+        } else {
+          results.push('○ Swap skipped (low RAM)');
+        }
+      } catch (err) {
+        results.push('○ Swap clearing skipped');
+      }
+    }
+
+    return { 
+      success: true, 
+      message: results.join(' | ') 
+    };
+  } catch (error) {
+    return { 
+      success: false, 
+      message: 'Auto-purge failed' 
+    };
+  }
+}
+
 // Allocate a port for the project
 async function allocatePort(projectId: string): Promise<number> {
   // Find next available port starting from 3001
@@ -406,6 +453,11 @@ router.post('/:projectId/deploy', async (req: Request, res: Response) => {
             writeLog(`  📍 ${svc.name}: http://${host}:${svc.port}\n`);
           }
         }
+        
+        // AUTO-PURGE: Clean up build artifacts and free memory
+        writeLog(`\n🧹 Running auto-purge to free resources...\n`);
+        const purgeResult = await runPostDeploymentPurge();
+        writeLog(`   ${purgeResult.message}\n`);
       } else {
         writeLog(`\n${'━'.repeat(50)}\n`);
         writeLog(`❌ DEPLOY FAILED (Exit Code: ${code})\n`);
@@ -674,6 +726,11 @@ router.post('/:projectId/redeploy', async (req: Request, res: Response) => {
           where: { project_id: projectId },
           data: { status: 'running' },
         });
+        
+        // AUTO-PURGE: Clean up build artifacts and free memory
+        writeLog(`\n🧹 Running auto-purge to free resources...\n`);
+        const purgeResult = await runPostDeploymentPurge();
+        writeLog(`   ${purgeResult.message}\n`);
       } else {
         writeLog(`\n${'━'.repeat(50)}\n❌ REDEPLOY FAILED (code ${code})\n${'━'.repeat(50)}\n`);
         
