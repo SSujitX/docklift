@@ -31,16 +31,32 @@ for cmd in docker git; do
 done
 echo -e " ${GREEN}done${NC}"
 
-# Step 2: Fetch
+# Step 2: Fetch latest release
 FETCH_ST=$(date +%s)
 printf "  ${CYAN}[2/5]${NC} Fetching code..."
 {
-    if [ "$DOCKLIFT_CI_LOCAL" = "true" ]; then mkdir -p "$INSTALL_DIR" && cp -r . "$INSTALL_DIR/" && cd "$INSTALL_DIR"
-    elif [ -d "$INSTALL_DIR/.git" ]; then cd "$INSTALL_DIR" && docker compose down 2>/dev/null || true && git fetch origin master -q && git reset --hard origin/master -q
-    else git clone -q https://github.com/SSujitX/docklift.git "$INSTALL_DIR" && cd "$INSTALL_DIR"; fi
+    # Get latest release tag from GitHub API
+    LATEST_TAG=$(curl -s https://api.github.com/repos/SSujitX/docklift/releases/latest | grep '"tag_name"' | cut -d'"' -f4 || echo "")
+
+    if [ "$DOCKLIFT_CI_LOCAL" = "true" ]; then
+        mkdir -p "$INSTALL_DIR" && cp -r . "$INSTALL_DIR/" && cd "$INSTALL_DIR"
+    elif [ -d "$INSTALL_DIR/.git" ]; then
+        cd "$INSTALL_DIR" && docker compose down 2>/dev/null || true
+        git fetch origin --tags -q
+        if [ -n "$LATEST_TAG" ]; then
+            git checkout "$LATEST_TAG" -q 2>/dev/null || git checkout "tags/$LATEST_TAG" -q
+        else
+            git fetch origin master -q && git reset --hard origin/master -q
+        fi
+    else
+        git clone -q https://github.com/SSujitX/docklift.git "$INSTALL_DIR" && cd "$INSTALL_DIR"
+        if [ -n "$LATEST_TAG" ]; then
+            git checkout "$LATEST_TAG" -q 2>/dev/null || git checkout "tags/$LATEST_TAG" -q
+        fi
+    fi
 } >/dev/null 2>&1
 echo -e " ${GREEN}done${NC} ${DIM}($(format_time $(($(date +%s) - FETCH_ST))))$NC"
-VERSION=$(grep -o '"version": *"[^"]*"' "$INSTALL_DIR/backend/package.json" 2>/dev/null | head -1 | cut -d'"' -f4 || echo "1.1.1")
+VERSION=$(grep -o '"version": *"[^"]*"' "$INSTALL_DIR/backend/package.json" 2>/dev/null | head -1 | cut -d'"' -f4 || echo "1.0.0")
 echo -e "        ${DIM}➞ Version: $VERSION${NC}"
 
 # Step 3-5: Setup & Build
