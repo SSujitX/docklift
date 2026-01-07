@@ -23,23 +23,23 @@ const Toaster = ({ ...props }: ToasterProps) => {
       toastOptions={{
         classNames: {
           toast:
-            "group toast group-[.toaster]:bg-background group-[.toaster]:text-foreground group-[.toaster]:border-border group-[.toaster]:shadow-2xl group-[.toaster]:rounded-2xl group-[.toaster]:py-4 group-[.toaster]:px-5 group-[.toaster]:min-h-[60px] group-[.toaster]:backdrop-blur-xl",
+            "group toast group-[.toaster]:bg-background/95 group-[.toaster]:text-foreground group-[.toaster]:border-border/40 group-[.toaster]:shadow-2xl group-[.toaster]:shadow-black/20 group-[.toaster]:rounded-xl group-[.toaster]:p-4 group-[.toaster]:gap-3 group-[.toaster]:font-sans group-[.toaster]:backdrop-blur-xl transition-all",
           success:
-            "group-[.toaster]:!bg-gradient-to-r group-[.toaster]:!from-emerald-500 group-[.toaster]:!via-green-500 group-[.toaster]:!to-teal-500 group-[.toaster]:!text-white group-[.toaster]:!border-emerald-400/50 group-[.toaster]:!shadow-[0_10px_40px_-10px_rgba(16,185,129,0.5)]",
+            "group-[.toaster]:!bg-emerald-500/5 group-[.toaster]:dark:!bg-emerald-500/10 group-[.toaster]:!border-emerald-500/20 group-[.toaster]:!text-emerald-600 group-[.toaster]:dark:!text-emerald-400 group-[.toaster]:!shadow-[0_8px_30px_-8px_rgba(16,185,129,0.1)]",
           error:
-            "group-[.toaster]:!bg-gradient-to-r group-[.toaster]:!from-rose-500 group-[.toaster]:!via-red-500 group-[.toaster]:!to-pink-500 group-[.toaster]:!text-white group-[.toaster]:!border-rose-400/50 group-[.toaster]:!shadow-[0_10px_40px_-10px_rgba(244,63,94,0.5)]",
+            "group-[.toaster]:!bg-red-500/5 group-[.toaster]:dark:!bg-red-500/10 group-[.toaster]:!border-red-500/20 group-[.toaster]:!text-red-600 group-[.toaster]:dark:!text-red-400 group-[.toaster]:!shadow-[0_8px_30px_-8px_rgba(239,68,68,0.1)]",
           warning:
-            "group-[.toaster]:!bg-gradient-to-r group-[.toaster]:!from-amber-500 group-[.toaster]:!via-orange-500 group-[.toaster]:!to-yellow-500 group-[.toaster]:!text-white group-[.toaster]:!border-amber-400/50 group-[.toaster]:!shadow-[0_10px_40px_-10px_rgba(245,158,11,0.5)]",
+            "group-[.toaster]:!bg-amber-500/5 group-[.toaster]:dark:!bg-amber-500/10 group-[.toaster]:!border-amber-500/20 group-[.toaster]:!text-amber-600 group-[.toaster]:dark:!text-amber-400 group-[.toaster]:!shadow-[0_8px_30px_-8px_rgba(245,158,11,0.1)]",
           info:
-            "group-[.toaster]:!bg-gradient-to-r group-[.toaster]:!from-cyan-500 group-[.toaster]:!via-blue-500 group-[.toaster]:!to-indigo-500 group-[.toaster]:!text-white group-[.toaster]:!border-cyan-400/50 group-[.toaster]:!shadow-[0_10px_40px_-10px_rgba(6,182,212,0.5)]",
-          title: "group-[.toast]:font-bold group-[.toast]:text-sm",
-          description: "group-[.toast]:text-muted-foreground group-[.toast.success]:!text-white/90 group-[.toast.error]:!text-white/90 group-[.toast.warning]:!text-white/90 group-[.toast.info]:!text-white/90 group-[.toast]:text-xs",
+            "group-[.toaster]:!bg-blue-500/5 group-[.toaster]:dark:!bg-blue-500/10 group-[.toaster]:!border-blue-500/20 group-[.toaster]:!text-blue-600 group-[.toaster]:dark:!text-blue-400 group-[.toaster]:!shadow-[0_8px_30px_-8px_rgba(59,130,246,0.1)]",
+          title: "group-[.toast]:font-bold group-[.toast]:text-sm group-[.toast]:text-foreground",
+          description: "group-[.toast]:text-muted-foreground group-[.toast]:text-xs group-[.toast]:opacity-90",
           actionButton:
-            "group-[.toast]:!bg-white/20 group-[.toast]:!text-white group-[.toast]:!font-bold group-[.toast]:!rounded-lg",
+            "group-[.toast]:bg-primary group-[.toast]:text-primary-foreground group-[.toast]:font-semibold group-[.toast]:rounded-lg group-[.toast]:text-xs",
           cancelButton:
-            "group-[.toast]:!bg-white/10 group-[.toast]:!text-white/80 group-[.toast]:!rounded-lg",
+            "group-[.toast]:bg-muted group-[.toast]:text-muted-foreground group-[.toast]:font-medium group-[.toast]:rounded-lg group-[.toast]:text-xs",
           closeButton:
-            "group-[.toast]:!bg-white/20 group-[.toast]:!text-white group-[.toast]:!border-white/20 group-[.toast]:hover:!bg-white/30",
+            "group-[.toast]:bg-transparent group-[.toast]:text-muted-foreground group-[.toast]:hover:text-foreground group-[.toast]:hover:bg-accent group-[.toast]:transition-colors",
         },
       }}
       {...props}
