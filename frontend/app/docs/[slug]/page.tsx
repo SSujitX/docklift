@@ -18,6 +18,7 @@ import { ApiReference } from "../components/ApiReference";
 import { FileManagement } from "../components/FileManagement";
 import { PortManagement } from "../components/PortManagement";
 import { ProfileManagement } from "../components/ProfileManagement";
+import { BackupRestore } from "../components/BackupRestore";
 import { ResetPassword } from "../components/ResetPassword";
 import { UsefulCommands } from "../components/UsefulCommands";
 import { Troubleshooting } from "../components/Troubleshooting";
@@ -37,6 +38,7 @@ const componentMap: Record<string, React.ComponentType> = {
   files: FileManagement,
   ports: PortManagement,
   profile: ProfileManagement,
+  backup: BackupRestore,
   "reset-password": ResetPassword,
   commands: UsefulCommands,
   troubleshooting: Troubleshooting,
