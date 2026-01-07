@@ -79,7 +79,9 @@ function SettingsContent() {
 
   // Backup State
   const [backups, setBackups] = useState<BackupInfo[]>([]);
+  const [uploadedFiles, setUploadedFiles] = useState<BackupInfo[]>([]);
   const [loadingBackups, setLoadingBackups] = useState(false);
+  const [loadingUploads, setLoadingUploads] = useState(false);
   const [creatingBackup, setCreatingBackup] = useState(false);
   const [backupProgress, setBackupProgress] = useState<string[]>([]);
   const [showBackupProgress, setShowBackupProgress] = useState(false);
@@ -93,6 +95,12 @@ function SettingsContent() {
   const [showUploadRestoreConfirm, setShowUploadRestoreConfirm] = useState(false);
   const [selectedUploadFile, setSelectedUploadFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [uploadToDelete, setUploadToDelete] = useState<string | null>(null);
+  const [showDeleteUploadConfirm, setShowDeleteUploadConfirm] = useState(false);
+  const [deletingUpload, setDeletingUpload] = useState(false);
+  const [uploadToRestore, setUploadToRestore] = useState<string | null>(null);
+  const [showRestoreUploadConfirm, setShowRestoreUploadConfirm] = useState(false);
+  const [backupName, setBackupName] = useState('');
 
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -118,7 +126,8 @@ function SettingsContent() {
     if (activeTab === 'github') fetchGitHubStatus();
     if (activeTab === 'domain') fetchDomains();
     if (activeTab === 'server') fetchServerIP();
-    if (activeTab === 'backup' || activeTab === 'restore') fetchBackups();
+    if (activeTab === 'backup') fetchBackups();
+    if (activeTab === 'restore') fetchUploadedFiles();
   }, [activeTab]);
 
   useEffect(() => {
@@ -339,6 +348,82 @@ function SettingsContent() {
     }
   };
 
+  const fetchUploadedFiles = async () => {
+    setLoadingUploads(true);
+    try {
+      const res = await fetch(`${API_URL}/api/backup/uploads`, { headers: getAuthHeaders() });
+      if (res.ok) {
+        const data = await res.json();
+        setUploadedFiles(data);
+      }
+    } catch (error) {
+      toast.error("Failed to load uploaded files");
+    } finally {
+      setLoadingUploads(false);
+    }
+  };
+
+  const handleDeleteUpload = async () => {
+    if (!uploadToDelete) return;
+
+    setDeletingUpload(true);
+    try {
+      const res = await fetch(`${API_URL}/api/backup/uploads/${uploadToDelete}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders(),
+      });
+
+      if (!res.ok) throw new Error("Failed to delete file");
+
+      toast.success("File deleted");
+      setShowDeleteUploadConfirm(false);
+      setUploadToDelete(null);
+      fetchUploadedFiles();
+    } catch (error) {
+      toast.error("Failed to delete file");
+    } finally {
+      setDeletingUpload(false);
+    }
+  };
+
+  const handleRestoreFromUpload = async () => {
+    if (!uploadToRestore) return;
+
+    setRestoringBackup(true);
+    setRestoreProgress([]);
+    setShowRestoreProgress(true);
+    setShowRestoreUploadConfirm(false);
+
+    try {
+      const res = await fetch(`${API_URL}/api/backup/restore-from-upload/${uploadToRestore}`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+      });
+
+      const reader = res.body?.getReader();
+      const decoder = new TextDecoder();
+
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const text = decoder.decode(value);
+          const lines = text.split('\n').filter(line => line.trim());
+          setRestoreProgress(prev => [...prev, ...lines]);
+        }
+      }
+
+      toast.success("Backup restored successfully");
+      fetchUploadedFiles();
+    } catch (error) {
+      toast.error("Failed to restore from uploaded file");
+    } finally {
+      setRestoringBackup(false);
+      setUploadToRestore(null);
+    }
+  };
+
   const handleCreateBackup = async () => {
     setCreatingBackup(true);
     setBackupProgress([]);
@@ -347,7 +432,8 @@ function SettingsContent() {
     try {
       const res = await fetch(`${API_URL}/api/backup/create`, {
         method: 'POST',
-        headers: getAuthHeaders(),
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({ name: backupName.trim() || undefined }),
       });
 
       const reader = res.body?.getReader();
@@ -365,6 +451,7 @@ function SettingsContent() {
       }
 
       toast.success("Backup created successfully");
+      setBackupName('');
       fetchBackups();
     } catch (error) {
       toast.error("Failed to create backup");
@@ -1100,21 +1187,34 @@ function SettingsContent() {
             {activeTab === 'backup' && (
               <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
                 <Card className="p-4 sm:p-6 border-emerald-500/20">
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 sm:p-3 rounded-xl bg-emerald-500/10 shrink-0">
-                        <Archive className="h-5 w-5 sm:h-6 sm:w-6 text-emerald-500" />
-                      </div>
-                      <div className="min-w-0">
-                        <h2 className="text-lg sm:text-xl font-semibold">Create Backup</h2>
-                        <p className="text-xs sm:text-sm text-muted-foreground">Create a full system backup with all your data</p>
-                      </div>
+                  <div className="flex items-center gap-3 mb-6">
+                    <div className="p-2 sm:p-3 rounded-xl bg-emerald-500/10 shrink-0">
+                      <Archive className="h-5 w-5 sm:h-6 sm:w-6 text-emerald-500" />
                     </div>
+                    <div className="min-w-0">
+                      <h2 className="text-lg sm:text-xl font-semibold">Create Backup</h2>
+                      <p className="text-xs sm:text-sm text-muted-foreground">Create a full system backup with all your data</p>
+                    </div>
+                  </div>
 
+                  {/* Backup name input */}
+                  <div className="flex flex-col sm:flex-row gap-3 mb-6">
+                    <div className="flex-1">
+                      <Input
+                        placeholder="Backup name (optional) - e.g., before-migration, v1.0"
+                        value={backupName}
+                        onChange={(e) => setBackupName(e.target.value)}
+                        className="bg-secondary/30 h-11 border-border/40 focus:border-emerald-500/50"
+                        disabled={creatingBackup}
+                      />
+                      <p className="text-xs text-muted-foreground mt-1.5 ml-1">
+                        Output: <span className="font-mono text-emerald-500">{backupName.trim() ? `${backupName.trim().replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 50)}` : 'docklift'}-backup-[timestamp].zip</span>
+                      </p>
+                    </div>
                     <Button
                       onClick={handleCreateBackup}
                       disabled={creatingBackup}
-                      className="bg-emerald-600 hover:bg-emerald-700 w-full sm:w-auto shrink-0"
+                      className="bg-emerald-600 hover:bg-emerald-700 h-11 px-6 shrink-0"
                     >
                       {creatingBackup ? (
                         <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -1311,6 +1411,87 @@ function SettingsContent() {
                   </div>
                 </Card>
 
+                {/* Uploaded Files List */}
+                <Card className="p-4 sm:p-6 border-amber-500/10">
+                  <div className="flex items-center gap-3 mb-4">
+                    <FileUp className="h-5 w-5 text-amber-500" />
+                    <h3 className="font-semibold">Uploaded Restore Files</h3>
+                  </div>
+
+                  {loadingUploads ? (
+                    <div className="flex justify-center p-8">
+                      <Loader2 className="h-8 w-8 animate-spin text-amber-500" />
+                    </div>
+                  ) : uploadedFiles.length > 0 ? (
+                    <div className="rounded-xl border border-border/50 overflow-hidden">
+                      <table className="w-full text-left text-sm">
+                        <thead className="bg-secondary/50 font-medium text-muted-foreground">
+                          <tr>
+                            <th className="px-4 py-3">File</th>
+                            <th className="px-4 py-3 hidden sm:table-cell">Size</th>
+                            <th className="px-4 py-3 hidden md:table-cell">Uploaded</th>
+                            <th className="px-4 py-3 text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border/50">
+                          {uploadedFiles.map((file) => (
+                            <tr key={file.filename} className="hover:bg-secondary/20">
+                              <td className="px-4 py-3">
+                                <span className="font-medium font-mono text-xs block truncate max-w-[200px]">
+                                  {file.filename}
+                                </span>
+                                <span className="text-xs text-muted-foreground sm:hidden">
+                                  {formatBytes(file.size)}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-muted-foreground hidden sm:table-cell">
+                                {formatBytes(file.size)}
+                              </td>
+                              <td className="px-4 py-3 text-muted-foreground hidden md:table-cell">
+                                {new Date(file.created_at).toLocaleString()}
+                              </td>
+                              <td className="px-4 py-3 text-right space-x-1">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="text-amber-500 hover:text-amber-600 hover:bg-amber-500/10"
+                                  onClick={() => {
+                                    setUploadToRestore(file.filename);
+                                    setShowRestoreUploadConfirm(true);
+                                  }}
+                                  title="Restore"
+                                  disabled={restoringBackup}
+                                >
+                                  <RotateCcw className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="text-red-500 hover:text-red-600 hover:bg-red-500/10"
+                                  onClick={() => {
+                                    setUploadToDelete(file.filename);
+                                    setShowDeleteUploadConfirm(true);
+                                  }}
+                                  title="Delete"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-border/50 overflow-hidden">
+                      <div className="p-6 text-center bg-secondary/20">
+                        <FileUp className="h-8 w-8 text-muted-foreground/50 mx-auto mb-2" />
+                        <p className="text-muted-foreground text-sm">No uploaded files. Upload a backup file above to restore.</p>
+                      </div>
+                    </div>
+                  )}
+                </Card>
+
               </div>
             )}
 
@@ -1413,6 +1594,76 @@ function SettingsContent() {
               className="bg-amber-600 hover:bg-amber-700"
             >
               {uploadingBackup ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : (
+                <RotateCcw className="h-4 w-4 mr-2" />
+              )}
+              Restore Backup
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Uploaded File Confirmation Dialog */}
+      <Dialog open={showDeleteUploadConfirm} onOpenChange={setShowDeleteUploadConfirm}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-500">
+              <AlertTriangle className="h-5 w-5" />
+              Delete Uploaded File
+            </DialogTitle>
+            <DialogDescription className="pt-2">
+              Are you sure you want to delete <span className="font-mono font-bold text-foreground">{uploadToDelete}</span>?
+              This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setShowDeleteUploadConfirm(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteUpload}
+              disabled={deletingUpload}
+            >
+              {deletingUpload ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : (
+                <Trash2 className="h-4 w-4 mr-2" />
+              )}
+              Delete File
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Restore from Uploaded File Confirmation Dialog */}
+      <Dialog open={showRestoreUploadConfirm} onOpenChange={setShowRestoreUploadConfirm}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-500">
+              <AlertTriangle className="h-5 w-5" />
+              Restore from Uploaded File
+            </DialogTitle>
+            <DialogDescription className="pt-2">
+              <span className="font-bold text-red-500 block mb-2">Warning: This will replace all current data!</span>
+              Are you sure you want to restore from <span className="font-mono font-bold text-foreground">{uploadToRestore}</span>?
+              All current projects, deployments, and configurations will be replaced.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => {
+              setShowRestoreUploadConfirm(false);
+              setUploadToRestore(null);
+            }}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleRestoreFromUpload}
+              disabled={restoringBackup}
+              className="bg-amber-600 hover:bg-amber-700"
+            >
+              {restoringBackup ? (
                 <Loader2 className="h-4 w-4 animate-spin mr-2" />
               ) : (
                 <RotateCcw className="h-4 w-4 mr-2" />
