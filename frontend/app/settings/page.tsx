@@ -1204,7 +1204,7 @@ function SettingsContent() {
                         placeholder="Backup name (optional) - e.g., before-migration, v1.0"
                         value={backupName}
                         onChange={(e) => setBackupName(e.target.value)}
-                        className="bg-secondary/30 h-11 border-border/40 focus:border-emerald-500/50"
+                        className="bg-secondary/30 h-11 border border-emerald-500/30 focus:border-emerald-500/60 focus:ring-1 focus:ring-emerald-500/20 transition-all"
                         disabled={creatingBackup}
                       />
                       <p className="text-xs text-muted-foreground mt-1.5 ml-1">
