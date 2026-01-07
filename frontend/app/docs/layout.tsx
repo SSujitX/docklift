@@ -4,10 +4,10 @@ import { usePathname, useRouter } from "next/navigation";
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 import { cn } from "@/lib/utils";
-import { 
-  Info, Rocket, RefreshCw, Globe, Cpu, Terminal, Key, Database, Activity, HardDrive, 
-  Network, Server, FileCode, Container, Trash2, Power, FolderTree, Plug, User, 
-  ShieldCheck, Github, Shield, Wrench, Download, Code
+import {
+  Info, Rocket, RefreshCw, Globe, Cpu, Terminal, Key, Database, Activity, HardDrive,
+  Network, Server, FileCode, Container, Trash2, Power, FolderTree, Plug, User,
+  ShieldCheck, Github, Shield, Wrench, Download, Code, Archive
 } from "lucide-react";
 import Link from "next/link";
 
@@ -26,6 +26,7 @@ const sections = [
   { id: "files", title: "File Management", icon: FolderTree, path: "/docs/files" },
   { id: "ports", title: "Port Management", icon: Plug, path: "/docs/ports" },
   { id: "profile", title: "Profile Management", icon: User, path: "/docs/profile" },
+  { id: "backup", title: "Backup & Restore", icon: Archive, path: "/docs/backup" },
   { id: "reset-password", title: "Reset Password", icon: ShieldCheck, path: "/docs/reset-password" },
   { id: "commands", title: "Useful Commands", icon: Wrench, path: "/docs/commands" },
   { id: "troubleshooting", title: "Troubleshooting", icon: Shield, path: "/docs/troubleshooting" },
