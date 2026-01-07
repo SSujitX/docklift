@@ -15,6 +15,14 @@ import crypto from 'crypto';
 const router = Router();
 const upload = multer({ dest: 'uploads/' });
 
+// Strict domain validation helper - validates single domain or comma-separated domains
+const DOMAIN_REGEX = /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)+$/;
+function isValidDomainList(domainStr: string): boolean {
+  if (!domainStr) return true; // Empty is valid (optional field)
+  const domains = domainStr.split(',').map(d => d.trim()).filter(Boolean);
+  return domains.every(d => DOMAIN_REGEX.test(d));
+}
+
 // List all projects
 router.get('/', async (req: Request, res: Response) => {
   try {
@@ -154,8 +162,8 @@ router.post('/', upload.single('files'), async (req: Request, res: Response) => 
     const { name, description, source_type, github_url, project_type, github_branch, domain } = req.body;
 
     // Validate domain format to prevent Nginx config injection
-    if (domain && !/^[a-zA-Z0-9., -]+$/.test(domain)) {
-      return res.status(400).json({ error: 'Invalid domain format. Only letters, numbers, dots, hyphens, and commas are allowed.' });
+    if (domain && !isValidDomainList(domain)) {
+      return res.status(400).json({ error: 'Invalid domain format. Must be valid domain names (e.g., example.com, app.example.com).' });
     }
     
     // Create project record
@@ -232,8 +240,8 @@ router.patch('/:id', async (req: Request, res: Response) => {
     const { name, description, github_url, project_type, domain } = req.body;
 
     // Validate domain format if provided
-    if (domain && !/^[a-zA-Z0-9., -]+$/.test(domain)) {
-      return res.status(400).json({ error: 'Invalid domain format. Only letters, numbers, dots, hyphens, and commas are allowed.' });
+    if (domain && !isValidDomainList(domain)) {
+      return res.status(400).json({ error: 'Invalid domain format. Must be valid domain names (e.g., example.com, app.example.com).' });
     }
     
     const project = await prisma.project.update({
