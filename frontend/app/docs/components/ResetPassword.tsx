@@ -28,13 +28,12 @@ export const ResetPassword = () => (
     <div className="space-y-6">
       <div className="bg-secondary/40 rounded-2xl p-6 border border-border/40">
         <h4 className="font-bold mb-4 text-sm uppercase tracking-wider text-muted-foreground/80">Reset Procedure</h4>
-        <TerminalWindow 
+        <TerminalWindow
           title="SSH Reset Command"
           color="cyan"
           items={[
             { comment: "1. SSH into your server", cmd: "ssh root@your-server-ip" },
-            { comment: "2. Navigate to the docklift directory", cmd: "cd /opt/docklift/backend" },
-            { comment: "3. Run the reset script", cmd: "bun run reset-password" }
+            { comment: "2. Run the reset script via Docker", cmd: "docker exec -it docklift-backend node dist/scripts/reset-password.js" }
           ]}
         />
         
