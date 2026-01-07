@@ -169,6 +169,103 @@ async function readHostOSInfo() {
   };
 }
 
+// Helper to read HOST CPU info from /host/proc/cpuinfo
+async function readHostCpuInfo(): Promise<{ model: string; speed: number; cores: number } | null> {
+  try {
+    const content = await readHostFile('/host/proc/cpuinfo');
+    if (!content) return null;
+    
+    const lines = content.split('\n');
+    let model = '';
+    let speed = 0;
+    let cores = 0;
+    
+    for (const line of lines) {
+      if (line.startsWith('model name')) {
+        model = line.split(':')[1]?.trim() || '';
+      }
+      if (line.startsWith('cpu MHz')) {
+        const mhz = parseFloat(line.split(':')[1]?.trim() || '0');
+        speed = Math.round(mhz / 100) / 10; // Convert MHz to GHz with 1 decimal
+      }
+      if (line.startsWith('processor')) {
+        cores++;
+      }
+    }
+    
+    return { model, speed, cores };
+  } catch (e) {
+    return null;
+  }
+}
+
+// Helper to read HOST memory info from /host/proc/meminfo
+async function readHostMemInfo(): Promise<{ total: number; free: number; available: number; buffers: number; cached: number } | null> {
+  try {
+    const content = await readHostFile('/host/proc/meminfo');
+    if (!content) return null;
+    
+    const lines = content.split('\n');
+    const memInfo: Record<string, number> = {};
+    
+    for (const line of lines) {
+      const [key, value] = line.split(':');
+      if (key && value) {
+        // Parse "12345 kB" to bytes
+        const kb = parseInt(value.trim().split(' ')[0]);
+        memInfo[key] = kb * 1024; // Convert KB to bytes
+      }
+    }
+    
+    return {
+      total: memInfo['MemTotal'] || 0,
+      free: memInfo['MemFree'] || 0,
+      available: memInfo['MemAvailable'] || 0,
+      buffers: memInfo['Buffers'] || 0,
+      cached: memInfo['Cached'] || 0,
+    };
+  } catch (e) {
+    return null;
+  }
+}
+
+// Helper to get HOST processes using nsenter (runs on host, not container)
+async function getHostProcesses() {
+  try {
+    // Use nsenter to run 'ps' on the host (outside container)
+    const { stdout } = await execAsync(
+      'nsenter --target 1 --mount --uts --ipc --net --pid -- ps aux --sort=-%cpu | head -n 15',
+      { timeout: 10000 }
+    );
+    
+    const lines = stdout.split('\n');
+    const processes = [];
+    
+    // Skip header line
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line) continue;
+      
+      const parts = line.split(/\s+/);
+      // ps aux format: USER PID %CPU %MEM VSZ RSS TTY STAT START TIME COMMAND
+      const user = parts[0];
+      const pid = parseInt(parts[1]);
+      const cpu = parseFloat(parts[2]);
+      const mem = parseFloat(parts[3]);
+      const name = parts.slice(10).join(' '); // Command with args
+      
+      if (!isNaN(pid) && name) {
+        processes.push({ pid, name: name.substring(0, 50), cpu, mem, user });
+      }
+    }
+    
+    return processes;
+  } catch (error) {
+    console.error('Error getting host processes:', error);
+    return null;
+  }
+}
+
 // Helper to getting processes using 'top' on Linux (more accurate in Docker)
 async function getLinuxTopProcesses() {
   try {
@@ -251,6 +348,8 @@ async function getSystemStats(): Promise<SystemStats> {
       networkInterfaces,
       hostHostname,
       hostOS,
+      hostCpuInfo,
+      hostMemInfo,
       linuxProcesses
     ] = await Promise.all([
       si.cpu(),
@@ -265,8 +364,12 @@ async function getSystemStats(): Promise<SystemStats> {
       si.networkInterfaces().catch(() => []),
       readHostFile('/host/hostname'),
       readHostOSInfo(),
-      // Try to get Linux processes via top if on Linux
-      (process.platform === 'linux') ? getLinuxTopProcesses() : Promise.resolve(null)
+      // Read HOST CPU info (real CPU, not container)
+      readHostCpuInfo(),
+      // Read HOST memory info (real memory, like nMon shows)
+      readHostMemInfo(),
+      // Try to get HOST processes via nsenter if on Linux, fallback to top
+      (process.platform === 'linux') ? getHostProcesses().then(p => p || getLinuxTopProcesses()) : Promise.resolve(null)
     ]);
 
     // Process GPU data
@@ -318,19 +421,31 @@ async function getSystemStats(): Promise<SystemStats> {
         }));
     }
 
+    // Use HOST memory info if available (like nMon), fallback to container
+    const actualMemUsed = hostMemInfo 
+      ? hostMemInfo.total - hostMemInfo.available 
+      : memData.used;
+    const actualMemTotal = hostMemInfo?.total || memData.total;
+    const actualMemFree = hostMemInfo?.available || memData.free;
+
+    // Use HOST CPU info if available
+    const actualCpuCores = hostCpuInfo?.cores || cpuData.cores;
+    const actualCpuSpeed = hostCpuInfo?.speed || cpuData.speed;
+    const actualCpuModel = hostCpuInfo?.model || cpuData.brand;
+
     const stats: SystemStats = {
       cpu: {
         usage: parseFloat(cpuLoad.currentLoad?.toFixed(1) || '0'),
-        cores: cpuData.cores,
-        model: cpuData.brand,
-        speed: cpuData.speed,
+        cores: actualCpuCores,
+        model: actualCpuModel,
+        speed: actualCpuSpeed,
         temperature: cpuTemp?.main || null
       },
       memory: {
-        total: memData.total,
-        used: memData.used,
-        free: memData.free,
-        usedPercent: parseFloat(((memData.used / memData.total) * 100).toFixed(1))
+        total: actualMemTotal,
+        used: actualMemUsed,
+        free: actualMemFree,
+        usedPercent: parseFloat(((actualMemUsed / actualMemTotal) * 100).toFixed(1))
       },
       gpu: gpuInfo,
       disk: diskInfo,
@@ -344,8 +459,8 @@ async function getSystemStats(): Promise<SystemStats> {
         uptime: time.uptime,
         uptimeFormatted: formatUptime(time.uptime),
         serverTime: new Date().toLocaleString(),
-        cpuModel: cpuData.brand,
-        cpuCores: `${cpuData.cores} Cores @ ${cpuData.speed} GHz`,
+        cpuModel: actualCpuModel,
+        cpuCores: `${actualCpuCores} Cores @ ${actualCpuSpeed} GHz`,
         loadAvg: {
           load1: parseFloat(cpuLoad.avgLoad?.toFixed(2) || '0'),
           load5: parseFloat((cpuLoad.avgLoad * 0.8)?.toFixed(2) || '0'),
