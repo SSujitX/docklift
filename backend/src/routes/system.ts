@@ -760,9 +760,46 @@ router.post('/reset', async (req: Request, res: Response) => {
     res.json({ message: 'Services reset command sent successfully (Restarting in 1s)' });
   } catch (error: any) {
     console.error('Reset error:', error);
-    res.status(500).json({ 
-      error: 'Failed to reset services', 
+    res.status(500).json({
+      error: 'Failed to reset services',
       details: error.message || error.stderr || 'Unknown error'
+    });
+  }
+});
+
+// ========================================
+// Command Execution (Self-hosted only)
+// ========================================
+
+// POST /api/system/execute - Execute shell command
+// Note: This is safe for self-hosted deployments where the user owns the server
+router.post('/execute', async (req: Request, res: Response) => {
+  try {
+    const { command } = req.body;
+
+    if (!command || typeof command !== 'string') {
+      return res.status(400).json({ error: 'Command is required' });
+    }
+
+    // Execute command with timeout
+    const { exec } = await import('child_process');
+    const { promisify } = await import('util');
+    const execAsync = promisify(exec);
+
+    const { stdout, stderr } = await execAsync(command, {
+      timeout: 30000, // 30 second timeout
+      maxBuffer: 1024 * 1024, // 1MB buffer
+      shell: '/bin/bash',
+    });
+
+    res.json({
+      output: stdout || stderr || '(no output)',
+      error: stderr && !stdout ? stderr : undefined,
+    });
+  } catch (error: any) {
+    res.json({
+      output: error.stdout || '',
+      error: error.stderr || error.message || 'Command failed',
     });
   }
 });
