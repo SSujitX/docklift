@@ -12,6 +12,14 @@ import { patchMiddlewareHosts, logMiddlewareBypassResult } from '../lib/middlewa
 
 const router = Router();
 
+// Strict domain validation helper - validates single domain or comma-separated domains
+const DOMAIN_REGEX = /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)+$/;
+function isValidDomainList(domainStr: string): boolean {
+  if (!domainStr) return true; // Empty is valid (optional field)
+  const domains = domainStr.split(',').map(d => d.trim()).filter(Boolean);
+  return domains.every(d => DOMAIN_REGEX.test(d));
+}
+
 // Auto-purge helper function (runs after successful deployments)
 async function runPostDeploymentPurge(): Promise<{ success: boolean; message: string }> {
   try {
@@ -128,8 +136,8 @@ router.put('/:projectId/services/:serviceId', async (req: Request, res: Response
     const { domain } = req.body || {};
 
     // Validate domain format to prevent Nginx config injection
-    if (domain && !/^[a-zA-Z0-9., -]+$/.test(domain)) {
-      return res.status(400).json({ error: 'Invalid domain format. Only letters, numbers, dots, hyphens, and commas are allowed.' });
+    if (domain && !isValidDomainList(domain)) {
+      return res.status(400).json({ error: 'Invalid domain format. Must be valid domain names (e.g., example.com, app.example.com).' });
     }
 
     const count = await prisma.service.updateMany({
@@ -698,7 +706,7 @@ router.post('/:projectId/redeploy', async (req: Request, res: Response) => {
     
     const dockerProcess = spawn('docker', ['compose', '-p', projectId, 'up', '-d', '--build', '--force-recreate'], {
       cwd: projectPath,
-      shell: true,
+      shell: false,
     });
     
     dockerProcess.stdout.on('data', (data) => {
@@ -775,7 +783,7 @@ router.post('/:projectId/cancel', async (req: Request, res: Response) => {
     
     const dockerProcess = spawn('docker', ['compose', '-p', projectId, 'down'], {
       cwd: projectPath,
-      shell: true,
+      shell: false,
     });
     
     dockerProcess.stdout.on('data', (data) => {
