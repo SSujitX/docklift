@@ -38,14 +38,17 @@ export default function Dashboard() {
     }
   }, []);
 
+  const runningCount = projects.filter((p) => p.status === "running").length;
+  const buildingCount = projects.filter((p) => p.status === "building").length;
+  const stoppedCount = projects.filter((p) => p.status === "stopped").length;
+
   useEffect(() => {
     fetchProjects();
-    const interval = setInterval(fetchProjects, 10000);
+    // Poll faster (3s) when any project is building, slower (10s) otherwise
+    const pollInterval = buildingCount > 0 ? 3000 : 10000;
+    const interval = setInterval(fetchProjects, pollInterval);
     return () => clearInterval(interval);
-  }, [fetchProjects]);
-
-  const runningCount = projects.filter((p) => p.status === "running").length;
-  const stoppedCount = projects.filter((p) => p.status === "stopped").length;
+  }, [fetchProjects, buildingCount]);
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -64,6 +67,12 @@ export default function Dashboard() {
                 <span className="mr-2 opacity-70">Running</span>
                 <span className="font-bold">{runningCount}</span>
               </div>
+              {buildingCount > 0 && (
+                <div className="px-4 py-2 rounded-xl bg-amber-500/10 dark:bg-amber-500/5 border border-amber-500/20 dark:border-amber-500/30 text-sm font-medium text-amber-600 dark:text-amber-400 shadow-sm shadow-amber-500/5 animate-pulse">
+                  <span className="mr-2 opacity-70">Building</span>
+                  <span className="font-bold">{buildingCount}</span>
+                </div>
+              )}
               <div className="px-4 py-2 rounded-xl bg-secondary/50 dark:bg-zinc-900/50 border border-border/50 dark:border-white/10 text-sm font-medium shadow-sm">
                 <span className="text-muted-foreground mr-2 opacity-70">Stopped</span>
                 <span className="font-bold text-foreground">{stoppedCount}</span>

@@ -534,12 +534,12 @@ router.post('/:projectId/stop', async (req: Request, res: Response) => {
     const deployment = await prisma.deployment.create({
       data: {
         project_id: projectId,
-        status: 'pending',
+        status: 'in_progress',
         trigger: 'stop',
-        logs: '',
+        logs: '🛑 Stopping project...\n', // Initialize with starting message for real-time polling
       },
     });
-    
+
     writeLog(`\n${'━'.repeat(50)}\n🛑 STOPPING PROJECT\n📅 ${timestamp}\n${'━'.repeat(50)}\n\n`);
     
     const dockerProcess = spawn('docker', ['compose', '-p', projectId, 'down'], {
@@ -618,12 +618,18 @@ router.post('/:projectId/restart', async (req: Request, res: Response) => {
     const deployment = await prisma.deployment.create({
       data: {
         project_id: projectId,
-        status: 'pending',
+        status: 'in_progress',
         trigger: 'restart',
-        logs: '',
+        logs: '🔄 Starting restart...\n', // Initialize with starting message for real-time polling
       },
     });
-    
+
+    // Set project status to building immediately
+    await prisma.project.update({
+      where: { id: projectId },
+      data: { status: 'building' },
+    });
+
     writeLog(`\n${'━'.repeat(50)}\n🔄 RESTARTING PROJECT\n📅 ${timestamp}\n${'━'.repeat(50)}\n\n`);
     
     const dockerProcess = spawn('docker', ['compose', '-p', projectId, 'restart'], {
@@ -697,12 +703,18 @@ router.post('/:projectId/redeploy', async (req: Request, res: Response) => {
     const deployment = await prisma.deployment.create({
       data: {
         project_id: projectId,
-        status: 'pending',
+        status: 'in_progress',
         trigger: 'redeploy',
-        logs: '',
+        logs: '🔄 Starting redeploy...\n', // Initialize with starting message for real-time polling
       },
     });
-    
+
+    // Set project status to building immediately
+    await prisma.project.update({
+      where: { id: projectId },
+      data: { status: 'building' },
+    });
+
     writeLog(`\n${'━'.repeat(50)}\n🔄 REDEPLOYING CONTAINER\n📅 ${timestamp}\n${'━'.repeat(50)}\n\n📦 Rebuilding with --force-recreate...\n${'─'.repeat(40)}\n`);
     
     const dockerProcess = spawn('docker', ['compose', '-p', projectId, 'up', '-d', '--build', '--force-recreate'], {
