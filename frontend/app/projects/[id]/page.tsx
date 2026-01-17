@@ -221,6 +221,9 @@ export default function ProjectDetail() {
   const [historyLimit, setHistoryLimit] = useState(10);
   const [historyLoading, setHistoryLoading] = useState(false);
 
+  // Track currently viewed deployment for auto-deploy real-time logs
+  const [viewingDeploymentId, setViewingDeploymentId] = useState<string | null>(null);
+
   // Fetch server IP on mount
   useEffect(() => {
     const fetchServerIP = async () => {
@@ -263,13 +266,39 @@ export default function ProjectDetail() {
       if (servicesRes.ok) {
         setServices(await servicesRes.json());
       }
-      
-      // Load logs from last deployment if available
-      // - On initial load (loading is true)
-      // - Or if project is building/pending (to show live progress)
-      if (deps.length > 0 && deps[0].logs) {
-        if (loading || projectData.status === "building" || projectData.status === "pending") {
-          setLogs(deps[0].logs);
+
+      // Handle real-time logs for deployments (including auto-deploy via webhooks)
+      // Skip log updates during manual actions (they stream logs directly)
+      if (deps.length > 0 && !actionLoading) {
+        const latestDeployment = deps[0];
+        const isBuilding = projectData.status === "building" || projectData.status === "pending";
+        const isLatestInProgress = latestDeployment.status === "in_progress";
+
+        // Find the deployment we're currently viewing
+        const viewedDeployment = viewingDeploymentId
+          ? deps.find((d: Deployment) => d.id === viewingDeploymentId)
+          : null;
+
+        // Detect when to update logs:
+        // 1. Initial page load
+        // 2. A new deployment started (different ID from what we're viewing)
+        // 3. Currently viewing a building deployment (keep updating logs)
+        // 4. The deployment we're viewing just finished (get final logs)
+        const shouldUpdateLogs =
+          loading || // Initial load
+          (isLatestInProgress && viewingDeploymentId !== latestDeployment.id) || // New deployment started
+          (isBuilding && viewingDeploymentId === latestDeployment.id) || // Current deployment still building
+          (viewedDeployment && viewedDeployment.id === latestDeployment.id && latestDeployment.logs); // Refresh viewed deployment logs
+
+        if (shouldUpdateLogs) {
+          // Update logs (use empty string fallback to handle initial null state)
+          setLogs(latestDeployment.logs || "🚀 Starting deployment...\n");
+          setViewingDeploymentId(latestDeployment.id);
+
+          // Auto-switch to deployments tab when a new build starts
+          if (isLatestInProgress && activeTab !== "deployments") {
+            setActiveTab("deployments");
+          }
         }
       }
     } catch (error) {
@@ -277,7 +306,7 @@ export default function ProjectDetail() {
     } finally {
       setLoading(false);
     }
-  }, [projectId, router, loading, actionLoading, historyLimit]);
+  }, [projectId, router, loading, actionLoading, historyLimit, viewingDeploymentId, activeTab]);
 
   const loadMoreHistory = () => {
     setHistoryLimit(prev => prev + 10);
@@ -913,16 +942,22 @@ export default function ProjectDetail() {
                       No deployments found
                     </div>
                   ) : (
-                    deployments.map((deployment) => (
-                      <div 
-                        key={deployment.id} 
+                    deployments.map((deployment) => {
+                      const isViewing = viewingDeploymentId === deployment.id;
+                      const isInProgress = deployment.status === "in_progress";
+                      return (
+                      <div
+                        key={deployment.id}
                         className={cn(
                           "flex flex-col gap-2 px-5 py-4 cursor-pointer transition-all duration-200 border-l-4",
                           deployment.status === "success" ? "border-l-emerald-500 lg:hover:bg-emerald-500/5" :
-                          deployment.status === "failed" ? "border-l-red-500 lg:hover:bg-red-500/5" : "border-l-amber-500"
+                          deployment.status === "failed" ? "border-l-red-500 lg:hover:bg-red-500/5" : "border-l-amber-500",
+                          isViewing && "bg-secondary/30 ring-1 ring-inset ring-border/50",
+                          isInProgress && isViewing && "animate-pulse bg-amber-500/5"
                         )}
                         onClick={() => {
                           setLogs(deployment.logs || "No logs available for this deployment");
+                          setViewingDeploymentId(deployment.id); // Track which deployment user is viewing
                           const terminalElement = document.getElementById('terminal-wrapper');
                           terminalElement?.scrollIntoView({ behavior: 'smooth', block: 'center' });
                         }}
@@ -970,7 +1005,8 @@ export default function ProjectDetail() {
                           </div>
                         )}
                       </div>
-                    ))
+                      );
+                    })
                   )}
                   
                   {deployments.length >= historyLimit && (

@@ -204,6 +204,7 @@ router.post('/:projectId/deploy', async (req: Request, res: Response) => {
         status: 'in_progress',
         trigger: trigger || 'manual',
         commit_message: finalCommitMessage,
+        logs: '🚀 Starting deployment...\n', // Initialize with starting message for real-time polling
       },
     });
     
