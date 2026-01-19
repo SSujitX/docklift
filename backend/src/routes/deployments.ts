@@ -492,13 +492,12 @@ router.post('/:projectId/deploy', async (req: Request, res: Response) => {
         where: { id: projectId },
         data: { status: success ? 'running' : 'error' },
       });
-      
-      for (const svc of servicesData) {
-        await prisma.service.updateMany({
-          where: { project_id: projectId, name: svc.name },
-          data: { status: success ? 'running' : 'error' },
-        });
-      }
+
+      // Update ALL services for this project (not just known ones) for consistency
+      await prisma.service.updateMany({
+        where: { project_id: projectId },
+        data: { status: success ? 'running' : 'error' },
+      });
       
       writeLog(`\n📊 Deployment complete! Status: ${success ? 'SUCCESS ✅' : 'FAILED ❌'}\n`);
       res.end();
@@ -771,9 +770,14 @@ router.post('/:projectId/redeploy', async (req: Request, res: Response) => {
         writeLog(`   ${purgeResult.message}\n`);
       } else {
         writeLog(`\n${'━'.repeat(50)}\n❌ REDEPLOY FAILED (code ${code})\n${'━'.repeat(50)}\n`);
-        
+
+        // Update both project AND all services to 'error' for consistency
         await prisma.project.update({
           where: { id: projectId },
+          data: { status: 'error' },
+        });
+        await prisma.service.updateMany({
+          where: { project_id: projectId },
           data: { status: 'error' },
         });
       }
