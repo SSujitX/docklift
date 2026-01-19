@@ -207,12 +207,17 @@ router.post('/:projectId/deploy', async (req: Request, res: Response) => {
         logs: '🚀 Starting deployment...\n', // Initialize with starting message for real-time polling
       },
     });
-    
+
+    // Set project and all services to 'building' immediately
     await prisma.project.update({
       where: { id: projectId },
       data: { status: 'building' },
     });
-    
+    await prisma.service.updateMany({
+      where: { project_id: projectId },
+      data: { status: 'building' },
+    });
+
     // Set streaming headers
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -624,9 +629,13 @@ router.post('/:projectId/restart', async (req: Request, res: Response) => {
       },
     });
 
-    // Set project status to building immediately
+    // Set project and all services to 'building' immediately
     await prisma.project.update({
       where: { id: projectId },
+      data: { status: 'building' },
+    });
+    await prisma.service.updateMany({
+      where: { project_id: projectId },
       data: { status: 'building' },
     });
 
@@ -664,15 +673,19 @@ router.post('/:projectId/restart', async (req: Request, res: Response) => {
         },
       });
       
-      // Update project status
+      // Update project and services status
       await prisma.project.update({
         where: { id: projectId },
         data: { status: success ? 'running' : 'error' },
       });
-      
+      await prisma.service.updateMany({
+        where: { project_id: projectId },
+        data: { status: success ? 'running' : 'error' },
+      });
+
       res.end();
     });
-    
+
   } catch (error: any) {
     console.error(error);
     res.write(`\n❌ Error: ${error.message}\n`);
@@ -709,9 +722,13 @@ router.post('/:projectId/redeploy', async (req: Request, res: Response) => {
       },
     });
 
-    // Set project status to building immediately
+    // Set project and all services to 'building' immediately
     await prisma.project.update({
       where: { id: projectId },
+      data: { status: 'building' },
+    });
+    await prisma.service.updateMany({
+      where: { project_id: projectId },
       data: { status: 'building' },
     });
 

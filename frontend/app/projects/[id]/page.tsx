@@ -50,7 +50,7 @@ import {
   Globe2,
   Rocket,
   Calendar,
-  RefreshCw
+  RefreshCw,
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -63,13 +63,35 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
-function ServiceDomainManager({ service, projectId, onUpdate }: { service: Service; projectId: string; onUpdate: () => void }) {
-  const [domains, setDomains] = useState<string[]>(service.domain ? service.domain.split(',').map(d => d.trim()).filter(Boolean) : []);
+function ServiceDomainManager({
+  service,
+  projectId,
+  onUpdate,
+}: {
+  service: Service;
+  projectId: string;
+  onUpdate: () => void;
+}) {
+  const [domains, setDomains] = useState<string[]>(
+    service.domain
+      ? service.domain
+          .split(",")
+          .map((d) => d.trim())
+          .filter(Boolean)
+      : [],
+  );
   const [loading, setLoading] = useState(false);
 
   // Sync with prop if it changes externally
   useEffect(() => {
-    setDomains(service.domain ? service.domain.split(',').map(d => d.trim()).filter(Boolean) : []);
+    setDomains(
+      service.domain
+        ? service.domain
+            .split(",")
+            .map((d) => d.trim())
+            .filter(Boolean)
+        : [],
+    );
   }, [service.domain]);
 
   const handleAddRow = () => {
@@ -90,18 +112,21 @@ function ServiceDomainManager({ service, projectId, onUpdate }: { service: Servi
 
   const handleSave = async () => {
     setLoading(true);
-    const cleanDomains = domains.map(d => d.trim()).filter(Boolean);
-    const domainString = cleanDomains.join(',');
+    const cleanDomains = domains.map((d) => d.trim()).filter(Boolean);
+    const domainString = cleanDomains.join(",");
 
     try {
-      const res = await fetch(`${API_URL}/api/deployments/${projectId}/services/${service.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-        body: JSON.stringify({ domain: domainString }),
-      });
-      
+      const res = await fetch(
+        `${API_URL}/api/deployments/${projectId}/services/${service.id}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+          body: JSON.stringify({ domain: domainString }),
+        },
+      );
+
       if (!res.ok) throw new Error("Failed to update domains");
-      
+
       toast.success("Domains updated successfully");
       onUpdate();
     } catch (err) {
@@ -123,8 +148,12 @@ function ServiceDomainManager({ service, projectId, onUpdate }: { service: Servi
           <div>
             <h4 className="font-bold text-lg">{service.name}</h4>
             <div className="flex items-center gap-2 mt-1">
-              <span className="text-xs font-mono bg-secondary px-2 py-0.5 rounded">Port: {service.port}</span>
-              <span className="text-xs text-muted-foreground">Internal: {service.internal_port}</span>
+              <span className="text-xs font-mono bg-secondary px-2 py-0.5 rounded">
+                Port: {service.port}
+              </span>
+              <span className="text-xs text-muted-foreground">
+                Internal: {service.internal_port}
+              </span>
             </div>
             <p className="text-xs text-muted-foreground mt-2 leading-relaxed">
               Map one or more custom domains to this service. traffic.
@@ -134,58 +163,68 @@ function ServiceDomainManager({ service, projectId, onUpdate }: { service: Servi
 
         {/* Domain Editor */}
         <div className="flex-1 space-y-4">
-           <div className="flex items-center justify-between">
-             <label className="text-sm font-medium text-purple-500 font-bold uppercase tracking-wider">
-               Active Domains
-             </label>
-             <Button variant="ghost" size="sm" onClick={handleAddRow} className="h-7 text-xs gap-1 text-purple-500 hover:text-purple-600 hover:bg-purple-500/10">
-               <Plus className="h-3 w-3" /> Add Domain
-             </Button>
-           </div>
-           
-           <div className="space-y-2">
-             {domains.length === 0 && (
-               <div className="text-sm text-muted-foreground italic p-3 border border-dashed rounded-lg text-center bg-background/50">
-                 No domains configured. Click "Add Domain" to start.
-               </div>
-             )}
-             
-             {domains.map((domain, idx) => (
-               <div key={idx} className="flex gap-2 animate-in fade-in slide-in-from-left-2 duration-300">
-                 <div className="relative flex-1 group">
-                    <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
-                      <span className="text-muted-foreground text-sm font-medium group-focus-within:text-foreground">https://</span>
-                    </div>
-                   <input
-                     type="text"
-                     value={domain}
-                     onChange={(e) => handleChange(idx, e.target.value)}
-                     placeholder="app.example.com"
-                     className="flex h-10 w-full rounded-lg border border-input bg-background pl-[4.5rem] pr-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-purple-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 transition-all font-mono"
-                   />
-                 </div>
-                 <Button 
-                   variant="ghost" 
-                   size="icon"
-                   onClick={() => handleRemoveRow(idx)}
-                   className="h-10 w-10 text-muted-foreground hover:text-red-500 hover:bg-red-500/10 rounded-lg shrink-0"
-                 >
-                   <Trash2 className="h-4 w-4" />
-                 </Button>
-               </div>
-             ))}
-           </div>
+          <div className="flex items-center justify-between">
+            <label className="text-sm font-bold text-purple-500 uppercase tracking-wider">
+              Active Domains
+            </label>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleAddRow}
+              className="h-7 text-xs gap-1 text-purple-500 hover:text-purple-600 hover:bg-purple-500/10"
+            >
+              <Plus className="h-3 w-3" /> Add Domain
+            </Button>
+          </div>
 
-           <div className="flex justify-end pt-2">
-             <Button 
-                onClick={handleSave} 
-                disabled={loading}
-                className="bg-purple-600 hover:bg-purple-700 text-white shadow-lg shadow-purple-500/20 font-bold"
-             >
-               {loading && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-               Save Changes
-             </Button>
-           </div>
+          <div className="space-y-2">
+            {domains.length === 0 && (
+              <div className="text-sm text-muted-foreground italic p-3 border border-dashed rounded-lg text-center bg-background/50">
+                No domains configured. Click "Add Domain" to start.
+              </div>
+            )}
+
+            {domains.map((domain, idx) => (
+              <div
+                key={idx}
+                className="flex gap-2 animate-in fade-in slide-in-from-left-2 duration-300"
+              >
+                <div className="relative flex-1 group">
+                  <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
+                    <span className="text-muted-foreground text-sm font-medium group-focus-within:text-foreground">
+                      https://
+                    </span>
+                  </div>
+                  <input
+                    type="text"
+                    value={domain}
+                    onChange={(e) => handleChange(idx, e.target.value)}
+                    placeholder="app.example.com"
+                    className="flex h-10 w-full rounded-lg border border-input bg-background pl-[4.5rem] pr-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-purple-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 transition-all font-mono"
+                  />
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => handleRemoveRow(idx)}
+                  className="h-10 w-10 text-muted-foreground hover:text-red-500 hover:bg-red-500/10 rounded-lg shrink-0"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex justify-end pt-2">
+            <Button
+              onClick={handleSave}
+              disabled={loading}
+              className="bg-purple-600 hover:bg-purple-700 text-white shadow-lg shadow-purple-500/20 font-bold"
+            >
+              {loading && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+              Save Changes
+            </Button>
+          </div>
         </div>
       </div>
     </Card>
@@ -205,9 +244,12 @@ export default function ProjectDetail() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [currentAction, setCurrentAction] = useState<string | null>(null);
-  const [editingFile, setEditingFile] = useState<{ name: string; content: string } | null>(null);
+  const [editingFile, setEditingFile] = useState<{
+    name: string;
+    content: string;
+  } | null>(null);
   const [activeTab, setActiveTab] = useState("overview");
-  const [serverIP, setServerIP] = useState<string>('...');
+  const [serverIP, setServerIP] = useState<string>("...");
 
   // Confirmation Dialog State
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
@@ -222,19 +264,23 @@ export default function ProjectDetail() {
   const [historyLoading, setHistoryLoading] = useState(false);
 
   // Track currently viewed deployment for auto-deploy real-time logs
-  const [viewingDeploymentId, setViewingDeploymentId] = useState<string | null>(null);
+  const [viewingDeploymentId, setViewingDeploymentId] = useState<string | null>(
+    null,
+  );
 
   // Fetch server IP on mount
   useEffect(() => {
     const fetchServerIP = async () => {
       try {
-        const res = await fetch(`${API_URL}/api/system/ip`, { headers: getAuthHeaders() });
+        const res = await fetch(`${API_URL}/api/system/ip`, {
+          headers: getAuthHeaders(),
+        });
         if (res.ok) {
           const data = await res.json();
-          setServerIP(data.ip || 'N/A');
+          setServerIP(data.ip || "N/A");
         }
       } catch {
-        setServerIP('N/A');
+        setServerIP("N/A");
       }
     };
     fetchServerIP();
@@ -242,12 +288,22 @@ export default function ProjectDetail() {
 
   const fetchProject = useCallback(async () => {
     try {
-      const [projectRes, filesRes, deploymentsRes, servicesRes] = await Promise.all([
-        fetch(`${API_URL}/api/projects/${projectId}`, { headers: getAuthHeaders() }),
-        fetch(`${API_URL}/api/files/${projectId}`, { headers: getAuthHeaders() }),
-        fetch(`${API_URL}/api/deployments/${projectId}?limit=${historyLimit}`, { headers: getAuthHeaders() }),
-        fetch(`${API_URL}/api/deployments/${projectId}/services`, { headers: getAuthHeaders() }),
-      ]);
+      const [projectRes, filesRes, deploymentsRes, servicesRes] =
+        await Promise.all([
+          fetch(`${API_URL}/api/projects/${projectId}`, {
+            headers: getAuthHeaders(),
+          }),
+          fetch(`${API_URL}/api/files/${projectId}`, {
+            headers: getAuthHeaders(),
+          }),
+          fetch(
+            `${API_URL}/api/deployments/${projectId}?limit=${historyLimit}`,
+            { headers: getAuthHeaders() },
+          ),
+          fetch(`${API_URL}/api/deployments/${projectId}/services`, {
+            headers: getAuthHeaders(),
+          }),
+        ]);
 
       if (!projectRes.ok) {
         // Don't redirect if an action is in progress (e.g., during deployment)
@@ -262,7 +318,7 @@ export default function ProjectDetail() {
       setFiles(await filesRes.json());
       const deps = await deploymentsRes.json();
       setDeployments(deps);
-      
+
       if (servicesRes.ok) {
         setServices(await servicesRes.json());
       }
@@ -271,7 +327,8 @@ export default function ProjectDetail() {
       // Skip log updates during manual actions (they stream logs directly)
       if (deps.length > 0 && !actionLoading) {
         const latestDeployment = deps[0];
-        const isBuilding = projectData.status === "building" || projectData.status === "pending";
+        const isBuilding =
+          projectData.status === "building" || projectData.status === "pending";
         const isLatestInProgress = latestDeployment.status === "in_progress";
 
         // Find the deployment we're currently viewing
@@ -288,7 +345,9 @@ export default function ProjectDetail() {
           loading || // Initial load
           (isLatestInProgress && viewingDeploymentId !== latestDeployment.id) || // New deployment started
           (isBuilding && viewingDeploymentId === latestDeployment.id) || // Current deployment still building
-          (viewedDeployment && viewedDeployment.id === latestDeployment.id && latestDeployment.logs); // Refresh viewed deployment logs
+          (viewedDeployment &&
+            viewedDeployment.id === latestDeployment.id &&
+            latestDeployment.logs); // Refresh viewed deployment logs
 
         if (shouldUpdateLogs) {
           // Update logs (use empty string fallback to handle initial null state)
@@ -306,10 +365,18 @@ export default function ProjectDetail() {
     } finally {
       setLoading(false);
     }
-  }, [projectId, router, loading, actionLoading, historyLimit, viewingDeploymentId, activeTab]);
+  }, [
+    projectId,
+    router,
+    loading,
+    actionLoading,
+    historyLimit,
+    viewingDeploymentId,
+    activeTab,
+  ]);
 
   const loadMoreHistory = () => {
-    setHistoryLimit(prev => prev + 10);
+    setHistoryLimit((prev) => prev + 10);
   };
 
   useEffect(() => {
@@ -323,19 +390,22 @@ export default function ProjectDetail() {
   // Fetch auto-deploy status
   useEffect(() => {
     if (!projectId) return;
-    
+
     const fetchAutoDeploy = async () => {
       try {
-        const res = await fetch(`${API_URL}/api/projects/${projectId}/auto-deploy`, { headers: getAuthHeaders() });
+        const res = await fetch(
+          `${API_URL}/api/projects/${projectId}/auto-deploy`,
+          { headers: getAuthHeaders() },
+        );
         if (res.ok) {
           const data = await res.json();
           setAutoDeploy(data.auto_deploy || false);
         }
       } catch (error) {
-        console.error('Failed to fetch auto-deploy status:', error);
+        console.error("Failed to fetch auto-deploy status:", error);
       }
     };
-    
+
     fetchAutoDeploy();
   }, [projectId]);
 
@@ -343,21 +413,26 @@ export default function ProjectDetail() {
   const handleAutoDeployToggle = async (enabled: boolean) => {
     setAutoDeployLoading(true);
     try {
-      const res = await fetch(`${API_URL}/api/projects/${projectId}/auto-deploy`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-        body: JSON.stringify({ enabled }),
-      });
-      
+      const res = await fetch(
+        `${API_URL}/api/projects/${projectId}/auto-deploy`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+          body: JSON.stringify({ enabled }),
+        },
+      );
+
       if (res.ok) {
         const data = await res.json();
         setAutoDeploy(data.auto_deploy);
-        toast.success(enabled ? 'Auto-deploy enabled!' : 'Auto-deploy disabled');
+        toast.success(
+          enabled ? "Auto-deploy enabled!" : "Auto-deploy disabled",
+        );
       } else {
-        toast.error('Failed to update auto-deploy');
+        toast.error("Failed to update auto-deploy");
       }
     } catch (error) {
-      toast.error('Failed to update auto-deploy');
+      toast.error("Failed to update auto-deploy");
     } finally {
       setAutoDeployLoading(false);
     }
@@ -369,54 +444,61 @@ export default function ProjectDetail() {
   };
 
   const getActionDetails = () => {
-    switch(pendingAction) {
+    switch (pendingAction) {
       case "delete":
         return {
           title: "Delete Project",
-          description: "Are you sure you want to delete this project? This action cannot be undone and will explicitly remove all associated data, containers, and configurations.",
+          description:
+            "Are you sure you want to delete this project? This action cannot be undone and will explicitly remove all associated data, containers, and configurations.",
           confirmText: "Yes, Delete Project",
           confirmVariant: "bg-red-600 hover:bg-red-700 text-white border-0",
-          icon: <Trash2 className="h-6 w-6 text-red-600" />
+          icon: <Trash2 className="h-6 w-6 text-red-600" />,
         };
       case "stop":
         return {
           title: "Stop Application",
-          description: "Are you sure you want to stop the running container? The application will generate 503 errors until started again.",
+          description:
+            "Are you sure you want to stop the running container? The application will generate 503 errors until started again.",
           confirmText: "Stop Application",
           confirmVariant: "bg-red-500 hover:bg-red-600 text-white border-0",
-          icon: <Square className="h-6 w-6 text-red-500" />
+          icon: <Square className="h-6 w-6 text-red-500" />,
         };
       case "restart":
         return {
           title: "Restart Application",
-          description: "Are you sure you want to restart the application? This may cause a brief period of downtime for your users.",
+          description:
+            "Are you sure you want to restart the application? This may cause a brief period of downtime for your users.",
           confirmText: "Restart Now",
           confirmVariant: "bg-amber-500 hover:bg-amber-600 text-white border-0",
-          icon: <RotateCw className="h-6 w-6 text-amber-500" />
+          icon: <RotateCw className="h-6 w-6 text-amber-500" />,
         };
       case "redeploy":
         return {
           title: "Redeploy Application",
-          description: "This will rebuild your application from the source and deploy a new version. This process may take a few minutes.",
+          description:
+            "This will rebuild your application from the source and deploy a new version. This process may take a few minutes.",
           confirmText: "Start Redeploy",
-          confirmVariant: "bg-emerald-600 hover:bg-emerald-700 text-white border-0",
-          icon: <Play className="h-6 w-6 text-emerald-600" />
+          confirmVariant:
+            "bg-emerald-600 hover:bg-emerald-700 text-white border-0",
+          icon: <Play className="h-6 w-6 text-emerald-600" />,
         };
       case "cancel":
         return {
           title: "Cancel Build",
-          description: "Are you sure you want to abort the current build process? Partial artifacts may be left behind.",
+          description:
+            "Are you sure you want to abort the current build process? Partial artifacts may be left behind.",
           confirmText: "Abort Build",
           confirmVariant: "bg-red-600 hover:bg-red-700 text-white border-0",
-          icon: <XCircle className="h-6 w-6 text-red-600" />
+          icon: <XCircle className="h-6 w-6 text-red-600" />,
         };
-       case "deploy":
+      case "deploy":
         return {
           title: "Deploy Application",
-          description: "Ready to launch? This will start a new build and deployment process for your application.",
+          description:
+            "Ready to launch? This will start a new build and deployment process for your application.",
           confirmText: "Deploy Now",
           confirmVariant: "bg-cyan-600 hover:bg-cyan-700 text-white border-0",
-          icon: <Play className="h-6 w-6 text-cyan-600" />
+          icon: <Play className="h-6 w-6 text-cyan-600" />,
         };
       default:
         return {
@@ -424,7 +506,7 @@ export default function ProjectDetail() {
           description: "Are you sure you want to proceed?",
           confirmText: "Confirm",
           confirmVariant: "default",
-          icon: <AlertTriangle className="h-6 w-6 text-amber-500" />
+          icon: <AlertTriangle className="h-6 w-6 text-amber-500" />,
         };
     }
   };
@@ -450,19 +532,26 @@ export default function ProjectDetail() {
         method = "DELETE";
       }
 
-      const res = await fetch(url, { 
+      const res = await fetch(url, {
         method,
         headers: {
           ...getAuthHeaders(),
-          ...(action === "deploy" ? { "Content-Type": "application/json" } : {})
+          ...(action === "deploy"
+            ? { "Content-Type": "application/json" }
+            : {}),
         },
-        body: action === "deploy" ? JSON.stringify({ trigger: "manual" }) : undefined
+        body:
+          action === "deploy"
+            ? JSON.stringify({ trigger: "manual" })
+            : undefined,
       });
-      
+
       if (!res.ok) {
         if (action !== "delete") {
           const errorData = await res.json().catch(() => null);
-          const errMsg = errorData?.error || `Server returned ${res.status} ${res.statusText}`;
+          const errMsg =
+            errorData?.error ||
+            `Server returned ${res.status} ${res.statusText}`;
           setLogs((prev) => prev + `\n[ERROR] ${errMsg}\n`);
         } else {
           toast.error("Failed to delete project");
@@ -475,7 +564,7 @@ export default function ProjectDetail() {
         router.push("/");
         return;
       }
-      
+
       const reader = res.body?.getReader();
       const decoder = new TextDecoder();
 
@@ -490,9 +579,11 @@ export default function ProjectDetail() {
       }
       setTimeout(fetchProject, 1000);
       // Wait for state to refresh before resetting actionLoading
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      await new Promise((resolve) => setTimeout(resolve, 1500));
       await fetchProject();
-      toast.success(`${action.charAt(0).toUpperCase() + action.slice(1)} completed!`);
+      toast.success(
+        `${action.charAt(0).toUpperCase() + action.slice(1)} completed!`,
+      );
     } catch (error) {
       console.error(error);
       if (action !== "delete") {
@@ -510,7 +601,10 @@ export default function ProjectDetail() {
 
   const openFileEditor = async (filePath: string) => {
     try {
-      const res = await fetch(`${API_URL}/api/files/${projectId}/content?path=${encodeURIComponent(filePath)}`, { headers: getAuthHeaders() });
+      const res = await fetch(
+        `${API_URL}/api/files/${projectId}/content?path=${encodeURIComponent(filePath)}`,
+        { headers: getAuthHeaders() },
+      );
       if (!res.ok) throw new Error("Failed to fetch file content");
       const data = await res.json();
       setEditingFile({ name: filePath, content: data.content });
@@ -538,7 +632,10 @@ export default function ProjectDetail() {
       <Header />
 
       <main className="flex-1 container max-w-6xl mx-auto px-4 md:px-6 py-8">
-        <Link href="/" className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground mb-6 transition-colors">
+        <Link
+          href="/"
+          className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground mb-6 transition-colors"
+        >
           <ArrowLeft className="h-4 w-4" />
           Back to Projects
         </Link>
@@ -554,16 +651,29 @@ export default function ProjectDetail() {
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-                <h1 className="text-2xl sm:text-3xl font-bold tracking-tight truncate">{project.name}</h1>
+                <h1 className="text-2xl sm:text-3xl font-bold tracking-tight truncate">
+                  {project.name}
+                </h1>
                 <StatusBadge status={project.status} />
               </div>
               <p className="text-xs sm:text-sm text-muted-foreground mt-1 flex flex-wrap items-center gap-x-3 sm:gap-x-4 gap-y-1">
-                <span className="capitalize font-bold text-foreground/80">{project.project_type}</span>
+                <span className="capitalize font-bold text-foreground/80">
+                  {project.project_type}
+                </span>
                 <span className="flex items-center gap-1.5 opacity-70">
                   <Calendar className="h-3 sm:h-3.5 w-3 sm:w-3.5" />
-                  <span className="hidden sm:inline">Created </span>{new Date(project.created_at).toLocaleString([], { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                  <span className="hidden sm:inline">Created </span>
+                  {new Date(project.created_at).toLocaleString([], {
+                    month: "short",
+                    day: "numeric",
+                    year: "numeric",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
                 </span>
-                <span className="font-mono text-[9px] sm:text-[10px] bg-secondary px-1.5 py-0.5 rounded uppercase tracking-wider">{project.id.split('-')[0]}</span>
+                <span className="font-mono text-[9px] sm:text-[10px] bg-secondary px-1.5 py-0.5 rounded uppercase tracking-wider">
+                  {project.id.split("-")[0]}
+                </span>
               </p>
             </div>
           </div>
@@ -571,67 +681,96 @@ export default function ProjectDetail() {
           <div className="flex flex-wrap items-center gap-2 bg-background/50 backdrop-blur-sm p-1.5 rounded-2xl border border-border/50 shadow-sm w-full lg:w-auto shrink-0">
             {project.status === "running" ? (
               <>
-                <Button 
-                    variant="ghost" 
-                    size="sm" 
-                    onClick={() => confirmAction("redeploy")} 
-                    disabled={actionLoading} 
-                    className="gap-1 sm:gap-2 h-9 px-3 sm:px-4 text-xs sm:text-sm bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white shadow-lg shadow-emerald-500/20 border-0 rounded-xl transition-all font-bold flex-1 lg:flex-none"
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => confirmAction("redeploy")}
+                  disabled={actionLoading}
+                  className="gap-1 sm:gap-2 h-9 px-3 sm:px-4 text-xs sm:text-sm bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white shadow-lg shadow-emerald-500/20 border-0 rounded-xl transition-all font-bold flex-1 lg:flex-none"
                 >
-                  {currentAction === "redeploy" ? <Loader2 className="h-4 w-4 animate-spin text-white" /> : <Play className="h-4 w-4 fill-current" />}
+                  {currentAction === "redeploy" ? (
+                    <Loader2 className="h-4 w-4 animate-spin text-white" />
+                  ) : (
+                    <Play className="h-4 w-4 fill-current" />
+                  )}
                   Redeploy
                 </Button>
-                
-                <Button 
-                    variant="ghost" 
-                    size="sm" 
-                    onClick={() => confirmAction("restart")} 
-                    disabled={actionLoading} 
-                    className="gap-2 h-9 px-4 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white shadow-lg shadow-cyan-500/20 border-0 rounded-xl transition-all font-bold"
+
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => confirmAction("restart")}
+                  disabled={actionLoading}
+                  className="gap-2 h-9 px-4 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white shadow-lg shadow-cyan-500/20 border-0 rounded-xl transition-all font-bold"
                 >
-                  {currentAction === "restart" ? <Loader2 className="h-4 w-4 animate-spin text-white" /> : <RotateCw className="h-4 w-4" />}
+                  {currentAction === "restart" ? (
+                    <Loader2 className="h-4 w-4 animate-spin text-white" />
+                  ) : (
+                    <RotateCw className="h-4 w-4" />
+                  )}
                   Restart
                 </Button>
-                
-                <Button 
-                    variant="ghost" 
-                    size="sm" 
-                    onClick={() => confirmAction("stop")} 
-                    disabled={actionLoading} 
-                    className="gap-2 h-9 px-4 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white shadow-lg shadow-amber-500/20 border-0 rounded-xl transition-all font-bold"
+
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => confirmAction("stop")}
+                  disabled={actionLoading}
+                  className="gap-2 h-9 px-4 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white shadow-lg shadow-amber-500/20 border-0 rounded-xl transition-all font-bold"
                 >
-                  {currentAction === "stop" ? <Loader2 className="h-4 w-4 animate-spin text-white" /> : <Square className="h-4 w-4 fill-current" />}
+                  {currentAction === "stop" ? (
+                    <Loader2 className="h-4 w-4 animate-spin text-white" />
+                  ) : (
+                    <Square className="h-4 w-4 fill-current" />
+                  )}
                   Stop
                 </Button>
               </>
             ) : project.status === "building" ? (
-              <Button variant="destructive" onClick={() => confirmAction("cancel")} disabled={currentAction === "cancel"} className="gap-2 h-9 px-4 rounded-xl shadow-red-500/20 font-bold bg-red-600 hover:bg-red-700">
-                {currentAction === "cancel" ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
+              <Button
+                variant="destructive"
+                onClick={() => confirmAction("cancel")}
+                disabled={currentAction === "cancel"}
+                className="gap-2 h-9 px-4 rounded-xl shadow-red-500/20 font-bold bg-red-600 hover:bg-red-700"
+              >
+                {currentAction === "cancel" ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <XCircle className="h-4 w-4" />
+                )}
                 Cancel Build
               </Button>
             ) : (
-              <Button 
-                onClick={() => confirmAction("deploy")} 
-                disabled={actionLoading} 
+              <Button
+                onClick={() => confirmAction("deploy")}
+                disabled={actionLoading}
                 className="gap-2 h-9 px-6 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white shadow-lg shadow-cyan-500/25 rounded-xl transition-all border-none font-bold"
               >
-                {currentAction === "deploy" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4 fill-current" />}
+                {currentAction === "deploy" ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Play className="h-4 w-4 fill-current" />
+                )}
                 Deploy Now
               </Button>
             )}
 
             <div className="w-px h-6 bg-border mx-1" />
 
-            <Button 
-                variant="ghost" 
-                size="sm" 
-                onClick={() => confirmAction("delete")} 
-                disabled={actionLoading} 
-                className="gap-2 h-9 px-4 flex-1 lg:flex-none bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white shadow-lg shadow-red-500/25 rounded-xl transition-all border-none font-bold"
-                title="Delete Project"
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => confirmAction("delete")}
+              disabled={actionLoading}
+              className="gap-2 h-9 px-4 flex-1 lg:flex-none bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white shadow-lg shadow-red-500/25 rounded-xl transition-all border-none font-bold"
+              title="Delete Project"
             >
-                {currentAction === "delete" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                Delete
+              {currentAction === "delete" ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Trash2 className="h-4 w-4" />
+              )}
+              Delete
             </Button>
           </div>
         </div>
@@ -640,51 +779,58 @@ export default function ProjectDetail() {
 
         {/* Stats Grid removed - moved to Overview */}
 
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+        <Tabs
+          value={activeTab}
+          onValueChange={setActiveTab}
+          className="space-y-6"
+        >
           <div className="sticky top-[72px] z-10 -mx-4 px-4 md:mx-0 md:px-0 overflow-x-auto md:overflow-visible md:flex md:justify-center">
-            <TabsList className="w-max flex justify-start md:justify-center bg-secondary/50 dark:bg-zinc-900 backdrop-blur-xl border border-border/40 dark:border-white/10 p-1 rounded-full shadow-sm inline-flex items-center gap-1">
-            <TabsTrigger 
-              value="overview" 
-              className="gap-1.5 sm:gap-2 rounded-full px-3 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-bold transition-all duration-300 data-[state=active]:bg-white data-[state=active]:dark:bg-cyan-500/20 data-[state=active]:text-cyan-600 data-[state=active]:dark:text-cyan-400 data-[state=active]:shadow-sm data-[state=active]:border-cyan-200/50 data-[state=active]:dark:border-cyan-500/30 border border-transparent hover:bg-secondary/50 whitespace-nowrap"
-            >
-              <LayoutDashboard className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-              <span className="hidden xs:inline">Overview</span>
-              <span className="xs:hidden">View</span>
-            </TabsTrigger>
-            <TabsTrigger 
-              value="deployments" 
-              className="gap-1.5 sm:gap-2 rounded-full px-3 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-bold transition-all duration-300 data-[state=active]:bg-white data-[state=active]:dark:bg-cyan-500/20 data-[state=active]:text-cyan-600 data-[state=active]:dark:text-cyan-400 data-[state=active]:shadow-sm data-[state=active]:border-cyan-200/50 data-[state=active]:dark:border-cyan-500/30 border border-transparent hover:bg-secondary/50 whitespace-nowrap"
-            >
-              <Activity className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-              <span className="hidden xs:inline">Deployments</span>
-              <span className="xs:hidden">Deploy</span>
-            </TabsTrigger>
-            <TabsTrigger 
-              value="env" 
-              className="gap-1.5 sm:gap-2 rounded-full px-3 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-bold transition-all duration-300 data-[state=active]:bg-white data-[state=active]:dark:bg-cyan-500/20 data-[state=active]:text-cyan-600 data-[state=active]:dark:text-cyan-400 data-[state=active]:shadow-sm data-[state=active]:border-cyan-200/50 data-[state=active]:dark:border-cyan-500/30 border border-transparent hover:bg-secondary/50 whitespace-nowrap"
-            >
-              <Key className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-              <span className="hidden xs:inline">Environment</span>
-              <span className="xs:hidden">Env</span>
-            </TabsTrigger>
-            <TabsTrigger 
-              value="source" 
-              className="gap-1.5 sm:gap-2 rounded-full px-3 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-bold transition-all duration-300 data-[state=active]:bg-white data-[state=active]:dark:bg-cyan-500/20 data-[state=active]:text-cyan-600 data-[state=active]:dark:text-cyan-400 data-[state=active]:shadow-sm data-[state=active]:border-cyan-200/50 data-[state=active]:dark:border-cyan-500/30 border border-transparent hover:bg-secondary/50 whitespace-nowrap"
-            >
-              <FileCode className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-              Source
-            </TabsTrigger>
-            <TabsTrigger 
-              value="domains" 
-              className="gap-1.5 sm:gap-2 rounded-full px-3 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-bold transition-all duration-300 data-[state=active]:bg-white data-[state=active]:dark:bg-cyan-500/20 data-[state=active]:text-cyan-600 data-[state=active]:dark:text-cyan-400 data-[state=active]:shadow-sm data-[state=active]:border-cyan-200/50 data-[state=active]:dark:border-cyan-500/30 border border-transparent hover:bg-secondary/50 whitespace-nowrap"
-            >
-              <Globe className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-              Domains
-            </TabsTrigger>
-          </TabsList>
+            <TabsList className="w-max inline-flex justify-start md:justify-center bg-secondary/50 dark:bg-zinc-900 backdrop-blur-xl border border-border/40 dark:border-white/10 p-1 rounded-full shadow-sm items-center gap-1">
+              <TabsTrigger
+                value="overview"
+                className="gap-1.5 sm:gap-2 rounded-full px-3 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-bold transition-all duration-300 data-[state=active]:bg-white data-[state=active]:dark:bg-cyan-500/20 data-[state=active]:text-cyan-600 data-[state=active]:dark:text-cyan-400 data-[state=active]:shadow-sm data-[state=active]:border-cyan-200/50 data-[state=active]:dark:border-cyan-500/30 border border-transparent hover:bg-secondary/50 whitespace-nowrap"
+              >
+                <LayoutDashboard className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                <span className="hidden xs:inline">Overview</span>
+                <span className="xs:hidden">View</span>
+              </TabsTrigger>
+              <TabsTrigger
+                value="deployments"
+                className="gap-1.5 sm:gap-2 rounded-full px-3 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-bold transition-all duration-300 data-[state=active]:bg-white data-[state=active]:dark:bg-cyan-500/20 data-[state=active]:text-cyan-600 data-[state=active]:dark:text-cyan-400 data-[state=active]:shadow-sm data-[state=active]:border-cyan-200/50 data-[state=active]:dark:border-cyan-500/30 border border-transparent hover:bg-secondary/50 whitespace-nowrap"
+              >
+                <Activity className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                <span className="hidden xs:inline">Deployments</span>
+                <span className="xs:hidden">Deploy</span>
+              </TabsTrigger>
+              <TabsTrigger
+                value="env"
+                className="gap-1.5 sm:gap-2 rounded-full px-3 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-bold transition-all duration-300 data-[state=active]:bg-white data-[state=active]:dark:bg-cyan-500/20 data-[state=active]:text-cyan-600 data-[state=active]:dark:text-cyan-400 data-[state=active]:shadow-sm data-[state=active]:border-cyan-200/50 data-[state=active]:dark:border-cyan-500/30 border border-transparent hover:bg-secondary/50 whitespace-nowrap"
+              >
+                <Key className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                <span className="hidden xs:inline">Environment</span>
+                <span className="xs:hidden">Env</span>
+              </TabsTrigger>
+              <TabsTrigger
+                value="source"
+                className="gap-1.5 sm:gap-2 rounded-full px-3 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-bold transition-all duration-300 data-[state=active]:bg-white data-[state=active]:dark:bg-cyan-500/20 data-[state=active]:text-cyan-600 data-[state=active]:dark:text-cyan-400 data-[state=active]:shadow-sm data-[state=active]:border-cyan-200/50 data-[state=active]:dark:border-cyan-500/30 border border-transparent hover:bg-secondary/50 whitespace-nowrap"
+              >
+                <FileCode className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                Source
+              </TabsTrigger>
+              <TabsTrigger
+                value="domains"
+                className="gap-1.5 sm:gap-2 rounded-full px-3 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-bold transition-all duration-300 data-[state=active]:bg-white data-[state=active]:dark:bg-cyan-500/20 data-[state=active]:text-cyan-600 data-[state=active]:dark:text-cyan-400 data-[state=active]:shadow-sm data-[state=active]:border-cyan-200/50 data-[state=active]:dark:border-cyan-500/30 border border-transparent hover:bg-secondary/50 whitespace-nowrap"
+              >
+                <Globe className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                Domains
+              </TabsTrigger>
+            </TabsList>
           </div>
 
-          <TabsContent value="overview" className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-400">
+          <TabsContent
+            value="overview"
+            className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-400"
+          >
             {/* Real Services Card */}
             {services.length > 0 && (
               <div className="grid gap-6">
@@ -699,29 +845,36 @@ export default function ProjectDetail() {
                 </div>
                 <div className="grid gap-4">
                   {services.map((svc) => {
-                    const domains = svc.domain ? svc.domain.split(',').map(d => d.trim()).filter(Boolean) : [];
-                    
+                    const domains = svc.domain
+                      ? svc.domain
+                          .split(",")
+                          .map((d) => d.trim())
+                          .filter(Boolean)
+                      : [];
+
                     // Use localhost when in development (browser is on localhost), server IP otherwise
-                    const isLocal = typeof window !== 'undefined' && 
-                      (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-                    const portHost = isLocal ? 'localhost' : serverIP;
-                    
-                    const portEndpoint = { 
-                      url: `http://${portHost}:${svc.port}`, 
+                    const isLocal =
+                      typeof window !== "undefined" &&
+                      (window.location.hostname === "localhost" ||
+                        window.location.hostname === "127.0.0.1");
+                    const portHost = isLocal ? "localhost" : serverIP;
+
+                    const portEndpoint = {
+                      url: `http://${portHost}:${svc.port}`,
                       label: `${portHost}:${svc.port}`,
-                      isPort: true
+                      isPort: true,
                     };
 
                     // Always show port endpoint + any configured domains
-                    const domainLinks = domains.map(d => ({ 
-                      url: `https://${d}`, 
+                    const domainLinks = domains.map((d) => ({
+                      url: `https://${d}`,
                       label: d,
-                      isPort: false 
+                      isPort: false,
                     }));
 
                     return (
-                      <Card 
-                        key={svc.id} 
+                      <Card
+                        key={svc.id}
                         className="group relative overflow-hidden p-0 border-border/40 hover:border-cyan-500/50 transition-all duration-300 shadow-sm hover:shadow-cyan-500/5"
                       >
                         <div className="absolute inset-y-0 left-0 w-1 bg-cyan-500 opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -733,20 +886,28 @@ export default function ProjectDetail() {
                             </div>
                             <div className="min-w-0 flex-1">
                               <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-                                <span className="font-bold text-base sm:text-lg truncate">{svc.name}</span>
+                                <span className="font-bold text-base sm:text-lg truncate">
+                                  {svc.name}
+                                </span>
                                 <StatusBadge status={svc.status} />
                               </div>
                               <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5 sm:mt-1 flex flex-wrap items-center gap-1.5 sm:gap-2">
-                                <span className="font-mono bg-secondary/80 px-1 sm:px-1.5 py-0.5 rounded text-[9px] sm:text-xs">Port {svc.internal_port}</span>
-                                <span className="text-muted-foreground/30 hidden sm:inline">/</span>
+                                <span className="font-mono bg-secondary/80 px-1 sm:px-1.5 py-0.5 rounded text-[9px] sm:text-xs">
+                                  Port {svc.internal_port}
+                                </span>
+                                <span className="text-muted-foreground/30 hidden sm:inline">
+                                  /
+                                </span>
                                 <span className="flex items-center gap-1 truncate">
                                   <FileCode className="h-2.5 w-2.5 sm:h-3 sm:w-3 shrink-0" />
-                                  <span className="truncate">{svc.dockerfile_path}</span>
+                                  <span className="truncate">
+                                    {svc.dockerfile_path}
+                                  </span>
                                 </span>
                               </p>
                             </div>
                           </div>
-                          
+
                           {/* Right: Endpoint links */}
                           <div className="flex flex-wrap gap-2 sm:flex-col sm:gap-2 sm:items-end ml-0 sm:ml-auto shrink-0">
                             {/* Always show IP:Port access */}
@@ -756,7 +917,9 @@ export default function ProjectDetail() {
                               rel="noopener noreferrer"
                               className="h-7 sm:h-9 px-2.5 sm:px-4 flex items-center gap-1.5 sm:gap-2 rounded-lg sm:rounded-xl bg-secondary/50 hover:bg-cyan-500 text-muted-foreground hover:text-white font-mono text-[10px] sm:text-xs font-bold transition-all duration-300 border border-border/50"
                             >
-                              <span className="truncate max-w-[120px] sm:max-w-none">{portEndpoint.label}</span>
+                              <span className="truncate max-w-[120px] sm:max-w-none">
+                                {portEndpoint.label}
+                              </span>
                               <ExternalLink className="h-2.5 w-2.5 sm:h-3 sm:w-3 shrink-0" />
                             </a>
                             {/* Show domain links if configured */}
@@ -768,7 +931,9 @@ export default function ProjectDetail() {
                                 rel="noopener noreferrer"
                                 className="h-7 sm:h-9 px-2.5 sm:px-4 flex items-center gap-1.5 sm:gap-2 rounded-lg sm:rounded-xl bg-cyan-500/10 hover:bg-cyan-500 text-cyan-600 hover:text-white font-mono text-[10px] sm:text-xs font-bold transition-all duration-300"
                               >
-                                <span className="truncate max-w-[120px] sm:max-w-none">{link.label}</span>
+                                <span className="truncate max-w-[120px] sm:max-w-none">
+                                  {link.label}
+                                </span>
                                 <ExternalLink className="h-2.5 w-2.5 sm:h-3 sm:w-3 shrink-0" />
                               </a>
                             ))}
@@ -788,11 +953,17 @@ export default function ProjectDetail() {
                   <div className="p-2 sm:p-2.5 rounded-lg sm:rounded-xl bg-orange-500/10">
                     <Activity className="h-4 w-4 sm:h-5 sm:w-5 text-orange-500" />
                   </div>
-                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Health</span>
+                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+                    Health
+                  </span>
                 </div>
                 <div className="space-y-0.5 sm:space-y-1">
-                  <p className="text-lg sm:text-2xl font-bold tracking-tight capitalize">{project.status}</p>
-                  <p className="text-[10px] sm:text-xs text-muted-foreground">Main service status</p>
+                  <p className="text-lg sm:text-2xl font-bold tracking-tight capitalize">
+                    {project.status}
+                  </p>
+                  <p className="text-[10px] sm:text-xs text-muted-foreground">
+                    Main service status
+                  </p>
                 </div>
               </Card>
 
@@ -801,11 +972,17 @@ export default function ProjectDetail() {
                   <div className="p-2 sm:p-2.5 rounded-lg sm:rounded-xl bg-purple-500/10">
                     <History className="h-4 w-4 sm:h-5 sm:w-5 text-purple-500" />
                   </div>
-                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Activity</span>
+                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+                    Activity
+                  </span>
                 </div>
                 <div className="space-y-0.5 sm:space-y-1">
-                  <p className="text-lg sm:text-2xl font-bold tracking-tight">{deployments.length}</p>
-                  <p className="text-[10px] sm:text-xs text-muted-foreground">Total deployments</p>
+                  <p className="text-lg sm:text-2xl font-bold tracking-tight">
+                    {deployments.length}
+                  </p>
+                  <p className="text-[10px] sm:text-xs text-muted-foreground">
+                    Total deployments
+                  </p>
                 </div>
               </Card>
 
@@ -814,11 +991,17 @@ export default function ProjectDetail() {
                   <div className="p-2 sm:p-2.5 rounded-lg sm:rounded-xl bg-blue-500/10">
                     <Cpu className="h-4 w-4 sm:h-5 sm:w-5 text-blue-500" />
                   </div>
-                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Resource</span>
+                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+                    Resource
+                  </span>
                 </div>
                 <div className="space-y-0.5 sm:space-y-1">
-                  <p className="text-lg sm:text-2xl font-bold tracking-tight">{project.source_type === "github" ? "GitHub" : "Upload"}</p>
-                  <p className="text-[10px] sm:text-xs text-muted-foreground">Source type</p>
+                  <p className="text-lg sm:text-2xl font-bold tracking-tight">
+                    {project.source_type === "github" ? "GitHub" : "Upload"}
+                  </p>
+                  <p className="text-[10px] sm:text-xs text-muted-foreground">
+                    Source type
+                  </p>
                 </div>
               </Card>
 
@@ -827,11 +1010,17 @@ export default function ProjectDetail() {
                   <div className="p-2 sm:p-2.5 rounded-lg sm:rounded-xl bg-cyan-500/10">
                     <Shield className="h-4 w-4 sm:h-5 sm:w-5 text-cyan-500" />
                   </div>
-                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Privacy</span>
+                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+                    Privacy
+                  </span>
                 </div>
                 <div className="space-y-0.5 sm:space-y-1">
-                  <p className="text-lg sm:text-2xl font-bold tracking-tight">Isolated</p>
-                  <p className="text-[10px] sm:text-xs text-muted-foreground">Network namespace</p>
+                  <p className="text-lg sm:text-2xl font-bold tracking-tight">
+                    Isolated
+                  </p>
+                  <p className="text-[10px] sm:text-xs text-muted-foreground">
+                    Network namespace
+                  </p>
                 </div>
               </Card>
             </div>
@@ -842,16 +1031,25 @@ export default function ProjectDetail() {
                 <div className="bg-secondary/30 px-6 py-4 border-b flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <GitBranch className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-sm font-semibold italic text-muted-foreground uppercase tracking-widest">Source Configuration</span>
+                    <span className="text-sm font-semibold italic text-muted-foreground uppercase tracking-widest">
+                      Source Configuration
+                    </span>
                   </div>
-                  <a href={project.github_url || "#"} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-cyan-500 hover:text-cyan-400 flex items-center gap-1.5 transition-colors">
+                  <a
+                    href={project.github_url || "#"}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs font-bold text-cyan-500 hover:text-cyan-400 flex items-center gap-1.5 transition-colors"
+                  >
                     VIEW REPO <ExternalLink className="h-3 w-3" />
                   </a>
                 </div>
                 <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-8">
                   <div className="space-y-4">
                     <div className="flex flex-col gap-1.5">
-                      <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Repository URL</span>
+                      <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+                        Repository URL
+                      </span>
                       <p className="text-sm font-mono bg-secondary/50 p-3 rounded-xl border border-border/50 truncate">
                         {project.github_url}
                       </p>
@@ -859,7 +1057,9 @@ export default function ProjectDetail() {
                   </div>
                   <div className="flex items-center gap-6">
                     <div className="flex flex-col gap-1.5">
-                      <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Selected Branch</span>
+                      <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+                        Selected Branch
+                      </span>
                       <div className="flex items-center gap-2 px-3 py-1.5 bg-cyan-500/10 text-cyan-500 rounded-lg border border-cyan-500/20 font-mono text-xs font-bold">
                         <GitBranch className="h-3.5 w-3.5" />
                         {project.github_branch}
@@ -876,10 +1076,12 @@ export default function ProjectDetail() {
                         <Rocket className="h-4 w-4 text-emerald-500" />
                       </div>
                       <div className="min-w-0">
-                        <span className="font-semibold text-sm sm:text-base">Auto-Deploy</span>
+                        <span className="font-semibold text-sm sm:text-base">
+                          Auto-Deploy
+                        </span>
                         <p className="text-[10px] sm:text-xs text-muted-foreground">
-                          {autoDeploy 
-                            ? "Pushes to this branch will trigger automatic deployment" 
+                          {autoDeploy
+                            ? "Pushes to this branch will trigger automatic deployment"
                             : "Enable to auto-redeploy when commits are pushed"}
                         </p>
                       </div>
@@ -889,13 +1091,13 @@ export default function ProjectDetail() {
                       disabled={autoDeployLoading}
                       className={cn(
                         "relative h-6 w-11 rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 shrink-0 self-end sm:self-auto",
-                        autoDeploy ? "bg-emerald-500" : "bg-secondary"
+                        autoDeploy ? "bg-emerald-500" : "bg-secondary",
                       )}
                     >
                       <span
                         className={cn(
                           "absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200",
-                          autoDeploy ? "translate-x-5" : "translate-x-0"
+                          autoDeploy ? "translate-x-5" : "translate-x-0",
                         )}
                       />
                     </button>
@@ -905,11 +1107,14 @@ export default function ProjectDetail() {
             )}
           </TabsContent>
 
-          <TabsContent value="deployments" className="animate-in fade-in slide-in-from-bottom-2 duration-400">
+          <TabsContent
+            value="deployments"
+            className="animate-in fade-in slide-in-from-bottom-2 duration-400"
+          >
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <div className="lg:col-span-2 space-y-6">
                 <div className="flex items-center justify-between">
-                   <h3 className="text-xl font-bold flex items-center gap-2">
+                  <h3 className="text-xl font-bold flex items-center gap-2">
                     <TerminalIcon className="h-5 w-5 text-amber-500" />
                     Live Terminal Output
                   </h3>
@@ -920,7 +1125,11 @@ export default function ProjectDetail() {
                     </div>
                   )}
                 </div>
-                <Terminal logs={logs} isBuilding={project?.status === "building"} className="h-[550px]" />
+                <Terminal
+                  logs={logs}
+                  isBuilding={project?.status === "building"}
+                  className="h-[550px]"
+                />
               </div>
 
               <div className="space-y-6">
@@ -946,74 +1155,110 @@ export default function ProjectDetail() {
                       const isViewing = viewingDeploymentId === deployment.id;
                       const isInProgress = deployment.status === "in_progress";
                       return (
-                      <div
-                        key={deployment.id}
-                        className={cn(
-                          "flex flex-col gap-2 px-5 py-4 cursor-pointer transition-all duration-200 border-l-4",
-                          deployment.status === "success" ? "border-l-emerald-500 lg:hover:bg-emerald-500/5" :
-                          deployment.status === "failed" ? "border-l-red-500 lg:hover:bg-red-500/5" : "border-l-amber-500",
-                          isViewing && "bg-secondary/30 ring-1 ring-inset ring-border/50",
-                          isInProgress && isViewing && "animate-pulse bg-amber-500/5"
-                        )}
-                        onClick={() => {
-                          setLogs(deployment.logs || "No logs available for this deployment");
-                          setViewingDeploymentId(deployment.id); // Track which deployment user is viewing
-                          const terminalElement = document.getElementById('terminal-wrapper');
-                          terminalElement?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                        }}
-                      >
-                        <div className="flex items-start justify-between">
-                          <div className="flex flex-col gap-1">
-                             <span className="font-bold text-sm tracking-tight">
-                              {deployment.trigger === 'webhook' ? 'Auto-Deploy (GitHub)' :
-                               deployment.trigger === 'restart' ? 'Restart Action' :
-                               deployment.trigger === 'stop' ? 'Stop Action' :
-                               deployment.trigger === 'redeploy' ? 'Manual Redeploy' : 'Manual Deployment'}
-                            </span>
-                            <div className="flex items-center gap-2">
-                              <span className={cn(
-                                "text-[10px] font-bold px-1.5 py-0.5 rounded-md uppercase tracking-wider",
-                                deployment.status === "success" ? "bg-emerald-500/10 text-emerald-500" :
-                                deployment.status === "failed" ? "bg-red-500/10 text-red-500" : "bg-amber-500/10 text-amber-500"
-                              )}>
-                                {deployment.status}
+                        <div
+                          key={deployment.id}
+                          className={cn(
+                            "flex flex-col gap-2 px-5 py-4 cursor-pointer transition-all duration-200 border-l-4",
+                            deployment.status === "success"
+                              ? "border-l-emerald-500 lg:hover:bg-emerald-500/5"
+                              : deployment.status === "failed"
+                                ? "border-l-red-500 lg:hover:bg-red-500/5"
+                                : "border-l-amber-500",
+                            isViewing &&
+                              "bg-secondary/30 ring-1 ring-inset ring-border/50",
+                            isInProgress &&
+                              isViewing &&
+                              "animate-pulse bg-amber-500/5",
+                          )}
+                          onClick={() => {
+                            setLogs(
+                              deployment.logs ||
+                                "No logs available for this deployment",
+                            );
+                            setViewingDeploymentId(deployment.id); // Track which deployment user is viewing
+                            const terminalElement =
+                              document.getElementById("terminal-wrapper");
+                            terminalElement?.scrollIntoView({
+                              behavior: "smooth",
+                              block: "center",
+                            });
+                          }}
+                        >
+                          <div className="flex items-start justify-between">
+                            <div className="flex flex-col gap-1">
+                              <span className="font-bold text-sm tracking-tight">
+                                {deployment.trigger === "webhook"
+                                  ? "Auto-Deploy (GitHub)"
+                                  : deployment.trigger === "restart"
+                                    ? "Restart Action"
+                                    : deployment.trigger === "stop"
+                                      ? "Stop Action"
+                                      : deployment.trigger === "redeploy"
+                                        ? "Manual Redeploy"
+                                        : "Manual Deployment"}
                               </span>
-                              <span className="text-[10px] font-mono text-muted-foreground opacity-60"># {deployment.id.split('-')[0]}</span>
+                              <div className="flex items-center gap-2">
+                                <span
+                                  className={cn(
+                                    "text-[10px] font-bold px-1.5 py-0.5 rounded-md uppercase tracking-wider",
+                                    deployment.status === "success"
+                                      ? "bg-emerald-500/10 text-emerald-500"
+                                      : deployment.status === "failed"
+                                        ? "bg-red-500/10 text-red-500"
+                                        : "bg-amber-500/10 text-amber-500",
+                                  )}
+                                >
+                                  {deployment.status}
+                                </span>
+                                <span className="text-[10px] font-mono text-muted-foreground opacity-60">
+                                  # {deployment.id.split("-")[0]}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="flex flex-col items-end gap-1">
+                              <span className="text-[10px] font-medium text-muted-foreground flex items-center gap-1.5 bg-secondary/30 px-2 py-0.5 rounded-full border border-border/20">
+                                <Clock className="h-3 w-3" />
+                                {new Date(
+                                  deployment.created_at,
+                                ).toLocaleTimeString([], {
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })}
+                              </span>
+                              <span className="text-[10px] text-muted-foreground/60 flex items-center gap-1.5 mr-1">
+                                <Calendar className="h-3 w-3" />
+                                {new Date(
+                                  deployment.created_at,
+                                ).toLocaleDateString([], {
+                                  month: "short",
+                                  day: "numeric",
+                                  year: "numeric",
+                                })}
+                              </span>
                             </div>
                           </div>
-                          <div className="flex flex-col items-end gap-1">
-                            <span className="text-[10px] font-medium text-muted-foreground flex items-center gap-1.5 bg-secondary/30 px-2 py-0.5 rounded-full border border-border/20">
-                              <Clock className="h-3 w-3" />
-                              {new Date(deployment.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                            </span>
-                             <span className="text-[10px] text-muted-foreground/60 flex items-center gap-1.5 mr-1">
-                              <Calendar className="h-3 w-3" />
-                              {new Date(deployment.created_at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
-                            </span>
-                          </div>
+                          <p className="text-[11px] text-muted-foreground line-clamp-1 italic">
+                            Click to restore log output to terminal
+                          </p>
+
+                          {deployment.commit_message && (
+                            <div className="mt-2 flex items-center gap-2 px-3 py-2 bg-secondary/30 rounded-lg border border-border/20">
+                              <GitBranch className="h-3 w-3 text-cyan-500" />
+                              <span className="text-[10px] font-medium text-foreground/80 line-clamp-1">
+                                {deployment.commit_message}
+                              </span>
+                            </div>
+                          )}
                         </div>
-                        <p className="text-[11px] text-muted-foreground line-clamp-1 italic">
-                          Click to restore log output to terminal
-                        </p>
-                        
-                        {deployment.commit_message && (
-                          <div className="mt-2 flex items-center gap-2 px-3 py-2 bg-secondary/30 rounded-lg border border-border/20">
-                            <GitBranch className="h-3 w-3 text-cyan-500" />
-                            <span className="text-[10px] font-medium text-foreground/80 line-clamp-1">
-                              {deployment.commit_message}
-                            </span>
-                          </div>
-                        )}
-                      </div>
                       );
                     })
                   )}
-                  
+
                   {deployments.length >= historyLimit && (
                     <div className="p-4 bg-secondary/20 flex justify-center border-t border-border/40">
-                      <Button 
-                        variant="ghost" 
-                        size="sm" 
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         onClick={(e) => {
                           e.stopPropagation();
                           loadMoreHistory();
@@ -1030,7 +1275,10 @@ export default function ProjectDetail() {
             </div>
           </TabsContent>
 
-          <TabsContent value="env" className="animate-in fade-in slide-in-from-bottom-2 duration-400">
+          <TabsContent
+            value="env"
+            className="animate-in fade-in slide-in-from-bottom-2 duration-400"
+          >
             <div className="max-w-4xl mx-auto space-y-6">
               <div className="flex items-center justify-between">
                 <div>
@@ -1039,7 +1287,8 @@ export default function ProjectDetail() {
                     Environment Variables
                   </h3>
                   <p className="text-sm text-muted-foreground mt-1">
-                    Manage secret values and configuration for your deployment environment.
+                    Manage secret values and configuration for your deployment
+                    environment.
                   </p>
                 </div>
               </div>
@@ -1047,7 +1296,10 @@ export default function ProjectDetail() {
             </div>
           </TabsContent>
 
-          <TabsContent value="source" className="animate-in fade-in slide-in-from-bottom-2 duration-400">
+          <TabsContent
+            value="source"
+            className="animate-in fade-in slide-in-from-bottom-2 duration-400"
+          >
             <div className="space-y-6">
               <div className="flex items-center justify-between">
                 <h3 className="text-xl font-bold flex items-center gap-2">
@@ -1061,98 +1313,135 @@ export default function ProjectDetail() {
             </div>
           </TabsContent>
 
-          <TabsContent value="domains" className="animate-in fade-in slide-in-from-bottom-2 duration-400">
-             <div className="max-w-4xl mx-auto space-y-8">
-               
+          <TabsContent
+            value="domains"
+            className="animate-in fade-in slide-in-from-bottom-2 duration-400"
+          >
+            <div className="max-w-4xl mx-auto space-y-8">
+              {/* DNS Guide Section */}
+              <Card className="p-6 border-cyan-500/20 bg-cyan-500/5">
+                <div className="flex flex-col sm:flex-row items-start gap-3 sm:gap-4">
+                  <div className="p-2 bg-cyan-500/10 rounded-lg shrink-0">
+                    <Info className="h-5 w-5 text-cyan-500" />
+                  </div>
+                  <div className="space-y-4 flex-1 min-w-0 w-full">
+                    <div>
+                      <h3 className="text-lg font-bold text-foreground">
+                        DNS Configuration Guide
+                      </h3>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        Configure your DNS records to point to your deployment
+                        server. Support for Cloudflare (Full/Strict) SSL is
+                        recommended.
+                      </p>
+                    </div>
 
-               {/* DNS Guide Section */}
-               <Card className="p-6 border-cyan-500/20 bg-cyan-500/5">
-                   <div className="flex flex-col sm:flex-row items-start gap-3 sm:gap-4">
-                   <div className="p-2 bg-cyan-500/10 rounded-lg shrink-0">
-                     <Info className="h-5 w-5 text-cyan-500" />
-                   </div>
-                   <div className="space-y-4 flex-1 min-w-0 w-full">
-                     <div>
-                       <h3 className="text-lg font-bold text-foreground">DNS Configuration Guide</h3>
-                       <p className="text-sm text-muted-foreground mt-1">
-                         Configure your DNS records to point to your deployment server. Support for Cloudflare (Full/Strict) SSL is recommended.
-                       </p>
-                     </div>
-
-                     <div className="grid md:grid-cols-2 gap-6">
-                       <div className="bg-background/50 p-4 rounded-xl border border-border/50">
-                         <div className="flex items-center justify-between mb-2">
-                           <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Server IP (A Record)</span>
-                           <Button 
-                             variant="ghost" 
-                             size="icon" 
-                             className="h-6 w-6 hover:bg-background" 
-                             onClick={() => {
-                               copyToClipboard(serverIP);
-                               toast.success("IP copied to clipboard");
-                             }}
-                           >
-                             <Copy className="h-3 w-3" />
-                           </Button>
-                         </div>
-                         <code className="text-xl font-mono font-bold text-cyan-500 block">
-                           {serverIP}
-                         </code>
-                         <p className="text-[10px] text-muted-foreground mt-2">
-                           Target for all <strong>A Records</strong>.
-                         </p>
-                       </div>
-
-                        <div className="space-y-2 text-sm overflow-x-auto">
-                          <div className="flex flex-col sm:grid sm:grid-cols-[80px_1fr_auto_1fr] gap-1 sm:gap-2 sm:items-center p-2 rounded-lg hover:bg-white/5 transition-colors group">
-                            <span className="font-bold text-muted-foreground group-hover:text-cyan-400 transition-colors">Root</span>
-                            <span className="font-mono text-sm truncate">example.com</span>
-                            <span className="hidden sm:block"><ArrowRight className="h-4 w-4 text-muted-foreground/50" /></span>
-                            <span className="font-mono bg-secondary px-2 py-1 rounded-md text-xs text-center sm:text-left border border-white/5 w-fit">A Record (@)</span>
-                          </div>
-                          <div className="flex flex-col sm:grid sm:grid-cols-[80px_1fr_auto_1fr] gap-1 sm:gap-2 sm:items-center p-2 rounded-lg hover:bg-white/5 transition-colors group">
-                            <span className="font-bold text-muted-foreground group-hover:text-cyan-400 transition-colors">Subdomain</span>
-                            <span className="font-mono text-sm truncate">app.example.com</span>
-                            <span className="hidden sm:block"><ArrowRight className="h-4 w-4 text-muted-foreground/50" /></span>
-                            <span className="font-mono bg-secondary px-2 py-1 rounded-md text-xs text-center sm:text-left border border-white/5 w-fit">A Record (app)</span>
-                          </div>
-                          <div className="flex flex-col sm:grid sm:grid-cols-[80px_1fr_auto_1fr] gap-1 sm:gap-2 sm:items-center p-2 rounded-lg hover:bg-white/5 transition-colors group">
-                            <span className="font-bold text-muted-foreground group-hover:text-cyan-400 transition-colors">WWW</span>
-                            <span className="font-mono text-sm truncate">www.example.com</span>
-                            <span className="hidden sm:block"><ArrowRight className="h-4 w-4 text-muted-foreground/50" /></span>
-                            <span className="font-mono bg-secondary px-2 py-1 rounded-md text-xs text-center sm:text-left border border-white/5 w-fit">CNAME (@)</span>
-                          </div>
-                          <div className="flex flex-wrap items-center gap-2 mt-2 pt-2 border-t border-border/30 text-xs text-emerald-500 font-medium">
-                            <Lock className="h-3 w-3" />
-                            ssl/https: Enable <strong>Flexible</strong> mode in Cloudflare/Provider.
-                          </div>
+                    <div className="grid md:grid-cols-2 gap-6">
+                      <div className="bg-background/50 p-4 rounded-xl border border-border/50">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                            Server IP (A Record)
+                          </span>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 hover:bg-background"
+                            onClick={() => {
+                              copyToClipboard(serverIP);
+                              toast.success("IP copied to clipboard");
+                            }}
+                          >
+                            <Copy className="h-3 w-3" />
+                          </Button>
                         </div>
-                     </div>
-                   </div>
-                 </div>
-               </Card>
+                        <code className="text-xl font-mono font-bold text-cyan-500 block">
+                          {serverIP}
+                        </code>
+                        <p className="text-[10px] text-muted-foreground mt-2">
+                          Target for all <strong>A Records</strong>.
+                        </p>
+                      </div>
 
-               <div className="space-y-4">
-                 <div className="flex items-center justify-between">
-                   <h3 className="text-xl font-bold flex items-center gap-2">
-                     <Globe className="h-5 w-5 text-purple-500" />
-                     Service Domains
-                   </h3>
-                 </div>
+                      <div className="space-y-2 text-sm overflow-x-auto">
+                        <div className="flex flex-col sm:grid sm:grid-cols-[80px_1fr_auto_1fr] gap-1 sm:gap-2 sm:items-center p-2 rounded-lg hover:bg-white/5 transition-colors group">
+                          <span className="font-bold text-muted-foreground group-hover:text-cyan-400 transition-colors">
+                            Root
+                          </span>
+                          <span className="font-mono text-sm truncate">
+                            example.com
+                          </span>
+                          <span className="hidden sm:block">
+                            <ArrowRight className="h-4 w-4 text-muted-foreground/50" />
+                          </span>
+                          <span className="font-mono bg-secondary px-2 py-1 rounded-md text-xs text-center sm:text-left border border-white/5 w-fit">
+                            A Record (@)
+                          </span>
+                        </div>
+                        <div className="flex flex-col sm:grid sm:grid-cols-[80px_1fr_auto_1fr] gap-1 sm:gap-2 sm:items-center p-2 rounded-lg hover:bg-white/5 transition-colors group">
+                          <span className="font-bold text-muted-foreground group-hover:text-cyan-400 transition-colors">
+                            Subdomain
+                          </span>
+                          <span className="font-mono text-sm truncate">
+                            app.example.com
+                          </span>
+                          <span className="hidden sm:block">
+                            <ArrowRight className="h-4 w-4 text-muted-foreground/50" />
+                          </span>
+                          <span className="font-mono bg-secondary px-2 py-1 rounded-md text-xs text-center sm:text-left border border-white/5 w-fit">
+                            A Record (app)
+                          </span>
+                        </div>
+                        <div className="flex flex-col sm:grid sm:grid-cols-[80px_1fr_auto_1fr] gap-1 sm:gap-2 sm:items-center p-2 rounded-lg hover:bg-white/5 transition-colors group">
+                          <span className="font-bold text-muted-foreground group-hover:text-cyan-400 transition-colors">
+                            WWW
+                          </span>
+                          <span className="font-mono text-sm truncate">
+                            www.example.com
+                          </span>
+                          <span className="hidden sm:block">
+                            <ArrowRight className="h-4 w-4 text-muted-foreground/50" />
+                          </span>
+                          <span className="font-mono bg-secondary px-2 py-1 rounded-md text-xs text-center sm:text-left border border-white/5 w-fit">
+                            CNAME (@)
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2 mt-2 pt-2 border-t border-border/30 text-xs text-emerald-500 font-medium">
+                          <Lock className="h-3 w-3" />
+                          ssl/https: Enable <strong>Flexible</strong> mode in
+                          Cloudflare/Provider.
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </Card>
 
-                 <div className="grid gap-4">
-                   {services.map((svc) => (
-                     <ServiceDomainManager key={svc.id} service={svc} projectId={projectId} onUpdate={fetchProject} />
-                   ))}
-                   
-                   {services.length === 0 && (
-                     <div className="text-center py-12 text-muted-foreground bg-secondary/20 rounded-xl border border-dashed border-border">
-                       No services found for this project.
-                     </div>
-                   )}
-                 </div>
-               </div>
-             </div>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xl font-bold flex items-center gap-2">
+                    <Globe className="h-5 w-5 text-purple-500" />
+                    Service Domains
+                  </h3>
+                </div>
+
+                <div className="grid gap-4">
+                  {services.map((svc) => (
+                    <ServiceDomainManager
+                      key={svc.id}
+                      service={svc}
+                      projectId={projectId}
+                      onUpdate={fetchProject}
+                    />
+                  ))}
+
+                  {services.length === 0 && (
+                    <div className="text-center py-12 text-muted-foreground bg-secondary/20 rounded-xl border border-dashed border-border">
+                      No services found for this project.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
           </TabsContent>
         </Tabs>
       </main>
@@ -1163,7 +1452,10 @@ export default function ProjectDetail() {
           filename={editingFile.name}
           content={editingFile.content}
           onClose={() => setEditingFile(null)}
-          onSave={() => { setEditingFile(null); fetchProject(); }}
+          onSave={() => {
+            setEditingFile(null);
+            fetchProject();
+          }}
         />
       )}
 
@@ -1183,12 +1475,14 @@ export default function ProjectDetail() {
             <Button variant="outline" onClick={() => setIsConfirmOpen(false)}>
               Cancel
             </Button>
-            <Button 
-              className={actionDetails.confirmVariant} 
+            <Button
+              className={actionDetails.confirmVariant}
               onClick={executeAction}
               disabled={actionLoading}
             >
-              {actionLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              {actionLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : null}
               {actionDetails.confirmText}
             </Button>
           </DialogFooter>
