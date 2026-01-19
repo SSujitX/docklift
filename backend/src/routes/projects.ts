@@ -60,6 +60,14 @@ router.get('/', async (req: Request, res: Response) => {
       
       if (container_name) {
         const status = await dockerService.getContainerStatus(container_name);
+
+        // IMPORTANT: Skip auto-sync if project is currently building
+        // The deployment process will handle status updates when it completes
+        if (project.status === 'building') {
+          // Don't auto-sync during active builds - let deployment handle it
+          continue;
+        }
+
         if (status.running && project.status !== 'running') {
           // Update both project AND all services to 'running' for consistency
           await prisma.project.update({
@@ -138,34 +146,39 @@ router.get('/:id', async (req: Request, res: Response) => {
     
     if (container_name) {
       const status = await dockerService.getContainerStatus(container_name);
-      if (status.running && project.status !== 'running') {
-        // Update both project AND all services to 'running' for consistency
-        await prisma.project.update({
-          where: { id: project.id },
-          data: { status: 'running' },
-        });
-        await prisma.service.updateMany({
-          where: { project_id: project.id },
-          data: { status: 'running' },
-        });
-        project.status = 'running';
 
-        // Also update IN_PROGRESS deployments to SUCCESS
-        await prisma.deployment.updateMany({
-          where: { project_id: project.id, status: 'in_progress' },
-          data: { status: 'success', finished_at: new Date() },
-        });
-      } else if (!status.running && status.status !== 'not_found' && project.status === 'running') {
-        // Update both project AND all services to 'stopped' for consistency
-        await prisma.project.update({
-          where: { id: project.id },
-          data: { status: 'stopped' },
-        });
-        await prisma.service.updateMany({
-          where: { project_id: project.id },
-          data: { status: 'stopped' },
-        });
-        project.status = 'stopped';
+      // IMPORTANT: Skip auto-sync if project is currently building
+      // The deployment process will handle status updates when it completes
+      if (project.status !== 'building') {
+        if (status.running && project.status !== 'running') {
+          // Update both project AND all services to 'running' for consistency
+          await prisma.project.update({
+            where: { id: project.id },
+            data: { status: 'running' },
+          });
+          await prisma.service.updateMany({
+            where: { project_id: project.id },
+            data: { status: 'running' },
+          });
+          project.status = 'running';
+
+          // Also update IN_PROGRESS deployments to SUCCESS
+          await prisma.deployment.updateMany({
+            where: { project_id: project.id, status: 'in_progress' },
+            data: { status: 'success', finished_at: new Date() },
+          });
+        } else if (!status.running && status.status !== 'not_found' && project.status === 'running') {
+          // Update both project AND all services to 'stopped' for consistency
+          await prisma.project.update({
+            where: { id: project.id },
+            data: { status: 'stopped' },
+          });
+          await prisma.service.updateMany({
+            where: { project_id: project.id },
+            data: { status: 'stopped' },
+          });
+          project.status = 'stopped';
+        }
       }
     }
 
