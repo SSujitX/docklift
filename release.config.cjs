@@ -194,7 +194,7 @@ const appendReleaseNotesPlugin = {
 };
 
 const releaseConfig = {
-  branches: ['main', { name: 'beta', prerelease: true }],
+  branches: ['master', 'main', { name: 'beta', prerelease: true }],
   plugins: [
     [
       '@semantic-release/commit-analyzer',
