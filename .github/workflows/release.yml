@@ -40,12 +40,5 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           body_path: RELEASE_NOTES.md
-          files: |
-            package.json
-            package-lock.json
-            frontend/package.json
-            frontend/package-lock.json
-            backend/package.json
-            backend/package-lock.json
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
