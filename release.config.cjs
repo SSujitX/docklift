@@ -8,7 +8,7 @@
 
 const REPO_URL = 'https://github.com/SSujitX/docklift';
 const GITHUB_BASE_URL = 'https://github.com';
-const FULL_CHANGELOG_URL = `${REPO_URL}/blob/main/CHANGELOG.md`;
+const FULL_CHANGELOG_URL = `${REPO_URL}/blob/master/CHANGELOG.md`;
 
 const releaseRules = [
   {
@@ -194,7 +194,7 @@ const appendReleaseNotesPlugin = {
 };
 
 const releaseConfig = {
-  branches: ['master', 'main', { name: 'beta', prerelease: true }],
+  branches: ['master', { name: 'beta', prerelease: true }],
   plugins: [
     [
       '@semantic-release/commit-analyzer',
@@ -231,6 +231,13 @@ const releaseConfig = {
       },
     ],
     '@semantic-release/npm', // Updates package.json and npm-shrinkwrap.json
+    [
+      '@semantic-release/exec',
+      {
+        prepareCmd:
+          'npm version ${nextRelease.version} --workspaces --no-git-tag-version --allow-same-version || (npm version ${nextRelease.version} --no-git-tag-version --prefix frontend && npm version ${nextRelease.version} --no-git-tag-version --prefix backend)',
+      },
+    ],
     appendReleaseNotesPlugin,
     [
       '@semantic-release/github',
@@ -244,7 +251,16 @@ const releaseConfig = {
     [
       '@semantic-release/git',
       {
-        assets: ['CHANGELOG.md', 'package.json', 'package-lock.json', 'npm-shrinkwrap.json'],
+        assets: [
+          'CHANGELOG.md',
+          'package.json',
+          'package-lock.json',
+          'npm-shrinkwrap.json',
+          'frontend/package.json',
+          'frontend/package-lock.json',
+          'backend/package.json',
+          'backend/package-lock.json',
+        ],
         message: 'chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}',
       },
     ],
