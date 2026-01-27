@@ -30,15 +30,6 @@ jobs:
           node-version: '22'
 
       - run: npm ci
-
-      - name: Generate Release Notes
-        run: npx conventional-changelog-cli -p conventionalcommits > RELEASE_NOTES.md
-        env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          body_path: RELEASE_NOTES.md
+      - run: npx semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
