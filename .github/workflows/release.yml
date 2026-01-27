@@ -1,17 +1,10 @@
 name: Release
 
 on:
-  pull_request:
-    branches:
-      - master
+  workflow_dispatch:
 
 jobs:
-  # test:
-  #   uses: ./.github/workflows/test-ubuntu.yml
-
   release:
-    # name: Create Release
-    # needs: [test]
     permissions:
       contents: write
       issues: write
