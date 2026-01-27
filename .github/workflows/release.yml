@@ -11,8 +11,12 @@ permissions:
   pull-requests: write
 
 jobs:
+  test:
+    uses: ./.github/workflows/test-ubuntu.yml
+
   release:
     name: Semantic Release
+    needs: [test]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
