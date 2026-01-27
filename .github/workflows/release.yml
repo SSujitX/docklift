@@ -21,16 +21,17 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Generate Release Notes
-        uses: release-drafter/release-drafter@v6
-        id: release_drafter
+        run: npx conventional-changelog-cli -p conventionalcommits > RELEASE_NOTES.md
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          body: ${{ steps.release_drafter.outputs.body }}
+          body_path: RELEASE_NOTES.md
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
