@@ -2,8 +2,8 @@ name: Release
 
 on:
   push:
-    branches:
-      - master
+    tags:
+      - 'v*'
 
 permissions:
   contents: write
@@ -15,26 +15,23 @@ jobs:
     uses: ./.github/workflows/test-ubuntu.yml
 
   release:
-    name: Semantic Release
+    name: Create Release
     needs: [test]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          fetch-depth: 0 # Required for semantic-release to analyze commits
-          persist-credentials: false # We use a token in the next steps
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: "npm"
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Release
+          files: |
+            package.json
+            package-lock.json
+            frontend/package.json
+            frontend/package-lock.json
+            backend/package.json
+            backend/package-lock.json
+          generate_release_notes: true
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }} # Use GH_TOKEN to trigger other workflows
-        run: npx semantic-release
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}

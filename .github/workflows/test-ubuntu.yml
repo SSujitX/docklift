@@ -2,9 +2,11 @@ name: Test Install - Ubuntu
 
 on:
   push:
-    branches: [ master, main ]
+    branches-ignore:
+      - master
   pull_request:
-    branches: [ master, main ]
+    branches-ignore:
+      - master
   workflow_dispatch:
   workflow_call:
 
