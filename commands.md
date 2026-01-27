@@ -3,6 +3,7 @@
 Useful commands for debugging and maintaining your Docklift instance.
 
 ## 📋 Table of Contents
+
 - [⬆️ Upgrade](#-upgrade)
 - [📜 Check Infrastructure Logs](#-check-infrastructure-logs)
 - [🛰️ Project Debugging](#-project-debugging)
@@ -12,6 +13,7 @@ Useful commands for debugging and maintaining your Docklift instance.
 ---
 
 ### ⬆️ Upgrade
+
 ```bash
 # Safe upgrade (preserves all data and containers)
 curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/upgrade.sh | sudo bash
@@ -20,6 +22,7 @@ curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/upgrade.sh 
 ---
 
 ### 📜 Check Infrastructure Logs
+
 ```bash
 # View Backend logs
 docker logs docklift-backend --tail 50 -f
@@ -36,10 +39,11 @@ docker compose up -d --build
 
 # View Nginx Proxy logs (useful for 502/404 errors)
 docker logs docklift-nginx-proxy --tail 50 -f
-docker logs -f docklift-nginx-proxy 
+docker logs -f docklift-nginx-proxy
 ```
 
 ### 🛰️ project Debugging
+
 ```bash
 # List all Docklift-related containers
 docker ps --filter name=dl_ --filter name=docklift_
@@ -50,6 +54,7 @@ docker logs dl_30e99d03_multiscraper_api --tail 100 -f
 ```
 
 ### 🧹 Cleaning & Resetting
+
 ```bash
 # Nuclear Uninstall (Force-kills everything & deletes all data)
 curl -fsSL "https://raw.githubusercontent.com/SSujitX/docklift/master/uninstall.sh?nocache=5" | sudo bash -s -- -y
@@ -64,6 +69,7 @@ bun run reset-password
 ```
 
 ### 🌐 Network & Port Check
+
 ```bash
 # Check if a port is in use and by what process
 sudo netstat -tulpn | grep 3001
@@ -75,6 +81,7 @@ docker network inspect docklift_network
 ---
 
 ### 🚀 Development Commands (Bun)
+
 ```bash
 # Database management
 bunx prisma studio              # Open DB GUI
@@ -85,11 +92,11 @@ bunx prisma generate            # Regenerate client
 bun run dev                     # Start Next.js dev server
 bunx next dev -p 3001           # Custom port
 
-# Backend dev  
+# Backend dev
 bun run dev                     # Start with tsx watch
 
 # Build & lint
-bun run build                   
+bun run build
 bunx tsc --noEmit
 ```
 
@@ -118,7 +125,9 @@ npm version patch --no-git-tag-version  # No git commit/tag
 ### Version Management (Multi-Package)
 To update versions for both `frontend` and `backend` simultaneously, run this from the **project root**:
 
+```
+
 ```bash
 cd frontend; bunx bumpp package.json ../backend/package.json --patch --tag --commit "chore: release v%s"
-```
+
 ```
