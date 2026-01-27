@@ -1,3 +1,10 @@
+## [1.3.10](https://github.com/SSujitX/docklift/compare/v1.3.9...v1.3.10) (2026-01-27)
+
+
+### Bug Fixes
+
+* **projects:** update GitHub URL regex to support dots in repo names ([ed99465](https://github.com/SSujitX/docklift/commit/ed99465c806c4a3a3dd06701d11a791334488cfb))
+
 ## [1.3.9](https://github.com/SSujitX/docklift/compare/v1.3.8...v1.3.9) (2026-01-27)
 
 
