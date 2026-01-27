@@ -224,9 +224,12 @@ router.post('/', upload.single('files'), async (req: Request, res: Response) => 
       let authUrl = github_url;
       try {
         // Extract owner/repo from URL to get correct installation
-        const match = github_url.match(/github\.com[/:]([^/]+)\/([^/.]+)/);
+        // Extract owner/repo from URL to get correct installation
+        // MODIFIED: Regex updated to support dots in repo name (e.g. quickdlr.com) and stripped .git
+        const match = github_url.match(/github\.com[/:]([^/]+)\/([^\/]+)/);
         if (match) {
-          const [, owner, repo] = match;
+          const [, owner, rawRepo] = match;
+          const repo = rawRepo.endsWith('.git') ? rawRepo.slice(0, -4) : rawRepo;
           let installId: string | null = null;
           
           try {
