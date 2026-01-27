@@ -1,6 +1,6 @@
 {
   "name": "docklift-backend",
-  "version": "1.3.9",
+  "version": "1.3.8",
   "description": "Docklift backend - Docker deployment platform",
   "type": "module",
   "main": "dist/index.js",
