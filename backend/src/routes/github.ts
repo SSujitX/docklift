@@ -564,13 +564,29 @@ router.get('/repos', async (req: Request, res: Response) => {
         // Fallback to single saved installation if list fails
         const installationId = await getSetting('github_installation_id');
         if (!installationId) return res.status(401).json({ error: 'GitHub not connected' });
+
+        // Helper to fetch all pages for a token
+        const fetchAllPages = async (token: string) => {
+          let page = 1;
+          let allRepos: any[] = [];
+          while (true) {
+            const response = await fetch(`${GITHUB_API_URL}/installation/repositories?page=${page}&per_page=100`, {
+                headers: { Authorization: `token ${token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' }
+            });
+            if (!response.ok) break;
+            const data = await response.json() as any;
+            const repos = data.repositories || [];
+            if (repos.length === 0) break;
+            allRepos = [...allRepos, ...repos];
+            if (repos.length < 100) break; // Reached last page
+            page++;
+          }
+          return allRepos;
+        };
         
         const token = await getInstallationToken(installationId);
-        const response = await fetch(`${GITHUB_API_URL}/installation/repositories`, {
-            headers: { Authorization: `token ${token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' }
-        });
-        const data = await response.json() as any;
-        return res.json((data.repositories || []).map(mapRepo));
+        const repos = await fetchAllPages(token);
+        return res.json(repos.map(mapRepo));
     }
 
     const installations = await installationsResponse.json() as Array<{ id: number; account?: { login: string } }>;
@@ -579,27 +595,39 @@ router.get('/repos', async (req: Request, res: Response) => {
       return res.json([]);
     }
 
-    // 2. Fetch repos for EACH installation in parallel
+    // 2. Fetch repos for EACH installation in parallel (fetching ALL pages)
     const allReposPromise = installations.map(async (inst) => {
       try {
         const token = await getInstallationToken(inst.id.toString());
-        const page = parseInt(req.query.page as string) || 1;
-        const perPage = Math.min(parseInt(req.query.per_page as string) || 30, 100);
-
-        const repoRes = await fetch(
-          `${GITHUB_API_URL}/installation/repositories?page=${page}&per_page=${perPage}`, 
-          {
-            headers: {
-              Authorization: `token ${token}`,
-              Accept: 'application/vnd.github+json',
-              'X-GitHub-Api-Version': '2022-11-28',
-            }
-          }
-        );
         
-        if (!repoRes.ok) return [];
-        const data = await repoRes.json() as { repositories?: any[] };
-        return data.repositories || [];
+        let page = 1;
+        let instRepos: any[] = [];
+        
+        // Fetch all pages for this installation
+        while (true) {
+           const repoRes = await fetch(
+             `${GITHUB_API_URL}/installation/repositories?page=${page}&per_page=100`, 
+             {
+               headers: {
+                 Authorization: `token ${token}`,
+                 Accept: 'application/vnd.github+json',
+                 'X-GitHub-Api-Version': '2022-11-28',
+               }
+             }
+           );
+           
+           if (!repoRes.ok) break;
+           const data = await repoRes.json() as { repositories?: any[] };
+           const pageRepos = data.repositories || [];
+           
+           if (pageRepos.length === 0) break;
+           instRepos = [...instRepos, ...pageRepos];
+           
+           if (pageRepos.length < 100) break; // Less than limit means last page
+           page++;
+        }
+        
+        return instRepos;
       } catch (err) {
         console.error(`Failed to fetch repos for installation ${inst.id}:`, err);
         return [];
