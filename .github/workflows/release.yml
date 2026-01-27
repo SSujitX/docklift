@@ -1,10 +1,17 @@
 name: Release
 
 on:
-  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
 
 jobs:
+  test:
+    uses: ./.github/workflows/test-ubuntu.yml
+
   release:
+    name: Create Release
+    needs: [test]
     permissions:
       contents: write
       issues: write
@@ -14,6 +21,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -21,6 +30,22 @@ jobs:
           node-version: '22'
 
       - run: npm ci
-      - run: npx semantic-release
+
+      - name: Generate Release Notes
+        run: npx conventional-changelog-cli -p conventionalcommits > RELEASE_NOTES.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: RELEASE_NOTES.md
+          files: |
+            package.json
+            package-lock.json
+            frontend/package.json
+            frontend/package-lock.json
+            backend/package.json
+            backend/package-lock.json
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
