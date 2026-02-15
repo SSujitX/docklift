@@ -42,6 +42,8 @@ backend/data/.secrets
 # Logs
 *.log
 logs/
+# Allow Next.js app route for /logs page
+!frontend/app/logs/
 
 # OS
 .DS_Store
