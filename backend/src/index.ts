@@ -19,6 +19,7 @@ import githubRouter from './routes/github.js';
 import systemRouter from './routes/system.js';
 import domainRouter from './routes/domains.js';
 import backupRouter from './routes/backup.js';
+import logsRouter from './routes/logs.js';
 import authRouter from './routes/auth.js';
 import { authMiddleware } from './lib/authMiddleware.js';
 
@@ -95,6 +96,7 @@ app.use('/api/github', (req, res, next) => {
 }, githubRouter);
 app.use('/api/system', authMiddleware, systemRouter);
 app.use('/api/domains', authMiddleware, domainRouter);
+app.use('/api/logs', authMiddleware, logsRouter);
 app.use('/api/backup', async (req, res, next) => {
   // Allow restore-upload without auth if no users exist (fresh install/restore scenario)
   if (req.path === '/restore-upload' && req.method === 'POST') {
