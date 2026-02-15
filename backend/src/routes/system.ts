@@ -2,6 +2,7 @@
 import { Router, Request, Response } from 'express';
 import si from 'systeminformation';
 import { exec } from 'child_process';
+import { streamContainerLogs } from '../services/docker.js';
 import { promisify } from 'util';
 import os from 'os';
 import { readFileSync } from 'fs';
@@ -500,6 +501,38 @@ router.get('/stats', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Failed to get system stats:', error);
     res.status(500).json({ error: 'Failed to fetch system statistics' });
+  }
+});
+
+
+
+// GET /api/system/logs/:service - Stream real-time logs for system containers (SSE)
+router.get('/logs/:service', async (req: Request, res: Response) => {
+  try {
+    const { service } = req.params;
+    const tail = parseInt(req.query.tail as string) || 200;
+
+    // Map friendly service names to container names
+    const serviceMap: Record<string, string> = {
+      'backend': 'docklift-backend',
+      'frontend': 'docklift-frontend',
+      'database': 'docklift-db',
+      'redis': 'docklift-redis',
+      'proxy': 'docklift-nginx-proxy',
+      'nginx': 'docklift-nginx'
+    };
+
+    const containerName = serviceMap[service];
+    
+    if (!containerName) {
+      return res.status(400).json({ error: 'Invalid service name. Available: backend, frontend, database, redis, proxy' });
+    }
+
+    // Start streaming
+    streamContainerLogs(containerName, res, tail);
+  } catch (error) {
+    console.error('Failed to stream system logs:', error);
+    res.status(500).json({ error: 'Failed to stream logs' });
   }
 });
 
