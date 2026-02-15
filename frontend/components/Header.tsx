@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Container, Settings, Moon, Sun, Monitor, BookOpen, Anchor, LayoutGrid, ChevronDown, Gauge, Menu, X, LogOut } from "lucide-react";
+import { Container, Settings, Moon, Sun, Monitor, BookOpen, Anchor, LayoutGrid, ChevronDown, Gauge, Menu, X, LogOut, Activity } from "lucide-react";
 import { GithubIcon } from "./icons/GithubIcon";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -57,6 +57,7 @@ export function Header() {
     { name: "Ports", href: "/ports", icon: Anchor },
     { name: "System", href: "/system", icon: Gauge },
     { name: "Terminal", href: "/terminal", icon: Monitor },
+    { name: "Logs", href: "/logs", icon: Activity },
   ];
 
   return (
