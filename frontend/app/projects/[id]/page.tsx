@@ -178,9 +178,10 @@ function ContainerLogsPanel({
     const token = typeof window !== "undefined"
       ? localStorage.getItem("docklift_token") || ""
       : "";
-    // EventSource must bypass Next.js rewrites (they buffer SSE).
-    // If API_URL is set, use it directly. Otherwise derive from current origin with backend port.
-    const sseBase = API_URL || (typeof window !== "undefined"
+    // EventSource must bypass Next.js rewrites in DEV (they buffer SSE).
+    // In PROD, Nginx handles routing correctly, so we use relative paths if API_URL is unset.
+    const isDev = process.env.NODE_ENV === "development";
+    const sseBase = API_URL || (isDev && typeof window !== "undefined"
       ? `${window.location.protocol}//${window.location.hostname}:8000`
       : "");
     const containerNames = containerNamesKey.split(",");
