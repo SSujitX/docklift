@@ -117,6 +117,8 @@ function AnsiLine({ text }: { text: string }) {
   return <>{elements}</>;
 }
 
+const MAX_LOG_LINES = 5000;
+
 // Real-time container logs panel
 function ContainerLogsPanel({
   projectId,
@@ -176,12 +178,17 @@ function ContainerLogsPanel({
     const token = typeof window !== "undefined"
       ? localStorage.getItem("docklift_token") || ""
       : "";
+    // EventSource must bypass Next.js rewrites (they buffer SSE).
+    // If API_URL is set, use it directly. Otherwise derive from current origin with backend port.
+    const sseBase = API_URL || (typeof window !== "undefined"
+      ? `${window.location.protocol}//${window.location.hostname}:8000`
+      : "");
     const containerNames = containerNamesKey.split(",");
 
     containerNames.forEach((containerName) => {
       if (eventSourcesRef.current[containerName]) return;
 
-      const url = `${API_URL}/api/logs/${projectId}/stream/${encodeURIComponent(containerName)}?token=${encodeURIComponent(token)}`;
+      const url = `${sseBase}/api/logs/${projectId}/stream/${encodeURIComponent(containerName)}?token=${encodeURIComponent(token)}`;
       const es = new EventSource(url);
 
       es.onopen = () => {
@@ -192,13 +199,16 @@ function ContainerLogsPanel({
         try {
           const data = JSON.parse(event.data);
           if (data.type === "log") {
-            setContainerLogs((prev) => ({
-              ...prev,
-              [containerName]: [
-                ...(prev[containerName] || []),
-                data.message,
-              ],
-            }));
+            setContainerLogs((prev) => {
+              const existing = prev[containerName] || [];
+              const updated = [...existing, data.message];
+              return {
+                ...prev,
+                [containerName]: updated.length > MAX_LOG_LINES
+                  ? updated.slice(-MAX_LOG_LINES)
+                  : updated,
+              };
+            });
           } else if (data.type === "status") {
             setContainerLogs((prev) => ({
               ...prev,
@@ -249,7 +259,7 @@ function ContainerLogsPanel({
   };
 
   const downloadLogs = (containerName: string) => {
-    const logContent = (containerLogs[containerName] || []).join("");
+    const logContent = (containerLogs[containerName] || []).join("\n");
     const blob = new Blob([logContent], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
