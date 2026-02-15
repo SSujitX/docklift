@@ -91,11 +91,14 @@ export function SystemLogsPanel({ service, isActive }: SystemLogsPanelProps) {
 
       const token = typeof window !== "undefined" ? localStorage.getItem("docklift_token") || "" : "";
       
-      // SSE URL
+      // SSE URL: use same-origin in browser when not on localhost (production behind proxy)
       const isDev = process.env.NODE_ENV === "development";
-      const sseBase = API_URL || (isDev && typeof window !== "undefined"
+      let sseBase = API_URL || (isDev && typeof window !== "undefined"
         ? `${window.location.protocol}//${window.location.hostname}:8000`
         : "");
+      if (typeof window !== "undefined" && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1") {
+        sseBase = ""; // same-origin so /api is proxied correctly
+      }
       
       const url = `${sseBase}/api/system/logs/${service}?tail=5000&token=${encodeURIComponent(token)}`;
 
@@ -110,11 +113,10 @@ export function SystemLogsPanel({ service, isActive }: SystemLogsPanelProps) {
       es.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          if (data.log) {
-            setLogs(prev => {
-              const newLogs = [...prev, data.log].slice(-5000); // Keep last 5000 lines
-              return newLogs;
-            });
+          // Backend sends { type: 'log', message: "..." }; support legacy data.log too
+          const line = data.log ?? (data.type === "log" || data.type === "error" ? data.message : data.message);
+          if (line != null && String(line).trim() !== "") {
+            setLogs(prev => [...prev, String(line)].slice(-5000));
           }
         } catch (e) {
          // Raw text fallback
