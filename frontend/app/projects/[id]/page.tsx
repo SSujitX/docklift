@@ -189,7 +189,7 @@ function ContainerLogsPanel({
     containerNames.forEach((containerName) => {
       if (eventSourcesRef.current[containerName]) return;
 
-      const url = `${sseBase}/api/logs/${projectId}/stream/${encodeURIComponent(containerName)}?token=${encodeURIComponent(token)}`;
+      const url = `${sseBase}/api/logs/${projectId}/stream/${encodeURIComponent(containerName)}?token=${encodeURIComponent(token)}&tail=5000`;
       const es = new EventSource(url);
 
       es.onopen = () => {
