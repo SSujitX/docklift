@@ -193,7 +193,18 @@ export function streamContainerLogs(containerName: string, res: Response, tail =
       tail,
       timestamps: false,
     }).then((logStream: any) => {
-      res.write(`data: ${JSON.stringify({ type: 'connected', container: containerName })}\n\n`);
+      let closed = false;
+
+      // Safe write helper — guards against write-after-end crashes
+      const safeWrite = (data: string) => {
+        if (closed) return;
+        try {
+          res.write(data);
+          (res as any).flush?.();
+        } catch { /* ignore write errors on closed connections */ }
+      };
+
+      safeWrite(`data: ${JSON.stringify({ type: 'connected', container: containerName })}\n\n`);
 
       // Docker multiplexed stream: each frame has 8-byte header
       // [stream_type(1)][0(3)][size(4)][payload(size)]
@@ -204,16 +215,17 @@ export function streamContainerLogs(containerName: string, res: Response, tail =
           const size = buffer.readUInt32BE(4);
           if (buffer.length < 8 + size) break; // wait for more data
 
-          const payload = buffer.slice(8, 8 + size).toString('utf-8');
-          buffer = buffer.slice(8 + size);
+          const payload = buffer.subarray(8, 8 + size).toString('utf-8');
+          buffer = buffer.subarray(8 + size);
 
           if (payload.trim()) {
-            res.write(`data: ${JSON.stringify({ type: 'log', message: payload })}\n\n`);
+            safeWrite(`data: ${JSON.stringify({ type: 'log', message: payload })}\n\n`);
           }
         }
       };
 
       logStream.on('data', (chunk: Buffer) => {
+        if (closed) return;
         // Try to detect if this is a multiplexed stream or raw
         // Multiplexed streams have header bytes 0x01 (stdout) or 0x02 (stderr) at position 0
         const firstByte = chunk[0];
@@ -224,23 +236,26 @@ export function streamContainerLogs(containerName: string, res: Response, tail =
           // Raw stream (e.g., TTY mode)
           const text = chunk.toString('utf-8');
           if (text.trim()) {
-            res.write(`data: ${JSON.stringify({ type: 'log', message: text })}\n\n`);
+            safeWrite(`data: ${JSON.stringify({ type: 'log', message: text })}\n\n`);
           }
         }
       });
 
       logStream.on('end', () => {
-        res.write(`data: ${JSON.stringify({ type: 'end', message: 'Log stream ended' })}\n\n`);
-        res.end();
+        if (closed) return;
+        safeWrite(`data: ${JSON.stringify({ type: 'end', message: 'Log stream ended' })}\n\n`);
+        try { res.end(); } catch { /* ignore */ }
       });
 
       logStream.on('error', (err: Error) => {
-        res.write(`data: ${JSON.stringify({ type: 'error', message: err.message })}\n\n`);
-        res.end();
+        if (closed) return;
+        safeWrite(`data: ${JSON.stringify({ type: 'error', message: err.message })}\n\n`);
+        try { res.end(); } catch { /* ignore */ }
       });
 
       // Cleanup on client disconnect
       res.on('close', () => {
+        closed = true;
         try {
           logStream.destroy();
         } catch {
@@ -248,8 +263,10 @@ export function streamContainerLogs(containerName: string, res: Response, tail =
         }
       });
     }).catch((err: Error) => {
-      res.write(`data: ${JSON.stringify({ type: 'error', message: `Failed to stream logs: ${err.message}` })}\n\n`);
-      res.end();
+      try {
+        res.write(`data: ${JSON.stringify({ type: 'error', message: `Failed to stream logs: ${err.message}` })}\n\n`);
+        res.end();
+      } catch { /* ignore if already closed */ }
     });
   }).catch((err: Error) => {
     res.write(`data: ${JSON.stringify({ type: 'error', message: `Container not found: ${err.message}` })}\n\n`);
