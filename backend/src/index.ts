@@ -73,9 +73,30 @@ if (!fs.existsSync(deploymentsDir)) {
   fs.mkdirSync(deploymentsDir, { recursive: true });
 }
 
+// Generate a unique ID for this server instance at startup
+const INSTANCE_ID = crypto.randomUUID();
+
 // Health check (public)
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  let version = 'unknown';
+  try {
+    const pkgPath = path.resolve(__dirname, '..', 'package.json');
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+    version = pkg.version;
+  } catch (e) {
+    // Try one level up (for dist structure)
+    try {
+      const pkgPathDist = path.resolve(__dirname, '..', '..', 'package.json');
+      const pkg = JSON.parse(fs.readFileSync(pkgPathDist, 'utf8'));
+      version = pkg.version;
+    } catch { /* ignore */ }
+  }
+  res.json({ 
+    status: 'ok', 
+    timestamp: new Date().toISOString(), 
+    version,
+    instanceId: INSTANCE_ID 
+  });
 });
 
 // Auth routes (public, rate limited)
