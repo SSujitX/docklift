@@ -166,6 +166,97 @@ export function streamComposeDown(projectPath: string, projectId: string, res: R
   });
 }
 
+// Stream real-time container logs via SSE
+export function streamContainerLogs(containerName: string, res: Response, tail = 200): void {
+  const docker = new Docker();
+
+  // Set SSE headers
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+
+  const container = docker.getContainer(containerName);
+
+  container.inspect().then((info) => {
+    if (!info.State.Running) {
+      res.write(`data: ${JSON.stringify({ type: 'status', message: 'Container is not running' })}\n\n`);
+      res.end();
+      return;
+    }
+
+    // Stream logs with follow
+    container.logs({
+      stdout: true,
+      stderr: true,
+      follow: true,
+      tail,
+      timestamps: false,
+    }).then((logStream: any) => {
+      res.write(`data: ${JSON.stringify({ type: 'connected', container: containerName })}\n\n`);
+
+      // Docker multiplexed stream: each frame has 8-byte header
+      // [stream_type(1)][0(3)][size(4)][payload(size)]
+      let buffer = Buffer.alloc(0);
+
+      const processBuffer = () => {
+        while (buffer.length >= 8) {
+          const size = buffer.readUInt32BE(4);
+          if (buffer.length < 8 + size) break; // wait for more data
+
+          const payload = buffer.slice(8, 8 + size).toString('utf-8');
+          buffer = buffer.slice(8 + size);
+
+          if (payload.trim()) {
+            res.write(`data: ${JSON.stringify({ type: 'log', message: payload })}\n\n`);
+          }
+        }
+      };
+
+      logStream.on('data', (chunk: Buffer) => {
+        // Try to detect if this is a multiplexed stream or raw
+        // Multiplexed streams have header bytes 0x01 (stdout) or 0x02 (stderr) at position 0
+        const firstByte = chunk[0];
+        if (firstByte === 0x01 || firstByte === 0x02) {
+          buffer = Buffer.concat([buffer, chunk]);
+          processBuffer();
+        } else {
+          // Raw stream (e.g., TTY mode)
+          const text = chunk.toString('utf-8');
+          if (text.trim()) {
+            res.write(`data: ${JSON.stringify({ type: 'log', message: text })}\n\n`);
+          }
+        }
+      });
+
+      logStream.on('end', () => {
+        res.write(`data: ${JSON.stringify({ type: 'end', message: 'Log stream ended' })}\n\n`);
+        res.end();
+      });
+
+      logStream.on('error', (err: Error) => {
+        res.write(`data: ${JSON.stringify({ type: 'error', message: err.message })}\n\n`);
+        res.end();
+      });
+
+      // Cleanup on client disconnect
+      res.on('close', () => {
+        try {
+          logStream.destroy();
+        } catch {
+          // Ignore cleanup errors
+        }
+      });
+    }).catch((err: Error) => {
+      res.write(`data: ${JSON.stringify({ type: 'error', message: `Failed to stream logs: ${err.message}` })}\n\n`);
+      res.end();
+    });
+  }).catch((err: Error) => {
+    res.write(`data: ${JSON.stringify({ type: 'error', message: `Container not found: ${err.message}` })}\n\n`);
+    res.end();
+  });
+}
+
 // Stream docker compose restart
 export function streamComposeRestart(projectPath: string, projectId: string, res: Response): void {
   const timestamp = new Date().toISOString();
