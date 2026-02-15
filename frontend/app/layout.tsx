@@ -5,6 +5,7 @@ import { ThemeProvider } from "@/lib/theme";
 import { Toaster } from "@/components/ui/sonner";
 import { ScrollToTop } from "@/components/ScrollToTop";
 import { AuthProvider } from "@/components/AuthProvider";
+import { VersionChecker } from "@/components/VersionChecker";
 
 export const metadata: Metadata = {
   title: "Docklift - Self-hosted Docker Deployment Platform",
@@ -42,6 +43,7 @@ export default function RootLayout({
       <body className="min-h-screen antialiased">
         <ThemeProvider>
           <AuthProvider>
+            <VersionChecker />
             <div className="relative min-h-screen flex flex-col">
               <div className="fixed inset-0 -z-10 bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(56,189,248,0.08),transparent)] dark:bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(56,189,248,0.12),transparent)]" />
               {children}
