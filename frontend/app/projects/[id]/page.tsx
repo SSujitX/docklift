@@ -1,7 +1,7 @@
 ﻿// Project detail page - overview, deployments, env vars, source files, and domain management
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
@@ -51,6 +51,10 @@ import {
   Rocket,
   Calendar,
   RefreshCw,
+  ScrollText,
+  Download,
+  Pause,
+  ChevronDown,
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -62,6 +66,362 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+
+// ANSI color code to CSS color mapping
+const ANSI_COLORS: Record<number, string> = {
+  30: "#6b7280", 31: "#ef4444", 32: "#22c55e", 33: "#eab308",
+  34: "#3b82f6", 35: "#a855f7", 36: "#06b6d4", 37: "#d1d5db",
+  90: "#9ca3af", 91: "#f87171", 92: "#4ade80", 93: "#facc15",
+  94: "#60a5fa", 95: "#c084fc", 96: "#22d3ee", 97: "#f3f4f6",
+};
+
+// Clean up raw Docker log lines for human readability
+function cleanLogLine(line: string): string {
+  // Strip Docker timestamp prefix (e.g., 2026-02-15T16:41:43.550268685Z)
+  let cleaned = line.replace(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z\s?/, "");
+  // Trim trailing whitespace
+  cleaned = cleaned.trimEnd();
+  return cleaned;
+}
+
+// Parse ANSI escape codes into styled spans
+function AnsiLine({ text }: { text: string }) {
+  const cleaned = cleanLogLine(text);
+  if (!cleaned) return null;
+
+  // eslint-disable-next-line no-control-regex
+  const parts = cleaned.split(/(\x1b\[[0-9;]*m)/g);
+  let currentColor: string | null = null;
+  let isBold = false;
+  const elements: React.ReactNode[] = [];
+
+  parts.forEach((part, i) => {
+    // eslint-disable-next-line no-control-regex
+    const ansiMatch = part.match(/^\x1b\[([0-9;]*)m$/);
+    if (ansiMatch) {
+      const codes = ansiMatch[1].split(";").map(Number);
+      for (const code of codes) {
+        if (code === 0) { currentColor = null; isBold = false; }
+        else if (code === 1) { isBold = true; }
+        else if (ANSI_COLORS[code]) { currentColor = ANSI_COLORS[code]; }
+      }
+    } else if (part) {
+      elements.push(
+        <span key={i} style={{ color: currentColor || undefined, fontWeight: isBold ? "bold" : undefined }}>
+          {part}
+        </span>
+      );
+    }
+  });
+
+  return <>{elements}</>;
+}
+
+// Real-time container logs panel
+function ContainerLogsPanel({
+  projectId,
+  services,
+  activeTab,
+}: {
+  projectId: string;
+  services: Service[];
+  activeTab: string;
+}) {
+  const [containerLogs, setContainerLogs] = useState<Record<string, string[]>>(
+    {}
+  );
+  const [activeContainer, setActiveContainer] = useState<string | null>(null);
+  const [autoScroll, setAutoScroll] = useState(true);
+  const [connected, setConnected] = useState<Record<string, boolean>>({});
+  const logEndRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const eventSourcesRef = useRef<Record<string, EventSource>>({});
+
+  // Stable list of container names to avoid re-connecting on every poll
+  const containerNamesKey = services
+    .map((s) => s.container_name)
+    .filter(Boolean)
+    .sort()
+    .join(",");
+
+  // Set default active container when services load
+  useEffect(() => {
+    if (services.length > 0 && !activeContainer) {
+      const firstWithContainer = services.find((s) => s.container_name);
+      if (firstWithContainer) {
+        setActiveContainer(firstWithContainer.container_name!);
+      }
+    }
+  }, [services, activeContainer]);
+
+  // Auto-scroll to bottom
+  useEffect(() => {
+    if (autoScroll && activeContainer && logEndRefs.current[activeContainer]) {
+      logEndRefs.current[activeContainer]?.scrollIntoView({
+        behavior: "smooth",
+      });
+    }
+  }, [containerLogs, activeContainer, autoScroll]);
+
+  // SSE connection management using native EventSource — clean close, no abort errors
+  useEffect(() => {
+    if (activeTab !== "logs" || !containerNamesKey) {
+      Object.values(eventSourcesRef.current).forEach((es) => {
+        try { es.close(); } catch { /* ignore */ }
+      });
+      eventSourcesRef.current = {};
+      setConnected({});
+      return;
+    }
+
+    const token = typeof window !== "undefined"
+      ? localStorage.getItem("docklift_token") || ""
+      : "";
+    const containerNames = containerNamesKey.split(",");
+
+    containerNames.forEach((containerName) => {
+      if (eventSourcesRef.current[containerName]) return;
+
+      const url = `${API_URL}/api/logs/${projectId}/stream/${encodeURIComponent(containerName)}?token=${encodeURIComponent(token)}`;
+      const es = new EventSource(url);
+
+      es.onopen = () => {
+        setConnected((prev) => ({ ...prev, [containerName]: true }));
+      };
+
+      es.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === "log") {
+            setContainerLogs((prev) => ({
+              ...prev,
+              [containerName]: [
+                ...(prev[containerName] || []),
+                data.message,
+              ],
+            }));
+          } else if (data.type === "status") {
+            setContainerLogs((prev) => ({
+              ...prev,
+              [containerName]: [`⚠️ ${data.message}`],
+            }));
+            setConnected((prev) => ({
+              ...prev,
+              [containerName]: false,
+            }));
+          } else if (data.type === "error") {
+            setContainerLogs((prev) => ({
+              ...prev,
+              [containerName]: [
+                ...(prev[containerName] || []),
+                `❌ ${data.message}`,
+              ],
+            }));
+            setConnected((prev) => ({
+              ...prev,
+              [containerName]: false,
+            }));
+          }
+        } catch {
+          // Ignore parse errors
+        }
+      };
+
+      es.onerror = () => {
+        es.close();
+        setConnected((prev) => ({ ...prev, [containerName]: false }));
+      };
+
+      eventSourcesRef.current[containerName] = es;
+    });
+
+    return () => {
+      Object.values(eventSourcesRef.current).forEach((es) => {
+        try { es.close(); } catch { /* ignore */ }
+      });
+      eventSourcesRef.current = {};
+      setConnected({});
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, containerNamesKey, projectId]);
+
+  const clearLogs = (containerName: string) => {
+    setContainerLogs((prev) => ({ ...prev, [containerName]: [] }));
+  };
+
+  const downloadLogs = (containerName: string) => {
+    const logContent = (containerLogs[containerName] || []).join("");
+    const blob = new Blob([logContent], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${containerName}-logs.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const containersWithNames = services.filter((s) => s.container_name);
+
+  if (containersWithNames.length === 0) {
+    return (
+      <div className="text-center py-16 text-muted-foreground">
+        <ScrollText className="h-12 w-12 mx-auto mb-4 opacity-30" />
+        <p className="text-lg font-semibold">No containers found</p>
+        <p className="text-sm mt-1">
+          Deploy your project first to view container logs.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-xl font-bold flex items-center gap-2">
+          <ScrollText className="h-5 w-5 text-emerald-500" />
+          Container Logs
+        </h3>
+        <div className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 uppercase tracking-widest">
+          Real-time
+        </div>
+      </div>
+
+      {/* Container selector tabs */}
+      {containersWithNames.length > 1 && (
+        <div className="flex flex-wrap gap-2">
+          {containersWithNames.map((svc) => (
+            <button
+              key={svc.id}
+              onClick={() => setActiveContainer(svc.container_name!)}
+              className={cn(
+                "flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all duration-300 border",
+                activeContainer === svc.container_name
+                  ? "bg-emerald-500/15 text-emerald-500 border-emerald-500/30 shadow-sm"
+                  : "bg-secondary/50 text-muted-foreground border-border/50 hover:bg-secondary hover:text-foreground"
+              )}
+            >
+              <Server className="h-3.5 w-3.5" />
+              {svc.name}
+              <span
+                className={cn(
+                  "h-2 w-2 rounded-full",
+                  connected[svc.container_name!]
+                    ? "bg-emerald-500 animate-pulse"
+                    : "bg-muted-foreground/30"
+                )}
+              />
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Log panels */}
+      {containersWithNames.map((svc) => {
+        const containerName = svc.container_name!;
+        const isActive =
+          containersWithNames.length === 1 ||
+          activeContainer === containerName;
+        if (!isActive) return null;
+
+        const logLines = containerLogs[containerName] || [];
+
+        return (
+          <Card
+            key={svc.id}
+            className="overflow-hidden border-border/40"
+          >
+            {/* Header bar */}
+            <div className="flex items-center justify-between px-4 py-3 bg-zinc-950 border-b border-border/30">
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <div
+                    className={cn(
+                      "h-2.5 w-2.5 rounded-full",
+                      connected[containerName]
+                        ? "bg-emerald-500 shadow-lg shadow-emerald-500/50 animate-pulse"
+                        : "bg-red-500/60"
+                    )}
+                  />
+                  <span className="text-sm font-bold text-zinc-300">
+                    {svc.name}
+                  </span>
+                </div>
+                <span className="text-[10px] font-mono text-zinc-500 hidden sm:inline">
+                  {containerName}
+                </span>
+              </div>
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 text-zinc-400 hover:text-white hover:bg-white/10"
+                  onClick={() => setAutoScroll(!autoScroll)}
+                  title={autoScroll ? "Pause auto-scroll" : "Resume auto-scroll"}
+                >
+                  {autoScroll ? (
+                    <Pause className="h-3.5 w-3.5" />
+                  ) : (
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  )}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 text-zinc-400 hover:text-white hover:bg-white/10"
+                  onClick={() => clearLogs(containerName)}
+                  title="Clear logs"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 text-zinc-400 hover:text-white hover:bg-white/10"
+                  onClick={() => downloadLogs(containerName)}
+                  title="Download logs"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </div>
+
+            {/* Log content */}
+            <div className="bg-zinc-950 p-4 h-[500px] overflow-y-auto font-mono text-xs leading-relaxed custom-scrollbar">
+              {logLines.length === 0 ? (
+                <div className="flex items-center justify-center h-full text-zinc-600">
+                  <div className="text-center">
+                    <ScrollText className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                    <p>
+                      {connected[containerName]
+                        ? "Waiting for logs..."
+                        : "Connecting to container..."}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {logLines.map((line, i) => (
+                    <div
+                      key={i}
+                      className="whitespace-pre-wrap break-all text-zinc-300 hover:bg-white/5 px-1 rounded transition-colors"
+                    >
+                      <AnsiLine text={line} />
+                    </div>
+                  ))}
+                  <div
+                    ref={(el) => {
+                      logEndRefs.current[containerName] = el;
+                    }}
+                  />
+                </>
+              )}
+            </div>
+          </Card>
+        );
+      })}
+    </div>
+  );
+}
+
 
 function ServiceDomainManager({
   service,
@@ -824,6 +1184,13 @@ export default function ProjectDetail() {
                 <Globe className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                 Domains
               </TabsTrigger>
+              <TabsTrigger
+                value="logs"
+                className="gap-1.5 sm:gap-2 rounded-full px-3 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-bold transition-all duration-300 data-[state=active]:bg-white data-[state=active]:dark:bg-cyan-500/20 data-[state=active]:text-cyan-600 data-[state=active]:dark:text-cyan-400 data-[state=active]:shadow-sm data-[state=active]:border-cyan-200/50 data-[state=active]:dark:border-cyan-500/30 border border-transparent hover:bg-secondary/50 whitespace-nowrap"
+              >
+                <ScrollText className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                Logs
+              </TabsTrigger>
             </TabsList>
           </div>
 
@@ -1442,6 +1809,17 @@ export default function ProjectDetail() {
                 </div>
               </div>
             </div>
+          </TabsContent>
+
+          <TabsContent
+            value="logs"
+            className="animate-in fade-in slide-in-from-bottom-2 duration-400"
+          >
+            <ContainerLogsPanel
+              projectId={projectId}
+              services={services}
+              activeTab={activeTab}
+            />
           </TabsContent>
         </Tabs>
       </main>
