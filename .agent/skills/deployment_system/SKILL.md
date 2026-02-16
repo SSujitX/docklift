@@ -33,7 +33,7 @@ This guide details the lifecycle of a deployment in Docklift, from source code t
     -   **Env Injection**: Environment variables (Build Args & Runtime) are injected into the compose file.
 
 4.  **Build & Run**:
-    -   Command: `docker compose up -d --build`
+    -   Command: `docker compose -p <projectId> up -d --build`
     -   Output is streamed via SSE (Server-Sent Events) to the frontend console.
 
 5.  **Verification**:
@@ -53,7 +53,7 @@ deployments/
 
 ## Naming Conventions
 
--   **Project Containers**: `docklift_<projectId>_<serviceName>`
+-   **Project Containers**: `dl_<shortId>_<serviceName>` (shortId = first 8 chars of projectId)
 -   **Networks**: All containers (and Docklift itself) must join `docklift_network`.
 
 ## Troubleshooting Deployments
