@@ -5,14 +5,15 @@ import { useState } from "react";
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 import { SystemLogsPanel } from "@/components/SystemLogsPanel";
-import { ScrollText, Server, Globe, Database } from "lucide-react";
+import { ScrollText, Server, Globe, Database, Shield, Network } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const SERVICES = [
-  { id: "backend", label: "Backend", icon: Server },
-  { id: "frontend", label: "Frontend", icon: Globe },
-  { id: "proxy", label: "Nginx Proxy", icon: Globe },
-  { id: "database", label: "Database", icon: Database },
+  { id: "backend", label: "Backend", icon: Server, description: "API & business logic" },
+  { id: "frontend", label: "Frontend", icon: Globe, description: "Next.js dashboard" },
+  { id: "proxy", label: "Nginx Proxy", icon: Shield, description: "Reverse proxy & TLS" },
+  { id: "nginx", label: "Nginx", icon: Network, description: "Static server" },
+  { id: "database", label: "Database", icon: Database, description: "SQLite / Prisma" },
 ] as const;
 
 export default function LogsPage() {
@@ -23,32 +24,43 @@ export default function LogsPage() {
       <Header />
 
       <main className="flex-1 container max-w-7xl mx-auto px-4 md:px-6 py-8">
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <ScrollText className="h-7 w-7 text-primary" />
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold flex items-center gap-3">
+            <div className="p-2 rounded-xl bg-primary/10 border border-primary/20">
+              <ScrollText className="h-6 w-6 text-primary" />
+            </div>
             System Logs
           </h1>
-          <p className="text-muted-foreground mt-1 text-sm">
-            Real-time logs for Docklift services. Select a service below.
+          <p className="text-muted-foreground mt-2 text-sm max-w-lg">
+            Real-time log streaming for all Docklift services. Select a service to view its live output.
           </p>
         </div>
 
         {/* Service tabs */}
-        <div className="flex flex-wrap gap-2 mb-6 border-b border-border/40 pb-4">
-          {SERVICES.map(({ id, label, icon: Icon }) => (
+        <div className="flex flex-wrap gap-2 mb-6">
+          {SERVICES.map(({ id, label, icon: Icon, description }) => (
             <button
               key={id}
               type="button"
               onClick={() => setActiveService(id)}
               className={cn(
-                "flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors",
+                "group flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 border",
                 activeService === id
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-secondary/50 text-muted-foreground hover:bg-secondary hover:text-foreground",
+                  ? "bg-primary/10 text-primary border-primary/30 shadow-sm shadow-primary/10"
+                  : "bg-card/50 text-muted-foreground border-border/50 hover:bg-card hover:text-foreground hover:border-border",
               )}
             >
-              <Icon className="h-4 w-4" />
-              {label}
+              <Icon className={cn(
+                "h-4 w-4 transition-colors",
+                activeService === id ? "text-primary" : "text-muted-foreground/60 group-hover:text-foreground"
+              )} />
+              <div className="text-left">
+                <div className="font-semibold">{label}</div>
+                <div className={cn(
+                  "text-[10px] leading-tight hidden sm:block",
+                  activeService === id ? "text-primary/70" : "text-muted-foreground/50"
+                )}>{description}</div>
+              </div>
             </button>
           ))}
         </div>

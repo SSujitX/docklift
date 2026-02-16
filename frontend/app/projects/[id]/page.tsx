@@ -7,6 +7,7 @@ import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Terminal } from "@/components/Terminal";
+import { LogViewer } from "@/components/LogViewer";
 import { FileEditor } from "@/components/FileEditor";
 import { FileTree } from "@/components/FileTree";
 import { EnvVarsManager } from "@/components/EnvVarsManager";
@@ -67,57 +68,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
-// ANSI color code to CSS color mapping
-const ANSI_COLORS: Record<number, string> = {
-  30: "#6b7280", 31: "#ef4444", 32: "#22c55e", 33: "#eab308",
-  34: "#3b82f6", 35: "#a855f7", 36: "#06b6d4", 37: "#d1d5db",
-  90: "#9ca3af", 91: "#f87171", 92: "#4ade80", 93: "#facc15",
-  94: "#60a5fa", 95: "#c084fc", 96: "#22d3ee", 97: "#f3f4f6",
-};
-
-// Clean up raw Docker log lines for human readability
-function cleanLogLine(line: string): string {
-  // Strip Docker timestamp prefix (e.g., 2026-02-15T16:41:43.550268685Z)
-  let cleaned = line.replace(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z\s?/, "");
-  // Trim trailing whitespace
-  cleaned = cleaned.trimEnd();
-  return cleaned;
-}
-
-// Parse ANSI escape codes into styled spans
-function AnsiLine({ text }: { text: string }) {
-  const cleaned = cleanLogLine(text);
-  if (!cleaned) return null;
-
-  // eslint-disable-next-line no-control-regex
-  const parts = cleaned.split(/(\x1b\[[0-9;]*m)/g);
-  let currentColor: string | null = null;
-  let isBold = false;
-  const elements: React.ReactNode[] = [];
-
-  parts.forEach((part, i) => {
-    // eslint-disable-next-line no-control-regex
-    const ansiMatch = part.match(/^\x1b\[([0-9;]*)m$/);
-    if (ansiMatch) {
-      const codes = ansiMatch[1].split(";").map(Number);
-      for (const code of codes) {
-        if (code === 0) { currentColor = null; isBold = false; }
-        else if (code === 1) { isBold = true; }
-        else if (ANSI_COLORS[code]) { currentColor = ANSI_COLORS[code]; }
-      }
-    } else if (part) {
-      elements.push(
-        <span key={i} style={{ color: currentColor || undefined, fontWeight: isBold ? "bold" : undefined }}>
-          {part}
-        </span>
-      );
-    }
-  });
-
-  return <>{elements}</>;
-}
-
-const MAX_LOG_LINES = 5000;
+const MAX_LOG_LINES = 10000;
 
 // Real-time container logs panel
 function ContainerLogsPanel({
@@ -133,9 +84,7 @@ function ContainerLogsPanel({
     {}
   );
   const [activeContainer, setActiveContainer] = useState<string | null>(null);
-  const [autoScroll, setAutoScroll] = useState(true);
   const [connected, setConnected] = useState<Record<string, boolean>>({});
-  const logEndRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const eventSourcesRef = useRef<Record<string, EventSource>>({});
 
   // Stable list of container names to avoid re-connecting on every poll
@@ -154,15 +103,6 @@ function ContainerLogsPanel({
       }
     }
   }, [services, activeContainer]);
-
-  // Auto-scroll to bottom
-  useEffect(() => {
-    if (autoScroll && activeContainer && logEndRefs.current[activeContainer]) {
-      logEndRefs.current[activeContainer]?.scrollIntoView({
-        behavior: "smooth",
-      });
-    }
-  }, [containerLogs, activeContainer, autoScroll]);
 
   // SSE connection management using native EventSource — clean close, no abort errors
   useEffect(() => {
@@ -336,97 +276,16 @@ function ContainerLogsPanel({
         const logLines = containerLogs[containerName] || [];
 
         return (
-          <Card
+          <LogViewer
             key={svc.id}
-            className="overflow-hidden border-border/40"
-          >
-            {/* Header bar */}
-            <div className="flex items-center justify-between px-4 py-3 bg-zinc-950 border-b border-border/30">
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-2">
-                  <div
-                    className={cn(
-                      "h-2.5 w-2.5 rounded-full",
-                      connected[containerName]
-                        ? "bg-emerald-500 shadow-lg shadow-emerald-500/50 animate-pulse"
-                        : "bg-red-500/60"
-                    )}
-                  />
-                  <span className="text-sm font-bold text-zinc-300">
-                    {svc.name}
-                  </span>
-                </div>
-                <span className="text-[10px] font-mono text-zinc-500 hidden sm:inline">
-                  {containerName}
-                </span>
-              </div>
-              <div className="flex items-center gap-1">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 text-zinc-400 hover:text-white hover:bg-white/10"
-                  onClick={() => setAutoScroll(!autoScroll)}
-                  title={autoScroll ? "Pause auto-scroll" : "Resume auto-scroll"}
-                >
-                  {autoScroll ? (
-                    <Pause className="h-3.5 w-3.5" />
-                  ) : (
-                    <ChevronDown className="h-3.5 w-3.5" />
-                  )}
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 text-zinc-400 hover:text-white hover:bg-white/10"
-                  onClick={() => clearLogs(containerName)}
-                  title="Clear logs"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 text-zinc-400 hover:text-white hover:bg-white/10"
-                  onClick={() => downloadLogs(containerName)}
-                  title="Download logs"
-                >
-                  <Download className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-            </div>
-
-            {/* Log content */}
-            <div className="bg-zinc-950 p-4 h-[500px] overflow-y-auto font-mono text-xs leading-relaxed custom-scrollbar">
-              {logLines.length === 0 ? (
-                <div className="flex items-center justify-center h-full text-zinc-600">
-                  <div className="text-center">
-                    <ScrollText className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                    <p>
-                      {connected[containerName]
-                        ? "Waiting for logs..."
-                        : "Connecting to container..."}
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  {logLines.map((line, i) => (
-                    <div
-                      key={i}
-                      className="whitespace-pre-wrap break-all text-zinc-300 hover:bg-white/5 px-1 rounded transition-colors"
-                    >
-                      <AnsiLine text={line} />
-                    </div>
-                  ))}
-                  <div
-                    ref={(el) => {
-                      logEndRefs.current[containerName] = el;
-                    }}
-                  />
-                </>
-              )}
-            </div>
-          </Card>
+            logs={logLines}
+            connected={!!connected[containerName]}
+            title={svc.name}
+            subtitle={containerName}
+            onClear={() => clearLogs(containerName)}
+            downloadFilename={`${containerName}-logs.txt`}
+            height="h-[550px]"
+          />
         );
       })}
     </div>
