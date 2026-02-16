@@ -191,7 +191,7 @@ export function streamContainerLogs(containerName: string, res: Response, tail =
       stderr: true,
       follow: true,
       tail,
-      timestamps: false,
+      timestamps: true,
     }).then((logStream: any) => {
       let closed = false;
 

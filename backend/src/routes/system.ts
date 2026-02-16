@@ -512,12 +512,10 @@ router.get('/logs/:service', async (req: Request, res: Response) => {
     const { service } = req.params;
     const tail = parseInt(req.query.tail as string) || 200;
 
-    // Map friendly service names to container names
+    // Map friendly service names to container names (must match docker-compose.yml)
     const serviceMap: Record<string, string> = {
       'backend': 'docklift-backend',
       'frontend': 'docklift-frontend',
-      'database': 'docklift-db',
-      'redis': 'docklift-redis',
       'proxy': 'docklift-nginx-proxy',
       'nginx': 'docklift-nginx'
     };
@@ -525,7 +523,7 @@ router.get('/logs/:service', async (req: Request, res: Response) => {
     const containerName = serviceMap[service];
     
     if (!containerName) {
-      return res.status(400).json({ error: 'Invalid service name. Available: backend, frontend, database, redis, proxy' });
+      return res.status(400).json({ error: 'Invalid service name. Available: backend, frontend, proxy, nginx' });
     }
 
     // Start streaming

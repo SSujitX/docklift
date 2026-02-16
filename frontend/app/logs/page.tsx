@@ -1,19 +1,18 @@
-// Logs page - system container logs (backend, frontend, proxy, etc.)
+// Logs page - system container logs (backend, frontend, proxy, nginx)
 "use client";
 
 import { useState } from "react";
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 import { SystemLogsPanel } from "@/components/SystemLogsPanel";
-import { ScrollText, Server, Globe, Database, Shield, Network } from "lucide-react";
+import { ScrollText, Server, Globe, Shield, Network } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const SERVICES = [
   { id: "backend", label: "Backend", icon: Server, description: "API & business logic" },
   { id: "frontend", label: "Frontend", icon: Globe, description: "Next.js dashboard" },
-  { id: "proxy", label: "Nginx Proxy", icon: Shield, description: "Reverse proxy & TLS" },
-  { id: "nginx", label: "Nginx", icon: Network, description: "Static server" },
-  { id: "database", label: "Database", icon: Database, description: "SQLite / Prisma" },
+  { id: "proxy", label: "Nginx Proxy", icon: Shield, description: "Reverse proxy & domains" },
+  { id: "nginx", label: "Nginx", icon: Network, description: "Static gateway" },
 ] as const;
 
 export default function LogsPage() {
@@ -65,7 +64,7 @@ export default function LogsPage() {
           ))}
         </div>
 
-        <SystemLogsPanel service={activeService} isActive={true} />
+        <SystemLogsPanel key={activeService} service={activeService} isActive={true} />
       </main>
 
       <Footer />
