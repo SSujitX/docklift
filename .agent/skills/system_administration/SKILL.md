@@ -38,16 +38,46 @@ Returns system metrics using the `systeminformation` library.
 - Executes `reboot` command on the host (requires privileged mode)
 - The backend container runs with `privileged: true` and `pid: host`
 
-## Backup System
+## Backup & Restore System
 
-### Database Backup
-- **API**: `POST /api/system/backup`
-- Creates a copy of `docklift.db` in `/data/backups/`
-- Filename format: `docklift-backup-YYYY-MM-DD-HH-MM-SS.db`
+All backup/restore routes are in `backend/src/routes/backup.ts`, mounted at `/api/backup`.
+
+### Backup
+
+| API | Purpose |
+|-----|---------|
+| `POST /api/backup/create` | Create a full backup (DB, deployments, Nginx configs, GitHub key) |
+| `GET /api/backup/list` | List available backups |
+| `GET /api/backup/download/:filename` | Download a backup file |
+| `DELETE /api/backup/:filename` | Delete a backup |
 
 ### Restore
-- **API**: `POST /api/system/restore`
-- Accepts a backup file and replaces the current database
+
+| API | Purpose |
+|-----|---------|
+| `POST /api/backup/restore/:filename` | Restore from a server-side backup |
+| `POST /api/backup/restore-upload` | Upload and immediately restore |
+| `POST /api/backup/restore-from-upload/:filename` | Restore from a previously uploaded file |
+
+### Auto-Restore (reconcileSystem)
+
+After restoring files, the system **automatically**:
+
+1. **Reads restored database** — Creates a fresh `PrismaClient` to read the restored DB
+2. **Auto-redeploys all projects** — Runs `docker compose -p <projectId> up -d --build` for each
+3. **Reloads Nginx proxy** — `docker exec docklift-nginx-proxy nginx -s reload`
+4. **Self-restarts backend** — `process.exit(0)` triggers Docker's `restart: unless-stopped` policy
+
+> This eliminates the need for manual redeployment after a restore.
+
+### What's Backed Up
+
+| Item | Path | Description |
+|------|------|-------------|
+| Database | `/app/data/docklift.db` | SQLite database |
+| Deployments | `/deployments/` | All project source code and configs |
+| Nginx configs | `/nginx-conf/` | Generated proxy configurations |
+| GitHub key | `github-app.pem` | GitHub App private key |
 
 ## Ports Management (`/ports`)
 
@@ -60,6 +90,7 @@ Shows all ports in use by Docker containers:
 - **GitHub App**: Connection status, app credentials
 - **Domain Config**: Server IP, wildcard domain
 - **Security**: JWT secret rotation, API secret management
+- **Backup & Restore**: Create, upload, download, and restore backups
 
 ## Server Access Requirements
 
