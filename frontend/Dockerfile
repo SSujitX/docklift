@@ -1,14 +1,13 @@
-# Base stage - Use Bun for faster installs
-FROM oven/bun:1-alpine AS base
-
-FROM base AS deps
+# Install dependencies with Bun (fast)
+FROM oven/bun:1-alpine AS deps
 RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
 COPY package.json bun.lock* ./
 RUN bun install --frozen-lockfile
 
-FROM base AS builder
+# Build with Node.js (stable — Bun crashes with SIGILL on some server CPUs)
+FROM node:22-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
@@ -18,9 +17,9 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # Ensure public folder exists
 RUN mkdir -p public
 
-RUN bun run build
+RUN npm run build
 
-# Use Node for production runtime (Next.js standalone)
+# Production runtime
 FROM node:22-alpine AS runner
 WORKDIR /app
 
