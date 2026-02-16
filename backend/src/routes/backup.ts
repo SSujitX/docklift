@@ -44,9 +44,15 @@ async function reconcileSystem(writeLog: (text: string) => void) {
         try {
           // Verify docker-compose.yml exists
           if (fs.existsSync(path.join(projectPath, 'docker-compose.yml'))) {
-             // Run docker compose up -d --build
-             // We use --build to ensure the image is recreated from the restored source
-             await execAsync(`docker compose up -d --build`, { cwd: projectPath });
+             // Run docker compose up -d --build with correct project name
+             // CRITICAL: -p flag must match the project ID used in streamComposeUp (docker.ts)
+             // Without -p, Docker uses the directory name, breaking container naming
+             await execAsync(`docker compose -p ${project.id} up -d --build`, {
+               cwd: projectPath,
+               env: { ...process.env, DOCKER_BUILDKIT: '1', COMPOSE_DOCKER_CLI_BUILD: '1' },
+               maxBuffer: 50 * 1024 * 1024, // 50MB buffer for verbose build output
+               timeout: 5 * 60 * 1000, // 5 minute timeout per project
+             });
              writeLog(`        + Success\n`);
           } else {
              writeLog(`        ! Skipped (No docker-compose.yml)\n`);
