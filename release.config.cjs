@@ -43,7 +43,7 @@ const config = {
       '@semantic-release/exec',
       {
         prepareCmd:
-          'npm version ${nextRelease.version} --workspaces --no-git-tag-version --allow-same-version || (npm version ${nextRelease.version} --no-git-tag-version --prefix frontend && npm version ${nextRelease.version} --no-git-tag-version --prefix backend)',
+          'npm version ${nextRelease.version} --no-git-tag-version --allow-same-version --prefix frontend && npm version ${nextRelease.version} --no-git-tag-version --allow-same-version --prefix backend',
       },
     ],
     [
