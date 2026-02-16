@@ -65,13 +65,33 @@ The frontend uses Next.js `standalone` output mode to minimize image size:
 
 ## Backend Dockerfile (`backend/Dockerfile`)
 
+Uses a 4-stage build:
+
 ```dockerfile
-FROM node:22-alpine
-RUN npm ci --omit=dev
-RUN npx prisma generate
-RUN npm run build
-CMD ["node", "dist/index.js"]
+# Stage 1: Install ALL deps with Bun (fast)
+FROM oven/bun:1-alpine AS deps
+RUN bun install --frozen-lockfile
+RUN bunx prisma generate
+
+# Stage 2: Install PRODUCTION deps only
+FROM oven/bun:1-alpine AS prod-deps
+RUN bun install --production --frozen-lockfile
+
+# Stage 3: Build with Bun
+FROM oven/bun:1-alpine AS builder
+RUN bun run build
+
+# Stage 4: Production runtime
+FROM node:22-alpine AS runner
+RUN apk add --no-cache docker-cli docker-cli-compose git procps
+CMD ["sh", "-c", "npx prisma db push --skip-generate && node dist/index.js"]
 ```
+
+> **Key details**:
+> - Docker CLI + Compose are installed so the backend can manage containers
+> - `prisma db push` runs on every startup to auto-apply schema migrations
+> - Runtime is Node.js (not Bun) for stability
+> - Runs as **root** (Docker socket requires it)
 
 ## Build Commands
 
