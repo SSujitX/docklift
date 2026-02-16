@@ -64,7 +64,7 @@ server { listen 80 default_server; server_name _; return 404; }
 EOF
 
 LOG=$(mktemp)
-if ! docker compose up -d --build --remove-orphans > "$LOG" 2>&1; then
+if ! docker compose up -d --build --no-cache --remove-orphans > "$LOG" 2>&1; then
     echo -e "\n  ${RED}Build failed!${NC}"; cat "$LOG"; rm "$LOG"; exit 1
 fi
 rm "$LOG"; sleep 5
