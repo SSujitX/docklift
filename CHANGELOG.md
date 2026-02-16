@@ -1,3 +1,39 @@
+## [1.3.11](https://github.com/SSujitX/docklift/compare/v1.3.10...v1.3.11) (2026-02-16)
+
+
+### Bug Fixes
+
+* **backup:** specify project name in docker compose up during restore ([1f5bd1c](https://github.com/SSujitX/docklift/commit/1f5bd1c39d1e560abb2069b3f1893e9eb920c10f))
+* correct import path and icon props for Next.js build ([016fa09](https://github.com/SSujitX/docklift/commit/016fa0964e4e5d0f2a36c5c9bc0bce3509eefabb))
+* **deployments:** pass branch parameter to pullRepo function ([8caa8e7](https://github.com/SSujitX/docklift/commit/8caa8e748df8a1e0ea1080eb65a14dbb10b66b3d))
+* **docker:** prevent write-after-end crashes in container log streaming ([b9b3c52](https://github.com/SSujitX/docklift/commit/b9b3c52aa105e791420b4ed839de98f04132c26a))
+* **frontend:** improve SSE URL handling in SystemLogsPanel for production environments ([a371253](https://github.com/SSujitX/docklift/commit/a3712534e5fb02cab9ed384e82e6c4d90959e83e))
+* **frontend:** limit container logs to 5000 lines and fix SSE URL ([f3b761e](https://github.com/SSujitX/docklift/commit/f3b761e3c5f13c24540b053f424b817ffb325530))
+* **frontend:** resolved LucideProps type error and added logs page ([4c650ca](https://github.com/SSujitX/docklift/commit/4c650ca71ebd865bb9a52e224d7282364987b16a))
+* **frontend:** use relative SSE paths in production to avoid buffering ([c0d08cd](https://github.com/SSujitX/docklift/commit/c0d08cd797fdb84174b1ad1853e1802a06e87619))
+* **git:** replace git pull with fetch+reset for reliable sync ([6c6224f](https://github.com/SSujitX/docklift/commit/6c6224f872c33d42a6b005b854c22db1992447f2))
+
+
+### Features
+
+* add container logs API endpoints for real-time streaming ([ab1083b](https://github.com/SSujitX/docklift/commit/ab1083bcf456f852ddc8be995c4e1cc71634322b))
+* add logs API endpoint with authentication middleware ([9c8fd07](https://github.com/SSujitX/docklift/commit/9c8fd074945d2bf6c67325fb2e412de34efa934b))
+* add logs page navigation to header ([61b0149](https://github.com/SSujitX/docklift/commit/61b014998c26c18a86a640958df43caae20aef44))
+* add version checker component to root layout ([087a8fb](https://github.com/SSujitX/docklift/commit/087a8fb0d715733828b48c33d4c3c5d8ac02589f))
+* **backup:** automate system reconciliation after restore ([b96511e](https://github.com/SSujitX/docklift/commit/b96511e7c9bd658a80014b0ef7caa30807e9d006))
+* **docker:** add real-time container log streaming via SSE ([9b00f9f](https://github.com/SSujitX/docklift/commit/9b00f9f249e094b179308d39549d346de575effa))
+* **frontend:** add system logs panel component for real-time service monitoring ([d5f4d1a](https://github.com/SSujitX/docklift/commit/d5f4d1afcc8ec4f7dfeaac4f812ffedb03930f6e))
+* **frontend:** add version checker component for auto-refresh on deploy ([9adf817](https://github.com/SSujitX/docklift/commit/9adf81761f5c8165dd7bdcecaa25b111e6c25cf3))
+* **frontend:** create logs page for real-time system logs monitoring ([cd914dd](https://github.com/SSujitX/docklift/commit/cd914dd80f53fb7b3bd007ea9e29193131a1533c))
+* **health:** add version and instance ID to health endpoint ([77ecf3d](https://github.com/SSujitX/docklift/commit/77ecf3d80bd87b8d77bc0ab48eff884f95515760))
+* **logs:** enhance log viewer with timestamps and improved UI ([2165389](https://github.com/SSujitX/docklift/commit/2165389af910d3043b454792a2fb8258151e2942))
+* **logs:** increase default log tail lines to 5000 ([3f32d6b](https://github.com/SSujitX/docklift/commit/3f32d6b6a53f6ee9c4fb51031cc0f972d68b12ab))
+* **logs:** introduce unified LogViewer component with search and enhanced UI ([ce551ef](https://github.com/SSujitX/docklift/commit/ce551ef284ccac6f43742daaf95346986f623d2d))
+* **nginx:** add configuration for long-lived SSE log streams ([fbaf00a](https://github.com/SSujitX/docklift/commit/fbaf00aa12d0ab71b37608e50d6b9395e1a4e914))
+* **nginx:** configure Nginx for Server-Sent Events by disabling buffering and caching ([edbbd62](https://github.com/SSujitX/docklift/commit/edbbd626a224e9f30f70bff97eab0ad63ac5ba27))
+* **projects:** add real-time container logs viewer with ANSI support ([34a9f0d](https://github.com/SSujitX/docklift/commit/34a9f0d4d6242b65949a86c6fe15920b80e85a13))
+* **system:** add real-time container logs endpoint via SSE ([f8d9aa1](https://github.com/SSujitX/docklift/commit/f8d9aa1630fb64009039c25634e3d5d1b38b3e1c))
+
 ## [1.3.10](https://github.com/SSujitX/docklift/compare/v1.3.9...v1.3.10) (2026-01-27)
 
 
