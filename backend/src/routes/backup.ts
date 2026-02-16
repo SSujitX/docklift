@@ -9,9 +9,74 @@ import archiver from 'archiver';
 import unzipper from 'unzipper';
 import multer from 'multer';
 import { config } from '../lib/config.js';
+import { PrismaClient } from '@prisma/client';
 
 const execAsync = promisify(exec);
 const router = Router();
+
+// Helper: Reconcile system state after restore
+// 1. Redeploy all active projects
+// 2. Reload Nginx
+// 3. Restart Backend
+async function reconcileSystem(writeLog: (text: string) => void) {
+  writeLog(`\n${'='.repeat(50)}\n`);
+  writeLog(`  RECONCILING SYSTEM STATE\n`);
+  writeLog(`${'='.repeat(50)}\n\n`);
+
+  try {
+    // 1. Initialize FRESH Prisma Client (to read the restored DB file)
+    writeLog(`[1/3] Reading restored database...\n`);
+    const prisma = new PrismaClient();
+    
+    // 2. Fetch all projects
+    const projects = await prisma.project.findMany();
+    writeLog(`      + Found ${projects.length} projects in database\n`);
+
+    // 3. Loop and redeploy
+    writeLog(`\n[2/3] Auto-redeploying projects...\n`);
+    for (const project of projects) {
+      const projectPath = path.join(config.deploymentsPath, project.id);
+      const sourcePath = path.join(projectPath, 'source');
+      
+      // Only deploy if source code exists
+      if (fs.existsSync(sourcePath)) {
+        writeLog(`      > Redeploying ${project.name} (${project.id})...\n`);
+        try {
+          // Verify docker-compose.yml exists
+          if (fs.existsSync(path.join(projectPath, 'docker-compose.yml'))) {
+             // Run docker compose up -d --build
+             // We use --build to ensure the image is recreated from the restored source
+             await execAsync(`docker compose up -d --build`, { cwd: projectPath });
+             writeLog(`        + Success\n`);
+          } else {
+             writeLog(`        ! Skipped (No docker-compose.yml)\n`);
+          }
+        } catch (e: any) {
+             writeLog(`        ! Failed: ${e.message.split('\n')[0]}\n`);
+        }
+      } else {
+        writeLog(`      - Skipped ${project.name} (No source code found)\n`);
+      }
+    }
+
+    // 4. Reload Nginx Proxy
+    writeLog(`\n[3/3] Reloading Nginx Proxy...\n`);
+    try {
+      await execAsync('docker exec docklift-nginx-proxy nginx -s reload');
+      writeLog(`      + Nginx configuration reloaded\n`);
+    } catch (e: any) {
+      writeLog(`      ! Nginx reload failed: ${e.message.split('\n')[0]}\n`);
+    }
+
+    // Disconnect prisma
+    await prisma.$disconnect();
+
+  } catch (error: any) {
+    writeLog(`\n[ERROR] Reconcile failed: ${error.message}\n`);
+    console.error('Reconcile error:', error);
+  }
+}
+
 
 // Configure multer for backup uploads (saves to uploads subdirectory)
 const uploadStorage = multer.diskStorage({
@@ -486,13 +551,21 @@ router.post('/restore/:filename', async (req: Request, res: Response) => {
       writeLog(`      ! Failed to clean backup files: ${cleanupError.message}\n`);
     }
 
+    // Reconcile system state (auto-redeploy)
+    await reconcileSystem(writeLog);
+
     writeLog(`\n${'='.repeat(50)}\n`);
     writeLog(`  RESTORE COMPLETE\n`);
     writeLog(`${'='.repeat(50)}\n`);
-    writeLog(`\n  [!] Please restart Docklift services to apply changes.\n`);
-    writeLog(`      You may need to redeploy your projects.\n`);
+    writeLog(`\n  [!] Restarting backend service to apply changes...\n`);
 
     res.end();
+
+    // Trigger restart
+    setTimeout(() => {
+      console.log('Restarting backend service after restore...');
+      process.exit(0);
+    }, 1000);
   } catch (error: any) {
     writeLog(`\n[ERROR] Restore failed: ${error.message}\n`);
     console.error('Restore error:', error);
@@ -731,14 +804,22 @@ router.post('/restore-upload', uploadBackup.single('backup'), async (req: Reques
       writeLog(`      ! Could not mark file: ${renameError.message}\n`);
     }
 
+    // Reconcile system state (auto-redeploy)
+    await reconcileSystem(writeLog);
+
     writeLog(`\n${'='.repeat(50)}\n`);
     writeLog(`  RESTORE COMPLETE\n`);
     writeLog(`${'='.repeat(50)}\n`);
-    writeLog(`\n  [!] Please restart Docklift services to apply changes.\n`);
-    writeLog(`      You may need to redeploy your projects.\n`);
+    writeLog(`\n  [!] Restarting backend service to apply changes...\n`);
     writeLog(`\n  The uploaded file has been kept. You can delete it manually from Settings.\n`);
 
     res.end();
+
+    // Trigger restart
+    setTimeout(() => {
+      console.log('Restarting backend service after restore...');
+      process.exit(0);
+    }, 1000);
   } catch (error: any) {
     console.error('Upload restore error:', error);
     if (!res.headersSent) {
@@ -906,14 +987,22 @@ router.post('/restore-from-upload/:filename', async (req: Request, res: Response
       writeLog(`      ! Could not mark file: ${renameError.message}\n`);
     }
 
+    // Reconcile system state (auto-redeploy)
+    await reconcileSystem(writeLog);
+
     writeLog(`\n${'='.repeat(50)}\n`);
     writeLog(`  RESTORE COMPLETE\n`);
     writeLog(`${'='.repeat(50)}\n`);
-    writeLog(`\n  [!] Please restart Docklift services to apply changes.\n`);
-    writeLog(`      You may need to redeploy your projects.\n`);
+    writeLog(`\n  [!] Restarting backend service to apply changes...\n`);
     writeLog(`\n  The uploaded file has been kept. You can delete it manually from Settings.\n`);
 
     res.end();
+
+    // Trigger restart
+    setTimeout(() => {
+      console.log('Restarting backend service after restore...');
+      process.exit(0);
+    }, 1000);
   } catch (error: any) {
     console.error('Restore from upload error:', error);
     if (!res.headersSent) {
