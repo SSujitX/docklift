@@ -36,7 +36,7 @@ server {
     server_name app.example.com;
 
     location / {
-        proxy_pass http://docklift_<projectId>_<serviceName>:<internal_port>;
+        proxy_pass http://dl_<shortId>_<serviceName>:<internal_port>;
         proxy_set_header Host $host;
         # ... standard proxy headers
     }
