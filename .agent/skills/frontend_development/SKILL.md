@@ -9,53 +9,86 @@ Docklift uses **Next.js 16 (App Router)** for its frontend.
 
 ## Directory Structure (`frontend/app/`)
 
--   `page.tsx`: Dashboard (Home).
--   `layout.tsx`: Root layout (includes ThemeProvider, AuthProvider, Toaster).
--   `projects/`: Project management routes.
-    -   `[id]/`: Project detail view (nested layout).
-    -   `new/`: Project creation wizard.
--   `settings/`: Global settings.
--   `sign-in/`: Login page.
+| Route | File | Description |
+|-------|------|-------------|
+| `/` | `page.tsx` | Dashboard (project list, system stats) |
+| `/sign-in` | `sign-in/page.tsx` | Login page |
+| `/setup` | `setup/page.tsx` | First-run registration |
+| `/projects/new` | `projects/new/page.tsx` | Project creation wizard |
+| `/projects/[id]` | `projects/[id]/page.tsx` | Project detail (tabs: overview, deployments, env, logs, files) |
+| `/logs` | `logs/page.tsx` | System logs (real-time SSE, 4 service tabs) |
+| `/terminal` | `terminal/page.tsx` | Web terminal (xterm.js) |
+| `/system` | `system/page.tsx` | System health (CPU, RAM, disk) |
+| `/ports` | `ports/page.tsx` | Docker port mapping viewer |
+| `/databases` | `databases/page.tsx` | Database management |
+| `/settings` | `settings/page.tsx` | App settings, GitHub integration |
+| `/docs` | `docs/page.tsx` | Built-in documentation |
 
-## Key Architectures
+## Key Components
+
+| Component | Location | Purpose |
+|-----------|----------|---------|
+| `Header.tsx` | `components/` | Global navigation bar |
+| `Footer.tsx` | `components/` | Global footer |
+| `LogViewer.tsx` | `components/` | **Shared** real-time log viewer with ANSI, search, colors |
+| `SystemLogsPanel.tsx` | `components/` | SSE wrapper for system service logs |
+| `Terminal.tsx` | `components/` | xterm.js terminal emulator |
+| `FileEditor.tsx` | `components/` | Monaco editor for in-browser file editing |
+| `FileTree.tsx` | `components/` | Directory tree navigator |
+| `EnvVarsManager.tsx` | `components/` | Environment variable CRUD |
+| `StatusBadge.tsx` | `components/` | Container status indicator |
+
+## Architecture Patterns
 
 ### 1. Client vs Server Components
--   **"use client"**: Used extensively for interactive dashboards (`useState`, `useEffect`).
--   **Server Components**: Used for static layouts or initial data fetching where possible (though this app relies heavily on client-side API fetching due to auth token storage in localStorage).
+- **"use client"**: Used for interactive dashboards (`useState`, `useEffect`)
+- **Server Components**: Minimal — app relies on client-side API fetching (auth token in localStorage)
 
 ### 2. State Management
--   **Local State**: `useState` for UI toggles.
--   **Global State**: Minimal. `AuthContext` handles user session.
--   **Data Fetching**: `useEffect` + `axios/fetch` pattern.
-    -   *Standard*: Fetch data on mount, show loader, handle error.
+- **Local State**: `useState` for UI toggles
+- **Global State**: `AuthContext` for user session
+- **Data Fetching**: `useEffect` + `axios` pattern
 
-### 3. Streaming Logs
--   Uses **Server-Sent Events (SSE)**.
--   Endpoint: `/api/deployments/:id/logs`.
--   Frontend: `EventSource` API handles real-time updates.
+### 3. Real-Time Streaming (SSE)
+- Uses **Server-Sent Events (SSE)** via `EventSource` API
+- System logs: `/api/system/logs/:service`
+- Container logs: `/api/containers/:name/logs`
+- Build logs: `/api/deployments/:id/logs`
+- Frontend component: `LogViewer.tsx` renders all log types
 
-### 4. File Editor (Monaco)
--   Found in `components/FileEditor.tsx`.
--   Used for editing `docker-compose.yml` and project files directly in the browser.
+### 4. Tab Switching Pattern
+When switching between tabs that share a component, use React `key` to force remount:
+```tsx
+// Forces clean state when switching services
+<SystemLogsPanel key={activeService} service={activeService} isActive={true} />
+```
 
 ## Common Tasks
 
 ### Adding a New Page
-1.  Create `app/new-feature/page.tsx`.
-2.  Add `"use client"` if it needs interaction.
-3.  Import `Header` and `Footer`.
+1. Create `app/new-feature/page.tsx`
+2. Add `"use client"` if it needs interaction
+3. Import `Header` and `Footer`
+4. Add navigation link in `components/Header.tsx`
 
 ### Connecting to Backend
-Use the helper in `lib/utils.ts` or `lib/auth.ts`:
 ```typescript
 import { API_URL } from "@/lib/utils";
 import { getAuthHeaders } from "@/lib/auth";
 
-// Fetch
 fetch(`${API_URL}/api/resource`, { headers: getAuthHeaders() });
+```
+
+### SSE Connection (with production proxy support)
+```typescript
+// In production, use same-origin (empty base) so /api is proxied correctly
+const sseBase = window.location.hostname === "localhost" ? API_URL : "";
+const es = new EventSource(`${sseBase}/api/system/logs/backend?token=...`);
 ```
 
 ## Debugging
 
--   **Hydration Errors**: Usually caused by malformed HTML (e.g., `<div>` inside `<p>`) or dates rendering differently on server/client.
--   **Auth Issues**: Check `Application > Local Storage` in devtools for `docklift_token`.
+- **Hydration Errors**: Caused by server/client mismatch (dates, conditional rendering)
+- **Auth Issues**: Check `localStorage.getItem("docklift_token")` in devtools
+- **SSE not connecting**: Check Network → EventStream tab in devtools
+- **Build errors**: Run `npx next build` locally first to catch TypeScript issues
