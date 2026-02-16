@@ -267,7 +267,7 @@ router.post('/:projectId/deploy', async (req: Request, res: Response) => {
         end: () => {},
         setHeader: () => {},
       } as any;
-      await pullRepo(projectPath, pullResWrapper);
+      await pullRepo(projectPath, pullResWrapper, project.github_branch || undefined);
     }
     
     writeLog(`\n${'━'.repeat(50)}\n`);
