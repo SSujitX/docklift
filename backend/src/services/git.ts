@@ -27,60 +27,55 @@ export async function cloneRepo(url: string, targetPath: string, branch?: string
   }
 }
 
-// Pull latest from repository
-export async function pullRepo(projectPath: string, res: Response): Promise<void> {
+// Pull latest from repository using fetch + reset (professional approach)
+// This guarantees the local copy exactly matches the remote, unlike git pull
+// which can fail silently on merge conflicts or diverged histories.
+export async function pullRepo(projectPath: string, res: Response, branch?: string): Promise<void> {
   const git = simpleGit(projectPath);
   
-  res.write(`📥 Pulling latest changes...\n`);
+  res.write(`📥 Fetching latest changes...\n`);
   
   try {
-    const result = await git.pull();
+    // Determine which branch to sync to
+    let targetBranch = branch;
+    if (!targetBranch) {
+      try {
+        targetBranch = (await git.revparse(['--abbrev-ref', 'HEAD'])).trim();
+      } catch {
+        targetBranch = 'main';
+      }
+    }
+    res.write(`   Branch: ${targetBranch}\n`);
     
-    if (result.summary.changes > 0) {
-      res.write(`   ✅ ${result.summary.changes} file(s) changed\n`);
-      res.write(`   ↓ ${result.summary.insertions} insertions\n`);
-      res.write(`   ✗ ${result.summary.deletions} deletions\n`);
+    // Get current commit before fetch for comparison
+    const beforeCommit = (await git.revparse(['HEAD'])).trim().substring(0, 7);
+    
+    // Step 1: Fetch latest refs from remote (never causes conflicts)
+    await git.fetch('origin', targetBranch);
+    res.write(`   ✅ Fetched from origin\n`);
+    
+    // Step 2: Hard reset to exact remote state (guarantees fresh code)
+    await git.reset(['--hard', `origin/${targetBranch}`]);
+    res.write(`   ✅ Reset to origin/${targetBranch}\n`);
+    
+    // Step 3: Clean untracked files and directories (removes stale artifacts)
+    await git.clean('f', ['-d']);
+    res.write(`   ✅ Cleaned untracked files\n`);
+    
+    // Get new commit for comparison
+    const afterCommit = (await git.revparse(['HEAD'])).trim().substring(0, 7);
+    
+    if (beforeCommit !== afterCommit) {
+      res.write(`   📝 Updated: ${beforeCommit} → ${afterCommit}\n`);
     } else {
-      res.write(`   Already up to date\n`);
+      res.write(`   Already up to date (${afterCommit})\n`);
     }
     res.write(`\n`);
   } catch (error: any) {
     const errorMsg = error?.message || String(error);
-    
-    // Check if it's a merge conflict / local changes issue
-    if (errorMsg.includes('overwritten by merge') || 
-        errorMsg.includes('local changes') || 
-        errorMsg.includes('Please commit your changes') ||
-        errorMsg.includes('Aborting')) {
-      res.write(`   ⚠️ Local changes detected, resetting to remote...\n`);
-      
-      try {
-        // Get current branch
-        const branch = await git.revparse(['--abbrev-ref', 'HEAD']);
-        const cleanBranch = branch.trim();
-        
-        // Reset hard to discard local changes
-        await git.reset(['--hard', 'HEAD']);
-        res.write(`   🔄 Reset local changes\n`);
-        
-        // Pull again
-        const retryResult = await git.pull('origin', cleanBranch);
-        
-        if (retryResult.summary.changes > 0) {
-          res.write(`   ✅ ${retryResult.summary.changes} file(s) changed\n`);
-          res.write(`   ↓ ${retryResult.summary.insertions} insertions\n`);
-          res.write(`   ✗ ${retryResult.summary.deletions} deletions\n`);
-        } else {
-          res.write(`   Already up to date\n`);
-        }
-        res.write(`\n`);
-        return;
-      } catch (resetError: any) {
-        res.write(`   ❌ Reset failed: ${resetError?.message || resetError}\n\n`);
-      }
-    } else {
-      res.write(`   ⚠️ Git pull warning: ${error}\n\n`);
-    }
+    res.write(`   ❌ Git sync failed: ${errorMsg}\n\n`);
+    // CRITICAL: Throw so deploy aborts instead of continuing with old code
+    throw new Error(`Git sync failed: ${errorMsg}`);
   }
 }
 
