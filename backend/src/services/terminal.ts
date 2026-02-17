@@ -1,6 +1,7 @@
-// Terminal service - WebSocket-based interactive PTY shell
+// Terminal service - WebSocket-based interactive shell (zero native dependencies)
 import { WebSocketServer, WebSocket } from 'ws';
 import { Server as HttpServer, IncomingMessage } from 'http';
+import { spawn, ChildProcess } from 'child_process';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
 import { JWT_SECRET } from '../lib/authMiddleware.js';
@@ -8,20 +9,9 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-// Dynamic import for node-pty (native module, may not be available on all platforms)
-let pty: typeof import('node-pty') | null = null;
-async function loadPty() {
-  try {
-    pty = await import('node-pty');
-  } catch (err) {
-    console.warn('[TERMINAL] node-pty not available — interactive terminal disabled. Install node-pty for full PTY support.');
-  }
-}
-loadPty();
-
 interface TerminalSession {
   ws: WebSocket;
-  ptyProcess: any;
+  shell: ChildProcess | null;
   authenticated: boolean;
   userId: string | null;
   authAttempts: number;
@@ -95,7 +85,7 @@ export function setupTerminalWebSocket(server: HttpServer) {
 
     const session: TerminalSession = {
       ws,
-      ptyProcess: null,
+      shell: null,
       authenticated: false,
       userId: user.userId,
       authAttempts: 0,
@@ -146,40 +136,50 @@ export function setupTerminalWebSocket(server: HttpServer) {
           session.authenticated = true;
           console.log(`[TERMINAL] User "${user.email}" authenticated for interactive terminal`);
 
-          // Check if node-pty is available
-          if (!pty) {
-            ws.send(JSON.stringify({ type: 'auth_error', message: 'Interactive terminal not available on this platform' }));
-            return;
-          }
-
-          // Spawn PTY process
+          // Spawn shell using 'script' for PTY emulation (works on Alpine, no native deps)
           try {
-            const shell = process.platform === 'win32' ? 'powershell.exe' : '/bin/bash';
-            session.ptyProcess = pty.spawn(shell, [], {
-              name: 'xterm-256color',
-              cols: msg.cols || 80,
-              rows: msg.rows || 24,
-              cwd: '/root',
+            const cols = msg.cols || 80;
+            const rows = msg.rows || 24;
+            
+            const shell = spawn('script', ['-q', '-c', '/bin/bash', '/dev/null'], {
               env: {
                 ...process.env,
                 TERM: 'xterm-256color',
                 COLORTERM: 'truecolor',
-                LANG: 'en_US.UTF-8',
-              } as Record<string, string>,
+                LANG: 'C.UTF-8',
+                COLUMNS: String(cols),
+                LINES: String(rows),
+              },
+              stdio: ['pipe', 'pipe', 'pipe'],
             });
 
-            // Stream PTY output to WebSocket
-            session.ptyProcess.onData((data: string) => {
+            session.shell = shell;
+
+            // Stream shell output to WebSocket
+            shell.stdout?.on('data', (data: Buffer) => {
               if (ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({ type: 'output', data }));
+                ws.send(JSON.stringify({ type: 'output', data: data.toString() }));
               }
             });
 
-            session.ptyProcess.onExit(({ exitCode }: { exitCode: number }) => {
-              console.log(`[TERMINAL] PTY exited with code ${exitCode} for user "${user.email}"`);
+            shell.stderr?.on('data', (data: Buffer) => {
               if (ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({ type: 'exit', code: exitCode }));
+                ws.send(JSON.stringify({ type: 'output', data: data.toString() }));
+              }
+            });
+
+            shell.on('exit', (code) => {
+              console.log(`[TERMINAL] Shell exited with code ${code} for user "${user.email}"`);
+              if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'exit', code: code || 0 }));
                 ws.close();
+              }
+            });
+
+            shell.on('error', (err) => {
+              console.error(`[TERMINAL] Shell error for user "${user.email}":`, err.message);
+              if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'output', data: `\r\nShell error: ${err.message}\r\n` }));
               }
             });
 
@@ -190,7 +190,7 @@ export function setupTerminalWebSocket(server: HttpServer) {
               if (session.idleTimer) clearTimeout(session.idleTimer);
               session.idleTimer = setTimeout(() => {
                 console.log(`[TERMINAL] Idle timeout for user: ${user.email}`);
-                if (session.ptyProcess) try { session.ptyProcess.kill(); } catch {}
+                killShell(session);
                 if (ws.readyState === WebSocket.OPEN) {
                   ws.send(JSON.stringify({ type: 'exit', code: -1, reason: 'idle_timeout' }));
                   ws.close();
@@ -202,25 +202,25 @@ export function setupTerminalWebSocket(server: HttpServer) {
             // Attach idle reset to session for input handler
             (session as any)._resetIdleTimer = resetIdleTimer;
           } catch (err) {
-            console.error('[TERMINAL] Failed to spawn PTY:', err);
+            console.error('[TERMINAL] Failed to spawn shell:', err);
             ws.send(JSON.stringify({ type: 'auth_error', message: 'Failed to start terminal session' }));
           }
           return;
         }
 
         // All other messages require authentication
-        if (!session.authenticated || !session.ptyProcess) return;
+        if (!session.authenticated || !session.shell) return;
 
         // Handle terminal input
         if (msg.type === 'input' && msg.data) {
-          session.ptyProcess.write(msg.data);
+          session.shell.stdin?.write(msg.data);
           // Reset idle timer on input
           if ((session as any)._resetIdleTimer) (session as any)._resetIdleTimer();
         }
 
-        // Handle terminal resize
+        // Handle terminal resize (send SIGWINCH-style resize via stty)
         if (msg.type === 'resize' && msg.cols && msg.rows) {
-          session.ptyProcess.resize(msg.cols, msg.rows);
+          session.shell.stdin?.write(`stty cols ${msg.cols} rows ${msg.rows}\n`);
         }
       } catch (err) {
         // Silently ignore malformed messages
@@ -230,23 +230,14 @@ export function setupTerminalWebSocket(server: HttpServer) {
     ws.on('close', () => {
       console.log(`[TERMINAL] WebSocket disconnected for user: ${user.email}`);
       if (session.idleTimer) clearTimeout(session.idleTimer);
-      if (session.ptyProcess) {
-        try {
-          session.ptyProcess.kill();
-        } catch {
-          // Process may already be dead
-        }
-      }
+      killShell(session);
       activeSessions.delete(session);
     });
 
     ws.on('error', (err) => {
       console.error(`[TERMINAL] WebSocket error for user ${user.email}:`, err.message);
-      if (session.ptyProcess) {
-        try {
-          session.ptyProcess.kill();
-        } catch {}
-      }
+      if (session.idleTimer) clearTimeout(session.idleTimer);
+      killShell(session);
       activeSessions.delete(session);
     });
   });
@@ -255,12 +246,22 @@ export function setupTerminalWebSocket(server: HttpServer) {
   return wss;
 }
 
+function killShell(session: TerminalSession) {
+  if (session.shell) {
+    try {
+      session.shell.stdin?.end();
+      session.shell.kill('SIGKILL');
+    } catch {
+      // Process may already be dead
+    }
+    session.shell = null;
+  }
+}
+
 // Cleanup all sessions (called on server shutdown)
 export function cleanupAllSessions() {
   for (const session of activeSessions) {
-    if (session.ptyProcess) {
-      try { session.ptyProcess.kill(); } catch {}
-    }
+    killShell(session);
     if (session.ws.readyState === WebSocket.OPEN) {
       session.ws.close();
     }
