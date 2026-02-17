@@ -72,8 +72,8 @@ router.post('/', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Invalid domain or port' });
   }
 
-  // Basic domain validation (alphanumeric, dots, hyphens)
-  if (!/^[a-zA-Z0-9.-]+$/.test(domain)) {
+  // Strict domain validation - must be valid hostname format (same as DELETE endpoint)
+  if (!/^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)+$/.test(domain)) {
     return res.status(400).json({ error: 'Invalid domain format' });
   }
 
