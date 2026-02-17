@@ -6,9 +6,15 @@ import { config } from '../lib/config.js';
 
 const router = Router();
 
+// Validate project ID to prevent path traversal (only allow UUIDs and alphanumeric-dash strings)
+const VALID_PROJECT_ID = /^[a-zA-Z0-9_-]+$/;
+
 // List files in project
 router.get('/:projectId', (req: Request, res: Response) => {
   try {
+    if (!VALID_PROJECT_ID.test(req.params.projectId)) {
+      return res.status(400).json({ error: 'Invalid project ID' });
+    }
     const projectPath = path.join(config.deploymentsPath, req.params.projectId);
     
     if (!fs.existsSync(projectPath)) {
@@ -26,12 +32,16 @@ router.get('/:projectId', (req: Request, res: Response) => {
 // Get file content - use query param ?path=...
 router.get('/:projectId/content', (req: Request, res: Response) => {
   try {
+    if (!VALID_PROJECT_ID.test(req.params.projectId)) {
+      return res.status(400).json({ error: 'Invalid project ID' });
+    }
     const projectPath = path.join(config.deploymentsPath, req.params.projectId);
     const relativePath = req.query.path as string || '';
-    const filePath = path.join(projectPath, relativePath);
+    const filePath = path.resolve(projectPath, relativePath);
 
-    // Security check - prevent path traversal (basic check)
-    if (!filePath.startsWith(projectPath)) {
+    // Security check - prevent path traversal using resolved absolute paths
+    const resolvedProject = path.resolve(projectPath);
+    if (!filePath.startsWith(resolvedProject)) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
@@ -62,12 +72,16 @@ router.get('/:projectId/content', (req: Request, res: Response) => {
 // Update file content - use query param ?path=...
 router.put('/:projectId/content', (req: Request, res: Response) => {
   try {
+    if (!VALID_PROJECT_ID.test(req.params.projectId)) {
+      return res.status(400).json({ error: 'Invalid project ID' });
+    }
     const projectPath = path.join(config.deploymentsPath, req.params.projectId);
     const relativePath = req.query.path as string || '';
-    const filePath = path.join(projectPath, relativePath);
+    const filePath = path.resolve(projectPath, relativePath);
 
-    // Security check - prevent path traversal (basic check)
-    if (!filePath.startsWith(projectPath)) {
+    // Security check - prevent path traversal using resolved absolute paths
+    const resolvedProject = path.resolve(projectPath);
+    if (!filePath.startsWith(resolvedProject)) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
@@ -131,9 +145,12 @@ function listFilesRecursive(basePath: string, currentPath: string, depth = 0): A
     
     const fullPath = path.join(currentPath, item);
     const relativePath = path.relative(basePath, fullPath);
-    const stat = fs.statSync(fullPath);
     
-    if (stat.isDirectory()) {
+    // Skip symlinks to prevent traversal attacks
+    const lstat = fs.lstatSync(fullPath);
+    if (lstat.isSymbolicLink()) continue;
+    
+    if (lstat.isDirectory()) {
       files.push({
         name: item,
         path: relativePath,
@@ -149,7 +166,7 @@ function listFilesRecursive(basePath: string, currentPath: string, depth = 0): A
         name: item,
         path: relativePath,
         type: 'file',
-        size: stat.size,
+        size: lstat.size,
         editable: isEditable,
       });
     }
