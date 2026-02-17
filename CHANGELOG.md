@@ -1,3 +1,23 @@
+## [1.3.15](https://github.com/SSujitX/docklift/compare/v1.3.14...v1.3.15) (2026-02-17)
+
+
+### Bug Fixes
+
+* **TerminalView:** handle missing API_URL for WebSocket connection ([cb6ab60](https://github.com/SSujitX/docklift/commit/cb6ab601b5afb20c2e87d64148a1954bb1f0793f))
+* update import path for Next.js routes type definitions ([4f4dbcf](https://github.com/SSujitX/docklift/commit/4f4dbcfb4093d6eca37d8257a284f2e7ace279c9))
+
+
+### Features
+
+* **nginx:** add WebSocket proxy configuration for terminal ([8c4354d](https://github.com/SSujitX/docklift/commit/8c4354dfd13965b6b2063969bc9e2bea4ad6f66e))
+* **terminal:** add clipboard support with copy/paste shortcuts ([105171d](https://github.com/SSujitX/docklift/commit/105171deca1caf14ace2c9a076a372aa7035dd6e))
+* **terminal:** add colorful prompt and set initial working directory ([5781ca4](https://github.com/SSujitX/docklift/commit/5781ca42dae9acb7cb317e58cc990bdfb62a8815))
+* **terminal:** add fullscreen toggle functionality ([ae6735b](https://github.com/SSujitX/docklift/commit/ae6735b9365f43ba214d85ba39ccbfc764c418d6))
+* **terminal:** add WebSocket-based interactive PTY shell service ([6f1a5dd](https://github.com/SSujitX/docklift/commit/6f1a5dd6a007f972b67f169b94bc8c0b9b78bd5b))
+* **terminal:** attach WebSocket server to HTTP server ([d787879](https://github.com/SSujitX/docklift/commit/d787879b47d9b088cb8ec5edd0c08d564ebf6895))
+* **terminal:** replace node-pty with script-based shell for zero native dependencies ([5b6544e](https://github.com/SSujitX/docklift/commit/5b6544e0733e729fb968ffe33e6056a82e3e5e5a))
+* **terminal:** replace static command logs with interactive xterm.js shell ([3125827](https://github.com/SSujitX/docklift/commit/3125827231da4458e23d1108404fa264bb18eb5c))
+
 ## [1.3.14](https://github.com/SSujitX/docklift/compare/v1.3.13...v1.3.14) (2026-02-17)
 
 ## [1.3.13](https://github.com/SSujitX/docklift/compare/v1.3.12...v1.3.13) (2026-02-17)
