@@ -47,7 +47,7 @@ Docklift uses **Next.js 16 (App Router)** for its frontend.
 ### 2. State Management
 - **Local State**: `useState` for UI toggles
 - **Global State**: `AuthContext` for user session
-- **Data Fetching**: `useEffect` + `axios` pattern
+- **Data Fetching**: `useEffect` + native `fetch` via `authFetch()` / `fetchWithAuth()` from `lib/auth.ts`
 
 ### 3. Real-Time Streaming (SSE)
 - Uses **Server-Sent Events (SSE)** via `EventSource` API
@@ -73,10 +73,13 @@ When switching between tabs that share a component, use React `key` to force rem
 
 ### Connecting to Backend
 ```typescript
-import { API_URL } from "@/lib/utils";
-import { getAuthHeaders } from "@/lib/auth";
+import { fetchWithAuth, authFetch } from "@/lib/auth";
 
-fetch(`${API_URL}/api/resource`, { headers: getAuthHeaders() });
+// Typed JSON response
+const data = await fetchWithAuth<MyType>("/api/resource");
+
+// Raw response (for non-JSON or custom handling)
+const res = await authFetch(`${API_URL}/api/resource`, { method: "POST", body: ... });
 ```
 
 ### SSE Connection (with production proxy support)
