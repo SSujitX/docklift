@@ -13,7 +13,9 @@ import { cleanupServiceDomain } from '../services/nginx.js';
 import crypto from 'crypto';
 
 const router = Router();
-const upload = multer({ dest: 'uploads/' });
+const uploadDir = path.join(config.dataPath, 'uploads');
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+const upload = multer({ dest: uploadDir });
 
 // Strict domain validation helper - validates single domain or comma-separated domains
 const DOMAIN_REGEX = /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)+$/;
@@ -257,10 +259,14 @@ router.post('/', upload.single('files'), async (req: Request, res: Response) => 
     } else if (req.file) {
       // Extract zip file
       fs.mkdirSync(projectPath, { recursive: true });
-      await fs.createReadStream(req.file.path)
-        .pipe(unzipper.Extract({ path: projectPath }))
-        .promise();
-      fs.unlinkSync(req.file.path);
+      try {
+        await fs.createReadStream(req.file.path)
+          .pipe(unzipper.Extract({ path: projectPath }))
+          .promise();
+      } finally {
+        // Always clean up temp upload file
+        try { fs.unlinkSync(req.file.path); } catch {}
+      }
     }
     
     res.status(201).json(project);
