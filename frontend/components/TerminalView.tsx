@@ -1,25 +1,16 @@
-// TerminalView component - interactive shell with system controls (reboot, reset, purge)
+// TerminalView component - interactive xterm.js shell with system controls
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { 
   Terminal as TerminalIcon, 
   RefreshCw, 
-  Trash2, 
   Power, 
-  Play, 
-  ChevronRight, 
-  History,
-  Info,
   AlertTriangle,
   CheckCircle2,
   XCircle,
-  Clock,
-  Search,
-  Settings as SettingsIcon,
-  Maximize2,
-  Send
+  Trash2,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -34,137 +25,290 @@ import {
 import { Input } from "@/components/ui/input";
 import { API_URL } from "@/lib/utils";
 import { getAuthHeaders } from "@/lib/auth";
-import { toast } from "sonner";;
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
-interface CommandLog {
-  id: string;
-  command: string;
-  output: string;
-  error?: string;
-  timestamp: Date;
-}
-
 export function TerminalView() {
-  const [command, setCommand] = useState("");
-  const [logs, setLogs] = useState<CommandLog[]>([]);
-  const [executing, setExecuting] = useState(false);
   const [showRebootDialog, setShowRebootDialog] = useState(false);
   const [showResetDialog, setShowResetDialog] = useState(false);
   const [showPurgeDialog, setShowPurgeDialog] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [terminalPassword, setTerminalPassword] = useState<string | null>(null);
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
   const [passwordInput, setPasswordInput] = useState("");
   const [passwordError, setPasswordError] = useState("");
-  const [pendingCommand, setPendingCommand] = useState<string | null>(null);
+  const [connected, setConnected] = useState(false);
+  const [connecting, setConnecting] = useState(false);
   
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const terminalRef = useRef<HTMLDivElement>(null);
+  const xtermRef = useRef<any>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+  const fitAddonRef = useRef<any>(null);
   const passwordInputRef = useRef<HTMLInputElement>(null);
+  const passwordResolveRef = useRef<((pwd: string) => void) | null>(null);
   const searchParams = useSearchParams();
 
+  // Cleanup on unmount
   useEffect(() => {
-    const action = searchParams.get('action');
-    if (action === 'upgrade') {
-      setLogs(prev => [...prev, {
-        id: 'upgrade-init',
-        command: 'system:upgrade',
-        output: 'System upgrade initiated.\n\nProcess is running in background. The server will restart automatically when finished.\nService temporary unavailability is expected.',
-        timestamp: new Date(),
-      }]);
-    } else if (action === 'upgrade_simulated') {
-      setLogs(prev => [...prev, {
-        id: 'upgrade-sim',
-        command: 'system:upgrade (simulation)',
-        output: 'Dev Mode: Simulated upgrade process completed successfully.\nNo changes were made to the system as you are running on a development environment (Windows/Mac).',
-        timestamp: new Date(),
-      }]);
-    }
-  }, [searchParams]);
-
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [logs]);
-
-  // Focus input on mount and after execution
-  useEffect(() => {
-    if (!executing && inputRef.current) {
-      inputRef.current.focus();
-    }
-  }, [executing]);
-
-  const executeCommand = async (cmd: string, pwd: string) => {
-    setExecuting(true);
-    try {
-      const res = await fetch(`${API_URL}/api/system/execute`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-        body: JSON.stringify({ command: cmd, password: pwd }),
-      });
-      
-      const data = await res.json();
-
-      // If password is rejected, clear stored password and re-prompt
-      if ((res.status === 401 || res.status === 403) && data.requirePassword) {
-        setTerminalPassword(null);
-        setPendingCommand(cmd);
-        setPasswordError(data.error || "Password verification failed");
-        setShowPasswordDialog(true);
-        return;
+    return () => {
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
       }
-      
-      const newLog: CommandLog = {
-        id: Math.random().toString(36).substr(2, 9),
-        command: cmd,
-        output: data.output || "",
-        error: data.error || (res.ok ? undefined : "Unknown error"),
-        timestamp: new Date(),
-      };
-      
-      setLogs(prev => [...prev.slice(-49), newLog]); // Keep last 50
-    } catch (err: any) {
-      toast.error("Execution failed: " + err.message);
-    } finally {
-      setExecuting(false);
+      if (xtermRef.current) {
+        xtermRef.current.dispose();
+        xtermRef.current = null;
+      }
+    };
+  }, []);
+
+  // Initialize xterm.js terminal and connect on mount
+  useEffect(() => {
+    if (!terminalRef.current) return;
+
+    let disposed = false;
+
+    async function initTerminal() {
+      // Dynamic imports for xterm (only works in browser)
+      const { Terminal } = await import("@xterm/xterm");
+      const { FitAddon } = await import("@xterm/addon-fit");
+      const { WebLinksAddon } = await import("@xterm/addon-web-links");
+
+      // xterm CSS is imported globally via globals.css or layout
+
+      if (disposed || !terminalRef.current) return;
+
+      const fitAddon = new FitAddon();
+      fitAddonRef.current = fitAddon;
+
+      const term = new Terminal({
+        cursorBlink: true,
+        cursorStyle: "block",
+        fontSize: 14,
+        fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Menlo', 'Monaco', 'Consolas', monospace",
+        fontWeight: "400",
+        fontWeightBold: "600",
+        lineHeight: 1.35,
+        letterSpacing: 0.5,
+        allowTransparency: true,
+        theme: {
+          background: "#0c0c0c",
+          foreground: "#d4d4d4",
+          cursor: "#22d3ee",
+          cursorAccent: "#0c0c0c",
+          selectionBackground: "#22d3ee33",
+          selectionForeground: "#ffffff",
+          black: "#1e1e1e",
+          red: "#f87171",
+          green: "#4ade80",
+          yellow: "#facc15",
+          blue: "#60a5fa",
+          magenta: "#c084fc",
+          cyan: "#22d3ee",
+          white: "#d4d4d4",
+          brightBlack: "#525252",
+          brightRed: "#fca5a5",
+          brightGreen: "#86efac",
+          brightYellow: "#fde047",
+          brightBlue: "#93c5fd",
+          brightMagenta: "#d8b4fe",
+          brightCyan: "#67e8f9",
+          brightWhite: "#ffffff",
+        },
+        scrollback: 5000,
+        convertEol: true,
+        allowProposedApi: true,
+      });
+
+      term.loadAddon(fitAddon);
+      term.loadAddon(new WebLinksAddon());
+
+      term.open(terminalRef.current!);
+      xtermRef.current = term;
+
+      // Fit to container
+      requestAnimationFrame(() => {
+        try { fitAddon.fit(); } catch {}
+      });
+
+      // Connect to server
+      term.writeln("\x1b[90mConnecting to server...\x1b[0m");
+      term.writeln("");
+
+      // Now connect WebSocket
+      connectWebSocket(term, fitAddon);
     }
-  };
 
-  const handleExecute = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (!command.trim() || executing) return;
+    initTerminal();
 
-    const currentCommand = command.trim();
-    setCommand("");
+    return () => {
+      disposed = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-    // If no password stored yet, prompt for it
-    if (!terminalPassword) {
-      setPendingCommand(currentCommand);
+  // Handle window resize
+  useEffect(() => {
+    const handleResize = () => {
+      if (fitAddonRef.current && xtermRef.current) {
+        try {
+          fitAddonRef.current.fit();
+          // Send resize to backend
+          if (wsRef.current?.readyState === WebSocket.OPEN) {
+            const { cols, rows } = xtermRef.current;
+            wsRef.current.send(JSON.stringify({ type: "resize", cols, rows }));
+          }
+        } catch {}
+      }
+    };
+
+    window.addEventListener("resize", handleResize);
+
+    // Also observe the terminal container for size changes
+    const observer = new ResizeObserver(handleResize);
+    if (terminalRef.current) observer.observe(terminalRef.current);
+
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      observer.disconnect();
+    };
+  }, []);
+
+  const promptPassword = useCallback((): Promise<string> => {
+    return new Promise((resolve) => {
+      passwordResolveRef.current = resolve;
       setPasswordError("");
+      setPasswordInput("");
       setShowPasswordDialog(true);
-      return;
-    }
+    });
+  }, []);
 
-    await executeCommand(currentCommand, terminalPassword);
-  };
-
-  const handlePasswordSubmit = async () => {
+  const handlePasswordSubmit = useCallback(() => {
     if (!passwordInput.trim()) return;
     const pwd = passwordInput;
     setPasswordInput("");
-    setPasswordError("");
     setShowPasswordDialog(false);
-    setTerminalPassword(pwd);
-
-    if (pendingCommand) {
-      const cmd = pendingCommand;
-      setPendingCommand(null);
-      await executeCommand(cmd, pwd);
+    if (passwordResolveRef.current) {
+      passwordResolveRef.current(pwd);
+      passwordResolveRef.current = null;
     }
-  };
+  }, [passwordInput]);
 
+  const connectWebSocket = useCallback(async (term: any, fitAddon: any) => {
+    setConnecting(true);
+
+    // Get JWT token directly from localStorage
+    const token = typeof window !== "undefined" ? localStorage.getItem("docklift_token") : null;
+
+    if (!token) {
+      term.writeln("  \x1b[1;31m✗ Not authenticated. Please log in first.\x1b[0m");
+      setConnecting(false);
+      return;
+    }
+
+    // Build WebSocket URL
+    const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const apiHost = API_URL.replace(/^https?:\/\//, "").replace(/\/$/, "");
+    const wsUrl = `${wsProtocol}//${apiHost}/ws/terminal?token=${encodeURIComponent(token)}`;
+
+    try {
+      const ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        term.writeln("  \x1b[1;32m✓ Connected to server\x1b[0m");
+        term.writeln("  \x1b[90mAuthenticating...\x1b[0m");
+      };
+
+      ws.onmessage = async (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+
+          if (msg.type === "auth_required") {
+            // Prompt for password
+            const password = await promptPassword();
+            ws.send(JSON.stringify({ 
+              type: "auth", 
+              password,
+              cols: term.cols,
+              rows: term.rows,
+            }));
+          }
+
+          if (msg.type === "auth_success") {
+            setConnected(true);
+            setConnecting(false);
+            term.writeln("  \x1b[1;32m✓ Authenticated — terminal ready\x1b[0m");
+            term.writeln("");
+
+            // Fit again after auth
+            requestAnimationFrame(() => {
+              try { 
+                fitAddon.fit();
+                ws.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
+              } catch {}
+            });
+
+            // Wire up terminal input → WebSocket
+            term.onData((data: string) => {
+              if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: "input", data }));
+              }
+            });
+          }
+
+          if (msg.type === "auth_error") {
+            term.writeln(`  \x1b[1;31m✗ ${msg.message || "Authentication failed"}\x1b[0m`);
+            setConnecting(false);
+            // Re-prompt
+            const password = await promptPassword();
+            ws.send(JSON.stringify({ 
+              type: "auth", 
+              password,
+              cols: term.cols,
+              rows: term.rows,
+            }));
+          }
+
+          if (msg.type === "output") {
+            term.write(msg.data);
+          }
+
+          if (msg.type === "exit") {
+            term.writeln("");
+            term.writeln("  \x1b[1;33m⚠ Shell session ended\x1b[0m");
+            setConnected(false);
+          }
+        } catch {}
+      };
+
+      ws.onclose = () => {
+        setConnected(false);
+        setConnecting(false);
+        term.writeln("");
+        term.writeln("  \x1b[1;33m⚠ Disconnected from server\x1b[0m");
+        term.writeln("  \x1b[90mPress any key to reconnect...\x1b[0m");
+
+        // Reconnect on keypress
+        const disposable = term.onData(() => {
+          disposable.dispose();
+          term.writeln("");
+          term.writeln("  \x1b[90mReconnecting...\x1b[0m");
+          connectWebSocket(term, fitAddon);
+        });
+      };
+
+      ws.onerror = () => {
+        setConnecting(false);
+        // onclose will handle the error message
+      };
+
+    } catch (err: any) {
+      term.writeln(`  \x1b[1;31m✗ Connection failed: ${err.message}\x1b[0m`);
+      setConnecting(false);
+    }
+  }, [promptPassword]);
+
+  // System action handler (same as before)
   const handleSystemAction = async (action: 'reboot' | 'reset' | 'purge' | 'update-system' | 'upgrade') => {
     setIsProcessing(true);
     setShowRebootDialog(false);
@@ -179,17 +323,7 @@ export function TerminalView() {
       const data = await res.json();
       
       if (!res.ok) throw new Error(data.error || "Action failed");
-      
       toast.success(data.message || `${action} successful`);
-      
-      const newLog: CommandLog = {
-        id: Math.random().toString(36).substr(2, 9),
-        command: `system:${action}`,
-        output: data.message || `System ${action} executed.`,
-        timestamp: new Date(),
-      };
-      setLogs(prev => [...prev.slice(-49), newLog]);
-      
     } catch (err: any) {
       toast.error(err.message || `Failed to ${action} server`);
     } finally {
@@ -296,110 +430,48 @@ export function TerminalView() {
         </Card>
       </div>
 
-      {/* Terminal View */}
-      <Card className="flex flex-col bg-[#0d0d0d] border-[#1a1a1a] overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.5)] rounded-3xl relative">
-        {/* Glow effect */}
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(56,189,248,0.05),transparent)] pointer-events-none" />
+      {/* Interactive Terminal */}
+      <Card className="flex flex-col bg-[#0c0c0c] border border-[#2a2a2a] overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.5)] rounded-2xl relative">
+        {/* Subtle glow */}
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(34,211,238,0.03),transparent)] pointer-events-none" />
         
-        {/* Mac-style Terminal Header */}
-        <div className="p-3 sm:p-4 border-b border-[#1a1a1a] flex items-center justify-between bg-[#141414]/90 backdrop-blur-md z-10">
+        {/* Terminal Header */}
+        <div className="px-3 sm:px-4 py-2.5 border-b border-[#2a2a2a] flex items-center justify-between bg-[#111]/90 backdrop-blur-md z-10">
           <div className="flex items-center gap-3 sm:gap-5">
             <div className="flex gap-1.5 sm:gap-2">
-              <div className="w-3 h-3 sm:w-3.5 sm:h-3.5 rounded-full bg-[#ff5f56] shadow-[0_0_10px_rgba(255,95,86,0.3)]" />
-              <div className="w-3 h-3 sm:w-3.5 sm:h-3.5 rounded-full bg-[#ffbd2e] shadow-[0_0_10px_rgba(255,189,46,0.3)]" />
-              <div className="w-3 h-3 sm:w-3.5 sm:h-3.5 rounded-full bg-[#27c93f] shadow-[0_0_10px_rgba(39,201,63,0.3)]" />
+              <div className="w-3 h-3 rounded-full bg-[#ff5f56] shadow-[0_0_8px_rgba(255,95,86,0.25)]" />
+              <div className="w-3 h-3 rounded-full bg-[#ffbd2e] shadow-[0_0_8px_rgba(255,189,46,0.25)]" />
+              <div className="w-3 h-3 rounded-full bg-[#27c93f] shadow-[0_0_8px_rgba(39,201,63,0.25)]" />
             </div>
-            <div className="hidden sm:flex items-center gap-2.5 px-4 py-1.5 bg-[#1a1a1a] rounded-lg border border-[#2a2a2a] shadow-inner">
-              <TerminalIcon className="h-4 w-4 text-cyan-400" />
-              <span className="text-[11px] font-bold text-[#aaa] tracking-[0.2em] uppercase">docklift@root:~</span>
+            <div className="hidden sm:flex items-center gap-2 px-3 py-1 bg-[#1a1a1a] rounded-lg border border-[#252525]">
+              <TerminalIcon className="h-3.5 w-3.5 text-cyan-400" />
+              <span className="text-[11px] font-bold text-[#888] tracking-[0.15em] uppercase">bash — root@docklift</span>
             </div>
           </div>
-          <div className="flex items-center gap-2 sm:gap-3">
-             <div className="flex items-center gap-2 text-[10px] font-bold text-emerald-400 bg-emerald-400/10 px-2 sm:px-3 py-1 rounded-full border border-emerald-400/20 shadow-[0_0_15px_rgba(52,211,153,0.1)]">
-                <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-emerald-400 animate-pulse" />
-                <span className="hidden sm:inline">SYSTEM ACTIVE</span>
-                <span className="sm:hidden">ONLINE</span>
-             </div>
-             <Button 
-              variant="ghost" 
-              size="sm" 
-              className="h-7 sm:h-8 px-2 sm:px-3 text-[10px] font-bold uppercase tracking-widest text-[#666] hover:text-rose-400 hover:bg-[#1a1a1a] rounded-lg border border-transparent hover:border-rose-400/20 transition-all"
-              onClick={() => setLogs([])}
-            >
-              Clear
-            </Button>
+          <div className="flex items-center gap-2">
+            <div className={cn(
+              "flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-bold tracking-wide transition-all",
+              connected 
+                ? "text-emerald-400 bg-emerald-400/10 border-emerald-400/20 shadow-[0_0_10px_rgba(52,211,153,0.08)]"
+                : connecting
+                  ? "text-amber-400 bg-amber-400/10 border-amber-400/20"
+                  : "text-zinc-500 bg-zinc-500/10 border-zinc-500/20"
+            )}>
+              <div className={cn(
+                "w-1.5 h-1.5 rounded-full",
+                connected ? "bg-emerald-400 animate-pulse" : connecting ? "bg-amber-400 animate-pulse" : "bg-zinc-500"
+              )} />
+              <span className="hidden sm:inline">{connected ? "CONNECTED" : connecting ? "CONNECTING" : "OFFLINE"}</span>
+            </div>
           </div>
         </div>
 
-        {/* Output Scroll Area */}
+        {/* xterm.js Terminal Container */}
         <div 
-          ref={scrollRef}
-          className="min-h-[300px] max-h-[70vh] overflow-y-auto p-6 font-mono text-[14px] space-y-4 scrollbar-thin scrollbar-thumb-[#252525] scroll-smooth z-10"
-        >
-          {logs.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-[#333] gap-4">
-              <div className="p-4 rounded-full bg-[#111] border border-[#1a1a1a] shadow-inner">
-                <History className="h-10 w-10 opacity-30 animate-pulse" />
-              </div>
-              <p className="font-bold uppercase tracking-[0.3em] text-[11px] opacity-40">System Console Ready</p>
-            </div>
-          ) : (
-            logs.map(log => (
-              <div key={log.id} className="space-y-2 group animate-in fade-in slide-in-from-left-2 duration-300">
-                <div className="flex items-center gap-3 text-[#777]">
-                  <span className="text-emerald-500 font-black text-base">➜</span>
-                  <span className="text-cyan-400 font-bold tracking-tight">~</span>
-                  <span className="font-bold text-[#eee] text-[15px]">{log.command}</span>
-                  <span className="text-[10px] opacity-0 group-hover:opacity-100 transition-opacity ml-auto text-[#444] font-mono">
-                    {log.timestamp.toLocaleTimeString()}
-                  </span>
-                </div>
-                {log.output && (
-                  <pre className="pl-8 text-[#ccc] whitespace-pre-wrap leading-relaxed select-text font-medium bg-[#111]/30 p-3 rounded-xl border border-[#1a1a1a]/50">
-                    {log.output}
-                  </pre>
-                )}
-                {log.error && (
-                  <pre className="pl-8 text-rose-400 whitespace-pre-wrap leading-relaxed italic bg-rose-400/5 py-3 px-4 rounded-xl border-l-4 border-rose-500/50 font-semibold text-[13px]">
-                    {log.error}
-                  </pre>
-                )}
-              </div>
-            ))
-          )}
-        </div>
-
-        {/* Input Area */}
-        <div className="p-3 sm:p-5 bg-[#0a0a0a] border-t border-[#1a1a1a] z-10">
-          <div className="relative group">
-            <div className="absolute -inset-1 bg-gradient-to-r from-cyan-500/20 to-violet-500/20 rounded-2xl blur opacity-0 group-focus-within:opacity-100 transition duration-500" />
-            <form onSubmit={handleExecute} className="relative flex items-center gap-2 sm:gap-4 bg-[#111] rounded-xl sm:rounded-2xl px-3 sm:px-5 py-2 sm:py-3 border border-[#222] focus-within:border-cyan-500/40 transition-all shadow-2xl">
-              <span className="text-cyan-500 font-black text-lg sm:text-xl select-none group-focus-within:scale-110 transition-transform duration-300">λ</span>
-              <input 
-                ref={inputRef}
-                type="text" 
-                value={command}
-                onChange={(e) => setCommand(e.target.value)}
-                placeholder="Execute command..."
-                className="flex-1 bg-transparent border-none outline-none text-[#eee] font-mono text-sm sm:text-[15px] placeholder:text-[#333] tracking-tight min-w-0"
-                autoComplete="off"
-                disabled={executing}
-                autoFocus
-              />
-              <button 
-                type="submit" 
-                disabled={!command.trim() || executing}
-                className="flex items-center justify-center h-8 w-8 sm:h-9 sm:w-9 rounded-lg sm:rounded-xl bg-[#1a1a1a] hover:bg-[#252525] text-[#555] hover:text-cyan-400 border border-[#2a2a2a] transition-all hover:scale-110 active:scale-95 shadow-lg shadow-black/50 shrink-0"
-              >
-                {executing ? (
-                  <RefreshCw className="h-3.5 w-3.5 sm:h-4 sm:w-4 animate-spin" />
-                ) : (
-                  <Send className="h-3.5 w-3.5 sm:h-4 sm:w-4 ml-0.5" />
-                )}
-              </button>
-            </form>
-          </div>
-        </div>
+          ref={terminalRef}
+          className="flex-1 min-h-[280px] sm:min-h-[400px] md:min-h-[500px] lg:min-h-[600px] p-1 z-10"
+          style={{ background: "#0c0c0c" }}
+        />
       </Card>
 
       {/* Reboot Confirmation Dialog */}
@@ -546,7 +618,6 @@ export function TerminalView() {
           setShowPasswordDialog(false);
           setPasswordInput("");
           setPasswordError("");
-          setPendingCommand(null);
         }
       }}>
         <DialogContent className="sm:max-w-md bg-background border-border shadow-2xl rounded-3xl">
@@ -557,7 +628,7 @@ export function TerminalView() {
             <div className="text-center space-y-2">
               <DialogTitle className="text-2xl font-bold tracking-tight">Terminal Access</DialogTitle>
               <DialogDescription className="text-muted-foreground text-sm leading-relaxed max-w-[300px] mx-auto">
-                Verify your password to execute commands on this server.
+                Verify your password to open an interactive terminal session.
               </DialogDescription>
             </div>
           </DialogHeader>
@@ -581,7 +652,7 @@ export function TerminalView() {
             <div className="p-3 rounded-xl bg-amber-500/5 border border-amber-500/20 flex items-start gap-3">
               <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
               <p className="text-[11px] text-amber-500/80 font-medium leading-relaxed">
-                Your password is only kept in memory for this session and is never stored or logged.
+                This opens a full interactive shell session. Your password is only used for verification and is never stored.
               </p>
             </div>
 
@@ -589,7 +660,7 @@ export function TerminalView() {
               <Button
                 type="button"
                 variant="ghost"
-                onClick={() => { setShowPasswordDialog(false); setPasswordInput(""); setPasswordError(""); setPendingCommand(null); }}
+                onClick={() => { setShowPasswordDialog(false); setPasswordInput(""); setPasswordError(""); }}
                 className="flex-1 font-bold text-base h-12 rounded-2xl"
               >
                 Cancel
@@ -599,7 +670,7 @@ export function TerminalView() {
                 disabled={!passwordInput.trim()}
                 className="flex-1 rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white font-bold text-base h-12 shadow-xl shadow-cyan-500/20"
               >
-                Verify & Continue
+                Open Terminal
               </Button>
             </DialogFooter>
           </form>
