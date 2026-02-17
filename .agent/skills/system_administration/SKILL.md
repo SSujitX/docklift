@@ -50,7 +50,31 @@ Returns before/after memory usage for comparison.
 | `POST /api/system/update-system` | Run `apt update && upgrade` on host | Via `nsenter`, 15-min timeout |
 | `POST /api/system/upgrade` | Run Docklift upgrade script | Executes `/opt/docklift/upgrade.sh` on host |
 
-### Command Execution
+## Interactive Web Terminal
+
+**Route**: `/terminal`
+**WebSocket**: `ws://host:8000/ws/terminal` (proxied via Nginx `/ws/`)
+
+A full-featured xterm.js-based interactive terminal providing direct root access to the host.
+
+### Architecture
+- **Frontend**: xterm.js + WebSocket
+- **Backend**: `ws` server + `child_process.spawn('script', ...)`
+- **PTY**: Uses Linux `script` command for TTY emulation (zero native dependencies)
+- **Container**: Runs inside `docklift-backend` (Alpine) but has host access via Docker privileged mode & PID host.
+
+### Features
+- **Real-time PTY**: Supports tab completion, history, colors, ncurses (htop/nano).
+- **Root Access**: Sesssion starts in `/root` with full host privileges.
+- **Resizing**: Bi-directional resize sync between frontend/backend.
+- **Persistence**: Auto-reconnect on network drops.
+- **Security**:
+  - **Double Authentication**: JWT (connect) + Password (interactive).
+  - **Rate Limiting**: Max 5 logins/minute.
+  - **Session Limits**: Max 3 concurrent connections per user.
+  - **Idle Timeout**: Auto-disconnect after 15 minutes of inactivity.
+
+### Command Execution (Legacy One-Shot)
 
 **API**: `POST /api/system/execute`
 - Executes arbitrary shell commands on the host via `nsenter`
