@@ -2,9 +2,12 @@
 import express, { Request, Response, NextFunction } from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
+import fs from 'fs';
+import path from 'path';
+import crypto from 'crypto';
 import prisma from '../lib/prisma.js';
-import { JWT_SECRET } from '../lib/authMiddleware.js';
-
+import { JWT_SECRET, authMiddleware } from '../lib/authMiddleware.js';
+import { config } from '../lib/config.js';
 const router = express.Router();
 
 const JWT_EXPIRES_IN = '7d';
@@ -256,6 +259,59 @@ router.post('/change-password', async (req: Request, res: Response) => {
     res.json({ message: 'Password changed successfully' });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+// ========================================
+// Setup Token (for restore-upload on fresh install)
+// ========================================
+
+// GET /api/auth/setup-token - Get or generate a one-time setup token
+// Only works when no users exist (fresh install scenario)
+router.get('/setup-token', async (req: Request, res: Response) => {
+  try {
+    const userCount = await prisma.user.count();
+    if (userCount > 0) {
+      return res.status(403).json({ error: 'Setup already complete. Setup tokens are only available before first user registration.' });
+    }
+
+    const dataDir = config.dataPath || './data';
+    const tokenPath = path.join(dataDir, '.setup-token');
+
+    // Generate token if it doesn't exist
+    if (!fs.existsSync(tokenPath)) {
+      fs.mkdirSync(dataDir, { recursive: true });
+      const token = crypto.randomBytes(32).toString('hex');
+      fs.writeFileSync(tokenPath, token, { mode: 0o600 });
+    }
+
+    const token = fs.readFileSync(tokenPath, 'utf8').trim();
+    res.json({ setupToken: token });
+  } catch (error: any) {
+    res.status(500).json({ error: 'Failed to generate setup token' });
+  }
+});
+
+// ========================================
+// SSE Token (short-lived tokens for SSE connections)
+// ========================================
+
+// POST /api/auth/sse-token - Issue a short-lived JWT for SSE/streaming connections
+// This prevents the main JWT from appearing in URLs (server logs, browser history, etc.)
+router.post('/sse-token', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const jwtSecret = await JWT_SECRET;
+    const user = (req as any).user;
+
+    const sseToken = jwt.sign(
+      { userId: user?.id || 'system', purpose: 'sse' },
+      jwtSecret,
+      { expiresIn: '5m' }
+    );
+
+    res.json({ token: sseToken });
+  } catch (error: any) {
+    res.status(500).json({ error: 'Failed to generate SSE token' });
   }
 });
 
