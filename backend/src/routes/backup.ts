@@ -9,7 +9,7 @@ import archiver from 'archiver';
 import unzipper from 'unzipper';
 import multer from 'multer';
 import { config } from '../lib/config.js';
-import { PrismaClient } from '@prisma/client';
+import prisma from '../lib/prisma.js';
 
 const execAsync = promisify(exec);
 const router = Router();
@@ -24,9 +24,8 @@ async function reconcileSystem(writeLog: (text: string) => void) {
   writeLog(`${'='.repeat(50)}\n\n`);
 
   try {
-    // 1. Initialize FRESH Prisma Client (to read the restored DB file)
+    // 1. Read restored database using singleton Prisma client
     writeLog(`[1/3] Reading restored database...\n`);
-    const prisma = new PrismaClient();
     
     // 2. Fetch all projects
     const projects = await prisma.project.findMany();
