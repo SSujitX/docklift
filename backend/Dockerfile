@@ -3,7 +3,7 @@ FROM oven/bun:1-alpine AS base
 
 # Dependencies stage
 FROM base AS deps
-RUN apk add --no-cache libc6-compat python3 make g++
+RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
 COPY package.json bun.lock* ./
@@ -16,7 +16,6 @@ FROM base AS prod-deps
 WORKDIR /app
 COPY package.json bun.lock* ./
 COPY prisma ./prisma/
-RUN apk add --no-cache python3 make g++
 RUN bun install --production --frozen-lockfile
 RUN bunx prisma generate --no-hints
 
