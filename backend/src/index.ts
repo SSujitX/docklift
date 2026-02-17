@@ -22,6 +22,7 @@ import backupRouter from './routes/backup.js';
 import logsRouter from './routes/logs.js';
 import authRouter from './routes/auth.js';
 import { authMiddleware } from './lib/authMiddleware.js';
+import { setupTerminalWebSocket } from './services/terminal.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -171,7 +172,7 @@ async function main() {
     await ensureNetwork();
     console.log(`🐳 Docker network "${config.dockerNetwork}" ready`);
     
-    app.listen(config.port, () => {
+    const server = app.listen(config.port, () => {
       console.log(`
 ╔════════════════════════════════════════════════════════════╗
 ║                                                            ║
@@ -186,6 +187,9 @@ async function main() {
       // Clean up orphaned Nginx configs on startup
       syncNginxConfigs().catch(console.error);
     });
+
+    // Attach WebSocket terminal server to HTTP server
+    setupTerminalWebSocket(server);
   } catch (error) {
     console.error('Failed to start server:', error);
     process.exit(1);
