@@ -149,7 +149,10 @@ export function setupTerminalWebSocket(server: HttpServer) {
                 LANG: 'C.UTF-8',
                 COLUMNS: String(cols),
                 LINES: String(rows),
+                // Colorful prompt: [green]root@docklift[reset]:[blue]~[reset]#
+                PS1: '\\[\\e[1;32m\\]\\u@\\h\\[\\e[0m\\]:\\[\\e[1;34m\\]\\w\\[\\e[0m\\]# ',
               },
+              cwd: '/root',
               stdio: ['pipe', 'pipe', 'pipe'],
             });
 
