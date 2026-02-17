@@ -16,7 +16,7 @@ export const EnvironmentVariables = () => (
         Security First
       </h4>
       <p className="text-sm text-muted-foreground mb-4">
-        All environment variables are encrypted and stored securely. They are automatically injected into your containers at runtime.
+        Environment variables are stored in the database and automatically injected into your containers at runtime via the generated <code className="bg-primary/10 px-1.5 py-0.5 rounded text-primary">.env</code> file.
       </p>
       
       <div className="bg-zinc-900 rounded-xl p-4 border border-white/5 font-mono text-xs">
