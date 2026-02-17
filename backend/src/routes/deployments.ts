@@ -229,7 +229,7 @@ router.post('/:projectId/deploy', async (req: Request, res: Response) => {
     
     // Helper to write logs to both response and DB logs array
     const writeLog = (text: string) => {
-      res.write(text);
+      try { if (!res.writableEnded) res.write(text); } catch {}
       logs.push(text);
     };
 
@@ -529,7 +529,7 @@ router.post('/:projectId/stop', async (req: Request, res: Response) => {
     
     const logs: string[] = [];
     const writeLog = (text: string) => {
-      res.write(text);
+      try { if (!res.writableEnded) res.write(text); } catch {}
       logs.push(text);
     };
 
@@ -613,7 +613,7 @@ router.post('/:projectId/restart', async (req: Request, res: Response) => {
     
     const logs: string[] = [];
     const writeLog = (text: string) => {
-      res.write(text);
+      try { if (!res.writableEnded) res.write(text); } catch {}
       logs.push(text);
     };
 
@@ -706,7 +706,7 @@ router.post('/:projectId/redeploy', async (req: Request, res: Response) => {
     
     const logs: string[] = [];
     const writeLog = (text: string) => {
-      res.write(text);
+      try { if (!res.writableEnded) res.write(text); } catch {}
       logs.push(text);
     };
 
