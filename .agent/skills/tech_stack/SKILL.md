@@ -17,8 +17,8 @@ Docklift is built using a modern, lightweight, and performance-oriented stack.
     -   `tailwindcss-animate`
 -   **State/Data**: 
     -   React Hooks (`useState`, `useEffect`)
-    -   [Axios](https://axios-http.com/) (HTTP requests)
-    -   [SWR](https://swr.vercel.app/) / EventSource (Real-time updates)
+    -   Native `fetch` via `authFetch()` / `fetchWithAuth()` helpers (`frontend/lib/auth.ts`)
+    -   [EventSource](https://developer.mozilla.org/en-US/docs/Web/API/EventSource) (Real-time SSE log streaming)
 -   **Editor**: [Monaco Editor](https://microsoft.github.io/monaco-editor/) (VS Code logic for browser)
 -   **Icons**: [Lucide React](https://lucide.dev/)
 -   **Notifications**: [Sonner](https://sonner.emilkowal.ski/)
