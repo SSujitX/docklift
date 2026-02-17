@@ -9,6 +9,8 @@ import { readFileSync } from 'fs';
 import { readFile } from 'fs/promises';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import bcrypt from 'bcrypt';
+import prisma from '../lib/prisma.js';
 
 const __filenameSystem = fileURLToPath(import.meta.url);
 const __dirnameSystem = dirname(__filenameSystem);
@@ -568,6 +570,7 @@ router.get('/ip', async (req: Request, res: Response) => {
 // POST /api/system/purge - Clean up system resources and free memory (ENHANCED + SAFE)
 router.post('/purge', async (req: Request, res: Response) => {
   try {
+    console.log(`[AUDIT] System purge initiated from IP: ${req.ip}`);
     const results: string[] = [];
     let memoryBefore = 0;
     let memoryAfter = 0;
@@ -729,6 +732,7 @@ router.post('/purge', async (req: Request, res: Response) => {
 // POST /api/system/reboot - Reboot the server
 router.post('/reboot', async (req: Request, res: Response) => {
   try {
+    console.log(`[AUDIT] System reboot initiated from IP: ${req.ip}`);
     const isWindows = os.platform() === "win32";
     const isMac = os.platform() === "darwin";
 
@@ -769,6 +773,7 @@ router.post('/reboot', async (req: Request, res: Response) => {
 // POST /api/system/reset - Reset Docklift services (OS aware)
 router.post('/reset', async (req: Request, res: Response) => {
   try {
+    console.log(`[AUDIT] System reset initiated from IP: ${req.ip}`);
     const isWindows = os.platform() === "win32";
     
     if (isWindows) {
@@ -803,20 +808,34 @@ router.post('/reset', async (req: Request, res: Response) => {
 // ========================================
 
 // POST /api/system/execute - Execute shell command
-// Note: This is safe for self-hosted deployments where the user owns the server
+// Requires password re-verification for security (JWT alone is not enough)
 router.post('/execute', async (req: Request, res: Response) => {
   try {
-    const { command } = req.body;
+    const { command, password } = req.body;
 
     if (!command || typeof command !== 'string') {
       return res.status(400).json({ error: 'Command is required' });
     }
 
-    // Execute command with timeout
-    const { exec } = await import('child_process');
-    const { promisify } = await import('util');
-    const execAsync = promisify(exec);
+    // Require password re-verification for terminal access
+    if (!password || typeof password !== 'string') {
+      return res.status(401).json({ error: 'Password required for terminal access', requirePassword: true });
+    }
 
+    const user = await prisma.user.findFirst();
+    if (!user) {
+      return res.status(403).json({ error: 'No user account found' });
+    }
+
+    const passwordValid = await bcrypt.compare(password, user.password);
+    if (!passwordValid) {
+      return res.status(403).json({ error: 'Invalid password', requirePassword: true });
+    }
+
+    // Audit log
+    console.log(`[TERMINAL] User "${user.email}" executed: ${command.substring(0, 200)}`);
+
+    // Execute command with timeout
     const { stdout, stderr } = await execAsync(command, {
       timeout: 30000, // 30 second timeout
       maxBuffer: 1024 * 1024, // 1MB buffer
@@ -911,6 +930,7 @@ router.get('/version', async (req: Request, res: Response) => {
 // POST /api/system/update-system - Run apt update and upgrade on HOST
 router.post('/update-system', async (req: Request, res: Response) => {
   try {
+    console.log(`[AUDIT] System update initiated from IP: ${req.ip}`);
     const isWindows = os.platform() === "win32";
     const isMac = os.platform() === "darwin";
 
@@ -949,6 +969,7 @@ router.post('/update-system', async (req: Request, res: Response) => {
 // POST /api/system/upgrade - Run upgrade script on HOST
 router.post('/upgrade', async (req: Request, res: Response) => {
   try {
+    console.log(`[AUDIT] Docklift upgrade initiated from IP: ${req.ip}`);
     const isWindows = os.platform() === "win32";
     const isMac = os.platform() === "darwin";
 
