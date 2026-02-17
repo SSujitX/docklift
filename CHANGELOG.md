@@ -1,3 +1,10 @@
+## [1.3.16](https://github.com/SSujitX/docklift/compare/v1.3.15...v1.3.16) (2026-02-17)
+
+
+### Bug Fixes
+
+* **nginx:** conditionally set Connection header for WebSocket upgrade ([1ddb1c7](https://github.com/SSujitX/docklift/commit/1ddb1c7f18a3d5116435305133bbec63af6ddf3a))
+
 ## [1.3.15](https://github.com/SSujitX/docklift/compare/v1.3.14...v1.3.15) (2026-02-17)
 
 
