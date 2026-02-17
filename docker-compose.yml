@@ -2,6 +2,7 @@ services:
   docklift-backend:
     build: ./backend
     container_name: docklift-backend
+    hostname: docklift
     restart: unless-stopped
     expose:
       - "8000"

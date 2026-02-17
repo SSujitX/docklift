@@ -72,6 +72,7 @@ export function TerminalView() {
       const { Terminal } = await import("@xterm/xterm");
       const { FitAddon } = await import("@xterm/addon-fit");
       const { WebLinksAddon } = await import("@xterm/addon-web-links");
+      const { ClipboardAddon } = await import("@xterm/addon-clipboard");
 
       // xterm CSS is imported globally via globals.css or layout
 
@@ -121,6 +122,33 @@ export function TerminalView() {
 
       term.loadAddon(fitAddon);
       term.loadAddon(new WebLinksAddon());
+      term.loadAddon(new ClipboardAddon());
+
+      // Handle Ctrl+C (Copy if selection, else Interrupt) and Ctrl+V (Paste)
+      term.attachCustomKeyEventHandler((arg) => {
+        if (arg.ctrlKey && arg.code === "KeyC" && arg.type === "keydown") {
+          const selection = term.getSelection();
+          if (selection) {
+            navigator.clipboard.writeText(selection);
+            return false;
+          }
+        }
+        if (arg.ctrlKey && arg.code === "KeyV" && arg.type === "keydown") {
+          navigator.clipboard.readText().then((text) => {
+            term.paste(text);
+          });
+          return false;
+        }
+        return true;
+      });
+
+      // Handle right click to paste
+      terminalRef.current!.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        navigator.clipboard.readText().then((text) => {
+          term.paste(text);
+        });
+      });
 
       term.open(terminalRef.current!);
       xtermRef.current = term;
