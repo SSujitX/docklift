@@ -118,72 +118,94 @@ function ContainerLogsPanel({
     const token = typeof window !== "undefined"
       ? localStorage.getItem("docklift_token") || ""
       : "";
-    // EventSource must bypass Next.js rewrites in DEV (they buffer SSE).
-    // In PROD, Nginx handles routing correctly, so we use relative paths if API_URL is unset.
-    const isDev = process.env.NODE_ENV === "development";
-    const sseBase = API_URL || (isDev && typeof window !== "undefined"
-      ? `${window.location.protocol}//${window.location.hostname}:8000`
-      : "");
-    const containerNames = containerNamesKey.split(",");
 
-    containerNames.forEach((containerName) => {
-      if (eventSourcesRef.current[containerName]) return;
-
-      const url = `${sseBase}/api/logs/${projectId}/stream/${encodeURIComponent(containerName)}?token=${encodeURIComponent(token)}&tail=5000`;
-      const es = new EventSource(url);
-
-      es.onopen = () => {
-        setConnected((prev) => ({ ...prev, [containerName]: true }));
-      };
-
-      es.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          if (data.type === "log") {
-            setContainerLogs((prev) => {
-              const existing = prev[containerName] || [];
-              const updated = [...existing, data.message];
-              return {
-                ...prev,
-                [containerName]: updated.length > MAX_LOG_LINES
-                  ? updated.slice(-MAX_LOG_LINES)
-                  : updated,
-              };
-            });
-          } else if (data.type === "status") {
-            setContainerLogs((prev) => ({
-              ...prev,
-              [containerName]: [`⚠️ ${data.message}`],
-            }));
-            setConnected((prev) => ({
-              ...prev,
-              [containerName]: false,
-            }));
-          } else if (data.type === "error") {
-            setContainerLogs((prev) => ({
-              ...prev,
-              [containerName]: [
-                ...(prev[containerName] || []),
-                `❌ ${data.message}`,
-              ],
-            }));
-            setConnected((prev) => ({
-              ...prev,
-              [containerName]: false,
-            }));
-          }
-        } catch {
-          // Ignore parse errors
+    // Use async IIFE to fetch SSE token (useEffect callbacks can't be async)
+    (async () => {
+      // Fetch short-lived SSE token instead of using main JWT in URL
+      let sseToken = token; // fallback
+      try {
+        const tokenRes = await fetch(`${API_URL || ""}/api/auth/sse-token`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+        });
+        if (tokenRes.ok) {
+          const data = await tokenRes.json();
+          sseToken = data.token || token;
         }
-      };
+      } catch {
+        // Use main token as fallback
+      }
 
-      es.onerror = () => {
-        es.close();
-        setConnected((prev) => ({ ...prev, [containerName]: false }));
-      };
+      // EventSource must bypass Next.js rewrites in DEV (they buffer SSE).
+      // In PROD, Nginx handles routing correctly, so we use relative paths if API_URL is unset.
+      const isDev = process.env.NODE_ENV === "development";
+      const sseBase = API_URL || (isDev && typeof window !== "undefined"
+        ? `${window.location.protocol}//${window.location.hostname}:8000`
+        : "");
+      const containerNames = containerNamesKey.split(",");
 
-      eventSourcesRef.current[containerName] = es;
-    });
+      containerNames.forEach((containerName) => {
+        if (eventSourcesRef.current[containerName]) return;
+
+        const url = `${sseBase}/api/logs/${projectId}/stream/${encodeURIComponent(containerName)}?token=${encodeURIComponent(sseToken)}&tail=5000`;
+        const es = new EventSource(url);
+
+        es.onopen = () => {
+          setConnected((prev) => ({ ...prev, [containerName]: true }));
+        };
+
+        es.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            if (data.type === "log") {
+              setContainerLogs((prev) => {
+                const existing = prev[containerName] || [];
+                const updated = [...existing, data.message];
+                return {
+                  ...prev,
+                  [containerName]: updated.length > MAX_LOG_LINES
+                    ? updated.slice(-MAX_LOG_LINES)
+                    : updated,
+                };
+              });
+            } else if (data.type === "status") {
+              setContainerLogs((prev) => ({
+                ...prev,
+                [containerName]: [`⚠️ ${data.message}`],
+              }));
+              setConnected((prev) => ({
+                ...prev,
+                [containerName]: false,
+              }));
+            } else if (data.type === "error") {
+              setContainerLogs((prev) => ({
+                ...prev,
+                [containerName]: [
+                  ...(prev[containerName] || []),
+                  `❌ ${data.message}`,
+                ],
+              }));
+              setConnected((prev) => ({
+                ...prev,
+                [containerName]: false,
+              }));
+            }
+          } catch {
+            // Ignore parse errors
+          }
+        };
+
+        es.onerror = () => {
+          es.close();
+          setConnected((prev) => ({ ...prev, [containerName]: false }));
+        };
+
+        eventSourcesRef.current[containerName] = es;
+      });
+    })();
 
     return () => {
       Object.values(eventSourcesRef.current).forEach((es) => {
