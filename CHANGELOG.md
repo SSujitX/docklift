@@ -1,3 +1,25 @@
+## [1.3.13](https://github.com/SSujitX/docklift/compare/v1.3.12...v1.3.13) (2026-02-17)
+
+
+### Bug Fixes
+
+* **auth:** allow query param tokens with purpose field for backward compatibility ([0a39654](https://github.com/SSujitX/docklift/commit/0a39654d6af1aab218f6a51ca99dad93ce2fd45d))
+* **deployments:** prevent write errors when response stream ends ([b3b76ab](https://github.com/SSujitX/docklift/commit/b3b76abc9d0f77ce6d83265c396668248e13d56f))
+* **domains:** enforce consistent domain validation across endpoints ([d19c13f](https://github.com/SSujitX/docklift/commit/d19c13fcdda98ef8b682d3656af00251c6ef5835))
+* **files:** add project ID validation and improve path traversal protection ([90f5cd7](https://github.com/SSujitX/docklift/commit/90f5cd761e7f220e38363fab446dd51437c3640d))
+* **projects:** handle upload directory creation and cleanup temp files ([287d884](https://github.com/SSujitX/docklift/commit/287d884533b115c1fd8586f2cf355d431d99b9c3))
+* **security:** enhance CORS and restore endpoint security ([1205159](https://github.com/SSujitX/docklift/commit/1205159958baddd6d185e6f75c5315655a9e6c8a))
+* update Next.js routes type import path ([4dd89eb](https://github.com/SSujitX/docklift/commit/4dd89eb71b62f69f101bba1309c9b94caf3023d3))
+
+
+### Features
+
+* **auth:** add setup token for fresh install and short-lived SSE token ([cb62d80](https://github.com/SSujitX/docklift/commit/cb62d8055e1f4744fc4b727268fc80213a297afa))
+* **logs:** fetch short-lived SSE token for container logs ([f731c0e](https://github.com/SSujitX/docklift/commit/f731c0ed4fc3a1832ca9c481ae3ec8769410959a))
+* **system-logs:** implement SSE token auth with exponential backoff ([acdcc80](https://github.com/SSujitX/docklift/commit/acdcc802c019b9149c6a5b8a5c1ae9525f2d501b))
+* **system:** add audit logging and password verification for execute endpoint ([6bf8977](https://github.com/SSujitX/docklift/commit/6bf8977e58dab29d917ef5fa27dd0200180ddd32))
+* **terminal:** add password verification for command execution ([b002974](https://github.com/SSujitX/docklift/commit/b002974374ee5dc194df75d3b1455a846b14b7ca))
+
 ## [1.3.12](https://github.com/SSujitX/docklift/compare/v1.3.11...v1.3.12) (2026-02-17)
 
 
