@@ -14,11 +14,11 @@ export const WebTerminal = () => (
     <div className="bg-secondary/50 rounded-xl p-6 mb-4">
       <h4 className="font-semibold mb-3">Features</h4>
       <ul className="list-disc list-inside text-muted-foreground space-y-1">
-        <li>Full xterm.js terminal emulator</li>
-        <li>Execute any shell command</li>
-        <li>Quick command shortcuts (docker ps, docker stats, etc.)</li>
-        <li>Command history</li>
-        <li>Color-coded output</li>
+        <li><strong>Interactive Bash Session</strong>: Real-time PTY with tab completion and history</li>
+        <li><strong>Root Access</strong>: Direct control over the host via Docker privileged mode</li>
+        <li><strong>Full Screen Mode</strong>: Maximize terminal for better visibility</li>
+        <li><strong>Clipboard Support</strong>: Select to copy, <kbd className="px-1 py-0.5 rounded bg-muted font-mono text-xs">Ctrl+C</kbd> to copy/interrupt, <kbd className="px-1 py-0.5 rounded bg-muted font-mono text-xs">Ctrl+V</kbd> to paste</li>
+        <li><strong>Power Tools</strong>: `htop`, `docker`, `git`, and `nano` pre-installed</li>
       </ul>
     </div>
 
