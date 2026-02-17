@@ -31,6 +31,7 @@ import {
   DialogDescription, 
   DialogFooter 
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { API_URL } from "@/lib/utils";
 import { getAuthHeaders } from "@/lib/auth";
 import { toast } from "sonner";;
@@ -52,9 +53,15 @@ export function TerminalView() {
   const [showResetDialog, setShowResetDialog] = useState(false);
   const [showPurgeDialog, setShowPurgeDialog] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [terminalPassword, setTerminalPassword] = useState<string | null>(null);
+  const [showPasswordDialog, setShowPasswordDialog] = useState(false);
+  const [passwordInput, setPasswordInput] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+  const [pendingCommand, setPendingCommand] = useState<string | null>(null);
   
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const passwordInputRef = useRef<HTMLInputElement>(null);
   const searchParams = useSearchParams();
 
   useEffect(() => {
@@ -89,26 +96,29 @@ export function TerminalView() {
     }
   }, [executing]);
 
-  const handleExecute = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (!command.trim() || executing) return;
-
-    const currentCommand = command.trim();
-    setCommand("");
+  const executeCommand = async (cmd: string, pwd: string) => {
     setExecuting(true);
-
     try {
       const res = await fetch(`${API_URL}/api/system/execute`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-        body: JSON.stringify({ command: currentCommand }),
+        body: JSON.stringify({ command: cmd, password: pwd }),
       });
       
       const data = await res.json();
+
+      // If password is rejected, clear stored password and re-prompt
+      if ((res.status === 401 || res.status === 403) && data.requirePassword) {
+        setTerminalPassword(null);
+        setPendingCommand(cmd);
+        setPasswordError(data.error || "Password verification failed");
+        setShowPasswordDialog(true);
+        return;
+      }
       
       const newLog: CommandLog = {
         id: Math.random().toString(36).substr(2, 9),
-        command: currentCommand,
+        command: cmd,
         output: data.output || "",
         error: data.error || (res.ok ? undefined : "Unknown error"),
         timestamp: new Date(),
@@ -119,6 +129,39 @@ export function TerminalView() {
       toast.error("Execution failed: " + err.message);
     } finally {
       setExecuting(false);
+    }
+  };
+
+  const handleExecute = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!command.trim() || executing) return;
+
+    const currentCommand = command.trim();
+    setCommand("");
+
+    // If no password stored yet, prompt for it
+    if (!terminalPassword) {
+      setPendingCommand(currentCommand);
+      setPasswordError("");
+      setShowPasswordDialog(true);
+      return;
+    }
+
+    await executeCommand(currentCommand, terminalPassword);
+  };
+
+  const handlePasswordSubmit = async () => {
+    if (!passwordInput.trim()) return;
+    const pwd = passwordInput;
+    setPasswordInput("");
+    setPasswordError("");
+    setShowPasswordDialog(false);
+    setTerminalPassword(pwd);
+
+    if (pendingCommand) {
+      const cmd = pendingCommand;
+      setPendingCommand(null);
+      await executeCommand(cmd, pwd);
     }
   };
 
@@ -494,6 +537,72 @@ export function TerminalView() {
               Purge All
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Terminal Password Verification Dialog */}
+      <Dialog open={showPasswordDialog} onOpenChange={(open) => {
+        if (!open) {
+          setShowPasswordDialog(false);
+          setPasswordInput("");
+          setPasswordError("");
+          setPendingCommand(null);
+        }
+      }}>
+        <DialogContent className="sm:max-w-md bg-background border-border shadow-2xl rounded-3xl">
+          <DialogHeader className="space-y-4">
+            <div className="mx-auto w-16 h-16 rounded-2xl bg-cyan-500/10 flex items-center justify-center border border-cyan-500/20">
+              <TerminalIcon className="h-8 w-8 text-cyan-500" />
+            </div>
+            <div className="text-center space-y-2">
+              <DialogTitle className="text-2xl font-bold tracking-tight">Terminal Access</DialogTitle>
+              <DialogDescription className="text-muted-foreground text-sm leading-relaxed max-w-[300px] mx-auto">
+                Verify your password to execute commands on this server.
+              </DialogDescription>
+            </div>
+          </DialogHeader>
+
+          <form onSubmit={(e) => { e.preventDefault(); handlePasswordSubmit(); }} className="space-y-4 my-2">
+            <div className="space-y-2">
+              <Input
+                ref={passwordInputRef}
+                type="password"
+                placeholder="Enter your account password"
+                value={passwordInput}
+                onChange={(e) => setPasswordInput(e.target.value)}
+                className="h-12 rounded-xl bg-secondary/30 border-border text-center font-mono tracking-widest text-lg"
+                autoFocus
+              />
+              {passwordError && (
+                <p className="text-rose-400 text-xs font-semibold text-center">{passwordError}</p>
+              )}
+            </div>
+
+            <div className="p-3 rounded-xl bg-amber-500/5 border border-amber-500/20 flex items-start gap-3">
+              <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+              <p className="text-[11px] text-amber-500/80 font-medium leading-relaxed">
+                Your password is only kept in memory for this session and is never stored or logged.
+              </p>
+            </div>
+
+            <DialogFooter className="flex flex-col sm:flex-row gap-3 pt-1">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => { setShowPasswordDialog(false); setPasswordInput(""); setPasswordError(""); setPendingCommand(null); }}
+                className="flex-1 font-bold text-base h-12 rounded-2xl"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={!passwordInput.trim()}
+                className="flex-1 rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white font-bold text-base h-12 shadow-xl shadow-cyan-500/20"
+              >
+                Verify & Continue
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
     </div>
