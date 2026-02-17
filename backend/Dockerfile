@@ -3,7 +3,7 @@ FROM oven/bun:1-alpine AS base
 
 # Dependencies stage
 FROM base AS deps
-RUN apk add --no-cache libc6-compat
+RUN apk add --no-cache libc6-compat python3 make g++
 WORKDIR /app
 
 COPY package.json bun.lock* ./
@@ -16,6 +16,7 @@ FROM base AS prod-deps
 WORKDIR /app
 COPY package.json bun.lock* ./
 COPY prisma ./prisma/
+RUN apk add --no-cache python3 make g++
 RUN bun install --production --frozen-lockfile
 RUN bunx prisma generate --no-hints
 
@@ -35,7 +36,7 @@ ENV NODE_ENV=production
 ENV PORT=8000
 
 # Install Docker CLI, Git, and procps (for accurate ps/top)
-RUN apk add --no-cache docker-cli docker-cli-compose git procps
+RUN apk add --no-cache docker-cli docker-cli-compose git procps bash
 RUN npm install -g npm@latest
 
 # Create non-root user
