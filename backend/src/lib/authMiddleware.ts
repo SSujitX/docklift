@@ -90,14 +90,15 @@ export const authMiddleware = (req: AuthenticatedRequest, res: Response, next: N
     if (authHeader && authHeader.startsWith('Bearer ')) {
       token = authHeader.split(' ')[1];
     } else if (queryToken) {
-      // Allow token in query params for download endpoints
+      // Query param tokens: accept both SSE-purpose tokens AND regular tokens
+      // for backward compatibility (downloads, SSE streams)
       token = queryToken;
     }
 
     if (!token) {
       return res.status(401).json({ error: 'Authentication required' });
     }
-    const decoded = jwt.verify(token, JWT_SECRET) as { userId: string; email: string; role: string };
+    const decoded = jwt.verify(token, JWT_SECRET) as { userId: string; email: string; role: string; purpose?: string };
 
     req.user = decoded;
     next();
