@@ -205,9 +205,11 @@ export function TerminalView() {
       return;
     }
 
-    // Build WebSocket URL
+    // Build WebSocket URL — use same origin (through Nginx) or API_URL if set
     const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const apiHost = API_URL.replace(/^https?:\/\//, "").replace(/\/$/, "");
+    const apiHost = API_URL
+      ? API_URL.replace(/^https?:\/\//, "").replace(/\/$/, "")
+      : window.location.host;
     const wsUrl = `${wsProtocol}//${apiHost}/ws/terminal?token=${encodeURIComponent(token)}`;
 
     try {
