@@ -30,7 +30,7 @@ router.get('/status', async (req: Request, res: Response) => {
         needsRestore: true
       });
     }
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -89,7 +89,8 @@ router.post('/register', async (req: Request, res: Response) => {
     if (error.code === 'P2002') {
       return res.status(400).json({ error: 'Email already exists' });
     }
-    res.status(500).json({ error: error.message });
+    console.error('Registration error:', error);
+    res.status(500).json({ error: 'Registration failed' });
   }
 });
 
@@ -135,23 +136,18 @@ router.post('/login', async (req: Request, res: Response) => {
       },
     });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error('Login error:', error);
+    res.status(500).json({ error: 'Login failed' });
   }
 });
 
 // Get current user (requires auth)
-router.get('/me', async (req: Request, res: Response) => {
+router.get('/me', authMiddleware, async (req: Request, res: Response) => {
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ error: 'No token provided' });
-    }
-
-    const token = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, JWT_SECRET) as { userId: string; email: string; role: string };
+    const authUser = (req as any).user;
 
     const user = await prisma.user.findUnique({
-      where: { id: decoded.userId },
+      where: { id: authUser.userId },
       select: {
         id: true,
         name: true,
@@ -167,32 +163,23 @@ router.get('/me', async (req: Request, res: Response) => {
 
     res.json({ user });
   } catch (error: any) {
-    if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
-      return res.status(401).json({ error: 'Invalid or expired token' });
-    }
-    res.status(500).json({ error: error.message });
+    console.error('Get user error:', error);
+    res.status(500).json({ error: 'Failed to get user' });
   }
 });
 
 // Update profile (name, email)
-router.patch('/profile', async (req: Request, res: Response) => {
+router.patch('/profile', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { name, email } = req.body;
-    const authHeader = req.headers.authorization;
-    
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ error: 'No token provided' });
-    }
-
-    const token = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, JWT_SECRET) as { userId: string };
+    const authUser = (req as any).user;
 
     if (!name || !email) {
       return res.status(400).json({ error: 'Name and email are required' });
     }
 
     const updatedUser = await prisma.user.update({
-      where: { id: decoded.userId },
+      where: { id: authUser.userId },
       data: {
         name,
         email: email.toLowerCase(),
@@ -210,22 +197,16 @@ router.patch('/profile', async (req: Request, res: Response) => {
     if (error.code === 'P2002') {
       return res.status(400).json({ error: 'Email already exists' });
     }
-    res.status(500).json({ error: error.message });
+    console.error('Profile update error:', error);
+    res.status(500).json({ error: 'Failed to update profile' });
   }
 });
 
 // Change password
-router.post('/change-password', async (req: Request, res: Response) => {
+router.post('/change-password', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { currentPassword, newPassword } = req.body;
-    const authHeader = req.headers.authorization;
-
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ error: 'No token provided' });
-    }
-
-    const token = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, JWT_SECRET) as { userId: string };
+    const authUser = (req as any).user;
 
     if (!currentPassword || !newPassword) {
       return res.status(400).json({ error: 'Current and new passwords are required' });
@@ -237,7 +218,7 @@ router.post('/change-password', async (req: Request, res: Response) => {
 
     // Find user to verify current password
     const user = await prisma.user.findUnique({
-      where: { id: decoded.userId },
+      where: { id: authUser.userId },
     });
 
     if (!user) {
@@ -258,7 +239,8 @@ router.post('/change-password', async (req: Request, res: Response) => {
 
     res.json({ message: 'Password changed successfully' });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error('Password change error:', error);
+    res.status(500).json({ error: 'Failed to change password' });
   }
 });
 
@@ -304,7 +286,7 @@ router.post('/sse-token', authMiddleware, async (req: Request, res: Response) =>
     const user = (req as any).user;
 
     const sseToken = jwt.sign(
-      { userId: user?.id || 'system', purpose: 'sse' },
+      { userId: user?.userId || 'system', purpose: 'sse' },
       jwtSecret,
       { expiresIn: '5m' }
     );
