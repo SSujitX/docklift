@@ -244,9 +244,10 @@ router.post('/:projectId/deploy', async (req: Request, res: Response) => {
       // Refresh the remote URL with a new token (tokens expire after 1 hour)
       try {
         const { getInstallationIdForRepo, getInstallationToken } = await import('./github.js');
-        const match = project.github_url.match(/github\.com[/:]([^/]+)\/([^/.]+)/);
+        const match = project.github_url.match(/github\.com[/:]([^/]+)\/([^\/]+)/);
         if (match) {
-          const [, owner, repo] = match;
+          const [, owner, rawRepo] = match;
+          const repo = rawRepo.endsWith('.git') ? rawRepo.slice(0, -4) : rawRepo;
           const installId = await getInstallationIdForRepo(owner, repo);
           const token = await getInstallationToken(installId);
           const urlObj = new URL(project.github_url);
@@ -255,10 +256,10 @@ router.post('/:projectId/deploy', async (req: Request, res: Response) => {
           const { simpleGit } = await import('simple-git');
           const git = simpleGit(projectPath);
           await git.remote(['set-url', 'origin', urlObj.toString()]);
-          writeLog(`🔑 Refreshed GitHub access token\\n`);
+          writeLog(`🔑 Refreshed GitHub access token\n`);
         }
       } catch (err: any) {
-        writeLog(`⚠️ Token refresh warning: ${err.message}\\n`);
+        writeLog(`⚠️ Token refresh warning: ${err.message}\n`);
       }
       
       // Create a wrapper for pullRepo to capture logs
