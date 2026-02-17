@@ -1,3 +1,11 @@
+## [1.3.12](https://github.com/SSujitX/docklift/compare/v1.3.11...v1.3.12) (2026-02-17)
+
+
+### Features
+
+* add deployments routes for project build, deploy, service management, and logging. ([06698e3](https://github.com/SSujitX/docklift/commit/06698e3826e7cfd007156ef1a12bc999acea8bd2))
+* Document the automated release process in a new skill and update README to reflect semantic-release usage. ([64caccf](https://github.com/SSujitX/docklift/commit/64caccf8f3e73476433eb58b12d3f7f0a4c737ad))
+
 ## [1.3.11](https://github.com/SSujitX/docklift/compare/v1.3.10...v1.3.11) (2026-02-16)
 
 
