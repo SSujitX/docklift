@@ -1,3 +1,16 @@
+## [1.3.17](https://github.com/SSujitX/docklift/compare/v1.3.16...v1.3.17) (2026-02-17)
+
+
+### Bug Fixes
+
+* **nginx:** use dynamic Connection header for WebSocket proxying ([1ebd6c5](https://github.com/SSujitX/docklift/commit/1ebd6c5bcdf84dd5507740d82e82ed560df55808))
+
+
+### Features
+
+* **nginx-proxy:** route unmatched domains to docklift dashboard ([3c5404d](https://github.com/SSujitX/docklift/commit/3c5404dc72d04f1a39be7d04f14995ee33ba9f72))
+* **nginx:** add WebSocket upgrade support via connection header mapping ([7aa4c26](https://github.com/SSujitX/docklift/commit/7aa4c26468c5a4e5553f942e1e07c4f94c8c101b))
+
 ## [1.3.16](https://github.com/SSujitX/docklift/compare/v1.3.15...v1.3.16) (2026-02-17)
 
 
