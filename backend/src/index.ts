@@ -50,9 +50,21 @@ app.use((req, res, next) => {
   next();
 });
 
-// CORS - allow requests from frontend (same origin in production, localhost in dev)
+// CORS - validate origin when CORS_ORIGIN is set, otherwise allow same-origin (self-hosted default)
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || true, // true allows same-origin, set CORS_ORIGIN for specific domain
+  origin: (origin, callback) => {
+    // If CORS_ORIGIN is explicitly configured, enforce it
+    if (process.env.CORS_ORIGIN) {
+      const allowed = process.env.CORS_ORIGIN.split(',').map(s => s.trim());
+      if (!origin || allowed.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error('CORS origin not allowed'));
+    }
+    // Self-hosted default: allow all origins (JWT auth is the real gate)
+    // This ensures IP, subdomain, and custom domain access all work
+    callback(null, true);
+  },
   credentials: true,
 }));
 
@@ -119,27 +131,28 @@ app.use('/api/system', authMiddleware, systemRouter);
 app.use('/api/domains', authMiddleware, domainRouter);
 app.use('/api/logs', authMiddleware, logsRouter);
 app.use('/api/backup', async (req, res, next) => {
-  // Allow restore-upload without auth if no users exist (fresh install/restore scenario)
+  // Allow restore-upload without auth ONLY with valid setup token (for fresh install/restore)
   if (req.path === '/restore-upload' && req.method === 'POST') {
-    // Apply rate limiting to unauthenticated restore endpoint
-    return authLimiter(req, res, async () => {
+    // Check for setup token in header
+    const setupToken = req.headers['x-setup-token'] as string | undefined;
+    if (setupToken) {
+      const tokenPath = path.join(dataDir, '.setup-token');
       try {
-        const { PrismaClient } = await import('@prisma/client');
-        const prisma = new PrismaClient();
-        const userCount = await prisma.user.count();
-        await prisma.$disconnect();
-
-        if (userCount === 0) {
-          // No users exist - allow restore without auth (fresh install)
-          return next();
+        if (fs.existsSync(tokenPath)) {
+          const storedToken = fs.readFileSync(tokenPath, 'utf8').trim();
+          if (setupToken === storedToken && storedToken.length > 0) {
+            // Valid setup token - delete after use (one-time only)
+            try { fs.unlinkSync(tokenPath); } catch {}
+            console.log('[SECURITY] Restore-upload authorized via setup token (token consumed)');
+            return next();
+          }
         }
-      } catch (error) {
-        // Database doesn't exist or error - allow restore without auth
-        return next();
+      } catch {
+        // Token file read error - fall through to normal auth
       }
-      // Users exist - require auth
-      return authMiddleware(req, res, next);
-    });
+    }
+    // No valid setup token = require normal JWT auth
+    return authMiddleware(req, res, next);
   }
   // All other backup endpoints require auth
   return authMiddleware(req, res, next);
