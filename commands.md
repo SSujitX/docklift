@@ -107,27 +107,25 @@ bun outdated
 bun update
 
 bun update next@latest react@latest react-dom@latest eslint-config-next@latest
-
 ```
 
 ```bash
 # Update all packages to latest
 bunx npm-check-updates -u
 bun install
-
-# Version bumps
-npm version patch               # 0.1.5 → 0.1.6 (bug fixes)
-npm version minor               # 0.1.5 → 0.2.0 (new features)
-npm version major               # 0.1.5 → 1.0.0 (breaking changes)
-npm version 0.1.6               # Set specific version
-npm version patch --no-git-tag-version  # No git commit/tag
-
-### Version Management (Multi-Package)
-To update versions for both `frontend` and `backend` simultaneously, run this from the **project root**:
-
 ```
 
-```bash
-cd frontend; bunx bumpp package.json ../backend/package.json --patch --tag --commit "chore: release v%s"
+### Version Management (semantic-release)
 
+Versioning is handled **automatically** by semantic-release. **Do NOT** use `bumpp` or manual `npm version` commands.
+
+```bash
+# Just push conventional commits to master:
+git commit -m "fix(deploy): description"    # → patch release
+git commit -m "feat(api): description"       # → patch release
+git commit -m "feat: *force minor*"          # → minor release
+git commit -m "chore: update *skip release*" # → no release
+
+# Then trigger: GitHub → Actions → "Release & Test" → Run workflow
+# semantic-release handles version bumps, changelog, tags, and GitHub releases.
 ```
