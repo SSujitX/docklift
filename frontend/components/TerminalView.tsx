@@ -11,6 +11,8 @@ import {
   CheckCircle2,
   XCircle,
   Trash2,
+  Maximize2,
+  Minimize2,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -38,6 +40,7 @@ export function TerminalView() {
   const [passwordError, setPasswordError] = useState("");
   const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<any>(null);
@@ -461,7 +464,12 @@ export function TerminalView() {
       </div>
 
       {/* Interactive Terminal */}
-      <Card className="flex flex-col bg-[#0c0c0c] border border-[#2a2a2a] overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.5)] rounded-2xl relative">
+      <Card 
+        className={cn(
+          "flex flex-col bg-[#0c0c0c] border border-[#2a2a2a] overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.5)] rounded-2xl relative transition-all duration-300",
+          isFullscreen ? "fixed inset-0 z-50 rounded-none border-0 h-screen w-screen m-0" : ""
+        )}
+      >
         {/* Subtle glow */}
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(34,211,238,0.03),transparent)] pointer-events-none" />
         
@@ -493,13 +501,45 @@ export function TerminalView() {
               )} />
               <span className="hidden sm:inline">{connected ? "CONNECTED" : connecting ? "CONNECTING" : "OFFLINE"}</span>
             </div>
+
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                const newState = !isFullscreen;
+                setIsFullscreen(newState);
+                // Give layout time to adjust before fitting
+                setTimeout(() => {
+                  const fitAddon = (terminalRef.current as any)?._fitAddon;
+                  if (fitAddon) {
+                    fitAddon.fit();
+                    // Notify backend of resize
+                    if (wsRef.current?.readyState === WebSocket.OPEN && xtermRef.current) {
+                      try {
+                        wsRef.current.send(JSON.stringify({ 
+                          type: "resize", 
+                          cols: xtermRef.current.cols, 
+                          rows: xtermRef.current.rows 
+                        }));
+                      } catch {}
+                    }
+                  }
+                }, 100);
+              }}
+              className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground hover:bg-white/10 rounded-md ml-1"
+              title={isFullscreen ? "Exit Full Screen" : "Full Screen"}
+            >
+              {isFullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+            </Button>
           </div>
         </div>
 
-        {/* xterm.js Terminal Container */}
         <div 
           ref={terminalRef}
-          className="flex-1 min-h-[280px] sm:min-h-[400px] md:min-h-[500px] lg:min-h-[600px] p-1 z-10"
+          className={cn(
+            "flex-1 p-1 z-10",
+            !isFullscreen && "min-h-[280px] sm:min-h-[400px] md:min-h-[500px] lg:min-h-[600px]"
+          )}
           style={{ background: "#0c0c0c" }}
         />
       </Card>
