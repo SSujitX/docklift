@@ -35,7 +35,7 @@ ENV NODE_ENV=production
 ENV PORT=8000
 
 # Install Docker CLI, Git, and procps (for accurate ps/top)
-RUN apk add --no-cache docker-cli docker-cli-compose git procps bash
+RUN apk add --no-cache docker-cli docker-cli-compose git procps bash util-linux
 RUN npm install -g npm@latest
 
 # Create non-root user
