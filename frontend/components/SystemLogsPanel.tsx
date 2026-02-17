@@ -25,11 +25,34 @@ export function SystemLogsPanel({ service, isActive }: SystemLogsPanelProps) {
       return;
     }
 
-    const connect = () => {
+    let retryCount = 0;
+
+    const connect = async () => {
       // Close existing
       eventSourceRef.current?.close();
 
-      const token = typeof window !== "undefined" ? localStorage.getItem("docklift_token") || "" : "";
+      // Fetch short-lived SSE token instead of using main JWT
+      let sseToken = "";
+      try {
+        const mainToken = typeof window !== "undefined" ? localStorage.getItem("docklift_token") || "" : "";
+        const tokenRes = await fetch(`${API_URL || ""}/api/auth/sse-token`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(mainToken ? { Authorization: `Bearer ${mainToken}` } : {}),
+          },
+        });
+        if (tokenRes.ok) {
+          const data = await tokenRes.json();
+          sseToken = data.token || "";
+        } else {
+          // Fallback to main token if SSE token endpoint not available
+          sseToken = typeof window !== "undefined" ? localStorage.getItem("docklift_token") || "" : "";
+        }
+      } catch {
+        // Fallback to main token
+        sseToken = typeof window !== "undefined" ? localStorage.getItem("docklift_token") || "" : "";
+      }
       
       // SSE URL: use same-origin in browser when not on localhost (production behind proxy)
       const isDev = process.env.NODE_ENV === "development";
@@ -40,13 +63,14 @@ export function SystemLogsPanel({ service, isActive }: SystemLogsPanelProps) {
         sseBase = ""; // same-origin so /api is proxied correctly
       }
       
-      const url = `${sseBase}/api/system/logs/${service}?tail=500&token=${encodeURIComponent(token)}`;
+      const url = `${sseBase}/api/system/logs/${service}?tail=500&token=${encodeURIComponent(sseToken)}`;
 
       const es = new EventSource(url);
       eventSourceRef.current = es;
 
       es.onopen = () => {
         setConnected(true);
+        retryCount = 0; // Reset on successful connection
       };
 
       es.onmessage = (event) => {
@@ -73,7 +97,10 @@ export function SystemLogsPanel({ service, isActive }: SystemLogsPanelProps) {
         setConnected(false);
         es.close();
         if (isActive) {
-           setTimeout(connect, 3000); // Retry in 3s
+          // Exponential backoff with jitter to prevent reconnect storms
+          const delay = Math.min(30000, 1000 * Math.pow(2, retryCount)) + Math.random() * 1000;
+          retryCount++;
+          setTimeout(connect, delay);
         }
       };
     };
