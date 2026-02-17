@@ -181,13 +181,27 @@ cd frontend && bun install && bun run dev
 | `bun run db:push` | Push schema changes |
 | `bun run db:generate` | Regenerate Prisma client |
 
-### 🏷️ Versioning
+### 🏷️ Auto Release
 
-| Command | Description |
-|---------|-------------|
-| `npm version patch` | 0.1.5 → 0.1.6 (bug fixes) |
-| `npm version minor` | 0.1.5 → 0.2.0 (features) |
-| `npm version major` | 0.1.5 → 1.0.0 (breaking) |
+Docklift uses [semantic-release](https://github.com/semantic-release/semantic-release) to automate versioning, changelogs, and GitHub Releases.
+
+**How to release:**
+1. Push commits to `master` using [conventional commits](#commit-convention) (e.g. `fix:`, `feat:`)
+2. Go to **GitHub → Actions → "Release & Test"** → Click **"Run workflow"**
+3. Done! semantic-release automatically:
+   - Determines the next version from commit messages
+   - Bumps `package.json` (root, frontend, backend)
+   - Updates `CHANGELOG.md`
+   - Creates a git tag and GitHub Release
+
+| Commit Type | Release |
+|-------------|---------|
+| `feat:`, `fix:`, `perf:`, `refactor:` | Patch (1.3.10 → 1.3.11) |
+| `*force minor*` in subject | Minor (1.3.10 → 1.4.0) |
+| `BREAKING CHANGE` | Major (1.3.10 → 2.0.0) |
+| `*skip release*` in subject | No release |
+
+> 📖 Config: [release.config.cjs](release.config.cjs) | Workflow: [.github/workflows/release.yml](.github/workflows/release.yml)
 
 ### 🧹 Cleanup
 
