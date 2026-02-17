@@ -105,9 +105,9 @@ export const UsefulCommands = () => (
             { cmd: "bun outdated", desc: "Check outdated packages" },
             { cmd: "bun update", desc: "Update packages" },
             { cmd: "bunx npm-check-updates -u && bun install", desc: "Update all to latest" },
-            { cmd: "bun version patch", desc: "Bump patch version (0.1.5 → 0.1.6)" },
-            { cmd: "bun version minor", desc: "Bump minor version (0.1.5 → 0.2.0)" },
-            { cmd: "bun version major", desc: "Bump major version (0.1.5 → 1.0.0)" },
+            { cmd: "npm version patch", desc: "Bump patch version (0.1.5 → 0.1.6)" },
+            { cmd: "npm version minor", desc: "Bump minor version (0.1.5 → 0.2.0)" },
+            { cmd: "npm version major", desc: "Bump major version (0.1.5 → 1.0.0)" },
           ].map((item, i) => (
             <CommandBlock key={i} label={item.desc} command={item.cmd} color="blue" />
           ))}
