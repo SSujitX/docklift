@@ -483,10 +483,24 @@ function SettingsContent() {
     }
   };
 
-  const handleDownloadBackup = (filename: string) => {
-    // Open download in new tab with auth
-    const token = localStorage.getItem('docklift_token');
-    window.open(`${API_URL}/api/backup/download/${filename}?token=${token}`, '_blank');
+  const handleDownloadBackup = async (filename: string) => {
+    try {
+      const res = await fetch(`${API_URL}/api/backup/download/${filename}`, {
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) throw new Error('Download failed');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error('Failed to download backup');
+    }
   };
 
   const formatBytes = (bytes: number): string => {
