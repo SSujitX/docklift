@@ -790,6 +790,25 @@ router.post('/webhook', async (req: Request, res: Response) => {
       return res.status(200).json({ message: `Ignoring ${event} event` });
     }
     
+    // SECURITY: Verify webhook signature FIRST — before any database queries or processing
+    // This prevents unauthenticated requests from triggering DB lookups or leaking project info
+    const webhookSecret = await getSetting('github_webhook_secret');
+    if (webhookSecret) {
+      if (!signature) {
+        console.warn(`[Webhook] Missing signature header`);
+        return res.status(401).json({ error: 'Missing webhook signature' });
+      }
+      // Use raw body from express.json verify callback for accurate HMAC comparison
+      const rawBody = (req as any).rawBody ? (req as any).rawBody.toString() : JSON.stringify(req.body);
+      if (!verifyWebhookSignature(rawBody, signature, webhookSecret)) {
+        console.warn(`[Webhook] Signature verification failed`);
+        return res.status(401).json({ error: 'Invalid signature' });
+      }
+    } else {
+      // No secret configured - warn but allow (for initial setup only)
+      console.warn(`[Webhook] No webhook secret configured - signature verification skipped`);
+    }
+    
     const payload = req.body;
     const repoUrl = payload.repository?.clone_url || payload.repository?.html_url;
     const pushedBranch = payload.ref?.replace('refs/heads/', '');
@@ -822,24 +841,6 @@ router.post('/webhook', async (req: Request, res: Response) => {
       });
       console.log(`[Webhook] No projects found for ${repoUrl}, all GitHub projects:`, JSON.stringify(allGithubProjects));
       return res.status(200).json({ message: 'No matching projects with auto-deploy enabled' });
-    }
-    
-    // Verify webhook signature using the global webhook secret
-    const webhookSecret = await getSetting('github_webhook_secret');
-    if (webhookSecret) {
-      // Secret is configured - signature MUST be present and valid
-      if (!signature) {
-        console.warn(`[Webhook] Missing signature header`);
-        return res.status(401).json({ error: 'Missing webhook signature' });
-      }
-      const rawBody = JSON.stringify(req.body);
-      if (!verifyWebhookSignature(rawBody, signature, webhookSecret)) {
-        console.warn(`[Webhook] Signature verification failed`);
-        return res.status(401).json({ error: 'Invalid signature' });
-      }
-    } else {
-      // No secret configured - warn but allow (for initial setup only)
-      console.warn(`[Webhook] No webhook secret configured - signature verification skipped`);
     }
     
     const triggered: { name: string; promise: Promise<any> }[] = [];
