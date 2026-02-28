@@ -65,6 +65,7 @@ export function TerminalView() {
   }, []);
 
   // Initialize xterm.js terminal and connect on mount
+  const contextMenuHandlerRef = useRef<((e: Event) => void) | null>(null);
   useEffect(() => {
     if (!terminalRef.current) return;
 
@@ -145,13 +146,15 @@ export function TerminalView() {
         return true;
       });
 
-      // Handle right click to paste
-      terminalRef.current!.addEventListener('contextmenu', (e) => {
+      // Handle right click to paste (store in ref for cleanup)
+      const contextMenuHandler = (e: Event) => {
         e.preventDefault();
         navigator.clipboard.readText().then((text) => {
           term.paste(text);
         });
-      });
+      };
+      contextMenuHandlerRef.current = contextMenuHandler;
+      terminalRef.current!.addEventListener('contextmenu', contextMenuHandler);
 
       term.open(terminalRef.current!);
       xtermRef.current = term;
@@ -173,6 +176,10 @@ export function TerminalView() {
 
     return () => {
       disposed = true;
+      // Cleanup contextmenu listener to prevent memory leak
+      if (terminalRef.current && contextMenuHandlerRef.current) {
+        terminalRef.current.removeEventListener('contextmenu', contextMenuHandlerRef.current);
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -510,9 +517,8 @@ export function TerminalView() {
                 setIsFullscreen(newState);
                 // Give layout time to adjust before fitting
                 setTimeout(() => {
-                  const fitAddon = (terminalRef.current as any)?._fitAddon;
-                  if (fitAddon) {
-                    fitAddon.fit();
+                  if (fitAddonRef.current) {
+                    try { fitAddonRef.current.fit(); } catch {}
                     // Notify backend of resize
                     if (wsRef.current?.readyState === WebSocket.OPEN && xtermRef.current) {
                       try {
