@@ -1,7 +1,7 @@
 // Dashboard page - displays all projects with status, actions, and navigation
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 import { ProjectCard } from "@/components/ProjectCard";
@@ -42,13 +42,18 @@ export default function Dashboard() {
   const buildingCount = projects.filter((p) => p.status === "building").length;
   const stoppedCount = projects.filter((p) => p.status === "stopped").length;
 
+  // Use a ref for buildingCount so the polling interval adapts without re-triggering the effect
+  const buildingCountRef = useRef(buildingCount);
+  buildingCountRef.current = buildingCount;
+
   useEffect(() => {
     fetchProjects();
-    // Poll faster (3s) when any project is building, slower (10s) otherwise
-    const pollInterval = buildingCount > 0 ? 3000 : 10000;
-    const interval = setInterval(fetchProjects, pollInterval);
+    // Poll faster (3s) when building, slower (10s) otherwise — checked dynamically via ref
+    const interval = setInterval(() => {
+      fetchProjects();
+    }, buildingCountRef.current > 0 ? 3000 : 10000);
     return () => clearInterval(interval);
-  }, [fetchProjects, buildingCount]);
+  }, [fetchProjects]);
 
   return (
     <div className="min-h-screen flex flex-col">
