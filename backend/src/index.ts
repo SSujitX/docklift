@@ -22,7 +22,8 @@ import backupRouter from './routes/backup.js';
 import logsRouter from './routes/logs.js';
 import authRouter from './routes/auth.js';
 import { authMiddleware } from './lib/authMiddleware.js';
-import { setupTerminalWebSocket } from './services/terminal.js';
+import { setupTerminalWebSocket, cleanupAllSessions } from './services/terminal.js';
+import prisma from './lib/prisma.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -70,7 +71,13 @@ app.use(cors({
 }));
 
 // Middleware
-app.use(express.json({ limit: '10mb' })); // Limit body size
+// SECURITY: Capture raw body for webhook signature verification (HMAC needs original bytes)
+app.use(express.json({
+  limit: '10mb',
+  verify: (req: any, _res, buf) => {
+    req.rawBody = buf;
+  },
+}));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // Trust only the first proxy (nginx) - prevents IP spoofing for rate limiting
 app.set('trust proxy', 1);
@@ -190,6 +197,19 @@ async function main() {
 
     // Attach WebSocket terminal server to HTTP server
     setupTerminalWebSocket(server);
+
+    // Graceful shutdown: close connections cleanly on SIGTERM/SIGINT
+    const shutdown = async (signal: string) => {
+      console.log(`\n🛑 ${signal} received — shutting down gracefully...`);
+      server.close(() => console.log('   HTTP server closed'));
+      cleanupAllSessions();
+      console.log('   Terminal sessions cleaned up');
+      await prisma.$disconnect();
+      console.log('   Database disconnected');
+      process.exit(0);
+    };
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
+    process.on('SIGINT', () => shutdown('SIGINT'));
   } catch (error) {
     console.error('Failed to start server:', error);
     process.exit(1);
