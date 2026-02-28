@@ -34,9 +34,10 @@ Docklift integrates with GitHub using a GitHub App. This allows for accessing pr
 -   **Endpoint**: `POST /api/github/webhook`
 -   **Event**: Listen for `push` events.
 -   **Logic**: 
-    1.  Verifies signature using `github_webhook_secret`.
+    1.  Verifies HMAC signature **FIRST** — before any database queries (prevents unauthenticated DB lookups). Uses `req.rawBody` captured via `express.json({ verify })` callback for accurate comparison.
     2.  Matches repository URL from payload with `Project` database entries.
     3.  Triggers deployment for matching projects with `auto_deploy: true`.
+    4.  Debounced via `recentDeploys` Map with 10-second cooldown per project.
 
 ### Authentication
 -   **App Auth**: Uses `jsonwebtoken` to sign a JWT with the stored Private Key (`RS256`).

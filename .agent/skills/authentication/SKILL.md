@@ -60,7 +60,8 @@ Located in `backend/src/lib/authMiddleware.ts`.
 -   **Security Headers**: Applied globally via `helmet()` middleware in `index.ts`.
 -   **CORS**: Configured from `CORS_ORIGIN` environment variable.
 -   **Rate Limiting**: Applied to all `/api/auth` routes.
--   **Password Re-verification**: Terminal `execute` command requires password confirmation.
+-   **Terminal**: WebSocket JWT + password re-verification (double auth).
+-   **Backup Downloads**: Use `fetch` + `Authorization: Bearer` header + blob download pattern — **never** put JWTs in URL query parameters (prevents token leakage in browser history, server logs, and referrer headers).
 
 ## Passwords
 

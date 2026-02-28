@@ -65,8 +65,8 @@ A full-featured xterm.js-based interactive terminal providing direct root access
 
 ### Features
 - **Real-time PTY**: Supports tab completion, history, colors, ncurses (htop/nano).
-- **Root Access**: Sesssion starts in `/root` with full host privileges.
-- **Resizing**: Bi-directional resize sync between frontend/backend.
+- **Root Access**: Session starts in `/root` with full host privileges.
+- **Resizing**: Bi-directional resize sync between frontend/backend. Resize inputs are validated (cols: 1–500, rows: 1–200) to prevent injection.
 - **Persistence**: Auto-reconnect on network drops.
 - **Security**:
   - **Double Authentication**: JWT (connect) + Password (interactive).
@@ -74,13 +74,13 @@ A full-featured xterm.js-based interactive terminal providing direct root access
   - **Session Limits**: Max 3 concurrent connections per user.
   - **Idle Timeout**: Auto-disconnect after 15 minutes of inactivity.
 
-### Command Execution (Legacy One-Shot)
+### Graceful Shutdown
 
-**API**: `POST /api/system/execute`
-- Executes arbitrary shell commands on the host via `nsenter`
-- **Requires password re-verification** (user must send current password)
-- Has a 30-second timeout
-- Audit-logged with IP address
+The backend handles SIGTERM/SIGINT signals for clean exit:
+- Stops accepting new HTTP connections.
+- Cleans up all active terminal PTY sessions via `cleanupAllSessions()`.
+- Disconnects Prisma database client.
+- Applied in: `index.ts`.
 
 ## System Logs
 

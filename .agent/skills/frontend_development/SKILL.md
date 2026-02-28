@@ -32,7 +32,8 @@ Docklift uses **Next.js 16 (App Router)** for its frontend.
 | `Footer.tsx` | `components/` | Global footer |
 | `LogViewer.tsx` | `components/` | **Shared** real-time log viewer with ANSI, search, colors |
 | `SystemLogsPanel.tsx` | `components/` | SSE wrapper for system service logs |
-| `Terminal.tsx` | `components/` | xterm.js terminal emulator |
+| `Terminal.tsx` | `components/` | Terminal page wrapper (mounts TerminalView) |
+| `TerminalView.tsx` | `components/` | Full xterm.js terminal emulator with system controls |
 | `FileEditor.tsx` | `components/` | Monaco editor for in-browser file editing |
 | `FileTree.tsx` | `components/` | Directory tree navigator |
 | `EnvVarsManager.tsx` | `components/` | Environment variable CRUD |
@@ -62,6 +63,39 @@ When switching between tabs that share a component, use React `key` to force rem
 // Forces clean state when switching services
 <SystemLogsPanel key={activeService} service={activeService} isActive={true} />
 ```
+
+### 5. Polling with Dynamic Intervals (useRef Pattern)
+When polling interval depends on component state, use a ref to avoid infinite useEffect re-registration:
+```tsx
+const buildingCountRef = useRef(buildingCount);
+buildingCountRef.current = buildingCount;
+
+useEffect(() => {
+  fetchProjects();
+  const interval = setInterval(() => {
+    fetchProjects();
+  }, buildingCountRef.current > 0 ? 3000 : 10000);
+  return () => clearInterval(interval);
+}, [fetchProjects]); // NO state-derived values in deps
+```
+
+### 6. Event Listener Cleanup (useRef Pattern)
+When adding event listeners inside async `useEffect` functions, store handlers in refs for cleanup:
+```tsx
+const handlerRef = useRef<((e: Event) => void) | null>(null);
+useEffect(() => {
+  async function init() {
+    const handler = (e: Event) => { ... };
+    handlerRef.current = handler;
+    element.addEventListener('contextmenu', handler);
+  }
+  init();
+  return () => {
+    if (element && handlerRef.current) {
+      element.removeEventListener('contextmenu', handlerRef.current);
+    }
+  };
+}, []);
 
 ## Common Tasks
 

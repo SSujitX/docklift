@@ -14,6 +14,7 @@ This skill documents all security patterns implemented in Docklift. Follow these
 -   **Expiry**: 7 days for session tokens.
 -   **Middleware**: All protected routes use `authMiddleware` from `lib/authMiddleware.ts` — never manually decode JWTs in route handlers.
 -   **Storage**: Frontend stores in `localStorage` key `docklift_token`.
+-   **Download Safety**: Backup downloads use `fetch` + `Authorization: Bearer` header + blob pattern — **never** put JWTs in URL query parameters.
 
 ### SSE Tokens (Short-lived)
 -   SSE connections use dedicated 5-minute tokens (`purpose: 'sse'`).
@@ -42,6 +43,22 @@ This skill documents all security patterns implemented in Docklift. Follow these
 ### Internal API Secret
 -   `X-Internal-Secret` header used for backend-to-backend calls (e.g., webhook → deploy).
 -   Stored in `INTERNAL_API_SECRET` env var.
+
+## Command Execution Security
+
+### spawnSync over execSync
+**RULE**: Never use `execSync()` with string concatenation. Always use `spawnSync()` with argument arrays to prevent command injection.
+
+```typescript
+// ✅ CORRECT — argument array, no shell injection possible
+import { spawnSync } from 'child_process';
+spawnSync('docker', ['rm', '-f', containerName], { stdio: 'ignore' });
+
+// ❌ WRONG — string interpolation allows injection
+execSync(`docker rm -f ${containerName}`);
+```
+
+Applied in: `deployments.ts` (container migration).
 
 ## Error Handling
 
@@ -79,6 +96,59 @@ Applied in: all 4 streaming handlers in `deployments.ts` (deploy, stop, restart,
 
 Also in `docker.ts` `streamContainerLogs`: uses `safeWrite()` + `closed` flag + `res.on('close')` cleanup.
 
+## Webhook Security
+
+### GitHub Webhook Signature Verification
+-   Uses `crypto.timingSafeEqual` (prevents timing attacks).
+-   Signature verified against `github_webhook_secret` stored in DB.
+-   **Verification order**: Signature is verified FIRST — before any database queries or processing. This prevents unauthenticated requests from triggering DB lookups.
+-   Raw body (`req.rawBody`) is captured via `express.json({ verify })` callback for accurate HMAC comparison.
+-   Debounced via `recentDeploys` Map with 10-second cooldown per project.
+
+## Git Token Security
+
+### Just-in-Time Token Pattern
+GitHub installation tokens are set just-in-time and immediately scrubbed after use:
+
+```typescript
+let gitTokenSet = false;
+try {
+  // Set token in git remote URL
+  await gitInstance.remote(['set-url', 'origin', authenticatedUrl]);
+  gitTokenSet = true;
+  // Pull code
+  await pullRepo(projectPath, ...);
+} finally {
+  // SECURITY: Always scrub token from remote URL
+  if (gitTokenSet && gitInstance) {
+    await gitInstance.remote(['set-url', 'origin', cleanUrl]);
+  }
+}
+```
+
+Applied in: `deployments.ts` (deploy handler).
+
+## Terminal Security
+
+### WebSocket Authentication
+-   **JWT**: Required to establish WebSocket connection (query param `?token=`).
+-   **Password Re-verification**: After WS connect, user must enter account password.
+-   **Rate Limiting**: Max 5 logins/minute.
+-   **Session Limits**: Max 3 concurrent connections per user.
+-   **Idle Timeout**: Auto-disconnect after 15 minutes of inactivity.
+
+### Resize Input Validation
+Terminal resize messages are validated to prevent injection:
+
+```typescript
+if (!Number.isInteger(cols) || !Number.isInteger(rows) ||
+    cols < 1 || cols > 500 || rows < 1 || rows > 200) {
+  return; // silently ignore invalid resize
+}
+```
+
+Applied in: `terminal.ts`.
+
 ## Path Security
 
 ### Path Traversal Prevention (`files.ts`)
@@ -115,13 +185,6 @@ try {
 }
 ```
 
-## Webhook Security
-
-### GitHub Webhook Signature Verification
--   Uses `crypto.timingSafeEqual` (prevents timing attacks).
--   Signature verified against `github_webhook_secret` stored in DB.
--   Debounced via `recentDeploys` Map with 10-second cooldown per project.
-
 ## Infrastructure Security
 
 ### Security Headers
@@ -134,10 +197,22 @@ try {
 -   One-time token stored in `.setup-token` file.
 -   Consumed (deleted) after single use.
 -   Only used for unauthenticated `/restore-upload` on fresh installs.
+-   Frontend (`setup/page.tsx`) fetches token via `GET /api/auth/setup-token` and sends as `x-setup-token` header.
 
-### Command Execution
--   `POST /api/system/execute` requires **password re-verification** in addition to JWT.
--   All destructive operations (reboot, reset, purge, upgrade) are audit-logged with client IP.
+### Graceful Shutdown
+Backend handles SIGTERM/SIGINT for clean exit:
+```typescript
+const shutdown = async (signal: string) => {
+  server.close();           // Stop accepting new connections
+  cleanupAllSessions();     // Kill all terminal PTY sessions
+  await prisma.$disconnect(); // Close database connection
+  process.exit(0);
+};
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
+```
+
+Applied in: `index.ts`.
 
 ## Checklist for New Features
 
@@ -148,3 +223,6 @@ When adding new endpoints or features, verify:
 - [ ] File paths are validated against traversal and symlink escapes
 - [ ] Temp files are cleaned up in `finally` blocks
 - [ ] Destructive operations include audit logging (`console.log(\`[AUDIT]...\`)`)
+- [ ] Shell commands use `spawnSync()` with argument arrays, never `execSync()` with strings
+- [ ] Sensitive tokens (JWT, Git) are never placed in URLs — use Authorization headers
+- [ ] Terminal/WebSocket inputs are validated (type, bounds) before processing

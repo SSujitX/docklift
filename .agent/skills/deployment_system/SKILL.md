@@ -28,6 +28,12 @@ This guide details the lifecycle of a deployment in Docklift, from source code t
         -   **Upload**: Unzip file into `deployments/<projectId>/source`.
     -   Temp upload files are always cleaned up via `try/finally` (even on extraction error).
 
+    **Git Token Security** (GitHub projects):
+    -   Installation token is refreshed just-in-time via `getInstallationToken()`.
+    -   Token is set in git remote URL, used for pull, then **immediately scrubbed** in a `finally` block.
+    -   If pull fails, token is still removed from the remote URL (prevents credential leakage).
+    -   Uses `spawnSync()` with argument arrays for any shell commands (e.g., `docker rm -f`) — never string interpolation.
+
 3.  **Configuration Generation**:
     -   `compose.scanDockerfiles()` searches for Dockerfiles.
     -   `compose.generateCompose()` creates a `docker-compose.yml` in the project root.
