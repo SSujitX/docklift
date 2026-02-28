@@ -96,8 +96,21 @@ export default function SetupPage() {
       const formData = new FormData();
       formData.append('backup', file);
 
+      // Fetch one-time setup token for unauthenticated restore (fresh install)
+      let headers: HeadersInit = {};
+      try {
+        const tokenRes = await fetch(`${API_URL}/api/auth/setup-token`);
+        if (tokenRes.ok) {
+          const tokenData = await tokenRes.json();
+          if (tokenData.setupToken) {
+            headers['x-setup-token'] = tokenData.setupToken;
+          }
+        }
+      } catch { /* If token fetch fails, try without — backend will decide */ }
+
       const res = await fetch(`${API_URL}/api/backup/restore-upload`, {
         method: 'POST',
+        headers,
         body: formData,
       });
 
