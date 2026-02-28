@@ -199,7 +199,6 @@ async function readHostCpuInfo(): Promise<{ model: string; speed: number; cores:
       }
     }
     
-    console.log(`[HOST] CPU: ${model}, ${speed} GHz, ${cores} cores`);
     return { model, speed, cores };
   } catch (e) {
     return null;
