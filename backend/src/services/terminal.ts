@@ -223,7 +223,13 @@ export function setupTerminalWebSocket(server: HttpServer) {
 
         // Handle terminal resize (send SIGWINCH-style resize via stty)
         if (msg.type === 'resize' && msg.cols && msg.rows) {
-          session.shell.stdin?.write(`stty cols ${msg.cols} rows ${msg.rows}\n`);
+          // SECURITY: Validate cols/rows are safe integers to prevent command injection
+          const cols = Number(msg.cols);
+          const rows = Number(msg.rows);
+          if (Number.isInteger(cols) && Number.isInteger(rows)
+              && cols > 0 && cols < 500 && rows > 0 && rows < 500) {
+            session.shell.stdin?.write(`stty cols ${cols} rows ${rows}\n`);
+          }
         }
       } catch (err) {
         // Silently ignore malformed messages
