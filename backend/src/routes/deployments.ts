@@ -241,6 +241,11 @@ router.post('/:projectId/deploy', async (req: Request, res: Response) => {
     
     // Pull latest if GitHub project
     if (project.source_type === 'github' && project.github_url) {
+      // SECURITY: Token is set just-in-time and scrubbed after pull completes
+      let gitTokenSet = false;
+      let cleanUrl = project.github_url;
+      let gitInstance: any = null;
+      
       // Refresh the remote URL with a new token (tokens expire after 1 hour)
       try {
         const { getInstallationIdForRepo, getInstallationToken } = await import('./github.js');
@@ -254,21 +259,31 @@ router.post('/:projectId/deploy', async (req: Request, res: Response) => {
           urlObj.username = 'x-access-token';
           urlObj.password = token;
           const { simpleGit } = await import('simple-git');
-          const git = simpleGit(projectPath);
-          await git.remote(['set-url', 'origin', urlObj.toString()]);
+          gitInstance = simpleGit(projectPath);
+          await gitInstance.remote(['set-url', 'origin', urlObj.toString()]);
+          gitTokenSet = true;
           writeLog(`🔑 Refreshed GitHub access token\n`);
         }
       } catch (err: any) {
         writeLog(`⚠️ Token refresh warning: ${err.message}\n`);
       }
       
-      // Create a wrapper for pullRepo to capture logs
-      const pullResWrapper = {
-        write: (text: string) => writeLog(text),
-        end: () => {},
-        setHeader: () => {},
-      } as any;
-      await pullRepo(projectPath, pullResWrapper, project.github_branch || undefined);
+      // Pull latest code (uses authenticated URL if token was set above)
+      try {
+        const pullResWrapper = {
+          write: (text: string) => writeLog(text),
+          end: () => {},
+          setHeader: () => {},
+        } as any;
+        await pullRepo(projectPath, pullResWrapper, project.github_branch || undefined);
+      } finally {
+        // SECURITY: Scrub token from remote URL after pull completes (or fails)
+        if (gitTokenSet && gitInstance) {
+          try {
+            await gitInstance.remote(['set-url', 'origin', cleanUrl]);
+          } catch { /* ignore cleanup errors */ }
+        }
+      }
     }
     
     writeLog(`\n${'━'.repeat(50)}\n`);
@@ -316,10 +331,11 @@ router.post('/:projectId/deploy', async (req: Request, res: Response) => {
            writeLog(`     🛠️ Migrating container name to shorter format...\n`);
            
            // Force remove the old container name to free up ports
-           const { execSync } = await import('child_process');
+           // SECURITY: Use spawnSync with argument array to prevent command injection
+           const { spawnSync } = await import('child_process');
            try {
               writeLog(`     🛑 Removing old container: ${service.container_name}\n`);
-              execSync(`docker rm -f ${service.container_name}`, { stdio: 'ignore' });
+              if (service.container_name) spawnSync('docker', ['rm', '-f', service.container_name], { stdio: 'ignore' });
            } catch (e) {
               // Ignore if container doesn't exist
            }
