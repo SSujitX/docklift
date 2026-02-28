@@ -168,7 +168,6 @@ export function streamComposeDown(projectPath: string, projectId: string, res: R
 
 // Stream real-time container logs via SSE
 export function streamContainerLogs(containerName: string, res: Response, tail = 200): void {
-  const docker = new Docker();
 
   // Set SSE headers
   res.setHeader('Content-Type', 'text/event-stream');
