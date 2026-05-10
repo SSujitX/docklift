@@ -1,3 +1,10 @@
+## [1.3.19](https://github.com/SSujitX/docklift/compare/v1.3.18...v1.3.19) (2026-05-10)
+
+
+### Features
+
+* **deployments:** update service domains on stop and cancel actions ([479a4c7](https://github.com/SSujitX/docklift/commit/479a4c7520502fea7ced02469e24b07130c8ee13))
+
 ## [1.3.18](https://github.com/SSujitX/docklift/compare/v1.3.17...v1.3.18) (2026-05-10)
 
 
