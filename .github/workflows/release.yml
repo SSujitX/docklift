@@ -30,4 +30,5 @@ jobs:
       - run: npm ci
       - run: npx semantic-release
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          # Prefer GH_TOKEN (PAT) for branch-protected repos; otherwise empty secret falls back to GITHUB_TOKEN.
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
