@@ -1,3 +1,27 @@
+## [1.3.18](https://github.com/SSujitX/docklift/compare/v1.3.17...v1.3.18) (2026-05-10)
+
+
+### Bug Fixes
+
+* **dashboard:** prevent polling interval from resetting on buildingCount change ([0cbf936](https://github.com/SSujitX/docklift/commit/0cbf936cd63802dcae1efd177138266886c773e2))
+* **deployments:** improve security by scrubbing GitHub tokens and preventing command injection ([4aa5cd7](https://github.com/SSujitX/docklift/commit/4aa5cd798fc1fbcaece8f524fe3b723622294e26))
+* **github:** verify webhook signature before database lookups ([747683d](https://github.com/SSujitX/docklift/commit/747683d2945031153d6db80f58bde35070bd3fa9))
+* **settings:** download backup using fetch instead of window.open ([e7259fa](https://github.com/SSujitX/docklift/commit/e7259fa887d221caf17e06ee0dbc24323469cb2b))
+* **terminal:** add input validation to prevent command injection ([86714ab](https://github.com/SSujitX/docklift/commit/86714ab5b47f8578bcb269780fa2e7fcd9269072))
+* **TerminalView:** prevent memory leak by cleaning up contextmenu listener ([5f95ef7](https://github.com/SSujitX/docklift/commit/5f95ef767d0b50d1b95ffc65b72c3fc25d460251))
+
+
+### Features
+
+* add system routes for monitoring, server controls, and command execution. ([65918e0](https://github.com/SSujitX/docklift/commit/65918e0af0ce7e9cb1bf64751783a664902638e3))
+* **docker:** enable IPv6 support and configure subnets for docklift_network ([4e0c943](https://github.com/SSujitX/docklift/commit/4e0c943413f14ef96e0ae5d575671190decd5fe6))
+* enable IPv6 support and configure subnets for docklift_network ([c786ccd](https://github.com/SSujitX/docklift/commit/c786ccd768dd13f7c13284eaea642f878c4f28ee))
+* Establish core application structure for project deployment, including a frontend dashboard and backend Docker services. ([d38f3e3](https://github.com/SSujitX/docklift/commit/d38f3e35e0e98716c2e4e63c22462dc08cfee624))
+* Implement core application features including settings, GitHub integration, domain management, and system backups. ([004d26c](https://github.com/SSujitX/docklift/commit/004d26c9abc21896e0227c2e49d2509cc4685e81))
+* **setup:** add setup token for unauthenticated backup restore ([e461826](https://github.com/SSujitX/docklift/commit/e4618268af6ff8d7b39ef3b85965dd1cd3f4e8dd))
+* update dependencies in package.json and bun.lock ([36d849c](https://github.com/SSujitX/docklift/commit/36d849cf5d07833411687aab7e5c6feadee6e4f3))
+* update package dependencies and add overrides for brace-expansion ([d46b83d](https://github.com/SSujitX/docklift/commit/d46b83d419796d6afba92c74e7954685859a99a4))
+
 ## [1.3.17](https://github.com/SSujitX/docklift/compare/v1.3.16...v1.3.17) (2026-02-17)
 
 
