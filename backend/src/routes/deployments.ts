@@ -605,6 +605,11 @@ router.post('/:projectId/stop', async (req: Request, res: Response) => {
         where: { id: projectId },
         data: { status: 'stopped' },
       });
+
+      const stoppedServices = await prisma.service.findMany({ where: { project_id: projectId } });
+      for (const svc of stoppedServices) {
+        await updateServiceDomain(svc);
+      }
       
       res.end();
     });
@@ -855,6 +860,11 @@ router.post('/:projectId/cancel', async (req: Request, res: Response) => {
         where: { id: projectId },
         data: { status: 'stopped' },
       });
+
+      const cancelledServices = await prisma.service.findMany({ where: { project_id: projectId } });
+      for (const svc of cancelledServices) {
+        await updateServiceDomain(svc);
+      }
       
       res.write(`✅ Build cancelled and status reset\n`);
       res.end();

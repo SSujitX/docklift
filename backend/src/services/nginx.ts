@@ -23,21 +23,20 @@ export async function updateServiceDomain(service: any) {
     }
     return;
   }
-  
-  // Verify container actually exists in Docker to prevent Nginx crash
+
+  // Resolver + variable proxy_pass (below) defers upstream DNS to request time, so nginx reload
+  // does not fail if the container is not up yet (restore / slow start). Log only.
   try {
     const containerStatus = await dockerService.getContainerStatus(service.container_name);
     if (!containerStatus.running && service.status !== 'starting') {
-       console.warn(`Container ${service.container_name} not running, skipping Nginx config to prevent crash.`);
-       if (fs.existsSync(confPath)) {
-          fs.unlinkSync(confPath);
-          await reloadNginx();
-       }
-       return;
+      console.warn(
+        `Nginx config for ${service.name}: container ${service.container_name} not running yet — config kept for when it starts.`
+      );
     }
   } catch (e) {
-    // If error checking container, err on side of caution
-    return;
+    console.warn(
+      `Nginx config for ${service.name}: could not inspect container ${service.container_name} — config kept.`
+    );
   }
 
   const domains = service.domain.split(',').map((d: string) => d.trim()).filter(Boolean).join(' ');
@@ -146,44 +145,34 @@ export async function syncNginxConfigs() {
     // 2. Get all Services from DB that SHOULD have config
     // (Running, have domain, have container_name)
     const { default: prisma } = await import('../lib/prisma.js');
+
+    const knownWithDomain = await prisma.service.findMany({
+      where: { domain: { not: null } },
+      select: { id: true },
+    });
+    const knownServiceIds = new Set(knownWithDomain.map((s) => s.id));
+
     const allServices = await prisma.service.findMany({
-        where: {
-            domain: { not: null },
-            status: 'running' // Only running services!
-        }
+      where: {
+        domain: { not: null },
+        container_name: { not: null },
+        status: { in: ['running', 'starting'] },
+      },
     });
 
     let changeMade = false;
-    const activeServiceIds = new Set();
 
-    // 3. Update/Create valid configs
+    // 3. Recreate missing configs for services that should be routed (do not require Docker to be up yet)
     for (const service of allServices) {
-        if (!service.container_name) continue;
-        
-        // Verify container exists to be safe
-        try {
-            const status = await dockerService.getContainerStatus(service.container_name);
-            if (!status.running) continue;
-        } catch (e) { continue; }
-
-        activeServiceIds.add(service.id);
-        
-        // If file missing or we just want to ensure it's correct (simplified: just regenerate if missing)
-        // Actually, let's regenerate all valid ones to be sure content is correct
-        // But optimization: check if file exists.
-        const confPath = path.join(config.nginxConfPath, `service-${service.id}.conf`);
-        
-        // If file doesn't exist, Create it
-        if (!fileServiceIds.has(service.id)) {
-             console.log(`Restoring missing Nginx config for ${service.name}`);
-             await updateServiceDomain(service); // This uses reloadNginx inside, so we might reload multiple times. That's fine for startup.
-             // Note: updateServiceDomain handles check for domain string validity
-        }
+      const confPath = path.join(config.nginxConfPath, `service-${service.id}.conf`);
+      if (!fileServiceIds.has(service.id)) {
+        console.log(`Restoring missing Nginx config for ${service.name}`);
+        await updateServiceDomain(service);
+      }
     }
 
-    // 4. Delete orphans (Files that exist but are NOT in the active bucket)
-    // This catches: Deleted services, Stopped services, Dead containers
-    const filesToDelete = [...fileServiceIds].filter(id => !activeServiceIds.has(id));
+    // 4. Delete orphans: conf file for a service id that no longer exists in DB (or domain removed)
+    const filesToDelete = [...fileServiceIds].filter((id) => !knownServiceIds.has(id));
     
     for (const id of filesToDelete) {
         const file = `service-${id}.conf`;
