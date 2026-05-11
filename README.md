@@ -160,6 +160,13 @@ cd frontend && bun install && bun run dev
 
 > **Requirement:** Your project must have a `Dockerfile`
 
+### 🛡️ Bypassing Cloudflare / Web Scraping Blocks
+If your deployed apps are blocked by Cloudflare (but work on your server terminal), Docker's network fingerprint is being detected. Run a lightweight proxy on your host network to bypass this:
+```bash
+docker run -d --name local-host-proxy --network host --restart unless-stopped -e PROXY_USER=user -e PROXY_PASSWORD=pass serjs/go-socks5-proxy
+```
+Then, update your app's code (like `curl_cffi` or Python `requests`) to route through `socks5://user:pass@host.docker.internal:1080`. This sends traffic through your physical host network, perfectly replicating your SSH terminal.
+
 ---
 
 ## 📋 Commands Reference
