@@ -1,3 +1,10 @@
+## [1.3.21](https://github.com/SSujitX/docklift/compare/v1.3.20...v1.3.21) (2026-05-12)
+
+
+### Features
+
+* **docker:** re-enable IPv6 support and configure subnets for docklift_network in Docker Compose files ([4a1431a](https://github.com/SSujitX/docklift/commit/4a1431ad5564c0eea15b0fe15b11993855ca4234))
+
 ## [1.3.20](https://github.com/SSujitX/docklift/compare/v1.3.19...v1.3.20) (2026-05-12)
 
 
