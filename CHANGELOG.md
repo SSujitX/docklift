@@ -1,3 +1,10 @@
+## [1.3.20](https://github.com/SSujitX/docklift/compare/v1.3.19...v1.3.20) (2026-05-12)
+
+
+### Features
+
+* **docker:** remove IPv6 support and subnet configurations from Docker Compose files ([16748ca](https://github.com/SSujitX/docklift/commit/16748ca13c99f77581397e3b4acb55c2fda413a4))
+
 ## [1.3.19](https://github.com/SSujitX/docklift/compare/v1.3.18...v1.3.19) (2026-05-10)
 
 
