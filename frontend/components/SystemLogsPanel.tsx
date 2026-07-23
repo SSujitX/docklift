@@ -26,12 +26,15 @@ export function SystemLogsPanel({ service, isActive }: SystemLogsPanelProps) {
     }
 
     let retryCount = 0;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let cancelled = false;
 
     const connect = async () => {
+      if (cancelled) return;
       // Close existing
       eventSourceRef.current?.close();
 
-      // Fetch short-lived SSE token instead of using main JWT
+      // Fetch short-lived SSE token — never put the session JWT in the URL
       let sseToken = "";
       try {
         const mainToken = typeof window !== "undefined" ? localStorage.getItem("docklift_token") || "" : "";
@@ -45,13 +48,19 @@ export function SystemLogsPanel({ service, isActive }: SystemLogsPanelProps) {
         if (tokenRes.ok) {
           const data = await tokenRes.json();
           sseToken = data.token || "";
-        } else {
-          // Fallback to main token if SSE token endpoint not available
-          sseToken = typeof window !== "undefined" ? localStorage.getItem("docklift_token") || "" : "";
         }
       } catch {
-        // Fallback to main token
-        sseToken = typeof window !== "undefined" ? localStorage.getItem("docklift_token") || "" : "";
+        /* leave empty */
+      }
+
+      if (!sseToken) {
+        setConnected(false);
+        if (isActive && !cancelled) {
+          const delay = Math.min(30000, 1000 * Math.pow(2, retryCount)) + Math.random() * 1000;
+          retryCount++;
+          retryTimer = setTimeout(connect, delay);
+        }
+        return;
       }
       
       // SSE URL: use same-origin in browser when not on localhost (production behind proxy)
@@ -96,11 +105,11 @@ export function SystemLogsPanel({ service, isActive }: SystemLogsPanelProps) {
       es.onerror = () => {
         setConnected(false);
         es.close();
-        if (isActive) {
+        if (isActive && !cancelled) {
           // Exponential backoff with jitter to prevent reconnect storms
           const delay = Math.min(30000, 1000 * Math.pow(2, retryCount)) + Math.random() * 1000;
           retryCount++;
-          setTimeout(connect, delay);
+          retryTimer = setTimeout(connect, delay);
         }
       };
     };
@@ -108,6 +117,8 @@ export function SystemLogsPanel({ service, isActive }: SystemLogsPanelProps) {
     connect();
 
     return () => {
+      cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
       eventSourceRef.current?.close();
     };
   }, [isActive, service]);

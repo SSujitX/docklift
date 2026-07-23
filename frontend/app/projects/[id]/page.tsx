@@ -119,10 +119,12 @@ function ContainerLogsPanel({
       ? localStorage.getItem("docklift_token") || ""
       : "";
 
+    let cancelled = false;
+
     // Use async IIFE to fetch SSE token (useEffect callbacks can't be async)
     (async () => {
-      // Fetch short-lived SSE token instead of using main JWT in URL
-      let sseToken = token; // fallback
+      // Fetch short-lived SSE token — never fall back to session JWT in the URL
+      let sseToken = "";
       try {
         const tokenRes = await fetch(`${API_URL || ""}/api/auth/sse-token`, {
           method: "POST",
@@ -133,10 +135,14 @@ function ContainerLogsPanel({
         });
         if (tokenRes.ok) {
           const data = await tokenRes.json();
-          sseToken = data.token || token;
+          sseToken = data.token || "";
         }
       } catch {
-        // Use main token as fallback
+        /* no session JWT fallback */
+      }
+
+      if (cancelled || !sseToken) {
+        return;
       }
 
       // EventSource must bypass Next.js rewrites in DEV (they buffer SSE).
@@ -148,16 +154,21 @@ function ContainerLogsPanel({
       const containerNames = containerNamesKey.split(",");
 
       containerNames.forEach((containerName) => {
-        if (eventSourcesRef.current[containerName]) return;
+        if (cancelled || eventSourcesRef.current[containerName]) return;
 
         const url = `${sseBase}/api/logs/${projectId}/stream/${encodeURIComponent(containerName)}?token=${encodeURIComponent(sseToken)}&tail=5000`;
         const es = new EventSource(url);
 
         es.onopen = () => {
+          if (cancelled) {
+            es.close();
+            return;
+          }
           setConnected((prev) => ({ ...prev, [containerName]: true }));
         };
 
         es.onmessage = (event) => {
+          if (cancelled) return;
           try {
             const data = JSON.parse(event.data);
             if (data.type === "log") {
@@ -200,7 +211,9 @@ function ContainerLogsPanel({
 
         es.onerror = () => {
           es.close();
-          setConnected((prev) => ({ ...prev, [containerName]: false }));
+          if (!cancelled) {
+            setConnected((prev) => ({ ...prev, [containerName]: false }));
+          }
         };
 
         eventSourcesRef.current[containerName] = es;
@@ -208,6 +221,7 @@ function ContainerLogsPanel({
     })();
 
     return () => {
+      cancelled = true;
       Object.values(eventSourcesRef.current).forEach((es) => {
         try { es.close(); } catch { /* ignore */ }
       });
