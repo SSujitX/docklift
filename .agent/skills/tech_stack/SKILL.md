@@ -26,7 +26,7 @@ Docklift is built using a modern, lightweight, and performance-oriented stack.
 
 ## Backend (API & Orchestration)
 
--   **Runtime**: [Node.js 22](https://nodejs.org/)
+-   **Runtime**: [Node.js 24](https://nodejs.org/) (production Docker images; Bun used for install/scripts)
 -   **Package Manager**: [Bun](https://bun.sh/) (Fast install & script runner)
 -   **Framework**: [Express 5.2](https://expressjs.com/)
 -   **Language**: [TypeScript](https://www.typescriptlang.org/)

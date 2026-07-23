@@ -282,12 +282,17 @@ router.get('/setup-token', async (req: Request, res: Response) => {
 // This prevents the main JWT from appearing in URLs (server logs, browser history, etc.)
 router.post('/sse-token', authMiddleware, async (req: Request, res: Response) => {
   try {
-    const jwtSecret = await JWT_SECRET;
     const user = (req as any).user;
 
+    // Short-lived token for EventSource query params only (enforced by sseAuthMiddleware on stream routes)
     const sseToken = jwt.sign(
-      { userId: user?.userId || 'system', purpose: 'sse' },
-      jwtSecret,
+      {
+        userId: user?.userId,
+        email: user?.email,
+        role: user?.role,
+        purpose: 'sse',
+      },
+      JWT_SECRET,
       { expiresIn: '5m' }
     );
 

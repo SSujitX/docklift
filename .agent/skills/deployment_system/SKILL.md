@@ -66,10 +66,9 @@ This prevents server crashes if the client disconnects mid-stream and ensures th
 
 ```
 deployments/
-  <projectId>/
-    source/           # Application Source Code
+  <projectId>/        # Application source (clone/upload root — not a nested source/ folder)
     docker-compose.yml # Generated Config
-    .env              # Runtime Environment Variables
+    .env              # Runtime Environment Variables (when used)
 ```
 
 ## Naming Conventions

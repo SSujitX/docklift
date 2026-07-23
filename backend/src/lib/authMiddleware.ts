@@ -67,12 +67,34 @@ export interface AuthenticatedRequest extends Request {
     userId: string;
     email: string;
     role: string;
+    purpose?: string;
   };
 }
 
 // Export for use in auth.ts and github.ts
 export { JWT_SECRET, INTERNAL_API_SECRET };
 
+type JwtPayload = {
+  userId: string;
+  email: string;
+  role: string;
+  purpose?: string;
+};
+
+function authError(res: Response, error: any) {
+  if (error?.name === 'JsonWebTokenError') {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
+  if (error?.name === 'TokenExpiredError') {
+    return res.status(401).json({ error: 'Token expired' });
+  }
+  return res.status(500).json({ error: 'Authentication failed' });
+}
+
+/**
+ * Default API auth: Authorization Bearer session JWT only.
+ * Does NOT accept query tokens (prevents SSE tokens from authorizing DELETE/reboot/etc).
+ */
 export const authMiddleware = (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     // Allow internal API calls with shared secret (for webhook auto-deploy)
@@ -83,33 +105,58 @@ export const authMiddleware = (req: AuthenticatedRequest, res: Response, next: N
     }
 
     const authHeader = req.headers.authorization;
-    const queryToken = req.query.token as string | undefined;
-
-    let token: string | undefined;
-
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      token = authHeader.split(' ')[1];
-    } else if (queryToken) {
-      // Query param tokens: accept both SSE-purpose tokens AND regular tokens
-      // for backward compatibility (downloads, SSE streams)
-      token = queryToken;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Authentication required' });
     }
 
+    const token = authHeader.split(' ')[1];
     if (!token) {
       return res.status(401).json({ error: 'Authentication required' });
     }
-    const decoded = jwt.verify(token, JWT_SECRET) as { userId: string; email: string; role: string; purpose?: string };
 
-    req.user = decoded;
+    const decoded = jwt.verify(token, JWT_SECRET) as JwtPayload;
+
+    // Short-lived SSE tokens must not authenticate normal API calls
+    if (decoded.purpose === 'sse') {
+      return res.status(401).json({ error: 'Invalid token for this endpoint' });
+    }
+
+    req.user = {
+      userId: decoded.userId,
+      email: decoded.email,
+      role: decoded.role,
+    };
     next();
   } catch (error: any) {
-    if (error.name === 'JsonWebTokenError') {
-      return res.status(401).json({ error: 'Invalid token' });
+    return authError(res, error);
+  }
+};
+
+/**
+ * SSE-only auth: query ?token= with purpose === 'sse'.
+ * Mount exclusively on log stream routes (EventSource cannot set Authorization headers).
+ */
+export const sseAuthMiddleware = (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  try {
+    const queryToken = req.query.token as string | undefined;
+    if (!queryToken) {
+      return res.status(401).json({ error: 'SSE token required' });
     }
-    if (error.name === 'TokenExpiredError') {
-      return res.status(401).json({ error: 'Token expired' });
+
+    const decoded = jwt.verify(queryToken, JWT_SECRET) as JwtPayload;
+    if (decoded.purpose !== 'sse') {
+      return res.status(401).json({ error: 'SSE token required' });
     }
-    return res.status(500).json({ error: 'Authentication failed' });
+
+    req.user = {
+      userId: decoded.userId,
+      email: decoded.email,
+      role: decoded.role,
+      purpose: 'sse',
+    };
+    next();
+  } catch (error: any) {
+    return authError(res, error);
   }
 };
 

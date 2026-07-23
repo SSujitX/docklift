@@ -34,11 +34,10 @@ async function reconcileSystem(writeLog: (text: string) => void) {
     // 3. Loop and redeploy
     writeLog(`\n[2/3] Auto-redeploying projects...\n`);
     for (const project of projects) {
+      // Projects are stored at deployments/<id>/ (not deployments/<id>/source/)
       const projectPath = path.join(config.deploymentsPath, project.id);
-      const sourcePath = path.join(projectPath, 'source');
       
-      // Only deploy if source code exists
-      if (fs.existsSync(sourcePath)) {
+      if (fs.existsSync(projectPath)) {
         writeLog(`      > Redeploying ${project.name} (${project.id})...\n`);
         try {
           // Verify docker-compose.yml exists
@@ -46,6 +45,7 @@ async function reconcileSystem(writeLog: (text: string) => void) {
              // Run docker compose up -d --build with correct project name
              // CRITICAL: -p flag must match the project ID used in streamComposeUp (docker.ts)
              // Without -p, Docker uses the directory name, breaking container naming
+             // SECURITY: project.id is a UUID from DB — still pass via spawn argv style via quoted id
              await execAsync(`docker compose -p ${project.id} up -d --build`, {
                cwd: projectPath,
                env: { ...process.env, DOCKER_BUILDKIT: '1', COMPOSE_DOCKER_CLI_BUILD: '1' },

@@ -256,6 +256,30 @@ router.post('/', upload.single('files'), async (req: Request, res: Response) => 
       }
       
       await cloneRepo(authUrl, projectPath, github_branch || undefined);
+      // SECURITY: Never leave installation tokens in .git/config (included in backups).
+      // If scrub fails after an authenticated clone, delete the project — do not keep a credentialed repo.
+      try {
+        const { scrubOriginRemote } = await import('../services/git.js');
+        await scrubOriginRemote(projectPath, github_url);
+        // Verify origin no longer embeds credentials when we used a tokenized URL
+        if (authUrl !== github_url) {
+          const { simpleGit } = await import('simple-git');
+          const remotes = await simpleGit(projectPath).getRemotes(true);
+          const origin = remotes.find((r) => r.name === 'origin');
+          const originUrl = origin?.refs?.fetch || origin?.refs?.push || '';
+          if (
+            originUrl.includes('x-access-token') ||
+            /https?:\/\/[^/@]+:[^/@]+@/.test(originUrl)
+          ) {
+            throw new Error('Origin remote still contains credentials after scrub');
+          }
+        }
+      } catch (scrubErr) {
+        console.error('Failed to scrub git remote after clone — rolling back project:', scrubErr);
+        try { fs.rmSync(projectPath, { recursive: true, force: true }); } catch {}
+        try { await prisma.project.delete({ where: { id: project.id } }); } catch {}
+        return res.status(500).json({ error: 'Failed to secure repository credentials after clone' });
+      }
     } else if (req.file) {
       // Extract zip file
       fs.mkdirSync(projectPath, { recursive: true });

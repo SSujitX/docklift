@@ -793,20 +793,20 @@ router.post('/webhook', async (req: Request, res: Response) => {
     // SECURITY: Verify webhook signature FIRST — before any database queries or processing
     // This prevents unauthenticated requests from triggering DB lookups or leaking project info
     const webhookSecret = await getSetting('github_webhook_secret');
-    if (webhookSecret) {
-      if (!signature) {
-        console.warn(`[Webhook] Missing signature header`);
-        return res.status(401).json({ error: 'Missing webhook signature' });
-      }
-      // Use raw body from express.json verify callback for accurate HMAC comparison
-      const rawBody = (req as any).rawBody ? (req as any).rawBody.toString() : JSON.stringify(req.body);
-      if (!verifyWebhookSignature(rawBody, signature, webhookSecret)) {
-        console.warn(`[Webhook] Signature verification failed`);
-        return res.status(401).json({ error: 'Invalid signature' });
-      }
-    } else {
-      // No secret configured - warn but allow (for initial setup only)
-      console.warn(`[Webhook] No webhook secret configured - signature verification skipped`);
+    // Fail closed: never accept unsigned webhooks (partially configured installs)
+    if (!webhookSecret) {
+      console.warn(`[Webhook] Rejected — webhook secret not configured`);
+      return res.status(401).json({ error: 'Webhook secret not configured' });
+    }
+    if (!signature) {
+      console.warn(`[Webhook] Missing signature header`);
+      return res.status(401).json({ error: 'Missing webhook signature' });
+    }
+    // Use raw body from express.json verify callback for accurate HMAC comparison
+    const rawBody = (req as any).rawBody ? (req as any).rawBody.toString() : JSON.stringify(req.body);
+    if (!verifyWebhookSignature(rawBody, signature, webhookSecret)) {
+      console.warn(`[Webhook] Signature verification failed`);
+      return res.status(401).json({ error: 'Invalid signature' });
     }
     
     const payload = req.body;

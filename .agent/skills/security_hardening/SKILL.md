@@ -18,9 +18,11 @@ This skill documents all security patterns implemented in Docklift. Follow these
 
 ### SSE Tokens (Short-lived)
 -   SSE connections use dedicated 5-minute tokens (`purpose: 'sse'`).
--   Generated via `POST /api/auth/sse-token`.
+-   Generated via `POST /api/auth/sse-token` (Bearer session JWT required).
 -   Passed as query param `?token=<sseToken>` (not the long-lived session JWT).
--   Backend validates `purpose === 'sse'` before allowing SSE connections.
+-   **`authMiddleware`**: Bearer session JWT only — query tokens are ignored/rejected.
+-   **`sseAuthMiddleware`**: query SSE token only — mounted exclusively on log stream routes (`/api/system/logs/:service`, `/api/logs/.../stream/...`).
+-   An SSE token in `?token=` cannot authorize DELETE/reboot or other protected APIs.
 
 ### Rate Limiting
 -   All `/api/auth` routes are rate-limited via `express-rate-limit`.
@@ -101,6 +103,7 @@ Also in `docker.ts` `streamContainerLogs`: uses `safeWrite()` + `closed` flag + 
 ### GitHub Webhook Signature Verification
 -   Uses `crypto.timingSafeEqual` (prevents timing attacks).
 -   Signature verified against `github_webhook_secret` stored in DB.
+-   **Fail closed**: If the webhook secret is not configured, the endpoint returns 401 (unsigned webhooks are never accepted).
 -   **Verification order**: Signature is verified FIRST — before any database queries or processing. This prevents unauthenticated requests from triggering DB lookups.
 -   Raw body (`req.rawBody`) is captured via `express.json({ verify })` callback for accurate HMAC comparison.
 -   Debounced via `recentDeploys` Map with 10-second cooldown per project.
@@ -108,7 +111,7 @@ Also in `docker.ts` `streamContainerLogs`: uses `safeWrite()` + `closed` flag + 
 ## Git Token Security
 
 ### Just-in-Time Token Pattern
-GitHub installation tokens are set just-in-time and immediately scrubbed after use:
+GitHub installation tokens are set just-in-time and immediately scrubbed after use (deploy pull **and** initial clone via `scrubOriginRemote`):
 
 ```typescript
 let gitTokenSet = false;
@@ -135,7 +138,7 @@ Applied in: `deployments.ts` (deploy handler).
 -   **Password Re-verification**: After WS connect, user must enter account password.
 -   **Rate Limiting**: Max 5 logins/minute.
 -   **Session Limits**: Max 3 concurrent connections per user.
--   **Idle Timeout**: Auto-disconnect after 15 minutes of inactivity.
+-   **Idle Timeout**: Auto-disconnect after 30 minutes of inactivity.
 
 ### Resize Input Validation
 Terminal resize messages are validated to prevent injection:
@@ -188,7 +191,7 @@ try {
 ## Infrastructure Security
 
 ### Security Headers
--   Applied globally via `helmet()` middleware in `index.ts`.
+-   Applied in `index.ts` via custom middleware (`X-Content-Type-Options`, `X-Frame-Options`, `X-XSS-Protection`, `Referrer-Policy`). Helmet is not used.
 
 ### CORS
 -   Configured from `CORS_ORIGIN` environment variable.

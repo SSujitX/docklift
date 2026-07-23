@@ -7,7 +7,7 @@ COPY package.json bun.lock* ./
 RUN bun install --frozen-lockfile
 
 # Build with Node.js (stable — Bun crashes with SIGILL on some server CPUs)
-FROM node:22-alpine AS builder
+FROM node:24-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
@@ -20,7 +20,7 @@ RUN mkdir -p public
 RUN npm run build
 
 # Production runtime
-FROM node:22-alpine AS runner
+FROM node:24-alpine AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
