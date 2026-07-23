@@ -43,24 +43,30 @@ Routes `/me`, `/profile`, `/change-password` all use `authMiddleware` (not manua
 
 ## SSE Authentication
 
-Server-Sent Events (logs, deployment streams) use **short-lived tokens** instead of long-lived JWTs in URLs:
--   `POST /api/auth/sse-token` → returns a 5-minute JWT with `purpose: 'sse'`
+Server-Sent Events (logs) use **short-lived tokens** instead of long-lived JWTs in URLs:
+-   `POST /api/auth/sse-token` → returns a 5-minute JWT with `purpose: 'sse'` (requires Bearer session JWT)
 -   Frontend uses this token as a query parameter: `?token=<sseToken>`
--   Backend validates `purpose === 'sse'` before allowing SSE connections
+-   Middleware split:
+    - **`authMiddleware`**: `Authorization: Bearer` session JWT only — **no query tokens**
+    - **`sseAuthMiddleware`**: query `?token=` with `purpose === 'sse'` only
+    - SSE middleware is mounted **only** on:
+      - `GET /api/system/logs/:service`
+      - `GET /api/logs/:projectId/stream/:containerName`
 
 ## Security Middleware
 
 Located in `backend/src/lib/authMiddleware.ts`.
 
--   **`authenticateToken`**: Verifies JWT signature, attaches `req.user`, returns 401 if invalid.
+-   **`authMiddleware`**: Bearer session JWT; rejects SSE-purpose tokens; never reads `?token=`.
+-   **`sseAuthMiddleware`**: Query SSE token only; rejects tokens without `purpose: 'sse'`.
 
 ## Security Hardening
 
 -   **Error Sanitization**: All `catch` blocks in auth routes return generic messages (e.g., `'Login failed'`), never `error.message`.
--   **Security Headers**: Applied globally via `helmet()` middleware in `index.ts`.
--   **CORS**: Configured from `CORS_ORIGIN` environment variable.
+-   **Security Headers**: Custom security headers in `index.ts` (`X-Content-Type-Options`, `X-Frame-Options`, `X-XSS-Protection`, `Referrer-Policy`). Helmet is not used.
+-   **CORS**: Configured from `CORS_ORIGIN` environment variable (or allow-all for self-hosted default; JWT is the gate).
 -   **Rate Limiting**: Applied to all `/api/auth` routes.
--   **Terminal**: WebSocket JWT + password re-verification (double auth).
+-   **Terminal**: WebSocket JWT + password re-verification (double auth). Session JWT only — SSE-purpose tokens are rejected on terminal upgrade.
 -   **Backup Downloads**: Use `fetch` + `Authorization: Bearer` header + blob download pattern — **never** put JWTs in URL query parameters (prevents token leakage in browser history, server logs, and referrer headers).
 
 ## Passwords

@@ -72,7 +72,7 @@ A full-featured xterm.js-based interactive terminal providing direct root access
   - **Double Authentication**: JWT (connect) + Password (interactive).
   - **Rate Limiting**: Max 5 logins/minute.
   - **Session Limits**: Max 3 concurrent connections per user.
-  - **Idle Timeout**: Auto-disconnect after 15 minutes of inactivity.
+  - **Idle Timeout**: Auto-disconnect after 30 minutes of inactivity.
 
 ### Graceful Shutdown
 
