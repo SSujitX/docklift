@@ -35,6 +35,10 @@ interface ClientMessage {
 function verifyToken(token: string): { userId: string; email: string } | null {
   try {
     const decoded = jwt.verify(token, JWT_SECRET) as any;
+    // Terminal upgrade uses the session JWT — reject short-lived SSE tokens
+    if (decoded.purpose === 'sse') {
+      return null;
+    }
     return { userId: decoded.userId || decoded.id, email: decoded.email };
   } catch {
     return null;

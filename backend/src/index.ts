@@ -21,7 +21,7 @@ import domainRouter from './routes/domains.js';
 import backupRouter from './routes/backup.js';
 import logsRouter from './routes/logs.js';
 import authRouter from './routes/auth.js';
-import { authMiddleware } from './lib/authMiddleware.js';
+import { authMiddleware, sseAuthMiddleware } from './lib/authMiddleware.js';
 import { setupTerminalWebSocket, cleanupAllSessions } from './services/terminal.js';
 import prisma from './lib/prisma.js';
 
@@ -135,9 +135,21 @@ app.use('/api/github', (req, res, next) => {
   }
   return authMiddleware(req, res, next);
 }, githubRouter);
-app.use('/api/system', authMiddleware, systemRouter);
+app.use('/api/system', (req, res, next) => {
+  // SSE log streams use short-lived query tokens; all other system APIs require Bearer session JWT
+  if (req.method === 'GET' && req.path.startsWith('/logs/')) {
+    return sseAuthMiddleware(req, res, next);
+  }
+  return authMiddleware(req, res, next);
+}, systemRouter);
 app.use('/api/domains', authMiddleware, domainRouter);
-app.use('/api/logs', authMiddleware, logsRouter);
+app.use('/api/logs', (req, res, next) => {
+  // Only container log SSE uses query SSE tokens; container list stays Bearer-only
+  if (req.method === 'GET' && /\/stream\//.test(req.path)) {
+    return sseAuthMiddleware(req, res, next);
+  }
+  return authMiddleware(req, res, next);
+}, logsRouter);
 app.use('/api/backup', async (req, res, next) => {
   // Allow restore-upload without auth ONLY with valid setup token (for fresh install/restore)
   if (req.path === '/restore-upload' && req.method === 'POST') {
@@ -175,9 +187,13 @@ app.use((err: Error, req: express.Request, res: express.Response, next: express.
 // Start server
 async function main() {
   try {
-    // Ensure Docker network exists
-    await ensureNetwork();
-    console.log(`🐳 Docker network "${config.dockerNetwork}" ready`);
+    // Ensure Docker network exists (non-fatal so auth/API can run without Docker for local smoke)
+    try {
+      await ensureNetwork();
+      console.log(`🐳 Docker network "${config.dockerNetwork}" ready`);
+    } catch (dockerErr: any) {
+      console.warn(`⚠️  Docker unavailable (${dockerErr?.code || dockerErr?.message || 'error'}) — API starting without Docker`);
+    }
     
     const server = app.listen(config.port, () => {
       console.log(`
