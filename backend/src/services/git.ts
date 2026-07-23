@@ -100,3 +100,10 @@ export async function getLastCommitMessage(projectPath: string): Promise<string 
     return null;
   }
 }
+
+// SECURITY: Remove credentials from origin remote after clone/pull
+export async function scrubOriginRemote(projectPath: string, cleanUrl: string): Promise<void> {
+  if (!cleanUrl || !fs.existsSync(path.join(projectPath, '.git'))) return;
+  const git = simpleGit(projectPath);
+  await git.remote(['set-url', 'origin', cleanUrl]);
+}
