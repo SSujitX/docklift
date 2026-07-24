@@ -127,7 +127,10 @@ function SettingsContent() {
   // Fetch data based on active tab
   useEffect(() => {
     if (activeTab === 'github') fetchGitHubStatus();
-    if (activeTab === 'domain') fetchDomains();
+    if (activeTab === 'domain') {
+      fetchDomains();
+      fetchServerIP();
+    }
     if (activeTab === 'server') fetchServerIP();
     if (activeTab === 'backup') fetchBackups();
     if (activeTab === 'restore') fetchUploadedFiles();
@@ -1150,27 +1153,44 @@ function SettingsContent() {
                         <DialogHeader>
                           <DialogTitle>Add Server Domain</DialogTitle>
                           <DialogDescription>
-                            Access Docklift using a custom domain instead of IP address. Configure your DNS first!
+                            Map a custom domain to this Docklift panel. Create the DNS records below before adding.
                           </DialogDescription>
                         </DialogHeader>
                         
                         {/* DNS Instructions */}
                         <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-sm space-y-2">
-                          <p className="font-medium text-amber-600 dark:text-amber-400">📝 DNS Setup Required</p>
-                          <p className="text-muted-foreground">Add an <strong>A Record</strong> in your domain's DNS settings:</p>
-                          <div className="font-mono text-xs bg-secondary/50 p-2 rounded">
-                            <div className="grid grid-cols-3 gap-2">
-                              <span className="text-muted-foreground">Type</span>
-                              <span className="text-muted-foreground">Host</span>
-                              <span className="text-muted-foreground">Value</span>
+                          <p className="font-medium text-amber-600 dark:text-amber-400">DNS Setup Required</p>
+                          <p className="text-muted-foreground">
+                            Point DNS at this server IP:{' '}
+                            <code className="bg-secondary px-1.5 py-0.5 rounded font-mono font-semibold text-foreground">
+                              {serverIP && serverIP !== '...' && serverIP !== 'N/A' ? serverIP : 'Loading…'}
+                            </code>
+                          </p>
+                          <div className="font-mono text-xs bg-secondary/50 p-2 rounded space-y-1.5">
+                            <div className="grid grid-cols-3 gap-2 text-muted-foreground">
+                              <span>Type</span>
+                              <span>Host</span>
+                              <span>Value</span>
                             </div>
                             <div className="grid grid-cols-3 gap-2 font-bold">
                               <span>A</span>
-                              <span>@ or subdomain</span>
-                              <span>Your Server IP</span>
+                              <span>@</span>
+                              <span className="truncate">{serverIP && serverIP !== '...' ? serverIP : 'Your Server IP'}</span>
+                            </div>
+                            <div className="grid grid-cols-3 gap-2 font-bold">
+                              <span>A</span>
+                              <span>www</span>
+                              <span className="truncate">{serverIP && serverIP !== '...' ? serverIP : 'Your Server IP'}</span>
                             </div>
                           </div>
-                          <p className="text-xs text-muted-foreground">Use <code className="bg-secondary px-1 rounded">@</code> for root domain (example.com) or a subdomain like <code className="bg-secondary px-1 rounded">panel</code> for panel.example.com</p>
+                          <p className="text-xs text-muted-foreground">
+                            For a root domain (example.com), add both <code className="bg-secondary px-1 rounded">@</code> and{' '}
+                            <code className="bg-secondary px-1 rounded">www</code> — HTTPS auto-includes www on the certificate.
+                            Or use a subdomain host like <code className="bg-secondary px-1 rounded">panel</code> (then www is not required).
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Cloudflare: you can proxy (orange cloud); after SSL is Active, set SSL/TLS to Full (strict).
+                          </p>
                         </div>
                         <div className="space-y-4 py-4">
                           <div className="space-y-2">
@@ -1207,6 +1227,7 @@ function SettingsContent() {
                     <label className="text-sm font-medium flex items-center gap-2">
                       <Mail className="h-4 w-4" />
                       Let&apos;s Encrypt / ACME email
+                      <span className="text-xs font-normal text-muted-foreground">(optional)</span>
                     </label>
                     <div className="flex flex-col sm:flex-row gap-2">
                       <Input
@@ -1227,8 +1248,7 @@ function SettingsContent() {
                       </Button>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      Used for certificate notices. Defaults to your admin account email if empty.
-                      Point DNS A records at this server before adding a domain (HTTP-01).
+                      Optional. Used for certificate expiry notices. If empty, Docklift uses your admin account email.
                     </p>
                   </div>
 
