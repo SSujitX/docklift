@@ -33,16 +33,76 @@ async function deleteSetting(key: string): Promise<void> {
 
 const GITHUB_STATE_TTL_MS = 60 * 60 * 1000; // 1 hour
 const GITHUB_STATE_COOKIE = 'docklift_github_state';
+const GITHUB_SETUP_DIR = path.join(config.dataPath, 'github-setup');
+
+function ensureGithubSetupDir(): void {
+  if (!fs.existsSync(GITHUB_SETUP_DIR)) {
+    fs.mkdirSync(GITHUB_SETUP_DIR, { recursive: true });
+  }
+}
+
+function githubSetupStatePath(state: string): string {
+  return path.join(GITHUB_SETUP_DIR, `${state}.json`);
+}
+
+function pruneExpiredGithubSetupStates(): void {
+  ensureGithubSetupDir();
+  const now = Date.now();
+  for (const name of fs.readdirSync(GITHUB_SETUP_DIR)) {
+    if (!name.endsWith('.json')) continue;
+    const full = path.join(GITHUB_SETUP_DIR, name);
+    try {
+      const data = JSON.parse(fs.readFileSync(full, 'utf8')) as { createdAt?: number };
+      if (!data.createdAt || now - data.createdAt > GITHUB_STATE_TTL_MS) {
+        fs.unlinkSync(full);
+      }
+    } catch {
+      try {
+        fs.unlinkSync(full);
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+}
 
 async function createGithubSetupState(): Promise<string> {
+  pruneExpiredGithubSetupStates();
   const state = crypto.randomBytes(24).toString('hex');
-  await saveSetting('github_setup_state', state);
-  await saveSetting('github_setup_state_at', String(Date.now()));
+  ensureGithubSetupDir();
+  fs.writeFileSync(
+    githubSetupStatePath(state),
+    JSON.stringify({ createdAt: Date.now() }),
+    { mode: 0o600 }
+  );
   return state;
 }
 
 async function verifyGithubSetupState(state: string | undefined): Promise<boolean> {
   if (!state || typeof state !== 'string') return false;
+  pruneExpiredGithubSetupStates();
+  const filePath = githubSetupStatePath(state);
+  if (!fs.existsSync(filePath)) {
+    return legacyVerifyGithubSetupState(state);
+  }
+  try {
+    const data = JSON.parse(fs.readFileSync(filePath, 'utf8')) as { createdAt?: number };
+    if (!data.createdAt || Date.now() - data.createdAt > GITHUB_STATE_TTL_MS) {
+      fs.unlinkSync(filePath);
+      return false;
+    }
+    const expected = path.basename(filePath, '.json');
+    const a = Buffer.from(state);
+    const b = Buffer.from(expected);
+    if (a.length !== b.length) return false;
+    return crypto.timingSafeEqual(a, b);
+  } catch {
+    return false;
+  }
+}
+
+/** Legacy single-key state in Settings (migrated away from overwriting). */
+async function legacyVerifyGithubSetupState(state: string): Promise<boolean> {
   const expected = await getSetting('github_setup_state');
   const at = await getSetting('github_setup_state_at');
   if (!expected || !at) return false;
@@ -57,7 +117,22 @@ async function verifyGithubSetupState(state: string | undefined): Promise<boolea
   return crypto.timingSafeEqual(a, b);
 }
 
-async function clearGithubSetupState(): Promise<void> {
+async function deleteGithubSetupStateFile(state: string | undefined): Promise<void> {
+  if (!state || typeof state !== 'string') return;
+  try {
+    const filePath = githubSetupStatePath(state);
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  } catch {
+    /* ignore */
+  }
+}
+
+async function clearGithubSetupState(states?: string[]): Promise<void> {
+  if (states?.length) {
+    for (const s of states) {
+      await deleteGithubSetupStateFile(s);
+    }
+  }
   await deleteSetting('github_setup_state');
   await deleteSetting('github_setup_state_at');
   // Legacy keys from older pending-bypass flow
@@ -245,6 +320,9 @@ router.get('/manifest/callback', async (req: Request, res: Response) => {
     if (!(await requireGithubSetupState(req))) {
       return res.redirect(`${config.frontendUrl}/settings?github_error=invalid_state`);
     }
+
+    const manifestStateQuery = typeof req.query.state === 'string' ? req.query.state : undefined;
+    const manifestStateCookie = readCookie(req, GITHUB_STATE_COOKIE);
     
     if (!code) {
       // This might be a setup callback without code
@@ -291,6 +369,10 @@ router.get('/manifest/callback', async (req: Request, res: Response) => {
     await saveSetting('github_webhook_secret', data.webhook_secret || '');
     await saveSetting('github_username', data.owner?.login || '');
     await saveSetting('github_avatar_url', data.owner?.avatar_url || '');
+
+    await clearGithubSetupState(
+      [manifestStateQuery, manifestStateCookie].filter(Boolean) as string[]
+    );
 
     // Fresh one-time nonce for the install → /setup return (HttpOnly cookie)
     const installState = await createGithubSetupState();
@@ -612,7 +694,9 @@ router.get('/setup', async (req: Request, res: Response) => {
     await saveSetting('github_installation_id', installationId);
     await saveSetting('github_username', account.login || 'unknown');
     await saveSetting('github_avatar_url', account.avatar_url || '');
-    await clearGithubSetupState();
+    const fromQuery = typeof req.query.state === 'string' ? req.query.state : undefined;
+    const fromCookie = readCookie(req, GITHUB_STATE_COOKIE);
+    await clearGithubSetupState([fromQuery, fromCookie].filter(Boolean) as string[]);
     clearGithubStateCookie(res);
 
     const returnUrl = await getSetting('github_return_url') || returnBase;
@@ -1029,6 +1113,11 @@ router.post('/webhook', async (req: Request, res: Response) => {
     }
     
     const payload = req.body;
+
+    if (payload.deleted === true || payload.head_commit == null) {
+      return res.status(200).json({ message: 'Ignoring branch deletion or empty push' });
+    }
+
     const repoUrl = payload.repository?.clone_url || payload.repository?.html_url;
     const pushedBranch = payload.ref?.replace('refs/heads/', '');
     
