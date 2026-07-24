@@ -11,9 +11,10 @@ Docklift uses a token-based authentication system (JWT) to secure the API and fr
 
 -   **Routes**: `backend/src/routes/auth.ts`
 -   **Middleware**: `backend/src/lib/authMiddleware.ts`
--   **Frontend Context**: `frontend/components/AuthProvider.tsx`
--   **Frontend API Helper**: `frontend/lib/auth.ts`
--   **Database Model**: `User` (email, password hash, role).
+-   **Origin checking**: `backend/src/lib/originCheck.ts` (CORS + WebSocket)
+-   **Frontend Context**: `frontend/src/components/AuthProvider.tsx`
+-   **Frontend API Helper**: `frontend/src/lib/auth.ts` (`getAuthHeaders`, `authFetch`, `fetchWithAuth`)
+-   **Database Model**: `User` (email, password hash, role, `passwordChangedAt`).
 
 ## Auth Flow
 
@@ -29,8 +30,10 @@ Docklift uses a token-based authentication system (JWT) to secure the API and fr
 
 3.  **Session Management**:
     -   Frontend stores the token in `localStorage` key `docklift_token`.
-    -   Token is sent in `Authorization: Bearer <token>` header via `getAuthHeaders()` in `frontend/lib/auth.ts`.
+    -   Token is sent in `Authorization: Bearer <token>` header via `getAuthHeaders()` in `frontend/src/lib/auth.ts`.
     -   `AuthProvider.tsx` validates the token against `/api/auth/me` on page load and clears invalid tokens.
+    -   **Password change invalidates old sessions**: `User.passwordChangedAt` is compared against the
+        JWT `iat`, so tokens issued before a password change are rejected even though they have not expired.
 
 ## Protected Routes
 
@@ -63,8 +66,10 @@ Located in `backend/src/lib/authMiddleware.ts`.
 ## Security Hardening
 
 -   **Error Sanitization**: All `catch` blocks in auth routes return generic messages (e.g., `'Login failed'`), never `error.message`.
--   **Security Headers**: Custom security headers in `index.ts` (`X-Content-Type-Options`, `X-Frame-Options`, `X-XSS-Protection`, `Referrer-Policy`). Helmet is not used.
--   **CORS**: Configured from `CORS_ORIGIN` environment variable (or allow-all for self-hosted default; JWT is the gate).
+-   **Security Headers**: Custom security headers in `index.ts` (`X-Content-Type-Options`, `X-Frame-Options`, `X-XSS-Protection`, `Referrer-Policy`, `Permissions-Policy`, plus HSTS when the request arrived over HTTPS). Helmet is not used.
+-   **CORS / Origin**: Strict **same-origin** — scheme + host + port — via `isTrustedOrigin()`, plus any
+    exact origins configured in `CORS_ORIGIN`. See the `security_hardening` skill for why hostname-only
+    matching is unsafe here.
 -   **Rate Limiting**: Applied to all `/api/auth` routes.
 -   **Terminal**: WebSocket JWT + password re-verification (double auth). Session JWT only — SSE-purpose tokens are rejected on terminal upgrade.
 -   **Backup Downloads**: Use `fetch` + `Authorization: Bearer` header + blob download pattern — **never** put JWTs in URL query parameters (prevents token leakage in browser history, server logs, and referrer headers).
