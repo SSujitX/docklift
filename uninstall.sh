@@ -1,56 +1,148 @@
 #!/bin/bash
-set -e
+# DockLift uninstaller - removes every DockLift resource and nothing else.
+set -uo pipefail
 
-# Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
+CYAN='\033[0;36m'
 YELLOW='\033[1;33m'
 BOLD='\033[1m'
 DIM='\033[2m'
 NC='\033[0m'
 
+INSTALL_DIR="/opt/docklift"
+
+# DockLift names every resource `docklift*`, `dl_*` (containers) or `dl-*` (compose
+# projects, and the images/volumes compose derives from them). Anything that matches
+# neither pattern belongs to another workload and is left untouched.
+NAME_RE='^(docklift|dl[-_])'
+PROJECT_RE='^dl-'
+
+# Base images DockLift pulls. Removed without -f so Docker refuses while another
+# workload still uses them.
+BASE_IMAGES=(nginx:stable-alpine certbot/certbot)
+
 echo -e "${RED}${BOLD}⚠️  THIS WILL DELETE ALL DOCKLIFT DATA, PROJECTS, AND DATABASES! ⚠️${NC}"
 
-if [[ "$1" == "-y" || "$1" == "--force" ]]; then
+if [[ "${1:-}" == "-y" || "${1:-}" == "--force" ]]; then
     echo -e "${YELLOW}Force mode detected. Skipping confirmation.${NC}"
 else
     echo -e "${YELLOW}Are you sure you want to continue? (y/N)${NC}"
     read -r response
-
     if [[ ! "$response" =~ ^([yY][eE][sS]|[yY])$ ]]; then
         echo "Aborted."
         exit 1
     fi
 fi
 
-echo -e "${YELLOW}Stopping and removing ALL Docklift-related containers...${NC}"
-# Find all container IDs that have "docklift" OR "dl_" in the name
-DOCKLIFT_CONTAINERS=$(docker ps -a -q --filter name=docklift --filter name=dl_)
-
-if [ -n "$DOCKLIFT_CONTAINERS" ]; then
-    echo -e "${YELLOW}Found containers, stopping and removing...${NC}"
-    docker stop $DOCKLIFT_CONTAINERS 2>/dev/null || true
-    docker rm $DOCKLIFT_CONTAINERS 2>/dev/null || true
-    echo -e "${GREEN}✓ Removed all containers${NC}"
-else
-    echo -e "${DIM}No docklift or dl_ containers found.${NC}"
+if ! command -v docker &>/dev/null; then
+    echo -e "${YELLOW}Docker not found - removing installation directory only.${NC}"
+    rm -rf "$INSTALL_DIR"
+    echo -e "${GREEN}✅ Done.${NC}"
+    exit 0
 fi
 
-echo -e "${YELLOW}Cleaning up Docker resources...${NC}"
-# Remove the network
-docker network rm docklift_network 2>/dev/null || true
-docker network prune -f 2>/dev/null || true
+# Containers match on their own name or on the compose project that created them, so
+# projects that set a custom container_name are still caught.
+docklift_containers() {
+    docker ps -a --format '{{.ID}}|{{.Names}}|{{.Label "com.docker.compose.project"}}' 2>/dev/null |
+        awk -F'|' -v n="$NAME_RE" -v p="$PROJECT_RE" '$2 ~ n || $3 ~ p {print $1}'
+}
 
-# Clean up any orphaned volumes related to docklift
-docker volume prune -f 2>/dev/null || true
+docklift_images() {
+    docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null |
+        awk '$0 ~ /^(docklift-|dl-)/ && $0 !~ /<none>/'
+}
 
-echo -e "${YELLOW}Killing any leftover processes on app port pool (5500-5600)...${NC}"
-for port in $(seq 5500 5600); do
-    fuser -k ${port}/tcp 2>/dev/null || true
+docklift_volumes() {
+    docker volume ls --format '{{.Name}}|{{.Labels}}' 2>/dev/null |
+        awk -F'|' -v n="$NAME_RE" '$1 ~ n || $2 ~ /com\.docker\.compose\.project=dl-/ {print $1}'
+}
+
+docklift_networks() {
+    docker network ls --format '{{.Name}}' 2>/dev/null | awk -v n="$NAME_RE" '$0 ~ n'
+}
+
+count() {
+    [ -z "${1:-}" ] && { echo 0; return; }
+    grep -c . <<<"$1"
+}
+
+# Step 1: let compose tear down the core stack it owns
+if [ -f "$INSTALL_DIR/docker-compose.yml" ]; then
+    printf "${CYAN}[1/6]${NC} Stopping the DockLift stack... "
+    (cd "$INSTALL_DIR" && docker compose down --volumes --remove-orphans --rmi all) >/dev/null 2>&1 || true
+    echo -e "${GREEN}done${NC}"
+else
+    echo -e "${CYAN}[1/6]${NC} No compose file at $INSTALL_DIR ${DIM}(skipping)${NC}"
+fi
+
+# Step 2: containers (core stack leftovers + every deployed project)
+printf "${CYAN}[2/6]${NC} Removing containers... "
+CONTAINERS=$(docklift_containers)
+if [ -n "$CONTAINERS" ]; then
+    docker stop $CONTAINERS >/dev/null 2>&1 || true
+    docker rm -f -v $CONTAINERS >/dev/null 2>&1 || true
+    echo -e "${GREEN}removed $(count "$CONTAINERS")${NC}"
+else
+    echo -e "${DIM}none found${NC}"
+fi
+
+# Step 3: images - DockLift's own builds, then the base images if nothing else needs them
+printf "${CYAN}[3/6]${NC} Removing images... "
+IMAGES=$(docklift_images)
+[ -n "$IMAGES" ] && docker rmi -f $IMAGES >/dev/null 2>&1 || true
+KEPT=""
+for img in "${BASE_IMAGES[@]}"; do
+    if docker image inspect "$img" >/dev/null 2>&1; then
+        docker rmi "$img" >/dev/null 2>&1 || KEPT="$KEPT $img"
+    fi
 done
+echo -e "${GREEN}removed $(count "$IMAGES") DockLift image(s)${NC}"
+[ -n "$KEPT" ] && echo -e "        ${DIM}kept in use by other containers:$KEPT${NC}"
 
-echo -e "${YELLOW}Removing installation directory (/opt/docklift)...${NC}"
-rm -rf /opt/docklift
+# Step 4: volumes and networks
+printf "${CYAN}[4/6]${NC} Removing volumes and networks... "
+VOLUMES=$(docklift_volumes)
+[ -n "$VOLUMES" ] && docker volume rm -f $VOLUMES >/dev/null 2>&1 || true
+NETWORKS=$(docklift_networks)
+[ -n "$NETWORKS" ] && docker network rm $NETWORKS >/dev/null 2>&1 || true
+echo -e "${GREEN}$(count "$VOLUMES") volume(s), $(count "$NETWORKS") network(s)${NC}"
 
-echo -e "${GREEN}✅ Uninstallation Complete. System is now clean.${NC}"
-echo -e "You can now run the installer again for a fresh start."
+# Step 5: build cache. Docker keeps one shared cache with no per-project scoping, and
+# install-dev.sh builds --no-cache, so this is where the bulk of the disk usage sits.
+printf "${CYAN}[5/6]${NC} Pruning Docker build cache... "
+RECLAIMED=$(docker builder prune -f 2>/dev/null | awk '/Total reclaimed space/ {print $4, $5}')
+echo -e "${GREEN}done${NC} ${DIM}${RECLAIMED:-0B}${NC}"
+
+# Step 6: installation directory (database, deployments, backups, certificates)
+printf "${CYAN}[6/6]${NC} Removing $INSTALL_DIR... "
+rm -rf "$INSTALL_DIR"
+echo -e "${GREEN}done${NC}"
+
+# Verify rather than assume
+LEFT_C=$(docklift_containers)
+LEFT_I=$(docklift_images)
+LEFT_V=$(docklift_volumes)
+LEFT_N=$(docklift_networks)
+if [ -n "$LEFT_C$LEFT_I$LEFT_V$LEFT_N" ] || [ -e "$INSTALL_DIR" ]; then
+    echo -e "\n${RED}${BOLD}⚠ Some resources could not be removed:${NC}"
+    [ -n "$LEFT_C" ] && echo -e "  containers: $(echo $LEFT_C | tr '\n' ' ')"
+    [ -n "$LEFT_I" ] && echo -e "  images:     $(echo $LEFT_I | tr '\n' ' ')"
+    [ -n "$LEFT_V" ] && echo -e "  volumes:    $(echo $LEFT_V | tr '\n' ' ')"
+    [ -n "$LEFT_N" ] && echo -e "  networks:   $(echo $LEFT_N | tr '\n' ' ')"
+    [ -e "$INSTALL_DIR" ] && echo -e "  directory:  $INSTALL_DIR"
+    exit 1
+fi
+
+# Anything still holding an app port after the containers are gone is not ours to kill.
+BUSY=""
+if command -v ss &>/dev/null; then
+    BUSY=$(ss -tln 2>/dev/null | awk '{print $4}' | grep -oE ':(55[0-9][0-9]|5600)$' | tr -d ':' | sort -un | tr '\n' ' ')
+fi
+
+echo -e "\n${GREEN}${BOLD}✅ Uninstallation complete. No DockLift resources remain.${NC}"
+if [ -n "$BUSY" ]; then
+    echo -e "${YELLOW}Note:${NC} ports still in use by non-DockLift processes: ${BUSY}"
+fi
+echo -e "${DIM}Docker Engine and git were left installed. You can now run the installer again.${NC}"

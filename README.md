@@ -149,6 +149,10 @@ curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/upgrade.sh 
 curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/uninstall.sh | sudo bash -s -- -y
 ```
 
+Removes every DockLift container, image, volume and network, the build cache, and
+`/opt/docklift` (database, deployments, backups, certificates). Other Docker workloads on
+the same host are left alone, as are Docker Engine and git.
+
 ### Development Build (Latest Master)
 
 For testing the latest features before release:

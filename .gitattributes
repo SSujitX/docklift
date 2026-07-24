@@ -1,0 +1,3 @@
+# Installer scripts are piped straight into bash on Linux hosts - a CRLF would break
+# the shebang, so never let a Windows checkout commit them back with CRLF.
+*.sh text eol=lf
