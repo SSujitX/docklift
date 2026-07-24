@@ -6,7 +6,7 @@ import { ProjectCard } from "@/components/ProjectCard";
 import { Button } from "@/components/ui/button";
 import { Project } from "@/lib/types";
 import { API_URL } from "@/lib/utils";
-import { getAuthHeaders } from "@/lib/auth";
+import { authFetch } from "@/lib/auth";
 import { Plus, RefreshCw, Container, LayoutGrid, Sparkles } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
@@ -17,12 +17,9 @@ export default function Dashboard() {
 
   const fetchProjects = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/api/projects`, {
-        headers: getAuthHeaders(),
-      });
+      const res = await authFetch(`${API_URL}/api/projects`);
       
-      if (res.status === 401) {
-        // Not authenticated, AuthProvider will handle redirect
+      if (!res.ok) {
         return;
       }
       
