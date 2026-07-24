@@ -59,11 +59,27 @@ Auto-adding `www.` was a real bug: if the `www` DNS record does not exist, the A
 whole certificate fails, so the apex domain gets **no** certificate either. Users who want `www` add
 it as another comma-separated domain — and must create the DNS record first.
 
+### DNS preflight
+
+`issueCertificate()` resolves every requested hostname first (`services/dnsCheck.ts`). When a
+resolver answers "no such record" (ENOTFOUND/ENODATA) issuance is **skipped** with an actionable
+error instead of calling certbot: ACME fails the whole order anyway, and failed orders count against
+the account rate limit. Lookup failures that are our fault (SERVFAIL, timeout) do not block.
+
+### Activity log
+
+`appendSslEvent()` / `getSslEvents()` keep the last 40 issuance events per hostname in memory —
+preflight results, certbot start, success or failure, nginx reloads. `GET
+/api/deployments/:projectId/services/:serviceId/ssl` returns `{ ssl, events }`, and the project
+Domains tab polls it every 2s while work is in flight so users watch issuance happen. Events are
+narration only; PEMs remain the source of truth.
+
 ### Error reporting
 
 `summarizeCertbotError()` reduces certbot's very verbose output to one actionable line, filtering
-boilerplate like "An unexpected error occurred". The UI (`SslStatusBadge.tsx`) shows that summary
-first, plus a copyable command for the raw logs:
+boilerplate like "An unexpected error occurred". `components/domains/ServiceDomainCard.tsx` shows
+that summary with numbered remediation steps (`domains/sslHelp.ts`), plus a copyable command for the
+raw logs:
 
 ```bash
 docker logs docklift-certbot --tail 200
