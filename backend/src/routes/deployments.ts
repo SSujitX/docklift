@@ -1,6 +1,6 @@
 // Deployments routes - API endpoints for deploy, redeploy, stop, restart, logs
 import { Router, Request, Response } from 'express';
-import { spawn, spawnSync, ChildProcess } from 'child_process';
+import { spawnSync, ChildProcess } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 import prisma from '../lib/prisma.js';
@@ -12,16 +12,30 @@ import { buildServiceImage } from '../services/buildRunner.js';
 import { pullRepo, getLastCommitMessage } from '../services/git.js';
 import { cleanupServiceDomain, updateServiceDomain } from '../services/nginx.js';
 import {
+  appendSslEvent,
+  clearSslEvents,
   clearSslMeta,
   getCertificateStatus,
+  getSslEvents,
   type CertificateStatus,
 } from '../services/certs.js';
+import { checkDomainsDns, getServerPublicIp } from '../services/dnsCheck.js';
 import {
   composeProjectName,
   composeProjectAliases,
   dockerSlug,
   serviceContainerName,
+  storageVolumeComposeKey,
 } from '../lib/naming.js';
+import { allocatePort } from '../lib/portAllocation.js';
+import {
+  assertHostnamesAvailable,
+  formatDomainField,
+  normalizeDomainList,
+} from '../lib/domainOwnership.js';
+import { isProjectDeploying, setProjectDeploying } from '../lib/deploymentState.js';
+import { runCompose } from '../lib/runCompose.js';
+import { syncProjectStatusFromContainers } from '../lib/projectStatusSync.js';
 
 const router = Router();
 
@@ -44,7 +58,6 @@ interface ActiveBuild {
   cancelled: boolean;
 }
 const activeBuilds = new Map<string, ActiveBuild>();
-const activeDeploymentProjects = new Set<string>();
 const cancelledDeployments = new Set<string>();
 
 function killComposeProcess(proc: ChildProcess) {
@@ -106,21 +119,36 @@ function wasBuildCancelled(projectId: string, deploymentId: string): boolean {
   return entry.cancelled;
 }
 
+async function isDeploymentCancelled(projectId: string, deploymentId: string): Promise<boolean> {
+  if (wasBuildCancelled(projectId, deploymentId)) return true;
+  const row = await prisma.deployment.findUnique({
+    where: { id: deploymentId },
+    select: { status: true },
+  });
+  return row?.status === 'cancelled';
+}
+
 async function failDeploymentState(
   projectId: string,
   deploymentId: string,
   logs?: string,
 ) {
-  await prisma.deployment
-    .update({
-      where: { id: deploymentId },
+  // Never overwrite an intentional cancel with failed
+  const persisted = await prisma.deployment
+    .updateMany({
+      where: {
+        id: deploymentId,
+        status: { not: 'cancelled' },
+      },
       data: {
         status: 'failed',
         finished_at: new Date(),
         ...(logs !== undefined ? { logs } : {}),
       },
     })
-    .catch(() => {});
+    .catch(() => ({ count: 0 }));
+  if (!persisted || persisted.count === 0) return;
+
   await prisma.project
     .update({
       where: { id: projectId },
@@ -199,38 +227,6 @@ async function runPostDeploymentPurge(): Promise<{ success: boolean; message: st
   }
 }
 
-// Allocate a port for the project
-async function allocatePort(projectId: string): Promise<number> {
-  const usedPorts = await prisma.port.findMany({
-    where: { is_locked: true },
-    select: { port: true },
-  });
-  const usedSet = new Set(usedPorts.map(p => p.port));
-
-  let port = config.portRangeStart;
-  while (usedSet.has(port)) {
-    port++;
-    if (port > config.portRangeEnd) {
-      throw new Error(`No free ports in range ${config.portRangeStart}-${config.portRangeEnd}`);
-    }
-  }
-  
-  // Use upsert to handle if the port record already exists but is unlocked
-  await prisma.port.upsert({
-    where: { port },
-    update: { project_id: projectId, is_locked: true },
-    create: { port, project_id: projectId, is_locked: true },
-  });
-  
-  // Also update the main project port if it's not set
-  await prisma.project.update({
-    where: { id: projectId },
-    data: { port: port }
-  }).catch(() => {}); // Ignore error if project doesn't exist or other issues
-  
-  return port;
-}
-
 // List deployments for a project
 // Default: JSON array (backward compatible).
 // With ?meta=1: { items, total } for paginated UIs.
@@ -275,11 +271,15 @@ router.get('/:projectId/services', async (req: Request, res: Response) => {
   }
 });
 
-async function sslMapForDomainString(domainStr: string | null | undefined): Promise<Record<string, CertificateStatus>> {
-  const domains = (domainStr || '')
+function domainList(domainStr: unknown): string[] {
+  return String(domainStr ?? '')
     .split(',')
     .map((d) => d.trim().toLowerCase())
     .filter(Boolean);
+}
+
+async function sslMapForDomainString(domainStr: string | null | undefined): Promise<Record<string, CertificateStatus>> {
+  const domains = domainList(domainStr);
   const ssl: Record<string, CertificateStatus> = {};
   for (const d of domains) {
     // Status is keyed by primary LE name (first domain in group); each listed domain checked individually
@@ -288,7 +288,7 @@ async function sslMapForDomainString(domainStr: string | null | undefined): Prom
   return ssl;
 }
 
-// GET service SSL status for each configured domain
+// GET service SSL status + recent issuance activity for each configured domain
 router.get('/:projectId/services/:serviceId/ssl', async (req: Request, res: Response) => {
   try {
     const { projectId, serviceId } = req.params;
@@ -299,10 +299,35 @@ router.get('/:projectId/services/:serviceId/ssl', async (req: Request, res: Resp
       return res.status(404).json({ error: 'Service not found' });
     }
     const ssl = await sslMapForDomainString(service.domain);
-    res.json({ ssl });
+    res.json({ ssl, events: getSslEvents(domainList(service.domain)) });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Failed to get SSL status' });
+  }
+});
+
+// POST DNS preflight — does each hostname point at this server?
+router.post('/:projectId/services/:serviceId/dns-check', async (req: Request, res: Response) => {
+  try {
+    const { projectId, serviceId } = req.params;
+    const service = await prisma.service.findFirst({
+      where: { id: serviceId, project_id: projectId },
+    });
+    if (!service) {
+      return res.status(404).json({ error: 'Service not found' });
+    }
+
+    const requested = Array.isArray(req.body?.domains) ? req.body.domains.slice(0, 10) : null;
+    const hosts = (requested ? requested.map((d: unknown) => String(d)) : domainList(service.domain))
+      .map((d: string) => d.trim().toLowerCase())
+      .filter((d: string) => d && !d.includes(',') && isValidDomainList(d))
+      .slice(0, 10);
+
+    const [checks, serverIp] = await Promise.all([checkDomainsDns(hosts), getServerPublicIp()]);
+    res.json({ checks, serverIp });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'DNS check failed' });
   }
 });
 
@@ -320,20 +345,19 @@ router.post('/:projectId/services/:serviceId/ssl/retry', async (req: Request, re
       return res.status(400).json({ error: 'Service has no domain or is not deployed' });
     }
 
-    const primaries = service.domain
-      .split(',')
-      .map((d) => d.trim().toLowerCase())
-      .filter(Boolean);
+    const primaries = domainList(service.domain);
     for (const d of primaries) {
       await clearSslMeta(d);
     }
+    clearSslEvents(primaries);
+    appendSslEvent(primaries, 'info', 'Manual SSL retry requested.');
 
     await updateServiceDomain(
       { ...service, status: service.status || 'running' },
       { issueSsl: true, forceSsl: true }
     );
     const ssl = await sslMapForDomainString(service.domain);
-    res.json({ success: true, ssl });
+    res.json({ success: true, ssl, events: getSslEvents(primaries) });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'SSL retry failed' });
@@ -346,31 +370,73 @@ router.put('/:projectId/services/:serviceId', async (req: Request, res: Response
     const { projectId, serviceId } = req.params;
     const { domain } = req.body || {};
 
+    if (domain !== undefined && domain !== null && typeof domain !== 'string') {
+      return res.status(400).json({ error: 'Domain must be a comma-separated string' });
+    }
+
     // Validate domain format to prevent Nginx config injection
     if (domain && !isValidDomainList(domain)) {
       return res.status(400).json({ error: 'Invalid domain format. Must be valid domain names (e.g., example.com, app.example.com).' });
     }
 
-    const count = await prisma.service.updateMany({
+    const existing = await prisma.service.findFirst({
       where: { id: serviceId, project_id: projectId },
-      data: { domain },
     });
-
-    if (count.count === 0) {
+    if (!existing) {
       return res.status(404).json({ error: 'Service not found or access denied' });
     }
-    
+
+    const previous = domainList(existing.domain);
+    const next = normalizeDomainList(domain);
+
+    try {
+      await assertHostnamesAvailable(next, { excludeServiceId: serviceId });
+    } catch (conflict: any) {
+      return res.status(409).json({ error: conflict.message || 'Domain already in use' });
+    }
+
+    const domainField = formatDomainField(next);
+    const previousField = existing.domain;
+
+    await prisma.service.update({
+      where: { id: serviceId },
+      data: { domain: domainField },
+    });
+
+    // Drop activity for hostnames that are no longer mapped here
+    clearSslEvents(previous.filter((d) => !next.includes(d)));
+
+    const added = next.filter((d) => !previous.includes(d));
+    if (added.length > 0) {
+      appendSslEvent(next, 'info', `Domain added: ${added.join(', ')}`);
+    }
+
     // Fetch updated service to generate Nginx config
     const service = await prisma.service.findUnique({
       where: { id: serviceId }
     });
-    
-    if (service && service.container_name) {
-      await updateServiceDomain(service, { issueSsl: true });
+
+    try {
+      if (service && service.container_name) {
+        await updateServiceDomain(service, { issueSsl: true });
+      } else if (next.length > 0) {
+        appendSslEvent(
+          next,
+          'warn',
+          'Service is not deployed yet — routing and HTTPS are set up on the next deploy.'
+        );
+      }
+    } catch (nginxErr) {
+      // Compensate: keep DB aligned with live nginx when reload/write fails
+      await prisma.service.update({
+        where: { id: serviceId },
+        data: { domain: previousField },
+      }).catch(() => {});
+      throw nginxErr;
     }
 
     const ssl = await sslMapForDomainString(service?.domain);
-    res.json({ success: true, ssl });
+    res.json({ success: true, ssl, events: getSslEvents(next) });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Failed to update service' });
@@ -399,10 +465,17 @@ async function deployProject(req: Request, res: Response) {
     if (!fs.existsSync(projectPath)) {
       return res.status(400).json({ error: 'Project files not found' });
     }
-    if (activeDeploymentProjects.has(projectId)) {
+    if (isProjectDeploying(projectId)) {
       return res.status(409).json({ error: 'A deployment is already running for this project' });
     }
-    activeDeploymentProjects.add(projectId);
+    const busyDeploy = await prisma.deployment.findFirst({
+      where: { project_id: projectId, status: 'in_progress' },
+      select: { id: true },
+    });
+    if (busyDeploy) {
+      return res.status(409).json({ error: 'A deployment is already running for this project' });
+    }
+    setProjectDeploying(projectId, true);
     
     const { trigger, commit_message } = req.body || {};
 
@@ -482,6 +555,7 @@ async function deployProject(req: Request, res: Response) {
       }
       
       // Pull latest code (uses authenticated URL if token was set above)
+      let scrubFailed = false;
       try {
         const pullResWrapper = {
           write: (text: string) => writeLog(text),
@@ -490,12 +564,33 @@ async function deployProject(req: Request, res: Response) {
         } as any;
         await pullRepo(projectPath, pullResWrapper, project.github_branch || undefined);
       } finally {
-        // SECURITY: Scrub token from remote URL after pull completes (or fails)
+        // SECURITY: Scrub token from remote URL after pull — fail deploy if creds remain
         if (gitTokenSet && gitInstance) {
           try {
-            await gitInstance.remote(['set-url', 'origin', cleanUrl]);
-          } catch { /* ignore cleanup errors */ }
+            const { scrubOriginRemote } = await import('../services/git.js');
+            await scrubOriginRemote(projectPath, cleanUrl);
+            const remotes = await gitInstance.getRemotes(true);
+            const origin = remotes.find((r: { name: string }) => r.name === 'origin');
+            const originUrl = origin?.refs?.fetch || origin?.refs?.push || '';
+            if (
+              originUrl.includes('x-access-token') ||
+              /https?:\/\/[^/@]+:[^/@]+@/.test(originUrl)
+            ) {
+              throw new Error('Origin remote still contains credentials after scrub');
+            }
+          } catch (scrubErr: any) {
+            scrubFailed = true;
+            writeLog(`❌ Failed to scrub Git credentials: ${scrubErr?.message || scrubErr}\n`);
+            try {
+              await gitInstance.remote(['set-url', 'origin', cleanUrl]);
+            } catch {
+              /* ignore */
+            }
+          }
         }
+      }
+      if (scrubFailed) {
+        throw new Error('Failed to scrub Git credentials after pull');
       }
     }
 
@@ -682,7 +777,7 @@ async function deployProject(req: Request, res: Response) {
         volumes: persistentVolumes
           .filter((volume) => volume.service_name === serviceData.name)
           .map((volume, index) => ({
-            key: `storage_${serviceData.name.replace(/[^a-zA-Z0-9_]/g, '_')}_${index}`,
+            key: storageVolumeComposeKey(serviceData.name, index, volume.name),
             name: volume.name,
             mountPath: volume.mount_path,
           })),
@@ -713,19 +808,10 @@ async function deployProject(req: Request, res: Response) {
       });
     }
     
-    // Run docker compose up — detached process group so cancel can signal plugin children
-    const dockerProcess = spawn('docker', ['compose', ...composeFileArgs(projectId), '-p', composeProject, 'up', '-d', '--remove-orphans'], {
-      cwd: projectPath,
-      shell: false,
-      detached: process.platform !== 'win32',
-    });
-    registerBuild(projectId, dockerProcess, deployment.id);
-    
-    // Throttled database update for logs
     let lastUpdate = Date.now();
     const syncLogsToDb = async (force = false) => {
       const now = Date.now();
-      if (force || now - lastUpdate > 2000) { // Update every 2 seconds or if forced
+      if (force || now - lastUpdate > 2000) {
         lastUpdate = now;
         await prisma.deployment.update({
           where: { id: deployment.id },
@@ -733,29 +819,35 @@ async function deployProject(req: Request, res: Response) {
         }).catch(err => console.error('Failed to sync logs to DB:', err));
       }
     };
-    
-    dockerProcess.stdout?.on('data', (data) => {
-      const text = data.toString();
-      logs.push(text);
-      try { if (!res.writableEnded) res.write(text); } catch {}
-      syncLogsToDb();
-    });
-    
-    dockerProcess.stderr?.on('data', (data) => {
-      const text = data.toString();
-      logs.push(text);
-      try { if (!res.writableEnded) res.write(text); } catch {}
-      syncLogsToDb();
-    });
-    
-    dockerProcess.on('close', async (code) => {
-      activeDeploymentProjects.delete(projectId);
-      const cancelled = wasBuildCancelled(projectId, deployment.id);
+
+    // Run docker compose up — detached process group so cancel can signal plugin children
+    const dockerProcess = runCompose(
+      ['compose', ...composeFileArgs(projectId), '-p', composeProject, 'up', '-d', '--remove-orphans'],
+      {
+        cwd: projectPath,
+        detached: process.platform !== 'win32',
+      },
+      {
+        onStdout: (data) => {
+          const text = data.toString();
+          logs.push(text);
+          try { if (!res.writableEnded) res.write(text); } catch {}
+          syncLogsToDb();
+        },
+        onStderr: (data) => {
+          const text = data.toString();
+          logs.push(text);
+          try { if (!res.writableEnded) res.write(text); } catch {}
+          syncLogsToDb();
+        },
+        onClose: async (code) => {
+      // Hold deploy lock through status write + nginx/SSL so cancel/delete/redeploy stay serialized
+      const cancelled = await isDeploymentCancelled(projectId, deployment.id);
       clearBuild(projectId, deployment.id);
 
       await syncLogsToDb(true);
 
-      if (cancelled) {
+      const markCancelledAndRelease = async () => {
         writeLog(`\n${'━'.repeat(50)}\n❌ DEPLOY CANCELLED\n${'━'.repeat(50)}\n`);
         await prisma.deployment.update({
           where: { id: deployment.id },
@@ -766,7 +858,12 @@ async function deployProject(req: Request, res: Response) {
           },
         }).catch(() => {});
         cancelledDeployments.delete(deployment.id);
+        setProjectDeploying(projectId, false);
         if (!res.writableEnded) res.end();
+      };
+
+      if (cancelled) {
+        await markCancelledAndRelease();
         return;
       }
 
@@ -790,58 +887,97 @@ async function deployProject(req: Request, res: Response) {
         writeLog(`\n🧹 Running auto-purge to free resources...\n`);
         const purgeResult = await runPostDeploymentPurge();
         writeLog(`   ${purgeResult.message}\n`);
+
+        if (await isDeploymentCancelled(projectId, deployment.id)) {
+          await markCancelledAndRelease();
+          return;
+        }
       } else {
         writeLog(`\n${'━'.repeat(50)}\n`);
         writeLog(`❌ DEPLOY FAILED (Exit Code: ${code})\n`);
         writeLog(`${'━'.repeat(50)}\n`);
       }
+
+      // Final cancel gate — cancel during purge/success logging must not flip to success
+      if (await isDeploymentCancelled(projectId, deployment.id)) {
+        await markCancelledAndRelease();
+        return;
+      }
       
-      // Update logs in DB with final messages
-      await prisma.deployment.update({
-        where: { id: deployment.id },
+      // Update logs in DB with final messages (never overwrite cancelled)
+      const finalStatus = success ? 'success' : 'failed';
+      const persisted = await prisma.deployment.updateMany({
+        where: {
+          id: deployment.id,
+          status: { not: 'cancelled' },
+        },
         data: {
-          status: success ? 'success' : 'failed',
+          status: finalStatus,
           logs: logs.join(''),
           finished_at: new Date(),
         },
       });
+      if (persisted.count === 0) {
+        cancelledDeployments.delete(deployment.id);
+        setProjectDeploying(projectId, false);
+        if (!res.writableEnded) res.end();
+        return;
+      }
       
-      await prisma.project.update({
-        where: { id: projectId },
-        data: { status: success ? 'running' : 'error' },
-      });
-
-      // Update ALL services for this project (not just known ones) for consistency
-      await prisma.service.updateMany({
-        where: { project_id: projectId },
-        data: { status: success ? 'running' : 'error' },
-      });
-
       if (success) {
+        // Cancel can still arrive during nginx activation — honor it by skipping further work
+        if (await isDeploymentCancelled(projectId, deployment.id)) {
+          await markCancelledAndRelease();
+          return;
+        }
+        await syncProjectStatusFromContainers(projectId);
         try {
           await activateServiceDomains(projectId);
           writeLog(`🌐 Nginx domains activated\n`);
         } catch (e: any) {
           writeLog(`⚠️ Domain activation warning: ${e?.message || 'failed'}\n`);
         }
+        if (await isDeploymentCancelled(projectId, deployment.id)) {
+          await markCancelledAndRelease();
+          return;
+        }
+      } else {
+        await prisma.project.update({
+          where: { id: projectId },
+          data: { status: 'error' },
+        });
+        await prisma.service.updateMany({
+          where: { project_id: projectId },
+          data: { status: 'error' },
+        });
       }
+      setProjectDeploying(projectId, false);
       
       writeLog(`\n📊 Deployment complete! Status: ${success ? 'SUCCESS ✅' : 'FAILED ❌'}\n`);
       cancelledDeployments.delete(deployment.id);
       if (!res.writableEnded) res.end();
-    });
-    
-    dockerProcess.on('error', async (err) => {
-      activeDeploymentProjects.delete(projectId);
+        },
+        onError: async (err) => {
       clearBuild(projectId, deployment.id);
       writeLog(`\n❌ Docker execution error: ${err.message}\n`);
-      await failDeploymentState(projectId, deployment.id, logs.join(''));
+      if (await isDeploymentCancelled(projectId, deployment.id)) {
+        await prisma.deployment.update({
+          where: { id: deployment.id },
+          data: { status: 'cancelled', logs: logs.join(''), finished_at: new Date() },
+        }).catch(() => {});
+      } else {
+        await failDeploymentState(projectId, deployment.id, logs.join(''));
+      }
       cancelledDeployments.delete(deployment.id);
+      setProjectDeploying(projectId, false);
       if (!res.writableEnded) res.end();
-    });
+        },
+      },
+    );
+    registerBuild(projectId, dockerProcess, deployment.id);
     
   } catch (error: any) {
-    activeDeploymentProjects.delete(projectId);
+    setProjectDeploying(projectId, false);
     console.error(error);
     if (deploymentId) {
       const cancelled = wasBuildCancelled(projectId, deploymentId);
@@ -877,7 +1013,7 @@ router.post('/:projectId/deploy', deployProject);
 router.post('/:projectId/stop', async (req: Request, res: Response) => {
   try {
     const { projectId } = req.params;
-    if (activeDeploymentProjects.has(projectId)) {
+    if (isProjectDeploying(projectId)) {
       return res.status(409).json({ error: 'Cannot stop while a deployment is running; cancel it first' });
     }
     const project = await prisma.project.findUnique({ where: { id: projectId } });
@@ -922,20 +1058,13 @@ router.post('/:projectId/stop', async (req: Request, res: Response) => {
       });
     }
     
-    const dockerProcess = spawn('docker', ['compose', ...composeFileArgs(projectId), '-p', composeProject, 'down'], {
-      cwd: projectPath,
-      shell: false,
-    });
-    
-    dockerProcess.stdout.on('data', (data) => {
-      writeLog(data.toString());
-    });
-    
-    dockerProcess.stderr.on('data', (data) => {
-      writeLog(data.toString());
-    });
-    
-    dockerProcess.on('close', async (code) => {
+    runCompose(
+      ['compose', ...composeFileArgs(projectId), '-p', composeProject, 'down'],
+      { cwd: projectPath },
+      {
+        onStdout: (data) => writeLog(data.toString()),
+        onStderr: (data) => writeLog(data.toString()),
+        onClose: async (code) => {
       const success = code === 0;
       
       if (success) {
@@ -944,7 +1073,6 @@ router.post('/:projectId/stop', async (req: Request, res: Response) => {
         writeLog(`\n${'━'.repeat(50)}\n❌ STOP FAILED (code ${code})\n${'━'.repeat(50)}\n`);
       }
       
-      // Update deployment record with logs
       await prisma.deployment.update({
         where: { id: deployment.id },
         data: {
@@ -954,24 +1082,39 @@ router.post('/:projectId/stop', async (req: Request, res: Response) => {
         },
       });
       
-      // Update service and project status
-      await prisma.service.updateMany({
-        where: { project_id: projectId },
-        data: { status: 'stopped' },
-      });
-      
-      await prisma.project.update({
-        where: { id: projectId },
-        data: { status: 'stopped' },
-      });
+      if (success) {
+        await prisma.service.updateMany({
+          where: { project_id: projectId },
+          data: { status: 'stopped' },
+        });
+        
+        await prisma.project.update({
+          where: { id: projectId },
+          data: { status: 'stopped' },
+        });
 
-      const stoppedServices = await prisma.service.findMany({ where: { project_id: projectId } });
-      for (const svc of stoppedServices) {
-        await updateServiceDomain(svc);
+        const stoppedServices = await prisma.service.findMany({ where: { project_id: projectId } });
+        for (const svc of stoppedServices) {
+          await updateServiceDomain(svc);
+        }
       }
       
       res.end();
-    });
+        },
+        onError: async (err) => {
+      writeLog(`\n❌ Docker execution error: ${err.message}\n`);
+      await prisma.deployment.update({
+        where: { id: deployment.id },
+        data: {
+          status: 'failed',
+          logs: logs.join(''),
+          finished_at: new Date(),
+        },
+      });
+      res.end();
+        },
+      },
+    );
     
   } catch (error: any) {
     console.error(error);
@@ -984,7 +1127,7 @@ router.post('/:projectId/stop', async (req: Request, res: Response) => {
 router.post('/:projectId/restart', async (req: Request, res: Response) => {
   try {
     const { projectId } = req.params;
-    if (activeDeploymentProjects.has(projectId)) {
+    if (isProjectDeploying(projectId)) {
       return res.status(409).json({ error: 'Cannot restart while a deployment is running' });
     }
     const project = await prisma.project.findUnique({ where: { id: projectId } });
@@ -1028,20 +1171,13 @@ router.post('/:projectId/restart', async (req: Request, res: Response) => {
 
     writeLog(`\n${'━'.repeat(50)}\n🔄 RESTARTING PROJECT\n📅 ${timestamp}\n${'━'.repeat(50)}\n\n`);
     
-    const dockerProcess = spawn('docker', ['compose', ...composeFileArgs(projectId), '-p', composeProject, 'restart'], {
-      cwd: projectPath,
-      shell: false,
-    });
-    
-    dockerProcess.stdout?.on('data', (data) => {
-      writeLog(data.toString());
-    });
-    
-    dockerProcess.stderr?.on('data', (data) => {
-      writeLog(data.toString());
-    });
-    
-    dockerProcess.on('close', async (code) => {
+    runCompose(
+      ['compose', ...composeFileArgs(projectId), '-p', composeProject, 'restart'],
+      { cwd: projectPath },
+      {
+        onStdout: (data) => writeLog(data.toString()),
+        onStderr: (data) => writeLog(data.toString()),
+        onClose: async (code) => {
       const success = code === 0;
       
       if (success) {
@@ -1050,7 +1186,6 @@ router.post('/:projectId/restart', async (req: Request, res: Response) => {
         writeLog(`\n${'━'.repeat(50)}\n❌ RESTART FAILED (code ${code})\n${'━'.repeat(50)}\n`);
       }
       
-      // Update deployment record with logs
       await prisma.deployment.update({
         where: { id: deployment.id },
         data: {
@@ -1060,24 +1195,25 @@ router.post('/:projectId/restart', async (req: Request, res: Response) => {
         },
       });
       
-      // Update project and services status
-      await prisma.project.update({
-        where: { id: projectId },
-        data: { status: success ? 'running' : 'error' },
-      });
-      await prisma.service.updateMany({
-        where: { project_id: projectId },
-        data: { status: success ? 'running' : 'error' },
-      });
+      if (success) {
+        await syncProjectStatusFromContainers(projectId);
+      } else {
+        await syncProjectStatusFromContainers(projectId);
+      }
 
       if (!res.writableEnded) res.end();
-    });
-
-    dockerProcess.on('error', async (err) => {
+        },
+        onError: async (err) => {
       writeLog(`\n❌ Docker execution error: ${err.message}\n`);
-      await failDeploymentState(projectId, deployment.id, logs.join(''));
+      await prisma.deployment.update({
+        where: { id: deployment.id },
+        data: { status: 'failed', logs: logs.join(''), finished_at: new Date() },
+      }).catch(() => {});
+      await syncProjectStatusFromContainers(projectId);
       if (!res.writableEnded) res.end();
-    });
+        },
+      },
+    );
 
   } catch (error: any) {
     console.error(error);
@@ -1127,7 +1263,7 @@ router.post('/:projectId/cancel', async (req: Request, res: Response) => {
     res.setHeader('Cache-Control', 'no-cache, no-transform');
     res.setHeader('Transfer-Encoding', 'chunked');
     
-    res.write(`❌ Cancelling build...\n`);
+    res.write(`❌ Cancelling — tearing down so you can start fresh...\n`);
 
     const active = activeBuilds.get(projectId);
     if (active) {
@@ -1138,19 +1274,31 @@ router.post('/:projectId/cancel', async (req: Request, res: Response) => {
       res.write(`ℹ️ No tracked build process — tearing down containers if present...\n`);
     }
 
-    // Keep an in-memory marker so cancellation also interrupts repository pulls,
-    // before the first Docker/Railpack child process exists.
+    // Mark in-flight and the latest success/failed rows cancelled so history matches teardown
     const inProgress = await prisma.deployment.findMany({
       where: { project_id: projectId, status: 'in_progress' },
       select: { id: true },
     });
     inProgress.forEach((deployment) => cancelledDeployments.add(deployment.id));
 
-    // Mark any in-progress deployment rows cancelled immediately
     await prisma.deployment.updateMany({
       where: { project_id: projectId, status: 'in_progress' },
       data: { status: 'cancelled', finished_at: new Date() },
     });
+
+    // Cancel anytime: if deploy already wrote success, flip it so UI does not show "running success"
+    const latest = await prisma.deployment.findFirst({
+      where: { project_id: projectId, status: { in: ['success', 'failed'] } },
+      orderBy: { created_at: 'desc' },
+      select: { id: true },
+    });
+    if (latest) {
+      cancelledDeployments.add(latest.id);
+      await prisma.deployment.update({
+        where: { id: latest.id },
+        data: { status: 'cancelled', finished_at: new Date() },
+      }).catch(() => {});
+    }
 
     // Best-effort: kill services then down (argv arrays, no shell; timeout avoids blocking forever)
     if (fs.existsSync(projectPath) && hasRuntimeCompose) {
@@ -1163,54 +1311,54 @@ router.post('/:projectId/cancel', async (req: Request, res: Response) => {
       });
     }
 
+    for (const deployment of inProgress) {
+      clearBuild(projectId, deployment.id);
+    }
+
     const dockerArgs = hasRuntimeCompose
       ? ['compose', ...composeFileArgs(projectId), '-p', composeProject, 'down', '--remove-orphans']
       : ['version', '--format', '{{.Server.Version}}'];
-    const dockerProcess = spawn('docker', dockerArgs, {
-      cwd: fs.existsSync(projectPath) ? projectPath : process.cwd(),
-      shell: false,
-    });
-    
-    dockerProcess.stdout.on('data', (data) => {
-      res.write(data.toString());
-    });
-    
-    dockerProcess.stderr.on('data', (data) => {
-      res.write(data.toString());
-    });
-    
-    dockerProcess.on('close', async () => {
-      await prisma.service.updateMany({
-        where: { project_id: projectId },
-        data: { status: 'stopped' },
-      });
-      
-      await prisma.project.update({
-        where: { id: projectId },
-        data: { status: 'stopped' },
-      });
+    runCompose(
+      dockerArgs,
+      { cwd: fs.existsSync(projectPath) ? projectPath : process.cwd() },
+      {
+        onStdout: (data) => res.write(data.toString()),
+        onStderr: (data) => res.write(data.toString()),
+        onClose: async (code) => {
+      const success = code === 0;
+      setProjectDeploying(projectId, false);
+      if (success) {
+        await prisma.service.updateMany({
+          where: { project_id: projectId },
+          data: { status: 'stopped' },
+        });
+        
+        await prisma.project.update({
+          where: { id: projectId },
+          data: { status: 'stopped' },
+        });
 
-      const cancelledServices = await prisma.service.findMany({ where: { project_id: projectId } });
-      for (const svc of cancelledServices) {
-        await updateServiceDomain(svc);
+        const cancelledServices = await prisma.service.findMany({ where: { project_id: projectId } });
+        for (const svc of cancelledServices) {
+          try {
+            await updateServiceDomain(svc);
+          } catch (e) {
+            console.error('Cancel nginx cleanup failed:', e);
+          }
+        }
+        res.write(`✅ Cancelled — containers down. Ready for a fresh deploy.\n`);
+      } else {
+        res.write(`❌ Compose teardown failed (code ${code}); project status unchanged\n`);
       }
-      
-      res.write(`✅ Build cancelled and status reset\n`);
       res.end();
-    });
-
-    dockerProcess.on('error', async () => {
-      await prisma.service.updateMany({
-        where: { project_id: projectId },
-        data: { status: 'stopped' },
-      });
-      await prisma.project.update({
-        where: { id: projectId },
-        data: { status: 'stopped' },
-      });
-      res.write(`✅ Status reset (compose down unavailable)\n`);
+        },
+        onError: async () => {
+      setProjectDeploying(projectId, false);
+      res.write(`❌ Compose teardown unavailable; project status unchanged\n`);
       res.end();
-    });
+        },
+      },
+    );
     
   } catch (error) {
     res.status(500).json({ error: 'Failed to cancel build' });
