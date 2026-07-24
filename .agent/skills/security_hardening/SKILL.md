@@ -46,6 +46,46 @@ This skill documents all security patterns implemented in Docklift. Follow these
 -   `X-Internal-Secret` header used for backend-to-backend calls (e.g., webhook → deploy).
 -   Stored in `INTERNAL_API_SECRET` env var.
 
+## Origin Validation (CORS & WebSocket)
+
+`lib/originCheck.ts` is the single implementation, shared by the CORS middleware in `index.ts` and
+the terminal WebSocket upgrade in `services/terminal.ts`.
+
+**RULE**: An origin is trusted only when it matches **scheme + host + port** of the request the
+browser actually made, or when it appears *exactly* in the operator allowlist (`CORS_ORIGIN`,
+`DOCKLIFT_FRONTEND_URL`).
+
+```typescript
+const allowed = isTrustedOrigin(origin, req.headers, {
+  fallbackProto: req.protocol,
+  allow: [config.frontendUrl],
+});
+```
+
+-   `requestOrigin()` reconstructs the browser-facing origin from the forwarded `Host`/proto headers.
+-   Scheme mismatches are tolerated **only on default ports**, to survive TLS termination at the proxy.
+-   Requests with no `Origin` header (non-browser clients) are allowed — the JWT is still the gate.
+
+### Why hostname-only matching is a real vulnerability
+
+A previous refactor compared **hostnames only**. On a Docklift server that is exactly wrong: user apps
+are deployed on the *same host* under other ports and subdomains. Any co-located app could then make
+credentialed cross-origin requests to the dashboard API. Port and scheme are part of the origin —
+keep them in the comparison.
+
+### Nginx must not pass through a client `X-Forwarded-Host`
+
+Because `requestOrigin()` trusts the forwarded host, every proxy config sets it from the connection
+itself:
+
+```nginx
+proxy_set_header X-Forwarded-Host $http_host;
+```
+
+Without this line a client can send its own `X-Forwarded-Host` and forge the origin the backend
+believes it is serving, defeating the same-origin check. Applies to `nginx.conf` and every template
+in `services/nginxSsl.ts`.
+
 ## Command Execution Security
 
 ### spawnSync over execSync
@@ -60,7 +100,21 @@ spawnSync('docker', ['rm', '-f', containerName], { stdio: 'ignore' });
 execSync(`docker rm -f ${containerName}`);
 ```
 
-Applied in: `deployments.ts` (container migration).
+Applied in: `deployments.ts` (container teardown/migration) and `projects.ts` (volume lifecycle).
+
+### Build Argument Allowlisting
+`validateDockerBuildArgs()` (`services/compose.ts`) passes only the build args a Dockerfile actually
+declares with `ARG`. Forwarding every project env var into `docker build` would bake runtime secrets
+into image layers, where they stay readable via `docker history`.
+
+`buildServiceImage()` additionally **rejects** protected host variables (e.g. `PATH`, `HOME`,
+`DOCKER_HOST`) as build variables, so a project setting cannot repoint the builder's toolchain or
+Docker endpoint. Covered by `buildResolver.test.ts`.
+
+### Path Resolution for User-Supplied Directories
+`resolveProjectPath()` (`services/buildResolver.ts`) resolves `base_directory` / `dockerfile_path`
+and rejects anything that escapes the deployment root, so a crafted project setting cannot make the
+builder read from elsewhere on the host.
 
 ## Error Handling
 
@@ -177,6 +231,11 @@ const projectIdRegex = /^[a-f0-9-]{36}$/;
 
 ## File Upload Safety
 
+### Safe ZIP Extraction
+Project uploads and backup archives are extracted through `lib/safeUnzip.ts`, which rejects absolute
+paths and `..` entries. A raw `unzipper` extract would happily write outside the destination
+directory (zip-slip).
+
 ### Multer Configuration
 -   Upload destination uses **absolute path**: `path.join(config.dataPath, 'uploads')`.
 -   Temp files are **always cleaned up** via `try/finally`:
@@ -191,10 +250,25 @@ try {
 ## Infrastructure Security
 
 ### Security Headers
--   Applied in `index.ts` via custom middleware (`X-Content-Type-Options`, `X-Frame-Options`, `X-XSS-Protection`, `Referrer-Policy`). Helmet is not used.
+-   Applied in `index.ts` via custom middleware: `X-Content-Type-Options`, `X-Frame-Options`,
+    `X-XSS-Protection`, `Referrer-Policy`, `Permissions-Policy`, and `Strict-Transport-Security`
+    (only when the request itself arrived over HTTPS). Helmet is not used.
+
+### Trusted Proxy Depth
+-   `app.set('trust proxy', 1)` — exactly one proxy (nginx). A larger value would let clients spoof
+    `X-Forwarded-For` and evade rate limiting.
+
+### Public Proxy Hostname Isolation
+-   Hostnames with no generated vhost are rejected at the edge rather than falling through to the
+    dashboard, so the admin UI is never served on an unconfigured domain.
+
+### Access Log Hygiene
+-   `nginx-proxy/nginx.conf` logs `$uri` rather than the full request line, keeping SSE `?token=`
+    query parameters out of access logs.
 
 ### CORS
--   Configured from `CORS_ORIGIN` environment variable.
+-   Strict same-origin via `isTrustedOrigin()`, plus exact `CORS_ORIGIN` entries — see
+    [Origin Validation](#origin-validation-cors--websocket) above.
 
 ### Setup Token (Backup Restore)
 -   One-time token stored in `.setup-token` file.
@@ -229,3 +303,8 @@ When adding new endpoints or features, verify:
 - [ ] Shell commands use `spawnSync()` with argument arrays, never `execSync()` with strings
 - [ ] Sensitive tokens (JWT, Git) are never placed in URLs — use Authorization headers
 - [ ] Terminal/WebSocket inputs are validated (type, bounds) before processing
+- [ ] Cross-origin checks go through `isTrustedOrigin()` — never compare hostnames alone
+- [ ] User-supplied paths go through `resolveProjectPath()` / `pathSecurity.ts`
+- [ ] Archives are extracted via `safeUnzip.ts`, never raw `unzipper`
+- [ ] New build inputs are allowlisted, not forwarded wholesale into `docker build`
+- [ ] New nginx templates set `X-Forwarded-Host` from `$http_host`
