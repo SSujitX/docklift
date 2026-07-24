@@ -5,6 +5,10 @@ export const config = {
   port: parseInt(process.env.PORT || '8000'),
   dataPath: path.resolve(process.env.DATA_PATH || './data'),
   deploymentsPath: path.resolve(process.env.DEPLOYMENTS_PATH || './deployments'),
+  /** Defaults under dataPath so native/dev installs never write to /data/backups. */
+  backupPath: path.resolve(
+    process.env.BACKUP_PATH || path.join(process.env.DATA_PATH || './data', 'backups')
+  ),
   dockerNetwork: process.env.DOCKER_NETWORK || 'docklift_network',
 
   // GitHub App settings
