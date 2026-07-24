@@ -1,3 +1,24 @@
+# [2.0.0](https://github.com/SSujitX/docklift/compare/v1.3.21...v2.0.0) (2026-07-24)
+
+
+### Bug Fixes
+
+* **backup:** redeploy from project root after restore ([ede06d2](https://github.com/SSujitX/docklift/commit/ede06d28f9ea44c221d56305b6e996779c68fa34))
+* **frontend:** harden SSE usage and adaptive polling ([1f84a4f](https://github.com/SSujitX/docklift/commit/1f84a4fdccf0d2d433a9e65ba5b645a76803967a))
+* **scripts:** align install flow with certbot and public :8080 ([2e839e3](https://github.com/SSujitX/docklift/commit/2e839e3e0b61ebb2273ccfa250af682ff81ae071))
+* **security:** scrub git remotes and require webhook secret ([33ca1d4](https://github.com/SSujitX/docklift/commit/33ca1d4962949d535b37244a1e7bc00895ff4c0d))
+
+
+### Features
+
+* **auth:** split bearer and SSE auth middleware ([f8e03ef](https://github.com/SSujitX/docklift/commit/f8e03ef89f2950030bf6a25e19e8c775a982b1bf))
+* **deploy:** cancel builds and fix status lifecycle ([262dd5c](https://github.com/SSujitX/docklift/commit/262dd5c149357af94e3c1ffacc23852d71fdb2e1))
+* **frontend:** migrate dashboard from Next.js to Vite ([39801ff](https://github.com/SSujitX/docklift/commit/39801ff79e104bd7f8b414c059e465858a3b13c0))
+* **security:** harden auth, CORS, uploads, and GitHub CSRF ([cde084b](https://github.com/SSujitX/docklift/commit/cde084b7efde25a06843cade9aa10388296808d0))
+* **ssl:** add Let's Encrypt ACME and HTTPS vhosts ([79b1b9e](https://github.com/SSujitX/docklift/commit/79b1b9ea79e67ce9ccff9fc4d949a9b20f5c20b8))
+* Vite frontend and SSL *force major* ([3108c66](https://github.com/SSujitX/docklift/commit/3108c6646dc9f4e53664e6d760ad7798e40faf17))
+* Vite frontend and SSL *force major* ([d08a4c8](https://github.com/SSujitX/docklift/commit/d08a4c8cddb0a72f708eff64cca560218e9604fb))
+
 ## [1.3.21](https://github.com/SSujitX/docklift/compare/v1.3.20...v1.3.21) (2026-05-12)
 
 
