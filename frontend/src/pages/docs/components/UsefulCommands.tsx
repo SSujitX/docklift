@@ -40,6 +40,7 @@ export const UsefulCommands = () => (
             { cmd: "docker logs docklift-frontend --tail 100 -f", desc: "Frontend (Vite SPA) logs" },
             { cmd: "docker logs docklift-nginx --tail 100 -f", desc: "Dashboard gateway (:8080)" },
             { cmd: "docker logs docklift-nginx-proxy --tail 100 -f", desc: "App domains proxy (:80)" },
+            { cmd: "docker logs docklift-certbot --tail 100 -f", desc: "Certificate renewals" },
             { cmd: "docker compose logs -f --tail 100", desc: "All Compose services live" },
           ].map((item, i) => (
             <CommandBlock key={i} label={item.desc} command={item.cmd} color="cyan" />

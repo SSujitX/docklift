@@ -1,4 +1,5 @@
-// Logs page - system container logs (backend, frontend, proxy, nginx, certbot)
+// Logs page - system container logs. The two nginx containers are distinct: the
+// public proxy owns :80/:443 and TLS, the dashboard gateway serves the panel on :8080.
 
 import { useState } from "react";
 import { PageHeader } from "@/components/shell/PageHeader";
@@ -11,8 +12,8 @@ import { cn } from "@/lib/utils";
 const SERVICES = [
   { id: "backend", label: "Backend", icon: Server, description: "API & business logic", container: "docklift-backend" },
   { id: "frontend", label: "Frontend", icon: Globe, description: "Vite SPA dashboard", container: "docklift-frontend" },
-  { id: "proxy", label: "Nginx Proxy", icon: Shield, description: "Reverse proxy & domains", container: "docklift-nginx-proxy" },
-  { id: "nginx", label: "Nginx", icon: Network, description: "Static gateway", container: "docklift-nginx" },
+  { id: "proxy", label: "Public Proxy", icon: Shield, description: "Domains + HTTPS on :80/:443", container: "docklift-nginx-proxy" },
+  { id: "nginx", label: "Dashboard Gateway", icon: Network, description: "Serves the panel on :8080", container: "docklift-nginx" },
   { id: "certbot", label: "Certbot", icon: LockKeyhole, description: "Certificate renewals (12h)", container: "docklift-certbot" },
 ] as const;
 
