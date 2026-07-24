@@ -109,6 +109,12 @@ Mapping lives in `LOG_SERVICE_CONTAINERS` (`backend/src/routes/system.ts`):
 
 All backup/restore routes are in `backend/src/routes/backup.ts`, mounted at `/api/backup`.
 
+### Paths
+
+-   `BACKUP_PATH` defaults to `<DATA_PATH>/backups` (not a hardcoded `/data/backups`).
+-   Production/dev Compose set `BACKUP_PATH=/data/backups` with a `./backups` mount.
+-   Env names are `DEPLOYMENTS_PATH`, `NGINX_CONF_PATH`, `DOCKER_NETWORK`, `DATA_PATH` (not `DOCKLIFT_*` for those).
+
 ### Backup
 
 | API | Purpose |
@@ -118,6 +124,11 @@ All backup/restore routes are in `backend/src/routes/backup.ts`, mounted at `/ap
 | `GET /api/backup/download/:filename` | Download a backup file |
 | `DELETE /api/backup/:filename` | Delete a backup |
 
+**SQLite integrity**: create uses `VACUUM INTO` a temp snapshot, then archives that file — never a live
+raw copy of `docklift.db`. Missing DB aborts with `[ERROR]` (UI must not toast success).
+
+Frontend streams use `frontend/src/lib/streamProgress.ts`: require `res.ok` and fail on `[ERROR]` lines.
+
 ### Restore
 
 | API | Purpose |
@@ -126,10 +137,16 @@ All backup/restore routes are in `backend/src/routes/backup.ts`, mounted at `/ap
 | `POST /api/backup/restore-upload` | Upload and immediately restore |
 | `POST /api/backup/restore-from-upload/:filename` | Restore from a previously uploaded file |
 
+**Safety**:
+-   `enterMaintenance()` blocks mutating APIs while the SQLite file is replaced (`prisma.$disconnect`
+    → copy → `reconnectPrisma()`).
+-   Directory restores use `lib/fsCopy.ts` (`fs.promises.cp` + atomic swap) — never shell `cp`.
+-   Restore does **not** wipe other backup ZIPs.
+
 ### Auto-Restore (reconcileSystem)
 
 After restoring files, the system **automatically**:
-1. **Reads restored database** — Creates a fresh `PrismaClient` to read the restored DB
+1. **Reads restored database** — `reconnectPrisma()` then read projects
 2. **Recreates persistent volumes** — Each `PersistentVolume` row is re-created as an external
    labelled Docker volume before the project starts, so mounts resolve
 3. **Brings every project back up** — `docker compose -f <runtime-compose> -p <composeProject> up -d`,
@@ -139,6 +156,9 @@ After restoring files, the system **automatically**:
    deployed manually
 4. **Reloads Nginx proxy** — `docker exec docklift-nginx-proxy nginx -s reload`
 5. **Self-restarts backend** — `process.exit(0)` triggers Docker's `restart: unless-stopped` policy
+
+Any per-project or nginx failure emits `[ERROR]`; the stream ends with **RESTORE INCOMPLETE** so the
+UI does not toast success. Backend still restarts so the restored DB is loaded.
 
 > The `-p` name must match deploy-time naming, or restore creates a *second* set of containers and
 > images alongside the originals.
