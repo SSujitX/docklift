@@ -471,18 +471,13 @@ function SettingsContent() {
         headers: getAuthHeaders(),
       });
 
-      const reader = res.body?.getReader();
-      const decoder = new TextDecoder();
+      const result = await consumeProgressStream(res, (line) => {
+        if (line.trim()) setRestoreProgress((prev) => [...prev, line]);
+      });
 
-      if (reader) {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          const text = decoder.decode(value);
-          const lines = text.split('\n').filter(line => line.trim());
-          setRestoreProgress(prev => [...prev, ...lines]);
-        }
+      if (!result.ok) {
+        toast.error(result.error || "Failed to restore from uploaded file");
+        return;
       }
 
       toast.success("Backup restored successfully");
@@ -507,18 +502,13 @@ function SettingsContent() {
         body: JSON.stringify({ name: backupName.trim() || undefined }),
       });
 
-      const reader = res.body?.getReader();
-      const decoder = new TextDecoder();
+      const result = await consumeProgressStream(res, (line) => {
+        if (line.trim()) setBackupProgress((prev) => [...prev, line]);
+      });
 
-      if (reader) {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          const text = decoder.decode(value);
-          const lines = text.split('\n').filter(line => line.trim());
-          setBackupProgress(prev => [...prev, ...lines]);
-        }
+      if (!result.ok) {
+        toast.error(result.error || "Failed to create backup");
+        return;
       }
 
       toast.success("Backup created successfully");
@@ -650,18 +640,13 @@ function SettingsContent() {
         body: formData,
       });
 
-      const reader = res.body?.getReader();
-      const decoder = new TextDecoder();
+      const result = await consumeProgressStream(res, (line) => {
+        if (line.trim()) setRestoreProgress((prev) => [...prev, line]);
+      });
 
-      if (reader) {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          const text = decoder.decode(value);
-          const lines = text.split('\n').filter(line => line.trim());
-          setRestoreProgress(prev => [...prev, ...lines]);
-        }
+      if (!result.ok) {
+        toast.error(result.error || "Failed to restore from uploaded backup");
+        return;
       }
 
       toast.success("Backup restored successfully");
