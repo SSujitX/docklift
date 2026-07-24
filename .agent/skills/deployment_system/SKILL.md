@@ -11,21 +11,26 @@ This guide details the lifecycle of a deployment in Docklift, from source code t
 
 -   **`routes/projects.ts`**: Project CRUD, build settings, persistent volumes, domain assignment.
 -   **`routes/deployments.ts`**: Deployment history plus the streaming `deploy` / `stop` / `restart` / `redeploy` / `cancel` handlers.
--   **`services/docker.ts`**: `dockerode` wrapper for inspect/logs and compose streaming.
+-   **`lib/runCompose.ts`**: Shared `docker` spawn with mandatory `error` + `close` handlers (never leave unhandled spawn errors).
+-   **`lib/deploymentState.ts`**: In-memory “deploying” lock per project (`isProjectDeploying` / `setProjectDeploying`).
+-   **`lib/projectStatusSync.ts`**: Inspect **all** service containers; aggregate project status.
+-   **`lib/deploymentRecovery.ts`**: On boot, mark stale `in_progress` failed and stuck `building` projects corrected.
+-   **`lib/portAllocation.ts`**: Transactional host-port claim (no upsert steal).
+-   **`services/docker.ts`**: `dockerode` wrapper for inspect/logs.
 -   **`services/buildResolver.ts`**: Decides *what* to build (Dockerfile vs Railpack, base directory, service list).
 -   **`services/buildRunner.ts`**: Actually builds the image and summarizes failures.
--   **`services/compose.ts`**: Scans Dockerfiles and writes DockLift-owned runtime Compose state.
--   **`services/git.ts`**: Clone (`git clone`) and update (`fetch` + `reset --hard` + `clean`).
--   **`lib/naming.ts`**: The single source of truth for compose project, container and image names.
+-   **`services/compose.ts`**: Scans Dockerfiles (**dedupes colliding service names** with path hash) and writes runtime Compose.
+-   **`services/git.ts`**: Clone / pull + `scrubOriginRemote`.
+-   **`lib/naming.ts`**: Compose project, container, image, and `storageVolumeComposeKey` names.
 
 ## Deployment Lifecycle
 
 1.  **Trigger**
     -   Manual (UI button) or GitHub push webhook.
-    -   `POST /api/deployments/:projectId/deploy` (SSE response).
-    -   **Serialized per project**: if a deployment is already `in_progress`, the endpoint returns
-        **409** instead of starting a second one. `stop` and `restart` return 409 for the same reason —
-        the caller must cancel first.
+    -   `POST /api/deployments/:projectId/deploy` (streaming response).
+    -   **Serialized per project**: memory lock **and** DB `deployment.status = in_progress` → **409**.
+        `stop` / `restart` also 409 while deploying; caller must cancel first.
+    -   **Delete project** while deploying → **409** (`projects.ts` + `isProjectDeploying`).
 
 2.  **Preparation**
     -   A deployment row is created (`status: in_progress`).
@@ -36,9 +41,9 @@ This guide details the lifecycle of a deployment in Docklift, from source code t
 
     **Git Token Security** (GitHub projects):
     -   Installation token is refreshed just-in-time via `getInstallationToken()`.
-    -   The token is written into the remote URL, used, then **immediately scrubbed** in `finally`
-        (`scrubOriginRemote`) — including on failure, so it never persists in `.git/config`.
-    -   Shell work uses `spawnSync()` with argument arrays — never string interpolation.
+    -   After pull/clone, origin is scrubbed (`scrubOriginRemote`) and verified clean.
+    -   **If scrub fails, the deployment/create fails** (do not continue with credentials in `.git/config`).
+    -   Shell work uses `spawn` / `spawnSync` with argument arrays — never string interpolation.
 
 3.  **Build Resolution**
     -   `build_type` on the project is `auto` (default), `dockerfile`, or `railpack`.
@@ -69,8 +74,16 @@ This guide details the lifecycle of a deployment in Docklift, from source code t
     -   Output streams to the UI console over SSE.
 
 6.  **Verification**
-    -   Container state is checked; `Project.status` becomes `running` and the deployment `success`.
-    -   On cancel, both rows are set to `cancelled` rather than left dangling.
+    -   `syncProjectStatusFromContainers()` updates each service from Docker, then aggregates project status
+        (`running` only if all running; `error` if any error; else mixed rules).
+    -   Deploy lock (`setProjectDeploying`) is held through status write **and** nginx/SSL activation.
+    -   Final status write uses `updateMany` with `status ≠ cancelled` so cancel cannot be overwritten as success.
+    -   `failDeploymentState` likewise never overwrites `cancelled`.
+
+7.  **Cancel (anytime)**
+    -   Product rule: cancel tears everything down so the user can start fresh.
+    -   Marks in-progress (and latest success/failed) deployments `cancelled`, `compose down`, project/services `stopped`.
+    -   Stop/cancel only mark `stopped` when compose exit code is **0**.
 
 ## Build Types at a Glance
 
@@ -89,8 +102,9 @@ Rebuilds replace containers, so anything written to a container's filesystem is 
 
 -   Configured per service in the project **Storage** tab → `PersistentVolume` rows
     (`service_name`, `mount_path`, `display_name`).
--   Docker volume name: `dl-<shortId>-<slug>`, labelled `com.docklift.project=<projectId>`
-    so uninstall and cleanup can find DockLift-owned volumes without touching other workloads.
+-   Docker volume name: `dl-<shortId>-<slug>-<hash(label)>` so labels like `a-b` vs `a_b` never collide.
+    Labelled `com.docklift.project=<projectId>` for cleanup.
+-   Compose volume keys use `storageVolumeComposeKey(service, index, volumeName)`.
 -   Volumes are created as **external** named volumes and referenced by the generated compose file,
     so `docker compose down` never deletes user data.
 -   They are removed only when the project is deleted (or when a failed create is rolled back).
@@ -146,7 +160,7 @@ Every container (and Docklift itself) joins `docklift_network`.
 -   **Container exited**: the app crashed — `docker logs <container>`.
 -   **Port conflicts**: host ports come from the `5500`–`5600` pool (`PORT_RANGE_START/END`). The app
     must listen on the port Docklift injects as `PORT` / the service's `internal_port`.
--   **409 on deploy**: a deployment is already in flight. `POST /:projectId/cancel` first.
--   **Stuck `in_progress`**: the disconnection guard normally settles status. If it truly hangs,
-    cancel the build, then check backend logs.
+-   **409 on deploy/delete**: a deployment is already in flight. `POST /:projectId/cancel` first.
+-   **Stuck `in_progress` / `building` after backend restart**: `recoverDeploymentStateOnBoot()` marks
+    interrupted deployments failed and reconciles project status from containers.
 -   **Data lost after redeploy**: no persistent volume for that path — configure one in Storage.
