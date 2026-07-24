@@ -1174,19 +1174,14 @@ function SettingsContent() {
                             </div>
                             <div className="grid grid-cols-3 gap-2 font-bold">
                               <span>A</span>
-                              <span>@</span>
-                              <span className="truncate">{serverIP && serverIP !== '...' ? serverIP : 'Your Server IP'}</span>
-                            </div>
-                            <div className="grid grid-cols-3 gap-2 font-bold">
-                              <span>A</span>
-                              <span>www</span>
+                              <span>@ / panel / www</span>
                               <span className="truncate">{serverIP && serverIP !== '...' ? serverIP : 'Your Server IP'}</span>
                             </div>
                           </div>
                           <p className="text-xs text-muted-foreground">
-                            For a root domain (example.com), add both <code className="bg-secondary px-1 rounded">@</code> and{' '}
-                            <code className="bg-secondary px-1 rounded">www</code> — HTTPS auto-includes www on the certificate.
-                            Or use a subdomain host like <code className="bg-secondary px-1 rounded">panel</code> (then www is not required).
+                            Create one record for the exact hostname entered below. The root domain and{' '}
+                            <code className="bg-secondary px-1 rounded">www</code> are separate; add each as its own
+                            domain mapping only when you want both.
                           </p>
                           <p className="text-xs text-muted-foreground">
                             Cloudflare: you can proxy (orange cloud); after SSL is Active, set SSL/TLS to Full (strict).

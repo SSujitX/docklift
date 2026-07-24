@@ -7,7 +7,6 @@ import * as dockerService from './docker.js';
 import {
   buildHttpHttpsServers,
   buildServiceProxyLocation,
-  buildWwwRedirectServers,
 } from './nginxSsl.js';
 import { certificateFilesExist, issueCertificate } from './certs.js';
 
@@ -62,22 +61,10 @@ export async function updateServiceDomain(
     return;
   }
 
-  const mainDomains: string[] = [];
-  const wwwRedirects: string[] = [];
-
-  for (const domain of domainsArray) {
-    if (domain.startsWith('www.')) {
-      mainDomains.push(domain);
-    } else {
-      mainDomains.push(domain);
-      if (!domain.match(/^[\d.]+$/) && !domain.includes('localhost')) {
-        wwwRedirects.push(`www.${domain}`);
-      }
-    }
-  }
-
-  const primaryDomain = mainDomains[0];
-  const mainDomainsStr = mainDomains.join(' ');
+  // Configure only hostnames explicitly entered by the user. In particular, do not
+  // silently add www: a missing www DNS record would fail the entire certificate order.
+  const primaryDomain = domainsArray[0];
+  const mainDomainsStr = domainsArray.join(' ');
   const proxyLocation = buildServiceProxyLocation(
     service.id,
     service.container_name,
@@ -85,19 +72,13 @@ export async function updateServiceDomain(
   );
 
   // 1) Write HTTP(+ACME) config so challenges can succeed
-  let content =
-    buildHttpHttpsServers({
-      comment: `Main server block for ${service.name}`,
-      serverNames: mainDomainsStr,
-      primaryDomain,
-      proxyLocation,
-      enableHttps: certificateFilesExist(primaryDomain),
-    }) +
-    buildWwwRedirectServers(
-      wwwRedirects,
-      primaryDomain,
-      certificateFilesExist(primaryDomain)
-    );
+  let content = buildHttpHttpsServers({
+    comment: `Main server block for ${service.name}`,
+    serverNames: mainDomainsStr,
+    primaryDomain,
+    proxyLocation,
+    enableHttps: certificateFilesExist(primaryDomain),
+  });
 
   try {
     fs.writeFileSync(confPath, content);
@@ -110,7 +91,7 @@ export async function updateServiceDomain(
   // 2) Issue certificate (optional — default true on domain updates)
   const shouldIssue = opts?.issueSsl !== false;
   if (shouldIssue) {
-    const sans = [...mainDomains, ...wwwRedirects];
+    const sans = domainsArray;
     try {
       const status = await issueCertificate(sans, { force: opts?.forceSsl === true });
       // 3) Rewrite with HTTPS if active
@@ -119,14 +100,13 @@ export async function updateServiceDomain(
         status.status === 'expiring' ||
         certificateFilesExist(primaryDomain)
       ) {
-        content =
-          buildHttpHttpsServers({
-            comment: `Main server block for ${service.name}`,
-            serverNames: mainDomainsStr,
-            primaryDomain,
-            proxyLocation,
-            enableHttps: true,
-          }) + buildWwwRedirectServers(wwwRedirects, primaryDomain, true);
+        content = buildHttpHttpsServers({
+          comment: `Main server block for ${service.name}`,
+          serverNames: mainDomainsStr,
+          primaryDomain,
+          proxyLocation,
+          enableHttps: true,
+        });
         fs.writeFileSync(confPath, content);
         await reloadNginx();
         console.log(
@@ -141,9 +121,7 @@ export async function updateServiceDomain(
       console.error(`SSL issue failed for ${primaryDomain}:`, e?.message || e);
     }
   } else {
-    console.log(
-      `Updated Nginx config for ${service.name} (${mainDomainsStr}${wwwRedirects.length > 0 ? ' + www redirect' : ''})`
-    );
+    console.log(`Updated Nginx config for ${service.name} (${mainDomainsStr})`);
   }
 }
 

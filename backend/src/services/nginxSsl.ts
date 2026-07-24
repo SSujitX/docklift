@@ -114,43 +114,5 @@ ${proxyLocation}
 `;
 }
 
-export function buildWwwRedirectServers(
-  wwwDomains: string[],
-  primaryApex: string,
-  https: boolean
-): string {
-  if (wwwDomains.length === 0) return '';
-  const names = wwwDomains.join(' ');
-  const scheme = https ? 'https' : 'http';
-  return `
-# WWW to non-WWW redirect
-server {
-    listen 80;
-    server_name ${names};
-
-    ${ACME_INCLUDE}
-
-    return 301 ${scheme}://${primaryApex}$request_uri;
-}
-${
-  https && certificateFilesExist(primaryApex)
-    ? `
-server {
-    listen 443 ssl;
-    listen [::]:443 ssl;
-    http2 on;
-    server_name ${names};
-
-    ssl_certificate ${nginxCertPaths(primaryApex).fullchain};
-    ssl_certificate_key ${nginxCertPaths(primaryApex).privkey};
-
-    return 301 https://${primaryApex}$request_uri;
-}
-`
-    : ''
-}
-`;
-}
-
 /** Marker used by panel domain listing */
 export const PANEL_CONF_MARKER = '# docklift-panel-domain';

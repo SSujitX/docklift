@@ -16,7 +16,6 @@ import {
   PANEL_CONF_MARKER,
   buildHttpHttpsServers,
   buildPanelProxyLocation,
-  buildWwwRedirectServers,
 } from '../services/nginxSsl.js';
 import { certificateFilesExist } from '../services/certs.js';
 
@@ -50,15 +49,9 @@ async function writePanelDomainConfig(domain: string, port: number, enableHttps:
     proxyLocation,
     enableHttps,
   });
-  const wwwRedirects =
-    !domain.startsWith('www.') && !domain.match(/^[\d.]+$/) && !domain.includes('localhost')
-      ? [`www.${domain}`]
-      : [];
-  const wwwBlock = buildWwwRedirectServers(wwwRedirects, domain, enableHttps && certificateFilesExist(domain));
   const nginxConfig = `${PANEL_CONF_MARKER}
 # docklift-panel-port: ${port}
-${body}
-${wwwBlock}`;
+${body}`;
   await fs.writeFile(panelConfPath(domain), nginxConfig);
 }
 
@@ -66,13 +59,9 @@ async function provisionPanelSsl(domain: string, port: number, opts?: { force?: 
   await writePanelDomainConfig(domain, port, false);
   await reloadNginx();
 
-  // Include www SAN (same pattern as service domains) when not already www.*
-  const sans = [domain];
-  if (!domain.startsWith('www.') && !domain.match(/^[\d.]+$/) && !domain.includes('localhost')) {
-    sans.push(`www.${domain}`);
-  }
-
-  const status = await issueCertificate(sans, { force: opts?.force });
+  // Each mapping owns exactly the hostname the user entered. A separate www mapping
+  // can be added when its DNS record exists.
+  const status = await issueCertificate([domain], { force: opts?.force });
   if (
     status.status === 'active' ||
     status.status === 'expiring' ||

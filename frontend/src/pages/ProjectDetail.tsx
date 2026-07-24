@@ -547,6 +547,10 @@ function ServiceDomainManager({
                 )}
               </div>
             ))}
+            <p className="text-xs text-muted-foreground">
+              Each row is an exact hostname. Add both example.com and www.example.com only
+              if both have DNS records and should serve this service.
+            </p>
           </div>
 
           <div className="flex justify-end pt-2">

@@ -133,12 +133,6 @@ export async function patchMiddlewareHosts(options: MiddlewareBypassOptions): Pr
       for (const domain of domains) {
         if (domain && domain.trim()) {
           hostsToAdd.push(domain.trim());
-          // Also add www variant if not a subdomain
-          if (!domain.includes('.') || domain.split('.').length === 2) {
-            if (!domain.startsWith('www.')) {
-              hostsToAdd.push(`www.${domain.trim()}`);
-            }
-          }
         }
       }
       
