@@ -59,6 +59,16 @@ elements and `top-20` for spaced ones.
 | `TerminalView.tsx` | `components/` | xterm.js + WS terminal |
 | `FileEditor.tsx` | `components/` | Monaco editor |
 | `AuthProvider.tsx` | `components/` | Auth + route redirects |
+| `ServiceDomainCard.tsx` | `components/domains/` | Domain list + SSL (serial mutation queue) |
+
+## API calls (required)
+
+-   Protected APIs: **`authFetch()`** from `lib/auth.ts` (401 → logout). Do not use raw `fetch` +
+    `getAuthHeaders()` for authenticated endpoints.
+-   Backup/restore/deploy streams: `lib/streamProgress.ts` (`consumeProgressStream`) — require
+    `res.ok` and treat `[ERROR]` lines as failure before toasting success.
+-   Overlays: `lib/focusTrap.ts` (`useFocusTrap`) for command palette + mobile drawer.
+-   Deploy history pagination: AbortController + generation counter (ignore stale pages).
 
 ## Dev server
 
