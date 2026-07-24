@@ -11,6 +11,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import bcrypt from 'bcrypt';
 import prisma from '../lib/prisma.js';
+import type { AuthenticatedRequest } from '../lib/authMiddleware.js';
 
 const __filenameSystem = fileURLToPath(import.meta.url);
 const __dirnameSystem = dirname(__filenameSystem);
@@ -820,12 +821,17 @@ router.post('/reset', async (req: Request, res: Response) => {
 
 // POST /api/system/execute - Execute shell command
 // Requires password re-verification for security (JWT alone is not enough)
-router.post('/execute', async (req: Request, res: Response) => {
+router.post('/execute', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { command, password } = req.body;
+    const authUser = req.user;
 
     if (!command || typeof command !== 'string') {
       return res.status(400).json({ error: 'Command is required' });
+    }
+
+    if (!authUser?.userId || authUser.userId === 'internal') {
+      return res.status(401).json({ error: 'Authentication required' });
     }
 
     // Require password re-verification for terminal access
@@ -833,7 +839,7 @@ router.post('/execute', async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Password required for terminal access', requirePassword: true });
     }
 
-    const user = await prisma.user.findFirst();
+    const user = await prisma.user.findUnique({ where: { id: authUser.userId } });
     if (!user) {
       return res.status(403).json({ error: 'No user account found' });
     }
