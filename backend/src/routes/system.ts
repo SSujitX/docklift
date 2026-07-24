@@ -518,13 +518,16 @@ router.get('/logs/:service', async (req: Request, res: Response) => {
       'backend': 'docklift-backend',
       'frontend': 'docklift-frontend',
       'proxy': 'docklift-nginx-proxy',
-      'nginx': 'docklift-nginx'
+      'nginx': 'docklift-nginx',
+      'certbot': 'docklift-certbot'
     };
 
     const containerName = serviceMap[service];
     
     if (!containerName) {
-      return res.status(400).json({ error: 'Invalid service name. Available: backend, frontend, proxy, nginx' });
+      return res.status(400).json({
+        error: `Invalid service name. Available: ${Object.keys(serviceMap).join(', ')}`,
+      });
     }
 
     // Start streaming

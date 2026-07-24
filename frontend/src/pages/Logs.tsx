@@ -1,20 +1,24 @@
-// Logs page - system container logs (backend, frontend, proxy, nginx)
+// Logs page - system container logs (backend, frontend, proxy, nginx, certbot)
 
 import { useState } from "react";
 import { PageHeader } from "@/components/shell/PageHeader";
 import { SystemLogsPanel } from "@/components/SystemLogsPanel";
-import { ScrollText, Server, Globe, Shield, Network } from "lucide-react";
+import { ScrollText, Server, Globe, Shield, Network, LockKeyhole } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+// One entry per container in docker-compose.yml — `container` must match the name
+// the backend maps in GET /api/system/logs/:service.
 const SERVICES = [
-  { id: "backend", label: "Backend", icon: Server, description: "API & business logic" },
-  { id: "frontend", label: "Frontend", icon: Globe, description: "Vite SPA dashboard" },
-  { id: "proxy", label: "Nginx Proxy", icon: Shield, description: "Reverse proxy & domains" },
-  { id: "nginx", label: "Nginx", icon: Network, description: "Static gateway" },
+  { id: "backend", label: "Backend", icon: Server, description: "API & business logic", container: "docklift-backend" },
+  { id: "frontend", label: "Frontend", icon: Globe, description: "Vite SPA dashboard", container: "docklift-frontend" },
+  { id: "proxy", label: "Nginx Proxy", icon: Shield, description: "Reverse proxy & domains", container: "docklift-nginx-proxy" },
+  { id: "nginx", label: "Nginx", icon: Network, description: "Static gateway", container: "docklift-nginx" },
+  { id: "certbot", label: "Certbot", icon: LockKeyhole, description: "Certificate renewals (12h)", container: "docklift-certbot" },
 ] as const;
 
 export default function LogsPage() {
   const [activeService, setActiveService] = useState<string>("backend");
+  const active = SERVICES.find((service) => service.id === activeService) ?? SERVICES[0];
 
   return (
     <>
@@ -54,7 +58,13 @@ export default function LogsPage() {
         ))}
       </div>
 
-      <SystemLogsPanel key={activeService} service={activeService} isActive={true} />
+      <SystemLogsPanel
+        key={active.id}
+        service={active.id}
+        label={active.label}
+        container={active.container}
+        isActive={true}
+      />
     </>
   );
 }

@@ -52,7 +52,8 @@ services:
       - |
         trap exit TERM
         while :; do
-          certbot renew --webroot -w /var/www/certbot --quiet || true
+          echo "[certbot] $(date -u +%Y-%m-%dT%H:%M:%SZ) checking renewals"
+          certbot renew --webroot -w /var/www/certbot || true
           sleep 12h
         done
     volumes:

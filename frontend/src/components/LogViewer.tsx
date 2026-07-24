@@ -160,16 +160,21 @@ export function LogViewer({
   const [searchQuery, setSearchQuery] = useState("");
   const [showSearch, setShowSearch] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const endRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // Auto-scroll
+  // Follow the tail by scrolling this container only. `scrollIntoView` would also
+  // scroll the page, and a smooth animation never reaches the end while lines are
+  // still streaming in — it restarts on every append and stalls part-way down.
   useEffect(() => {
-    if (autoScroll && endRef.current) {
-      endRef.current.scrollIntoView({ behavior: "smooth" });
-    }
-  }, [logs, autoScroll]);
+    if (!autoScroll) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    const frame = requestAnimationFrame(() => {
+      el.scrollTop = el.scrollHeight;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [logs, autoScroll, isFullscreen]);
 
   // Focus search
   useEffect(() => {
@@ -375,7 +380,6 @@ export function LogViewer({
                 </div>
               );
             })}
-            <div ref={endRef} />
           </div>
         )}
       </div>
@@ -385,12 +389,16 @@ export function LogViewer({
         <button
           onClick={() => {
             setAutoScroll(true);
-            endRef.current?.scrollIntoView({ behavior: "smooth" });
+            scrollRef.current?.scrollTo({
+              top: scrollRef.current.scrollHeight,
+              behavior: "smooth",
+            });
           }}
-          className="absolute bottom-4 right-4 h-8 w-8 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-700 shadow-lg transition-all"
-          title="Scroll to bottom"
+          className="absolute bottom-4 right-4 flex h-8 items-center gap-1.5 rounded-full border border-zinc-700 bg-zinc-800 px-3 text-zinc-300 shadow-lg transition-all hover:bg-zinc-700 hover:text-white"
+          title="Resume following the newest logs"
         >
-          <ArrowDown className="h-4 w-4" />
+          <ArrowDown className="h-3.5 w-3.5" />
+          <span className="text-[11px] font-semibold">Follow</span>
         </button>
       )}
     </div>

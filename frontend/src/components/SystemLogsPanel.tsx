@@ -4,13 +4,18 @@ import { LogViewer } from "@/components/LogViewer";
 import { API_URL } from "@/lib/utils";
 
 interface SystemLogsPanelProps {
-  service: string; // 'backend' | 'frontend' | 'database' | 'redis' | 'proxy' | 'nginx'
+  /** Service key accepted by GET /api/system/logs/:service. */
+  service: string;
   isActive: boolean;
+  /** Display name; defaults to the capitalised service key. */
+  label?: string;
+  /** Real container name, shown beside the title. */
+  container?: string;
 }
 
 const MAX_LOG_LINES = 10000;
 
-export function SystemLogsPanel({ service, isActive }: SystemLogsPanelProps) {
+export function SystemLogsPanel({ service, isActive, label, container }: SystemLogsPanelProps) {
   const [logs, setLogs] = useState<string[]>([]);
   const [connected, setConnected] = useState(false);
   const eventSourceRef = useRef<EventSource | null>(null);
@@ -76,29 +81,47 @@ export function SystemLogsPanel({ service, isActive }: SystemLogsPanelProps) {
       const es = new EventSource(url);
       eventSourceRef.current = es;
 
+      const append = (line: string) => {
+        if (!line.trim()) return;
+        setLogs(prev => {
+          const updated = [...prev, line];
+          return updated.length > MAX_LOG_LINES ? updated.slice(-MAX_LOG_LINES) : updated;
+        });
+      };
+
+      // Status lines repeat on every reconnect (e.g. a stopped container), so only
+      // show them when they are not already the last thing on screen.
+      const appendStatus = (line: string) => {
+        if (!line.trim()) return;
+        setLogs(prev => (prev[prev.length - 1] === line ? prev : [...prev, line]));
+      };
+
       es.onopen = () => {
         setConnected(true);
-        retryCount = 0; // Reset on successful connection
       };
 
       es.onmessage = (event) => {
+        let data: { type?: string; message?: string; log?: string };
         try {
-          const data = JSON.parse(event.data);
-          // Backend sends { type: 'log', message: "..." }; support legacy data.log too
-          const line = data.log ?? (data.type === "log" || data.type === "error" ? data.message : data.message);
-          if (line != null && String(line).trim() !== "") {
-            setLogs(prev => {
-              const updated = [...prev, String(line)];
-              return updated.length > MAX_LOG_LINES ? updated.slice(-MAX_LOG_LINES) : updated;
-            });
-          }
+          data = JSON.parse(event.data);
         } catch {
-         // Raw text fallback
-         setLogs(prev => {
-           const updated = [...prev, event.data];
-           return updated.length > MAX_LOG_LINES ? updated.slice(-MAX_LOG_LINES) : updated;
-         });
+          append(event.data); // Raw text fallback
+          return;
         }
+
+        if (data.type === "log" || data.log != null) {
+          // Real output means the stream is healthy, so restart the backoff here
+          // rather than in onopen: the connection also "opens" for a container
+          // that does not exist, which otherwise reconnects once a second forever.
+          retryCount = 0;
+          append(String(data.log ?? data.message ?? ""));
+          return;
+        }
+
+        if (data.type === "connected") return;
+
+        // status | error | end — container missing, stopped, or stream closed
+        if (data.message) appendStatus(String(data.message));
       };
 
       es.onerror = () => {
@@ -124,14 +147,17 @@ export function SystemLogsPanel({ service, isActive }: SystemLogsPanelProps) {
 
   if (!isActive) return null;
 
+  const title = label || service.charAt(0).toUpperCase() + service.slice(1);
+  const containerName = container || `docklift-${service}`;
+
   return (
     <LogViewer
       logs={logs}
       connected={connected}
-      title={`${service.charAt(0).toUpperCase() + service.slice(1)} Logs`}
-      subtitle={`docklift-${service}`}
+      title={`${title} Logs`}
+      subtitle={containerName}
       onClear={() => setLogs([])}
-      downloadFilename={`docklift-${service}-logs.txt`}
+      downloadFilename={`${containerName}-logs.txt`}
       height="h-[650px]"
     />
   );
