@@ -25,7 +25,8 @@ import {
   StorageMount,
 } from "@/lib/types";
 import { API_URL, cn } from "@/lib/utils";
-import { getAuthHeaders } from "@/lib/auth";
+import { authFetch } from "@/lib/auth";
+import { consumeProgressStream } from "@/lib/streamProgress";
 import {
   ArrowLeft,
   Play,
@@ -124,10 +125,6 @@ function ContainerLogsPanel({
       return;
     }
 
-    const token = typeof window !== "undefined"
-      ? localStorage.getItem("docklift_token") || ""
-      : "";
-
     let cancelled = false;
 
     // Use async IIFE to fetch SSE token (useEffect callbacks can't be async)
@@ -135,12 +132,9 @@ function ContainerLogsPanel({
       // Fetch short-lived SSE token — never fall back to session JWT in the URL
       let sseToken = "";
       try {
-        const tokenRes = await fetch(`${API_URL || ""}/api/auth/sse-token`, {
+        const tokenRes = await authFetch(`${API_URL || ""}/api/auth/sse-token`, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
+          headers: { "Content-Type": "application/json" },
         });
         if (tokenRes.ok) {
           const data = await tokenRes.json();
@@ -386,6 +380,8 @@ export default function ProjectDetail() {
   const [historyPage, setHistoryPage] = useState(0);
   const [deploymentTotal, setDeploymentTotal] = useState(0);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const historyFetchGen = useRef(0);
+  const deploymentsAbortRef = useRef<AbortController | null>(null);
 
   // Track currently viewed deployment for auto-deploy real-time logs
   const [viewingDeploymentId, setViewingDeploymentId] = useState<string | null>(
@@ -396,9 +392,7 @@ export default function ProjectDetail() {
   useEffect(() => {
     const fetchServerIP = async () => {
       try {
-        const res = await fetch(`${API_URL}/api/system/ip`, {
-          headers: getAuthHeaders(),
-        });
+        const res = await authFetch(`${API_URL}/api/system/ip`);
         if (res.ok) {
           const data = await res.json();
           setServerIP(data.ip || "N/A");
@@ -413,26 +407,26 @@ export default function ProjectDetail() {
   const fetchProject = useCallback(async () => {
     try {
       const historyOffset = historyPage * HISTORY_PAGE_SIZE;
+      const pageForHistory = historyPage;
+      const historyGenAtStart = historyFetchGen.current;
+
+      deploymentsAbortRef.current?.abort();
+      const deploymentsAbort = new AbortController();
+      deploymentsAbortRef.current = deploymentsAbort;
+
       const [projectRes, filesRes, deploymentsRes, servicesRes, latestRes] =
         await Promise.all([
-          fetch(`${API_URL}/api/projects/${projectId}`, {
-            headers: getAuthHeaders(),
-          }),
-          fetch(`${API_URL}/api/files/${projectId}`, {
-            headers: getAuthHeaders(),
-          }),
-          fetch(
+          authFetch(`${API_URL}/api/projects/${projectId}`),
+          authFetch(`${API_URL}/api/files/${projectId}`),
+          authFetch(
             `${API_URL}/api/deployments/${projectId}?limit=${HISTORY_PAGE_SIZE}&offset=${historyOffset}&meta=1`,
-            { headers: getAuthHeaders() },
+            { signal: deploymentsAbort.signal },
           ),
-          fetch(`${API_URL}/api/deployments/${projectId}/services`, {
-            headers: getAuthHeaders(),
-          }),
+          authFetch(`${API_URL}/api/deployments/${projectId}/services`),
           // Always resolve the newest deployment for live log tracking when not on page 1
           historyPage > 0
-            ? fetch(
+            ? authFetch(
                 `${API_URL}/api/deployments/${projectId}?limit=1&offset=0`,
-                { headers: getAuthHeaders() },
               )
             : Promise.resolve(null),
         ]);
@@ -450,20 +444,26 @@ export default function ProjectDetail() {
       setFiles(await filesRes.json());
 
       const depsPayload = await deploymentsRes.json();
+      const historyStale =
+        historyGenAtStart !== historyFetchGen.current ||
+        pageForHistory !== historyPage;
+
       const deps: Deployment[] = Array.isArray(depsPayload)
         ? depsPayload
         : (depsPayload.items ?? []);
-      const total =
-        typeof depsPayload?.total === "number"
-          ? depsPayload.total
-          : deps.length;
-      setDeployments(deps);
-      setDeploymentTotal(total);
 
-      // Clamp page if history shrank (e.g. purged) while viewing a later page
-      const maxPage = Math.max(0, Math.ceil(total / HISTORY_PAGE_SIZE) - 1);
-      if (historyPage > maxPage) {
-        setHistoryPage(maxPage);
+      if (!historyStale) {
+        const total =
+          typeof depsPayload?.total === "number"
+            ? depsPayload.total
+            : deps.length;
+        setDeployments(deps);
+        setDeploymentTotal(total);
+
+        const maxPage = Math.max(0, Math.ceil(total / HISTORY_PAGE_SIZE) - 1);
+        if (historyPage > maxPage) {
+          setHistoryPage(maxPage);
+        }
       }
 
       if (servicesRes.ok) {
@@ -525,6 +525,7 @@ export default function ProjectDetail() {
         }
       }
     } catch (error) {
+      if ((error as DOMException)?.name === "AbortError") return;
       console.error(error);
     } finally {
       setLoading(false);
@@ -541,6 +542,7 @@ export default function ProjectDetail() {
   ]);
 
   useEffect(() => {
+    historyFetchGen.current += 1;
     setHistoryPage(0);
     setDeploymentTotal(0);
   }, [projectId]);
@@ -559,6 +561,7 @@ export default function ProjectDetail() {
   const goHistoryPage = (page: number) => {
     const next = Math.max(0, Math.min(page, historyPageCount - 1));
     if (next === historyPage) return;
+    historyFetchGen.current += 1;
     setHistoryLoading(true);
     setHistoryPage(next);
   };
@@ -589,9 +592,7 @@ export default function ProjectDetail() {
   const fetchBuildDetection = useCallback(async () => {
     setBuildDetecting(true);
     try {
-      const res = await fetch(`${API_URL}/api/projects/${projectId}/build/detect`, {
-        headers: getAuthHeaders(),
-      });
+      const res = await authFetch(`${API_URL}/api/projects/${projectId}/build/detect`);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Failed to detect build");
       setBuildDetection(data);
@@ -605,9 +606,7 @@ export default function ProjectDetail() {
   const fetchStorage = useCallback(async () => {
     setStorageLoading(true);
     try {
-      const res = await fetch(`${API_URL}/api/projects/${projectId}/storage`, {
-        headers: getAuthHeaders(),
-      });
+      const res = await authFetch(`${API_URL}/api/projects/${projectId}/storage`);
       const data = await res.json().catch(() => []);
       if (!res.ok) throw new Error(data.error || "Failed to load storage");
       setStorageMounts(data);
@@ -634,9 +633,9 @@ export default function ProjectDetail() {
 
     setBuildSaving(true);
     try {
-      const res = await fetch(`${API_URL}/api/projects/${projectId}`, {
+      const res = await authFetch(`${API_URL}/api/projects/${projectId}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           build_type: buildType,
           base_directory: baseDirectory.trim(),
@@ -663,9 +662,9 @@ export default function ProjectDetail() {
 
     setStorageSaving(true);
     try {
-      const res = await fetch(`${API_URL}/api/projects/${projectId}/storage`, {
+      const res = await authFetch(`${API_URL}/api/projects/${projectId}/storage`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           service_name: storageService,
           name: storageName.trim(),
@@ -689,9 +688,9 @@ export default function ProjectDetail() {
     if (!storageToDelete) return;
     setStorageSaving(true);
     try {
-      const res = await fetch(
+      const res = await authFetch(
         `${API_URL}/api/projects/${projectId}/storage/${storageToDelete.id}?removeVolume=true`,
-        { method: "DELETE", headers: getAuthHeaders() },
+        { method: "DELETE" },
       );
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Failed to delete storage");
@@ -711,9 +710,8 @@ export default function ProjectDetail() {
 
     const fetchAutoDeploy = async () => {
       try {
-        const res = await fetch(
+        const res = await authFetch(
           `${API_URL}/api/projects/${projectId}/auto-deploy`,
-          { headers: getAuthHeaders() },
         );
         if (res.ok) {
           const data = await res.json();
@@ -731,11 +729,11 @@ export default function ProjectDetail() {
   const handleAutoDeployToggle = async (enabled: boolean) => {
     setAutoDeployLoading(true);
     try {
-      const res = await fetch(
+      const res = await authFetch(
         `${API_URL}/api/projects/${projectId}/auto-deploy`,
         {
           method: "PATCH",
-          headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ enabled }),
         },
       );
@@ -850,14 +848,12 @@ export default function ProjectDetail() {
         method = "DELETE";
       }
 
-      const res = await fetch(url, {
+      const res = await authFetch(url, {
         method,
-        headers: {
-          ...getAuthHeaders(),
-          ...(action === "deploy"
+        headers:
+          action === "deploy"
             ? { "Content-Type": "application/json" }
-            : {}),
-        },
+            : undefined,
         body:
           action === "deploy"
             ? JSON.stringify({ trigger: "manual" })
@@ -883,22 +879,21 @@ export default function ProjectDetail() {
         return;
       }
 
-      const reader = res.body?.getReader();
-      const decoder = new TextDecoder();
+      const streamResult = await consumeProgressStream(res, (line) => {
+        setLogs((prev) => prev + line + "\n");
+      });
 
-      if (reader) {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          setLogs((prev) => prev + decoder.decode(value));
-        }
-      } else {
-        setLogs((prev) => prev + "\nâš ï¸ No stream data received\n");
-      }
       setTimeout(fetchProject, 1000);
-      // Wait for state to refresh before resetting actionLoading
       await new Promise((resolve) => setTimeout(resolve, 1500));
       await fetchProject();
+
+      if (!streamResult.ok) {
+        if (streamResult.error) {
+          toast.error(streamResult.error);
+        }
+        return;
+      }
+
       toast.success(
         `${action.charAt(0).toUpperCase() + action.slice(1)} completed!`,
       );
@@ -919,9 +914,8 @@ export default function ProjectDetail() {
 
   const openFileEditor = async (filePath: string) => {
     try {
-      const res = await fetch(
+      const res = await authFetch(
         `${API_URL}/api/files/${projectId}/content?path=${encodeURIComponent(filePath)}`,
-        { headers: getAuthHeaders() },
       );
       if (!res.ok) throw new Error("Failed to fetch file content");
       const data = await res.json();
