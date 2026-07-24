@@ -15,9 +15,11 @@
 
 <p align="center">
   <a href="#-quick-start">Quick Start</a> •
-  <a href="#-how-it-works">How it Works</a> •
   <a href="#-features">Features</a> •
-  <a href="#-commands">Commands</a> •
+  <a href="#-how-it-works">How it Works</a> •
+  <a href="#-builds-dockerfile-or-railpack">Builds</a> •
+  <a href="#-domains--https">Domains & HTTPS</a> •
+  <a href="#-commands-reference">Commands</a> •
   <a href="#-contributing">Contributing</a>
 </p>
 
@@ -25,37 +27,47 @@
 
 ## 📖 What is Docklift?
 
-Docklift lets you deploy and manage Docker containers on your own server with a beautiful web UI. Connect GitHub repos or upload files, get auto-deployments, custom domains, and full system monitoring — without vendor lock-in.
+Docklift turns a plain VPS into your own deployment platform. Point it at a GitHub repo or upload a
+ZIP, and it builds a Docker image, runs it, assigns a port, wires up a custom domain with HTTPS, and
+redeploys on every push — all from a web UI, with no vendor lock-in.
 
 **Your server. Your rules. Your apps.**
 
 ![Docklift Dashboard](screenshots/project.png)
 
----
+<details>
+<summary><b>More screenshots</b></summary>
 
-## 🆚 Why Docklift?
+**Project detail** — services, deployments, env vars, storage, logs
+![Project detail](screenshots/inside%20projects.png)
 
-There are great tools out there like **Coolify**, **Dokploy**, **Dokku**, and **CapRover** — but they often come with a learning curve, complex configurations, or feel heavy for simple use cases. 
+**Live logs** — every platform container, streamed over SSE
+![Logs](screenshots/logs.png)
 
-Docklift is built to be **lightweight, minimal, and easy to understand**. It focuses purely on Docker deployments without the bloat, while offering features others don't — like full **system monitoring** (CPU, RAM, GPU, disk, network) and a **web terminal** right in your browser. 
+**System monitoring** — CPU, RAM, GPU, disk, network, processes
+![System](screenshots/system.png)
 
-If you want to deploy Docker containers quickly without wrestling with configurations, **Docklift is for you**.
+</details>
 
 ---
 
 ## 📑 Table of Contents
 
 - [Quick Start](#-quick-start)
-- [How it Works](#-how-it-works)
-- [Why Docklift](#-why-docklift)
 - [Features](#-features)
+- [How it Works](#-how-it-works)
+- [Deploy Your First App](#-deploy-your-first-app)
+- [Builds: Dockerfile or Railpack](#-builds-dockerfile-or-railpack)
+- [Persistent Storage](#-persistent-storage)
+- [Domains & HTTPS](#-domains--https)
+- [Configuration](#-configuration)
 - [Installation](#-installation)
 - [Development Setup](#-development-setup)
-- [Deploy Your First App](#-deploy-your-first-app)
 - [Commands Reference](#-commands-reference)
+- [Troubleshooting](#-troubleshooting)
+- [Why Docklift](#-why-docklift)
 - [Contributing](#-contributing)
 - [License](#-license)
-
 
 ---
 
@@ -67,13 +79,52 @@ One-command install on Ubuntu/Debian:
 curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh | sudo bash
 ```
 
-Access the dashboard at `http://YOUR_SERVER_IP:8080`. For HTTPS on a hostname, add a panel domain under **Settings → Domain**. Unknown hostnames on ports 80/443 do not fall through to the dashboard.
+Then open the dashboard at **`http://YOUR_SERVER_IP:8080`**.
+
+### First login needs the bootstrap secret
+
+A fresh install prints a one-time **bootstrap secret** to the backend logs. The Setup page asks for
+it before you can create the first admin account, so nobody who merely finds your IP can claim the
+panel first. It is never exposed through any API.
+
+```bash
+# Grab it from the logs…
+docker logs docklift-backend | grep -A8 "Fresh install"
+
+# …or read it straight off disk
+sudo cat /opt/docklift/data/.bootstrap-secret
+```
+
+Paste it into the Setup page, register (or restore a backup), and the secret is consumed and deleted.
+
+> For HTTPS on a hostname instead of an IP, add a panel domain under **Settings → Domain**.
+> Unknown hostnames on ports 80/443 are rejected — they never fall through to the dashboard.
+
+---
+
+## ✨ Features
+
+| Feature | Description |
+|---------|-------------|
+| 📦 **One-Click Deploy** | Push code → Docklift builds and runs it |
+| 🧱 **Automatic Builds** | Uses your `Dockerfile`, or [Railpack](https://railpack.com/) detects the framework when there isn't one |
+| 🐙 **GitHub Integration** | Connect private repos through a GitHub App you own |
+| 🔄 **Auto-Deploy** | Webhook-triggered redeploys on push, with a 10s debounce |
+| 🌐 **Custom Domains** | Nginx vhosts + automatic Let's Encrypt HTTPS (Cloudflare Full-strict ready) |
+| 💾 **Persistent Storage** | Named volumes per service, so SQLite files and uploads survive rebuilds |
+| 📜 **Live Build Logs** | Real-time streaming output, with cancel mid-build |
+| 🔐 **Env Variables** | Separate build-time and runtime values; only declared `ARG`s reach the image |
+| 📊 **System Monitoring** | CPU, RAM, GPU, disk, network and top processes for the host |
+| 💻 **Web Terminal** | Full xterm.js root shell in your browser, behind double auth |
+| 🗄️ **Backup & Restore** | Database, sources, vhosts and certificates in one archive |
+| 🧭 **Sidebar Workspace** | Everything in one collapsible left rail, with `Ctrl+K` command palette |
 
 ---
 
 ## ⚙️ How it Works
 
-Docklift is a small Docker Compose stack that turns your VPS into a PaaS: a web UI for projects, a backend that talks to the Docker socket, and nginx that routes public traffic to your apps.
+Docklift is a small Docker Compose stack: a web UI, a backend that talks to the Docker socket, and
+nginx to route public traffic to your apps.
 
 ```mermaid
 flowchart LR
@@ -91,80 +142,156 @@ flowchart LR
 
 ### Stack pieces
 
-| Service | Role |
-|---------|------|
-| **Frontend** | React (Vite) dashboard — projects, logs, settings, terminal |
-| **Backend** | Express + Prisma/SQLite — deploy, auth, GitHub App, nginx/SSL |
+| Container | Role |
+|-----------|------|
+| **docklift-frontend** | React (Vite) dashboard — projects, logs, settings, terminal |
+| **docklift-backend** | Express + Prisma/SQLite — deploy, auth, GitHub App, nginx/SSL |
 | **docklift-nginx** | Dashboard gateway on **`:8080`** |
-| **nginx-proxy** | Public **`:80` / `:443`** for project & panel domains |
-| **certbot** | Issues/renews Let's Encrypt certs (HTTP-01) |
+| **docklift-nginx-proxy** | Public **`:80` / `:443`** for project and panel domains |
+| **docklift-certbot** | Issues and renews Let's Encrypt certificates (HTTP-01) |
+
+> Two nginx containers, two different jobs: `docklift-nginx` serves *the panel*,
+> `docklift-nginx-proxy` serves *your apps*. The Logs page labels them **Dashboard Gateway** and
+> **Public Proxy** for that reason.
 
 ### Deploy path
 
-1. You create a project (GitHub repo or ZIP). Source lands under `deployments/<project-id>/`.
-2. Backend uses your `Dockerfile` when present, otherwise Railpack detects the framework and builds an image.
-3. A host port from the pool (`5500`–`5600` by default) is published so you can hit the app by IP:port.
-4. If you set a **custom domain**, backend writes an nginx vhost and asks certbot for HTTPS.
-5. With GitHub connected, a push webhook triggers rebuild/redeploy automatically.
+1. You create a project from a GitHub repo or a ZIP. Source lands in `deployments/<project-id>/`.
+2. Docklift uses your `Dockerfile` when there is one, otherwise Railpack detects the stack and builds an image.
+3. A host port from the pool (`5500`–`5600` by default) is published, so you can reach the app by `IP:port`.
+4. Set a **custom domain** and the backend writes an nginx vhost, then asks certbot for a certificate.
+5. With GitHub connected, a push webhook rebuilds and redeploys automatically.
+
+Docklift writes its own runtime Compose file under `deployments/.docklift/<project-id>/`. Your
+repository is **never modified** — a `docker-compose.yml` you committed yourself stays untouched.
 
 ### Access model
 
-- **Admin UI:** `http://SERVER_IP:8080`, or a domain under **Settings → Domain**.
-- **Your apps:** public hostnames on `:80`/`:443` via nginx-proxy (unknown hosts are rejected — they do not fall through to the dashboard).
-- **Secrets:** JWT and internal keys auto-persist under `data/.secrets`; local overrides use `backend/.env.local`.
+- **Admin UI:** `http://SERVER_IP:8080`, or a domain configured in **Settings → Domain**.
+- **Your apps:** public hostnames on `:80`/`:443` via nginx-proxy.
+- **Secrets:** `JWT_SECRET` and internal keys auto-generate and persist under `data/.secrets`.
 
 ---
 
-## ✨ Features
+## 🐳 Deploy Your First App
 
-| Feature | Description |
-|---------|-------------|
-| 📦 **One-Click Deploy** | Push code → Docklift builds & runs it |
-| 🐙 **GitHub Integration** | Connect private repos via GitHub Apps |
-| 🔄 **Auto-Deploy** | Webhook-triggered redeploys on push |
-| 🌐 **Custom Domains** | Nginx proxy + automatic Let's Encrypt HTTPS (Full strict ready) |
-| 📊 **System Monitoring** | CPU, RAM, GPU, disk & network stats |
-| 💻 **Web Terminal** | SSH-like access in your browser |
-| 📜 **Live Build Logs** | Real-time streaming output |
-| 🔐 **Env Variables** | Secure build-time & runtime secrets |
-| 🧭 **Sidebar Workspace** | Everything in one collapsible left rail, with `Ctrl+K` search |
+1. Open Docklift → **New Project**
+2. Choose a source: GitHub URL, private repo, or ZIP upload
+3. Add environment variables (optional) and pick a build mode (default: **Auto**)
+4. **Deploy** → watch live build logs (cancel any time)
+5. Visit `http://your-ip:<assigned-port>`, then add a domain when you're ready
+
+---
+
+## 🧱 Builds: Dockerfile or Railpack
+
+Every project has a build mode, configurable in project settings.
+
+| Mode | Behaviour |
+|------|-----------|
+| **Auto** (default) | Uses a repository `Dockerfile` if present, otherwise falls back to Railpack |
+| **Dockerfile** | Always your Dockerfile — fails loudly instead of silently falling back |
+| **Railpack** | Always Railpack, even if a Dockerfile exists |
+
+**Railpack** (the builder behind Railway) detects Node, Python, Go, PHP, Ruby, Java, Rust and more
+from manifests like `package.json`, `requirements.txt` or `pyproject.toml`, then builds an image with
+BuildKit — no Dockerfile required.
+
+Two settings help with non-trivial repos:
+
+- **Base directory** — build from a subdirectory, for monorepos.
+- **Dockerfile path** — point at a Dockerfile that isn't at the root.
+
+Build-time variables are passed only when the Dockerfile actually declares them with `ARG`, so
+runtime secrets don't get baked into image layers.
+
+---
+
+## 💾 Persistent Storage
+
+Redeploying replaces containers, so anything written inside a container's filesystem is lost unless
+it's on a volume. If your app keeps a SQLite database, uploaded files, or a cache **inside** the
+container, add a mount in the project's **Storage** tab.
+
+- Volumes are external and labelled `com.docklift.project=<id>`, so `docker compose down` and
+  redeploys never delete them.
+- They are removed only when you delete the project.
+- External databases reached over `DATABASE_URL` (Postgres, MySQL, managed services) need nothing here.
+
+```bash
+# Inspect what Docklift manages
+docker volume ls --filter label=com.docklift.project
+```
+
+---
+
+## 🌐 Domains & HTTPS
+
+1. Point an **A record** at your server's IP.
+2. Add the domain to a service in Docklift.
+3. Docklift writes an HTTP vhost, certbot solves the ACME HTTP-01 challenge, and the vhost is
+   rewritten with HTTPS plus an HTTP→HTTPS redirect. Renewals run automatically every 12 hours.
+
+**`www` is not added for you.** A certificate order fails *entirely* if one of its hostnames has no
+DNS record, so silently adding `www.` would break the apex domain too. Create the `www` DNS record
+first, then add `www.example.com` as an additional domain on the service.
+
+**Behind Cloudflare:** use SSL mode **Full (strict)** once a certificate is issued, and make sure
+Cloudflare can reach `/.well-known/acme-challenge/` over plain HTTP during issuance.
+
+If issuance fails, the UI shows the specific certbot error plus a copyable command for the full log:
+
+```bash
+docker logs docklift-certbot --tail 200
+```
+
+---
+
+## 🔧 Configuration
+
+All of these are optional. Create `/opt/docklift/.env` (Compose picks it up automatically) and
+re-run `docker compose up -d` from that directory to apply changes:
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `DASHBOARD_BIND` | `0.0.0.0` | Set to `127.0.0.1` to expose the panel only via SSH tunnel or the public proxy |
+| `PORT_RANGE_START` / `PORT_RANGE_END` | `5500` / `5600` | Host port pool for deployed apps |
+| `CERTBOT_EMAIL` | — | Let's Encrypt account email (expiry notices) |
+| `CERTBOT_STAGING` | `false` | Use the staging CA while testing, to avoid rate limits |
+| `CORS_ORIGIN` | — | Extra allowed browser origins, if the panel isn't same-origin |
+| `DOCKLIFT_FRONTEND_URL` | `http://localhost:8080` | Public dashboard URL, used for GitHub App callbacks |
+| `JWT_SECRET` / `INTERNAL_API_SECRET` | auto-generated | Override only if you manage secrets yourself |
 
 ---
 
 ## 📦 Installation
 
-### Production (Recommended)
+### Production (recommended)
 
-**Install:**
 ```bash
+# Install
 curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh | sudo bash
-```
 
-**Upgrade (preserves data):**
-```bash
+# Upgrade (preserves data)
 curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/upgrade.sh | sudo bash
-```
 
-**Uninstall:**
-```bash
+# Uninstall
 curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/uninstall.sh | sudo bash -s -- -y
 ```
 
-Removes every DockLift container, image, volume and network, the build cache, and
-`/opt/docklift` (database, deployments, backups, certificates). Other Docker workloads on
-the same host are left alone, as are Docker Engine and git.
+Uninstall removes every DockLift container, image, volume and network, the build cache, and
+`/opt/docklift` (database, deployments, backups, certificates). Other Docker workloads on the same
+host are left alone, as are Docker Engine and git.
 
-### Development Build (Latest Master)
-
-For testing the latest features before release:
+### Development build (latest master)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install-dev.sh | sudo bash
 ```
 
-> ⚠️ **Warning:** This installs unreleased code from master branch. Use production install for stable deployments.
+> ⚠️ Installs unreleased code from `master`. Use the production install for stable deployments.
 
-### Docker Compose
+### Docker Compose (manual)
 
 ```bash
 git clone https://github.com/SSujitX/docklift.git
@@ -176,54 +303,35 @@ docker compose up -d
 
 ## 💻 Development Setup
 
-**Prerequisites:** Docker, [Bun](https://bun.sh/)
+**Prerequisites:** Docker and [Bun](https://bun.sh/).
 
-**Clone & setup:**
 ```bash
 git clone https://github.com/SSujitX/docklift.git
 cd docklift
 ```
 
-**Backend:**
+**Backend** — `localhost:8000`:
+
 ```bash
 cd backend
 cp .env.local.example .env.local   # your machine only (gitignored)
-# edit .env.local if needed — GitHub optional; or use Settings → Create App
 bun install
 bun run db:generate && bun run db:push
 bun run dev
 ```
 
-**Frontend (new terminal):**
+**Frontend** (new terminal) — `localhost:3600`:
+
 ```bash
 cd frontend && bun install && bun run dev
 ```
 
-**Dev URLs:** Frontend `localhost:3600` | Backend `localhost:8000`  
+**Env files:** `backend/.env` is server/production config (committed).
+`backend/.env.local.example` is the local template (committed) → copy to `.env.local` (gitignored)
+for the Vite dev origin in `CORS_ORIGIN` and optional GitHub App credentials.
 
-**Env files:** `backend/.env` = server/production (committed). `backend/.env.local.example` = local template (committed) → copy to `.env.local` (gitignored) for Vite CORS / optional GitHub.
-
----
-
-## 🐳 Deploy Your First App
-
-1. Open Docklift → Click **New Project**
-2. Choose source: GitHub URL, Private Repo, or ZIP Upload
-3. Add environment variables (optional)
-4. Click **Deploy** → Watch live build logs
-5. Access at `http://your-ip:<assigned-port>`
-
-> **Build selection:** Auto mode prefers a repository `Dockerfile` and falls back to Railpack.
-> Choose Dockerfile or Railpack explicitly in project settings when you need to override detection.
-> SQLite databases and uploaded files inside the container require a persistent mount configured
-> in the project Storage tab; external databases referenced by `DATABASE_URL` are unaffected by rebuilds.
-
-### 🛡️ Bypassing Cloudflare / Web Scraping Blocks
-If your deployed apps are blocked by Cloudflare (but work on your server terminal), Docker's network fingerprint is being detected. Run a lightweight proxy on your host network to bypass this:
-```bash
-docker run -d --name local-host-proxy --network host --restart unless-stopped -e PROXY_USER=user -e PROXY_PASSWORD=pass serjs/go-socks5-proxy
-```
-Then, update your app's code (like `curl_cffi` or Python `requests`) to route through `socks5://user:pass@172.28.0.1:1080`. This sends traffic through your physical host network, perfectly replicating your SSH terminal.
+The `.agent/skills/` directory documents each subsystem (deployments, networking, security, UI) and
+is the fastest way to get oriented in the codebase.
 
 ---
 
@@ -233,62 +341,111 @@ Then, update your app's code (like `curl_cffi` or Python `requests`) to route th
 
 | Command | Description |
 |---------|-------------|
-| `docker logs docklift-backend -f` | Backend logs |
-| `docker logs docklift-frontend -f` | Frontend logs |
-| `docker logs docklift-nginx -f` | Dashboard gateway (:8080) |
-| `docker logs docklift-nginx-proxy -f` | App domains proxy (:80) |
+| `docker logs docklift-backend -f` | Backend / API |
+| `docker logs docklift-frontend -f` | Dashboard SPA |
+| `docker logs docklift-nginx -f` | Dashboard gateway (`:8080`) |
+| `docker logs docklift-nginx-proxy -f` | Public proxy (`:80`/`:443`) |
+| `docker logs docklift-certbot -f` | Certificate issuance and renewals |
 | `docker ps --filter name=dl_` | List project containers |
 
 ### 🗄️ Database
 
+Run from `backend/`:
+
 | Command | Description |
 |---------|-------------|
 | `bun run db:studio` | Open Prisma Studio GUI |
-| `bun run db:push` | Push schema changes |
-| `bun run db:generate` | Regenerate Prisma client |
+| `bun run db:push` | Apply schema changes |
+| `bun run db:generate` | Regenerate the Prisma client |
 
-### 🏷️ Auto Release
-
-Docklift uses [semantic-release](https://github.com/semantic-release/semantic-release) to automate versioning, changelogs, and GitHub Releases.
-
-**How to release:**
-1. Push commits to `master` using [conventional commits](#commit-convention) (e.g. `fix:`, `feat:`)
-2. Go to **GitHub → Actions → "Release & Test"** → Click **"Run workflow"**
-3. Done! semantic-release automatically:
-   - Determines the next version from commit messages
-   - Bumps `package.json` (root, frontend, backend)
-   - Updates `CHANGELOG.md`
-   - Creates a git tag and GitHub Release
-
-| Commit Type | Release |
-|-------------|---------|
-| `feat:`, `fix:`, `perf:`, `refactor:` | Patch (1.3.10 → 1.3.11) |
-| `*force minor*` in subject | Minor (1.3.10 → 1.4.0) |
-| `BREAKING CHANGE` | Major (1.3.10 → 2.0.0) |
-| `*skip release*` in subject | No release |
-
-> 📖 Config: [release.config.cjs](release.config.cjs) | Workflow: [.github/workflows/release.yml](.github/workflows/release.yml)
-
-### 🧹 Cleanup
+### 🧹 Maintenance
 
 | Command | Description |
 |---------|-------------|
-| `for port in {5500..5600}; do sudo fuser -k ${port}/tcp 2>/dev/null; done` | Kill app port pool |
 | `docker exec -it docklift-backend node dist/scripts/reset-password.js` | Reset admin password |
+| `docker exec docklift-nginx-proxy nginx -t` | Validate generated vhosts |
+| `for port in {5500..5600}; do sudo fuser -k ${port}/tcp 2>/dev/null; done` | Free the app port pool |
 
-> 📖 Full commands guide: [COMMANDS.md](COMMANDS.md)
+> 📖 Full command guide: [commands.md](commands.md)
+
+### 🏷️ Releases
+
+Docklift uses [semantic-release](https://github.com/semantic-release/semantic-release) for
+versioning, changelogs and GitHub Releases.
+
+1. Push commits to `master` using [conventional commits](#commit-convention)
+2. **GitHub → Actions → "Release & Test"** → **Run workflow**
+3. semantic-release determines the version, bumps `package.json` (root, frontend, backend), updates
+   `CHANGELOG.md`, tags, and publishes the release
+
+| Commit subject | Release |
+|----------------|---------|
+| `feat:`, `fix:`, `perf:`, `refactor:`, `docs:`, `chore:` … | Patch (1.3.10 → 1.3.11) |
+| contains `*force minor*` | Minor (1.3.10 → 1.4.0) |
+| contains `BREAKING CHANGE` or `*force major*` | Major (1.3.10 → 2.0.0) |
+| contains `*skip release*` | No release |
+
+> 📖 Config: [release.config.cjs](release.config.cjs) · Workflow: [.github/workflows/release.yml](.github/workflows/release.yml)
+
+---
+
+## 🩺 Troubleshooting
+
+| Symptom | Likely cause / fix |
+|---------|--------------------|
+| Can't get past Setup | Bootstrap secret required — see [First login](#first-login-needs-the-bootstrap-secret) |
+| Build fails with "no Dockerfile" | Set build mode to **Railpack**, or fix **Base directory** for a monorepo |
+| `502 Bad Gateway` on a domain | Container not running, or the app isn't listening on the configured internal port |
+| Domain returns nothing / `NXDOMAIN` | DNS record missing or not propagated; flush your local resolver cache |
+| Certificate order fails | One hostname in the request has no DNS record — check `docker logs docklift-certbot` |
+| Data disappears after redeploy | Add a mount in the project's [Storage](#-persistent-storage) tab |
+| "A deployment is already running" | Cancel the in-flight build first; deployments are serialized per project |
+
+### 🛡️ Bypassing Cloudflare / scraping blocks
+
+If a deployed app is blocked by Cloudflare but works from your SSH shell, Docker's network
+fingerprint is being detected. Run a lightweight proxy on the host network:
+
+```bash
+docker run -d --name local-host-proxy --network host --restart unless-stopped \
+  -e PROXY_USER=user -e PROXY_PASSWORD=pass serjs/go-socks5-proxy
+```
+
+Then route your app's requests (e.g. `curl_cffi`, Python `requests`) through
+`socks5://user:pass@172.28.0.1:1080`. Traffic then leaves through the physical host network, exactly
+like your SSH session.
+
+---
+
+## 🆚 Why Docklift?
+
+Coolify, Dokploy, Dokku and CapRover are all good tools — but they tend to come with a learning
+curve, a lot of configuration, or more machinery than a small server needs.
+
+Docklift stays **lightweight, minimal and readable**. It does Docker deployments without the bloat,
+and adds things the others don't ship out of the box: full **host monitoring** (CPU, RAM, GPU, disk,
+network) and a real **web terminal**, right in the dashboard.
+
+If you want to deploy containers quickly without wrestling with configuration, Docklift is for you.
 
 ---
 
 ## 🤝 Contributing
 
-Contributions welcome! Please:
+Contributions are welcome:
 
 1. Fork the repo
 2. Create a feature branch (`git checkout -b feature/amazing`)
-3. Commit changes (`git commit -m 'feat: add amazing feature'`)
-4. Push to branch (`git push origin feature/amazing`)
+3. Commit your changes (`git commit -m 'feat: add amazing feature'`)
+4. Push the branch (`git push origin feature/amazing`)
 5. Open a Pull Request
+
+Before opening a PR, please run:
+
+```bash
+cd backend  && bun run build && bun run test
+cd frontend && bun run build
+```
 
 ### Commit Convention
 
