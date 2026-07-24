@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
 import { config } from '../lib/config.js';
+import { shortPathHash } from '../lib/naming.js';
 
 interface ServiceConfig {
   name: string;
@@ -100,7 +101,31 @@ export function scanDockerfiles(projectPath: string, maxDepth = 2): ServiceConfi
   }
   
   scanDir(projectPath, 0);
-  return services;
+  return dedupeScannedServices(services);
+}
+
+/** Resolve Dockerfile scan name collisions using a short hash of each service path. */
+export function dedupeScannedServices(services: ServiceConfig[]): ServiceConfig[] {
+  if (services.length === 0) return services;
+
+  const usedNames = new Set<string>();
+  const deduped: ServiceConfig[] = [];
+
+  for (const svc of services) {
+    let name = svc.name;
+    if (usedNames.has(name)) {
+      name = `${svc.name}-${shortPathHash(svc.dockerfile_path)}`;
+    }
+    if (usedNames.has(name)) {
+      throw new Error(
+        `Duplicate service name "${name}" after scan deduplication — adjust Dockerfile layout or paths.`,
+      );
+    }
+    usedNames.add(name);
+    deduped.push(name === svc.name ? svc : { ...svc, name });
+  }
+
+  return deduped;
 }
 
 /**
