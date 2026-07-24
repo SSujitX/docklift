@@ -61,7 +61,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// CORS: explicit allowlist, else same-origin only (scheme + host + port)
+// CORS: allowlist + same Host as this request (panel domains behind TLS termination)
 function normalizeOrigin(value: string): string | null {
   try {
     const u = new URL(value);
@@ -72,41 +72,75 @@ function normalizeOrigin(value: string): string | null {
   }
 }
 
+function requestHostname(req: express.Request): string {
+  const host = (req.headers['x-forwarded-host'] || req.headers.host || '')
+    .toString()
+    .split(',')[0]
+    .trim();
+  if (!host) return '';
+  try {
+    return new URL(`http://${host}`).hostname.toLowerCase();
+  } catch {
+    return host.split(':')[0].toLowerCase();
+  }
+}
+
 app.use((req, res, next) => {
   cors({
     origin: (origin, callback) => {
       if (!origin) return callback(null, true);
 
-      if (process.env.CORS_ORIGIN) {
-        const allowed = process.env.CORS_ORIGIN.split(',').map((s) => s.trim()).filter(Boolean);
-        if (allowed.includes(origin)) return callback(null, true);
-        return callback(new Error('CORS origin not allowed'));
-      }
-
       try {
         const originNorm = normalizeOrigin(origin);
-        if (!originNorm) return callback(new Error('CORS origin not allowed'));
+        if (!originNorm) return callback(null, false);
+        const originHost = new URL(origin).hostname.toLowerCase();
 
-        const proto = (req.headers['x-forwarded-proto'] || req.protocol || 'http')
-          .toString()
-          .split(',')[0]
-          .trim();
+        // Explicit allowlist (dev Vite, etc.) — additive, not exclusive
+        if (process.env.CORS_ORIGIN) {
+          for (const part of process.env.CORS_ORIGIN.split(',')) {
+            const allowed = part.trim();
+            if (!allowed) continue;
+            if (allowed === origin || normalizeOrigin(allowed) === originNorm) {
+              return callback(null, true);
+            }
+          }
+        }
+
         const host = (req.headers['x-forwarded-host'] || req.headers.host || '')
           .toString()
           .split(',')[0]
           .trim();
+        const reqHost = requestHostname(req);
+
+        // Same hostname as the API request (covers https panel → http internal hop)
+        if (reqHost && originHost === reqHost) {
+          return callback(null, true);
+        }
+
         if (host) {
+          const proto = (req.headers['x-forwarded-proto'] || req.protocol || 'http')
+            .toString()
+            .split(',')[0]
+            .trim();
           const reqNorm = normalizeOrigin(`${proto}://${host}`);
           if (reqNorm && originNorm === reqNorm) return callback(null, true);
         }
+
         if (config.frontendUrl) {
           const feNorm = normalizeOrigin(config.frontendUrl);
           if (feNorm && originNorm === feNorm) return callback(null, true);
+          try {
+            if (new URL(config.frontendUrl).hostname.toLowerCase() === originHost) {
+              return callback(null, true);
+            }
+          } catch {
+            /* ignore */
+          }
         }
       } catch {
         /* fall through */
       }
-      return callback(new Error('CORS origin not allowed'));
+      return callback(null, false);
     },
     credentials: true,
   })(req, res, next);
