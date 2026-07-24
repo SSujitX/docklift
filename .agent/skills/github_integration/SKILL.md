@@ -31,12 +31,11 @@ Docklift integrates with GitHub using a GitHub App. This allows for accessing pr
 The manifest and install callbacks are **public** endpoints (GitHub calls them unauthenticated), so
 they are guarded by a one-time nonce instead:
 
--   `createGithubSetupState()` stores a random 24-byte `state` in `Settings`
-    (`github_setup_state` + `github_setup_state_at`) and also sets it as an `HttpOnly`,
-    `SameSite=Lax` cookie (`docklift_github_state`, `Secure` over HTTPS).
--   `verifyGithubSetupState()` compares with `timingSafeEqual`, enforces a TTL, and **deletes the
-    state on use** — the nonce is single-use whether it validates or not.
--   The nonce is read from the query string (manifest callback) or from the cookie (install redirect).
+-   Each setup attempt writes a **per-state file** under `data/github-setup/<state>.json` (TTL cleanup).
+    Concurrent install flows no longer overwrite a single Settings key.
+-   Also sets an `HttpOnly`, `SameSite=Lax` cookie (`docklift_github_state`, `Secure` over HTTPS).
+-   Verification uses `timingSafeEqual`, enforces TTL, and clears the used state — single-use.
+-   Legacy Settings-key fallback may still be read for older in-flight flows.
 
 ## Key Components
 
@@ -46,14 +45,16 @@ they are guarded by a one-time nonce instead:
 -   **Important**: Uses pagination to ensure all repositories are retrieved (recursively fetching all pages).
 
 ### Webhooks (Auto-Deploy)
--   **Endpoint**: `POST /api/github/webhook`
+-   **Endpoint**: `POST /api/github/webhook` (global — project matching is by repo URL, not `/webhook/:projectId`).
+-   UI / API should advertise `/api/github/webhook`.
 -   **Event**: Listen for `push` events.
 -   **Logic**: 
     1.  Requires `github_webhook_secret` to be configured — requests are **rejected (401)** if the secret is missing (fail closed).
     2.  Verifies HMAC signature **FIRST** — before any database queries (prevents unauthenticated DB lookups). Uses `req.rawBody` captured via `express.json({ verify })` callback for accurate comparison.
-    3.  Matches repository URL from payload with `Project` database entries.
-    4.  Triggers deployment for matching projects with `auto_deploy: true`.
-    5.  Debounced via `recentDeploys` Map with 10-second cooldown per project.
+    3.  **Skip** when `payload.deleted === true` or `payload.head_commit == null` (deleted-branch pushes).
+    4.  Matches repository URL from payload with `Project` database entries.
+    5.  Triggers deployment for matching projects with `auto_deploy: true`.
+    6.  Debounced via `recentDeploys` Map with 10-second cooldown per project (no global concurrency cap — careful with many projects on one repo).
 
 ### Authentication
 -   **App Auth**: Uses `jsonwebtoken` to sign a JWT with the stored Private Key (`RS256`).
