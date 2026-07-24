@@ -80,6 +80,7 @@ export type JwtPayload = {
   email: string;
   role: string;
   purpose?: string;
+  pwdv?: number;
   iat?: number;
   exp?: number;
 };
@@ -103,11 +104,8 @@ export async function assertPasswordStillValid(decoded: JwtPayload): Promise<str
       select: { passwordChangedAt: true },
     });
     if (!user) return 'User not found';
-    if (
-      user.passwordChangedAt &&
-      typeof decoded.iat === 'number' &&
-      decoded.iat < Math.floor(user.passwordChangedAt.getTime() / 1000)
-    ) {
+    const expectedPwdv = user.passwordChangedAt?.getTime() ?? 0;
+    if (typeof decoded.pwdv !== 'number' || decoded.pwdv !== expectedPwdv) {
       return 'Session expired. Please log in again.';
     }
   } catch {
