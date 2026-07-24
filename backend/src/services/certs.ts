@@ -5,6 +5,7 @@ import { spawn } from 'child_process';
 import { X509Certificate } from 'crypto';
 import { config } from '../lib/config.js';
 import prisma from '../lib/prisma.js';
+import { checkDomainDns } from './dnsCheck.js';
 
 export type SslStatus =
   | 'missing'
@@ -25,6 +26,59 @@ export interface CertificateStatus {
 
 const EXPIRING_DAYS = 21;
 const STATUS_KEY_PREFIX = 'ssl_meta_';
+
+export type SslEventLevel = 'info' | 'success' | 'warn' | 'error';
+
+export interface SslEvent {
+  at: string;
+  level: SslEventLevel;
+  message: string;
+}
+
+// Recent issuance activity per hostname, so the UI can show what certbot is doing.
+// In-memory on purpose: it is progress narration, not state — PEMs remain the source of truth.
+const MAX_EVENTS_PER_DOMAIN = 40;
+const eventLog = new Map<string, SslEvent[]>();
+
+export function appendSslEvent(
+  hostnames: string | string[],
+  level: SslEventLevel,
+  message: string
+): void {
+  const event: SslEvent = { at: new Date().toISOString(), level, message };
+  const hosts = (Array.isArray(hostnames) ? hostnames : [hostnames])
+    .map((h) => h.trim().toLowerCase())
+    .filter(Boolean);
+
+  for (const host of hosts) {
+    const events = eventLog.get(host) || [];
+    events.push(event);
+    eventLog.set(host, events.slice(-MAX_EVENTS_PER_DOMAIN));
+  }
+}
+
+/** Merged, de-duplicated, oldest-first activity for a set of hostnames. */
+export function getSslEvents(hostnames: string[]): SslEvent[] {
+  const seen = new Set<string>();
+  const merged: SslEvent[] = [];
+
+  for (const host of hostnames) {
+    for (const event of eventLog.get(host.trim().toLowerCase()) || []) {
+      const key = `${event.at}|${event.message}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push(event);
+    }
+  }
+
+  return merged.sort((a, b) => a.at.localeCompare(b.at)).slice(-MAX_EVENTS_PER_DOMAIN);
+}
+
+export function clearSslEvents(hostnames: string[]): void {
+  for (const host of hostnames) {
+    eventLog.delete(host.trim().toLowerCase());
+  }
+}
 
 function certbotLogCommand(): string {
   return `sudo docker exec ${config.certbotContainer} tail -n 100 /var/log/letsencrypt/letsencrypt.log`;
@@ -331,17 +385,45 @@ export async function issueCertificate(
   if (!opts?.force && certificateFilesExist(primary) && certCoversAllHosts(primary, cleaned)) {
     const status = await getCertificateStatus(primary);
     if (status.status === 'active' || status.status === 'expiring') {
+      appendSslEvent(cleaned, 'info', 'Existing certificate already covers these hostnames — reusing it.');
       return status;
     }
   }
 
   await setMeta(primary, { status: 'pending', error: null });
+  appendSslEvent(
+    cleaned,
+    'info',
+    `Requesting certificate for ${cleaned.join(', ')}${config.certbotStaging ? ' (staging CA)' : ''}`
+  );
 
   let email: string;
   try {
     email = await getAcmeEmail();
   } catch (e: any) {
+    appendSslEvent(cleaned, 'error', e.message);
     await setMeta(primary, { status: 'failed', error: e.message });
+    return getCertificateStatus(primary);
+  }
+
+  // Preflight DNS. Let's Encrypt fails the whole order when any single hostname does
+  // not resolve, and failed orders count against the account rate limit — so stop here
+  // with the real reason instead of calling certbot.
+  const unresolved: string[] = [];
+  for (const domain of cleaned) {
+    const check = await checkDomainDns(domain);
+    appendSslEvent(
+      cleaned,
+      check.status === 'ok' ? 'info' : check.status === 'missing' ? 'error' : 'warn',
+      check.message
+    );
+    if (check.status === 'missing') unresolved.push(domain);
+  }
+
+  if (unresolved.length > 0) {
+    const err = `DNS record missing for ${unresolved.join(', ')} — create an A record pointing at this server, then retry SSL.`;
+    appendSslEvent(cleaned, 'error', 'Skipped Let\u2019s Encrypt: DNS is not ready yet.');
+    await setMeta(primary, { status: 'failed', error: err });
     return getCertificateStatus(primary);
   }
 
@@ -370,18 +452,28 @@ export async function issueCertificate(
   }
 
   console.log(`[SSL] Issuing certificate for ${cleaned.join(', ')} (staging=${config.certbotStaging})`);
+  appendSslEvent(cleaned, 'info', `Running certbot HTTP-01 challenge in ${config.certbotContainer}…`);
   const result = await runDockerExec(args);
 
   if (result.code !== 0 || !certificateFilesExist(primary)) {
     const err = summarizeCertbotError(result.stdout, result.stderr);
     console.error(`[SSL] Issue failed for ${primary}:`, err);
+    appendSslEvent(cleaned, 'error', err);
     await setMeta(primary, { status: 'failed', error: err });
     return getCertificateStatus(primary);
   }
 
   await setMeta(primary, { status: 'active', error: null });
   console.log(`[SSL] Certificate active for ${primary}`);
-  return getCertificateStatus(primary);
+  const issued = await getCertificateStatus(primary);
+  appendSslEvent(
+    cleaned,
+    'success',
+    issued.expiresAt
+      ? `Certificate issued — valid until ${new Date(issued.expiresAt).toUTCString()}`
+      : 'Certificate issued'
+  );
+  return issued;
 }
 
 export async function clearSslMeta(primaryDomain: string): Promise<void> {
