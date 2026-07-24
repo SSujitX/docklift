@@ -232,18 +232,32 @@ async function allocatePort(projectId: string): Promise<number> {
 }
 
 // List deployments for a project
+// Default: JSON array (backward compatible).
+// With ?meta=1: { items, total } for paginated UIs.
 router.get('/:projectId', async (req: Request, res: Response) => {
   try {
     const limit = parseInt(req.query.limit as string) || 10;
     const offset = parseInt(req.query.offset as string) || 0;
-    
-    const deployments = await prisma.deployment.findMany({
-      where: { project_id: req.params.projectId },
-      orderBy: { created_at: 'desc' },
-      take: limit,
-      skip: offset,
-    });
-    res.json(deployments);
+    const withMeta = req.query.meta === '1' || req.query.meta === 'true';
+    const where = { project_id: req.params.projectId };
+
+    const [deployments, total] = await Promise.all([
+      prisma.deployment.findMany({
+        where,
+        orderBy: { created_at: 'desc' },
+        take: limit,
+        skip: offset,
+      }),
+      withMeta
+        ? prisma.deployment.count({ where })
+        : Promise.resolve(undefined as number | undefined),
+    ]);
+
+    if (withMeta) {
+      res.json({ items: deployments, total: total ?? 0 });
+    } else {
+      res.json(deployments);
+    }
   } catch (error) {
     res.status(500).json({ error: 'Failed to list deployments' });
   }
