@@ -24,9 +24,11 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { API_URL } from "@/lib/utils";
-import { getAuthHeaders } from "@/lib/auth";
+import { authFetch } from "@/lib/auth";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+
+const PASSWORD_CANCEL = Symbol("terminal_password_cancel");
 
 export function TerminalView() {
   const [showRebootDialog, setShowRebootDialog] = useState(false);
@@ -45,7 +47,9 @@ export function TerminalView() {
   const wsRef = useRef<WebSocket | null>(null);
   const fitAddonRef = useRef<any>(null);
   const passwordInputRef = useRef<HTMLInputElement>(null);
-  const passwordResolveRef = useRef<((pwd: string) => void) | null>(null);
+  const passwordResolveRef = useRef<
+    ((value: string | typeof PASSWORD_CANCEL) => void) | null
+  >(null);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -208,7 +212,21 @@ export function TerminalView() {
     };
   }, []);
 
-  const promptPassword = useCallback((): Promise<string> => {
+  const cancelPasswordPrompt = useCallback(() => {
+    setShowPasswordDialog(false);
+    setPasswordInput("");
+    setPasswordError("");
+    if (!passwordResolveRef.current) return;
+    passwordResolveRef.current(PASSWORD_CANCEL);
+    passwordResolveRef.current = null;
+    setConnecting(false);
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+  }, []);
+
+  const promptPassword = useCallback((): Promise<string | typeof PASSWORD_CANCEL> => {
     return new Promise((resolve) => {
       passwordResolveRef.current = resolve;
       setPasswordError("");
@@ -220,12 +238,12 @@ export function TerminalView() {
   const handlePasswordSubmit = useCallback(() => {
     if (!passwordInput.trim()) return;
     const pwd = passwordInput;
-    setPasswordInput("");
-    setShowPasswordDialog(false);
     if (passwordResolveRef.current) {
       passwordResolveRef.current(pwd);
       passwordResolveRef.current = null;
     }
+    setPasswordInput("");
+    setShowPasswordDialog(false);
   }, [passwordInput]);
 
   const connectWebSocket = useCallback(async (term: any, fitAddon: any) => {
@@ -242,9 +260,8 @@ export function TerminalView() {
 
     let token: string;
     try {
-      const tokenRes = await fetch(`${API_URL}/api/auth/terminal-token`, {
+      const tokenRes = await authFetch(`${API_URL}/api/auth/terminal-token`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${sessionToken}` },
       });
       if (!tokenRes.ok) {
         throw new Error("Failed to issue terminal token");
@@ -279,9 +296,13 @@ export function TerminalView() {
           const msg = JSON.parse(event.data);
 
           if (msg.type === "auth_required") {
-            // Prompt for password
             const password = await promptPassword();
-            ws.send(JSON.stringify({ 
+            if (password === PASSWORD_CANCEL) {
+              setConnecting(false);
+              ws.close();
+              return;
+            }
+            ws.send(JSON.stringify({
               type: "auth", 
               password,
               cols: term.cols,
@@ -314,9 +335,13 @@ export function TerminalView() {
           if (msg.type === "auth_error") {
             term.writeln(`  \x1b[1;31m✗ ${msg.message || "Authentication failed"}\x1b[0m`);
             setConnecting(false);
-            // Re-prompt
             const password = await promptPassword();
-            ws.send(JSON.stringify({ 
+            if (password === PASSWORD_CANCEL) {
+              setConnecting(false);
+              ws.close();
+              return;
+            }
+            ws.send(JSON.stringify({
               type: "auth", 
               password,
               cols: term.cols,
@@ -361,7 +386,7 @@ export function TerminalView() {
       term.writeln(`  \x1b[1;31m✗ Connection failed: ${err.message}\x1b[0m`);
       setConnecting(false);
     }
-  }, [promptPassword]);
+  }, [promptPassword, cancelPasswordPrompt]);
 
   // System action handler (same as before)
   const handleSystemAction = async (action: 'reboot' | 'reset' | 'purge' | 'update-system' | 'upgrade') => {
@@ -371,9 +396,8 @@ export function TerminalView() {
     setShowPurgeDialog(false);
     
     try {
-      const res = await fetch(`${API_URL}/api/system/${action}`, {
+      const res = await authFetch(`${API_URL}/api/system/${action}`, {
         method: "POST",
-        headers: getAuthHeaders(),
       });
       const data = await res.json();
       
@@ -706,9 +730,7 @@ export function TerminalView() {
       {/* Terminal Password Verification Dialog */}
       <Dialog open={showPasswordDialog} onOpenChange={(open) => {
         if (!open) {
-          setShowPasswordDialog(false);
-          setPasswordInput("");
-          setPasswordError("");
+          cancelPasswordPrompt();
         }
       }}>
         <DialogContent className="sm:max-w-md bg-background border-border shadow-2xl rounded-3xl">
@@ -751,7 +773,7 @@ export function TerminalView() {
               <Button
                 type="button"
                 variant="ghost"
-                onClick={() => { setShowPasswordDialog(false); setPasswordInput(""); setPasswordError(""); }}
+                onClick={cancelPasswordPrompt}
                 className="flex-1 font-bold text-base h-12 rounded-2xl"
               >
                 Cancel
