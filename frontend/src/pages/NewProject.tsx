@@ -33,9 +33,8 @@ import {
   Box,
 } from "lucide-react";
 import { API_URL, cn } from "@/lib/utils";
-import { getAuthHeaders, startGithubInstallAndNavigate } from "@/lib/auth";
+import { authFetch, startGithubInstallAndNavigate } from "@/lib/auth";
 import { toast } from "sonner";
-import axios from "axios";
 import { Project } from "@/lib/types";
 import {
   Dialog,
@@ -147,7 +146,7 @@ function NewProjectContent() {
     setBranchesLoading(true);
     setRepoAccessError(null);
     try {
-      const res = await fetch(`${API_URL}/api/github/branches?repo=${repoIdentifier}&type=${type}`, { headers: getAuthHeaders() });
+      const res = await authFetch(`${API_URL}/api/github/branches?repo=${repoIdentifier}&type=${type}`);
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
         if (res.status === 404) {
@@ -185,7 +184,7 @@ function NewProjectContent() {
   const fetchGitHubStatus = async () => {
     setGithubLoading(true);
     try {
-      const res = await fetch(`${API_URL}/api/github/status`, { headers: getAuthHeaders() });
+      const res = await authFetch(`${API_URL}/api/github/status`);
       const data = await res.json();
       setGithubStatus(data);
       if (data.connected) {
@@ -201,10 +200,16 @@ function NewProjectContent() {
   const fetchRepos = async () => {
     setReposLoading(true);
     try {
-      const res = await fetch(`${API_URL}/api/github/repos?per_page=50`, { headers: getAuthHeaders() });
+      const res = await authFetch(`${API_URL}/api/github/repos?per_page=50`);
       const data = await res.json();
+      if (!res.ok || !Array.isArray(data)) {
+        setRepos([]);
+        toast.error("Failed to fetch repositories");
+        return;
+      }
       setRepos(data);
     } catch {
+      setRepos([]);
       toast.error("Failed to fetch repositories");
     } finally {
       setReposLoading(false);
@@ -213,7 +218,7 @@ function NewProjectContent() {
 
   const fetchExistingDatabases = async () => {
     try {
-      const res = await fetch(`${API_URL}/api/projects`, { headers: getAuthHeaders() });
+      const res = await authFetch(`${API_URL}/api/projects`);
       const data: Project[] = await res.json();
       setExistingDbs(data.filter(p => p.project_type === "database"));
     } catch (error) {
@@ -283,16 +288,17 @@ function NewProjectContent() {
         Array.from(files).forEach((file) => formData.append("files", file));
       }
 
-      // 1. Create Project
-      const response = await axios.post(`${API_URL}/api/projects`, formData, {
-        headers: { 
-          "Content-Type": "multipart/form-data",
-          ...getAuthHeaders() 
-        } as any,
-        timeout: 300000,
+      const createRes = await authFetch(`${API_URL}/api/projects`, {
+        method: "POST",
+        body: formData,
       });
 
-      const newProject = response.data;
+      if (!createRes.ok) {
+        const errBody = await createRes.json().catch(() => ({} as { detail?: string; error?: string }));
+        throw new Error(errBody.detail || errBody.error || "Failed to create project");
+      }
+
+      const newProject = await createRes.json();
 
       // 2. Inject ENVs
       const varsToInject = [...envVars];
@@ -306,9 +312,9 @@ function NewProjectContent() {
       }
 
       for (const env of varsToInject) {
-        await fetch(`${API_URL}/api/projects/${newProject.id}/env`, {
+        await authFetch(`${API_URL}/api/projects/${newProject.id}/env`, {
           method: "POST",
-          headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify(env),
         });
       }
