@@ -84,6 +84,21 @@ export interface Service {
   created_at: string;
 }
 
+export interface SslEvent {
+  at: string;
+  level: "info" | "success" | "warn" | "error";
+  message: string;
+}
+
+export interface DomainDnsCheck {
+  domain: string;
+  status: "ok" | "mismatch" | "missing" | "unknown";
+  a: string[];
+  aaaa: string[];
+  serverIp: string | null;
+  message: string;
+}
+
 export interface EnvVariable {
   id: string;
   project_id: string;
