@@ -29,6 +29,8 @@ ENV/
 *.sqlite
 *.sqlite3
 data/*.db
+# Accidental Prisma/SQLite scratch DBs (no extension — *.db does not match)
+backend/prisma/memdb*
 
 # Secrets (auto-generated, never commit)
 .secrets
