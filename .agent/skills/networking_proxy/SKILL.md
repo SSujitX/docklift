@@ -39,8 +39,11 @@ Both sit on the `docklift_network` bridge (IPv4 `172.28.0.0/16`, IPv6 `fd12:3456
 3. **HTTP first, then HTTPS**: the initial write is an HTTP-only block that includes the ACME snippet,
    so the challenge can succeed. After a certificate exists, the file is rewritten with the HTTPS
    server block and an HTTP→HTTPS redirect.
-4. **Reload**: `docker exec docklift-nginx-proxy nginx -s reload`.
-5. **Reconciliation**: `syncNginxConfigs()` deletes `service-*.conf` files whose service no longer
+4. **Reload**: `reloadNginx()` in `nginx.ts` — spawn reload, optional self-heal, then **throws** on
+   failure. Callers must not treat a failed reload as success (domain PUT rolls DB back on throw).
+5. **Duplicate hostnames**: `lib/domainOwnership.ts` rejects a hostname already owned by another
+   service or panel conf before save.
+6. **Reconciliation**: `syncNginxConfigs()` deletes `service-*.conf` files whose service no longer
    exists, so stale vhosts do not keep hijacking a hostname.
 
 ## SSL / Let's Encrypt
