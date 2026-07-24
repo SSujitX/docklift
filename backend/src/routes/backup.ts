@@ -8,27 +8,71 @@ import path from 'path';
 import archiver from 'archiver';
 import multer from 'multer';
 import { config } from '../lib/config.js';
-import prisma from '../lib/prisma.js';
+import prisma, { reconnectPrisma } from '../lib/prisma.js';
 import { composeProjectName } from '../lib/naming.js';
 import { safeExtractZip } from '../lib/safeUnzip.js';
+import { replaceDirContents } from '../lib/fsCopy.js';
+import { enterMaintenance, exitMaintenance } from '../lib/maintenance.js';
 
 const execAsync = promisify(exec);
 const router = Router();
+
+/**
+ * Consistent SQLite snapshot via VACUUM INTO — never archive the live DB file
+ * while writers are active (raw copy can mix pages across transactions).
+ */
+async function snapshotDatabase(liveDbPath: string): Promise<{ snapshotPath: string; cleanup: () => Promise<void> }> {
+  const snapshotPath = path.join(
+    path.dirname(liveDbPath),
+    `.docklift-backup-${Date.now()}-${process.pid}.db`
+  );
+  await fsp.rm(snapshotPath, { force: true });
+  // Absolute path, forward slashes for SQLite on Windows
+  const sqlPath = snapshotPath.replace(/\\/g, '/').replace(/'/g, "''");
+  await prisma.$executeRawUnsafe(`VACUUM INTO '${sqlPath}'`);
+  return {
+    snapshotPath,
+    cleanup: async () => {
+      try {
+        await fsp.rm(snapshotPath, { force: true });
+      } catch {
+        /* ignore */
+      }
+    },
+  };
+}
+
+async function restoreDatabaseFile(tempDbPath: string, currentDbPath: string, writeLog: (t: string) => void) {
+  // Must drop open handles before replacing the SQLite file on disk.
+  await prisma.$disconnect();
+  if (fs.existsSync(currentDbPath)) {
+    const backupDbPath = `${currentDbPath}.pre-restore`;
+    await fsp.copyFile(currentDbPath, backupDbPath);
+    writeLog(`      + Created backup of current database\n`);
+  }
+  await fsp.mkdir(path.dirname(currentDbPath), { recursive: true });
+  await fsp.copyFile(tempDbPath, currentDbPath);
+  writeLog(`      + Database restored\n`);
+  await reconnectPrisma();
+}
 
 // Helper: Reconcile system state after restore
 // 1. Redeploy all active projects
 // 2. Reload Nginx
 // 3. Restart Backend
-async function reconcileSystem(writeLog: (text: string) => void) {
+/** Returns true when every attempted redeploy + nginx reload succeeded. */
+async function reconcileSystem(writeLog: (text: string) => void): Promise<boolean> {
   writeLog(`\n${'='.repeat(50)}\n`);
   writeLog(`  RECONCILING SYSTEM STATE\n`);
   writeLog(`${'='.repeat(50)}\n\n`);
 
+  let failures = 0;
+
   try {
-    // 1. Read restored database using singleton Prisma client
+    // Fresh client after DB file replacement
+    await reconnectPrisma();
     writeLog(`[1/3] Reading restored database...\n`);
-    
-    // 2. Fetch all projects
+
     const projects = await prisma.project.findMany();
     writeLog(`      + Found ${projects.length} projects in database\n`);
 
@@ -76,7 +120,8 @@ async function reconcileSystem(writeLog: (text: string) => void) {
              writeLog(`        ! Skipped (No DockLift runtime compose; deploy manually)\n`);
           }
         } catch (e: any) {
-             writeLog(`        ! Failed: ${e.message.split('\n')[0]}\n`);
+             failures += 1;
+             writeLog(`        [ERROR] Failed: ${e.message.split('\n')[0]}\n`);
         }
       } else {
         writeLog(`      - Skipped ${project.name} (No source code found)\n`);
@@ -89,15 +134,19 @@ async function reconcileSystem(writeLog: (text: string) => void) {
       await execAsync('docker exec docklift-nginx-proxy nginx -s reload');
       writeLog(`      + Nginx configuration reloaded\n`);
     } catch (e: any) {
-      writeLog(`      ! Nginx reload failed: ${e.message.split('\n')[0]}\n`);
+      failures += 1;
+      writeLog(`      [ERROR] Nginx reload failed: ${e.message.split('\n')[0]}\n`);
     }
 
-    // Disconnect prisma
-    await prisma.$disconnect();
-
+    if (failures > 0) {
+      writeLog(`\n[ERROR] Reconcile finished with ${failures} failure(s) — restore is incomplete\n`);
+      return false;
+    }
+    return true;
   } catch (error: any) {
     writeLog(`\n[ERROR] Reconcile failed: ${error.message}\n`);
     console.error('Reconcile error:', error);
+    return false;
   }
 }
 
@@ -105,7 +154,7 @@ async function reconcileSystem(writeLog: (text: string) => void) {
 // Configure multer for backup uploads (saves to uploads subdirectory)
 const uploadStorage = multer.diskStorage({
   destination: async (req, file, cb) => {
-    const uploadDir = path.join(process.env.BACKUP_PATH || '/data/backups', 'uploads');
+    const uploadDir = path.join(config.backupPath, 'uploads');
     await fsp.mkdir(uploadDir, { recursive: true });
     cb(null, uploadDir);
   },
@@ -129,7 +178,7 @@ const uploadBackup = multer({
 });
 
 // Configuration paths
-const BACKUP_DIR = process.env.BACKUP_PATH || '/data/backups';
+const BACKUP_DIR = config.backupPath;
 const UPLOADS_DIR = path.join(BACKUP_DIR, 'uploads'); // Separate directory for uploaded restore files
 const DEPLOYMENTS_PATH = config.deploymentsPath;
 const NGINX_CONF_PATH = config.nginxConfPath;
@@ -346,15 +395,29 @@ router.post('/create', async (req: Request, res: Response) => {
 
     archive.pipe(output);
 
-    // 1. Add database
+    // 1. Add database (consistent snapshot — never the live file)
     writeLog(`[1/4] Adding database...\n`);
     const dbPath = getDatabasePath();
+    let snapshotCleanup: (() => Promise<void>) | null = null;
     if (fs.existsSync(dbPath)) {
-      const dbStats = await fsp.stat(dbPath);
-      archive.file(dbPath, { name: 'database/docklift.db' });
-      writeLog(`      + docklift.db (${formatBytes(dbStats.size)})\n`);
+      const { snapshotPath, cleanup } = await snapshotDatabase(dbPath);
+      snapshotCleanup = cleanup;
+      const dbStats = await fsp.stat(snapshotPath);
+      archive.file(snapshotPath, { name: 'database/docklift.db' });
+      writeLog(`      + docklift.db (${formatBytes(dbStats.size)}) [consistent snapshot]\n`);
+      archive.on('end', () => {
+        void cleanup();
+      });
+      archive.on('error', () => {
+        void cleanup();
+      });
     } else {
-      writeLog(`      ! Database not found at ${dbPath}\n`);
+      writeLog(`\n[ERROR] Database not found at ${dbPath} — refusing incomplete backup\n`);
+      if (fs.existsSync(backupPath)) {
+        await fsp.rm(backupPath, { force: true }).catch(() => {});
+      }
+      res.end();
+      return;
     }
 
     // 2. Add deployments
@@ -416,6 +479,7 @@ router.post('/create', async (req: Request, res: Response) => {
     writeLog(`  Size: ${formatBytes(finalStats.size)}\n`);
     writeLog(`  Location: ${BACKUP_DIR}\n`);
 
+    if (snapshotCleanup) await snapshotCleanup();
     res.end();
   } catch (error: any) {
     writeLog(`\n[ERROR] Backup failed: ${error.message}\n`);
@@ -438,6 +502,8 @@ router.post('/restore/:filename', async (req: Request, res: Response) => {
   if (!fs.existsSync(backupPath)) {
     return res.status(404).json({ error: 'Backup file not found' });
   }
+
+  enterMaintenance('Restoring from backup');
 
   // Set streaming headers
   res.setHeader('Content-Type', 'text/plain; charset=utf-8');
@@ -493,16 +559,7 @@ router.post('/restore/:filename', async (req: Request, res: Response) => {
     const tempDbPath = path.join(tempDir, 'database', 'docklift.db');
     const currentDbPath = getDatabasePath();
     if (fs.existsSync(tempDbPath)) {
-      // Create backup of current database
-      if (fs.existsSync(currentDbPath)) {
-        const backupDbPath = `${currentDbPath}.pre-restore`;
-        await fsp.copyFile(currentDbPath, backupDbPath);
-        writeLog(`      + Created backup of current database\n`);
-      }
-      // Ensure target directory exists
-      await fsp.mkdir(path.dirname(currentDbPath), { recursive: true });
-      await fsp.copyFile(tempDbPath, currentDbPath);
-      writeLog(`      + Database restored\n`);
+      await restoreDatabaseFile(tempDbPath, currentDbPath, writeLog);
     } else {
       writeLog(`      ! No database in backup\n`);
     }
@@ -511,17 +568,7 @@ router.post('/restore/:filename', async (req: Request, res: Response) => {
     writeLog(`\n[4/7] Restoring deployments...\n`);
     const tempDeploymentsPath = path.join(tempDir, 'deployments');
     if (fs.existsSync(tempDeploymentsPath)) {
-      // Clear existing deployments contents (don't remove the mount point itself)
-      try {
-        const existingItems = await fsp.readdir(DEPLOYMENTS_PATH);
-        for (const item of existingItems) {
-          await fsp.rm(path.join(DEPLOYMENTS_PATH, item), { recursive: true, force: true });
-        }
-      } catch {
-        // Directory might not exist yet
-      }
-      await fsp.mkdir(DEPLOYMENTS_PATH, { recursive: true });
-      await execAsync(`cp -r "${tempDeploymentsPath}/." "${DEPLOYMENTS_PATH}/"`);
+      await replaceDirContents(tempDeploymentsPath, DEPLOYMENTS_PATH);
       writeLog(`      + Deployments restored\n`);
     } else {
       writeLog(`      ! No deployments in backup\n`);
@@ -532,7 +579,7 @@ router.post('/restore/:filename', async (req: Request, res: Response) => {
     const tempNginxPath = path.join(tempDir, 'nginx-conf');
     if (fs.existsSync(tempNginxPath)) {
       await fsp.mkdir(NGINX_CONF_PATH, { recursive: true });
-      await execAsync(`cp -r "${tempNginxPath}/." "${NGINX_CONF_PATH}/"`);
+      await replaceDirContents(tempNginxPath, NGINX_CONF_PATH);
       writeLog(`      + Nginx configs restored\n`);
 
       // Reload nginx proxy
@@ -551,7 +598,7 @@ router.post('/restore/:filename', async (req: Request, res: Response) => {
     const tempLePath = path.join(tempDir, 'letsencrypt');
     if (fs.existsSync(tempLePath)) {
       await fsp.mkdir(LETSENCRYPT_PATH, { recursive: true });
-      await execAsync(`cp -r "${tempLePath}/." "${LETSENCRYPT_PATH}/"`);
+      await replaceDirContents(tempLePath, LETSENCRYPT_PATH);
       writeLog(`      + Let's Encrypt certificates restored\n`);
       try {
         await execAsync('docker exec docklift-nginx-proxy nginx -s reload 2>/dev/null || true');
@@ -576,33 +623,19 @@ router.post('/restore/:filename', async (req: Request, res: Response) => {
     // Clean up temp directory
     await fsp.rm(tempDir, { recursive: true, force: true });
 
-    // Delete all backup files from the server
-    writeLog(`\n[8/8] Cleaning up backup files...\n`);
-    try {
-      const backupFiles = await fsp.readdir(BACKUP_DIR);
-      let deletedCount = 0;
-      for (const file of backupFiles) {
-        if (file.endsWith('.zip')) {
-          const filePath = path.join(BACKUP_DIR, file);
-          await fsp.unlink(filePath);
-          writeLog(`      - Removed: ${file}\n`);
-          deletedCount++;
-        }
-      }
-      if (deletedCount === 0) {
-        writeLog(`      - No backup files to remove\n`);
-      } else {
-        writeLog(`      + Removed ${deletedCount} backup file(s)\n`);
-      }
-    } catch (cleanupError: any) {
-      writeLog(`      ! Failed to clean backup files: ${cleanupError.message}\n`);
-    }
+    // Keep other rollback archives; only note the archive that was just applied
+    writeLog(`\n[8/8] Restore archive retained for rollback...\n`);
+    writeLog(`      + Kept: ${filename}\n`);
 
     // Reconcile system state (auto-redeploy)
-    await reconcileSystem(writeLog);
+    const reconcileOk = await reconcileSystem(writeLog);
 
     writeLog(`\n${'='.repeat(50)}\n`);
-    writeLog(`  RESTORE COMPLETE\n`);
+    if (reconcileOk) {
+      writeLog(`  RESTORE COMPLETE\n`);
+    } else {
+      writeLog(`  [ERROR] RESTORE INCOMPLETE — data restored but some projects failed to start\n`);
+    }
     writeLog(`${'='.repeat(50)}\n`);
     writeLog(`\n  [!] Restarting backend service to apply changes...\n`);
 
@@ -614,6 +647,7 @@ router.post('/restore/:filename', async (req: Request, res: Response) => {
       process.exit(0);
     }, 1000);
   } catch (error: any) {
+    exitMaintenance();
     writeLog(`\n[ERROR] Restore failed: ${error.message}\n`);
     console.error('Restore error:', error);
     res.end();
@@ -706,6 +740,7 @@ router.post('/restore-upload', uploadBackup.single('backup'), async (req: Reques
       return res.status(400).json({ error: 'No backup file uploaded' });
     }
 
+    enterMaintenance('Restoring from uploaded backup');
     const backupPath = req.file.path;
     const filename = req.file.filename;
 
@@ -762,15 +797,7 @@ router.post('/restore-upload', uploadBackup.single('backup'), async (req: Reques
     const tempDbPath = path.join(tempDir, 'database', 'docklift.db');
     const currentDbPath = getDatabasePath();
     if (fs.existsSync(tempDbPath)) {
-      if (fs.existsSync(currentDbPath)) {
-        const backupDbPath = `${currentDbPath}.pre-restore`;
-        await fsp.copyFile(currentDbPath, backupDbPath);
-        writeLog(`      + Created backup of current database\n`);
-      }
-      // Ensure target directory exists
-      await fsp.mkdir(path.dirname(currentDbPath), { recursive: true });
-      await fsp.copyFile(tempDbPath, currentDbPath);
-      writeLog(`      + Database restored\n`);
+      await restoreDatabaseFile(tempDbPath, currentDbPath, writeLog);
     } else {
       writeLog(`      ! No database in backup\n`);
     }
@@ -779,17 +806,7 @@ router.post('/restore-upload', uploadBackup.single('backup'), async (req: Reques
     writeLog(`\n[4/7] Restoring deployments...\n`);
     const tempDeploymentsPath = path.join(tempDir, 'deployments');
     if (fs.existsSync(tempDeploymentsPath)) {
-      // Clear existing deployments contents (don't remove the mount point itself)
-      try {
-        const existingItems = await fsp.readdir(DEPLOYMENTS_PATH);
-        for (const item of existingItems) {
-          await fsp.rm(path.join(DEPLOYMENTS_PATH, item), { recursive: true, force: true });
-        }
-      } catch {
-        // Directory might not exist yet
-      }
-      await fsp.mkdir(DEPLOYMENTS_PATH, { recursive: true });
-      await execAsync(`cp -r "${tempDeploymentsPath}/." "${DEPLOYMENTS_PATH}/"`);
+      await replaceDirContents(tempDeploymentsPath, DEPLOYMENTS_PATH);
       writeLog(`      + Deployments restored\n`);
     } else {
       writeLog(`      ! No deployments in backup\n`);
@@ -800,7 +817,7 @@ router.post('/restore-upload', uploadBackup.single('backup'), async (req: Reques
     const tempNginxPath = path.join(tempDir, 'nginx-conf');
     if (fs.existsSync(tempNginxPath)) {
       await fsp.mkdir(NGINX_CONF_PATH, { recursive: true });
-      await execAsync(`cp -r "${tempNginxPath}/." "${NGINX_CONF_PATH}/"`);
+      await replaceDirContents(tempNginxPath, NGINX_CONF_PATH);
       writeLog(`      + Nginx configs restored\n`);
 
       try {
@@ -817,7 +834,7 @@ router.post('/restore-upload', uploadBackup.single('backup'), async (req: Reques
     const tempLePath = path.join(tempDir, 'letsencrypt');
     if (fs.existsSync(tempLePath)) {
       await fsp.mkdir(LETSENCRYPT_PATH, { recursive: true });
-      await execAsync(`cp -r "${tempLePath}/." "${LETSENCRYPT_PATH}/"`);
+      await replaceDirContents(tempLePath, LETSENCRYPT_PATH);
       writeLog(`      + Let's Encrypt certificates restored\n`);
       try {
         await execAsync('docker exec docklift-nginx-proxy nginx -s reload 2>/dev/null || true');
@@ -863,10 +880,14 @@ router.post('/restore-upload', uploadBackup.single('backup'), async (req: Reques
     }
 
     // Reconcile system state (auto-redeploy)
-    await reconcileSystem(writeLog);
+    const reconcileOk = await reconcileSystem(writeLog);
 
     writeLog(`\n${'='.repeat(50)}\n`);
-    writeLog(`  RESTORE COMPLETE\n`);
+    if (reconcileOk) {
+      writeLog(`  RESTORE COMPLETE\n`);
+    } else {
+      writeLog(`  [ERROR] RESTORE INCOMPLETE — data restored but some projects failed to start\n`);
+    }
     writeLog(`${'='.repeat(50)}\n`);
     writeLog(`\n  [!] Restarting backend service to apply changes...\n`);
     writeLog(`\n  The uploaded file has been kept. You can delete it manually from Settings.\n`);
@@ -879,6 +900,7 @@ router.post('/restore-upload', uploadBackup.single('backup'), async (req: Reques
       process.exit(0);
     }, 1000);
   } catch (error: any) {
+    exitMaintenance();
     console.error('Upload restore error:', error);
     if (!res.headersSent) {
       res.status(500).json({ error: error.message || 'Failed to restore from uploaded backup' });
@@ -902,6 +924,8 @@ router.post('/restore-from-upload/:filename', async (req: Request, res: Response
   if (!fs.existsSync(backupPath)) {
     return res.status(404).json({ error: 'Uploaded file not found' });
   }
+
+  enterMaintenance('Restoring from uploaded backup');
 
   // Set streaming headers
   res.setHeader('Content-Type', 'text/plain; charset=utf-8');
@@ -958,14 +982,7 @@ router.post('/restore-from-upload/:filename', async (req: Request, res: Response
     const tempDbPath = path.join(tempDir, 'database', 'docklift.db');
     const currentDbPath = getDatabasePath();
     if (fs.existsSync(tempDbPath)) {
-      if (fs.existsSync(currentDbPath)) {
-        const backupDbPath = `${currentDbPath}.pre-restore`;
-        await fsp.copyFile(currentDbPath, backupDbPath);
-        writeLog(`      + Created backup of current database\n`);
-      }
-      await fsp.mkdir(path.dirname(currentDbPath), { recursive: true });
-      await fsp.copyFile(tempDbPath, currentDbPath);
-      writeLog(`      + Database restored\n`);
+      await restoreDatabaseFile(tempDbPath, currentDbPath, writeLog);
     } else {
       writeLog(`      ! No database in backup\n`);
     }
@@ -974,16 +991,7 @@ router.post('/restore-from-upload/:filename', async (req: Request, res: Response
     writeLog(`\n[4/7] Restoring deployments...\n`);
     const tempDeploymentsPath = path.join(tempDir, 'deployments');
     if (fs.existsSync(tempDeploymentsPath)) {
-      try {
-        const existingItems = await fsp.readdir(DEPLOYMENTS_PATH);
-        for (const item of existingItems) {
-          await fsp.rm(path.join(DEPLOYMENTS_PATH, item), { recursive: true, force: true });
-        }
-      } catch {
-        // Directory might not exist yet
-      }
-      await fsp.mkdir(DEPLOYMENTS_PATH, { recursive: true });
-      await execAsync(`cp -r "${tempDeploymentsPath}/." "${DEPLOYMENTS_PATH}/"`);
+      await replaceDirContents(tempDeploymentsPath, DEPLOYMENTS_PATH);
       writeLog(`      + Deployments restored\n`);
     } else {
       writeLog(`      ! No deployments in backup\n`);
@@ -994,7 +1002,7 @@ router.post('/restore-from-upload/:filename', async (req: Request, res: Response
     const tempNginxPath = path.join(tempDir, 'nginx-conf');
     if (fs.existsSync(tempNginxPath)) {
       await fsp.mkdir(NGINX_CONF_PATH, { recursive: true });
-      await execAsync(`cp -r "${tempNginxPath}/." "${NGINX_CONF_PATH}/"`);
+      await replaceDirContents(tempNginxPath, NGINX_CONF_PATH);
       writeLog(`      + Nginx configs restored\n`);
 
       try {
@@ -1011,7 +1019,7 @@ router.post('/restore-from-upload/:filename', async (req: Request, res: Response
     const tempLePath = path.join(tempDir, 'letsencrypt');
     if (fs.existsSync(tempLePath)) {
       await fsp.mkdir(LETSENCRYPT_PATH, { recursive: true });
-      await execAsync(`cp -r "${tempLePath}/." "${LETSENCRYPT_PATH}/"`);
+      await replaceDirContents(tempLePath, LETSENCRYPT_PATH);
       writeLog(`      + Let's Encrypt certificates restored\n`);
       try {
         await execAsync('docker exec docklift-nginx-proxy nginx -s reload 2>/dev/null || true');
@@ -1057,10 +1065,14 @@ router.post('/restore-from-upload/:filename', async (req: Request, res: Response
     }
 
     // Reconcile system state (auto-redeploy)
-    await reconcileSystem(writeLog);
+    const reconcileOk = await reconcileSystem(writeLog);
 
     writeLog(`\n${'='.repeat(50)}\n`);
-    writeLog(`  RESTORE COMPLETE\n`);
+    if (reconcileOk) {
+      writeLog(`  RESTORE COMPLETE\n`);
+    } else {
+      writeLog(`  [ERROR] RESTORE INCOMPLETE — data restored but some projects failed to start\n`);
+    }
     writeLog(`${'='.repeat(50)}\n`);
     writeLog(`\n  [!] Restarting backend service to apply changes...\n`);
     writeLog(`\n  The uploaded file has been kept. You can delete it manually from Settings.\n`);
@@ -1073,6 +1085,7 @@ router.post('/restore-from-upload/:filename', async (req: Request, res: Response
       process.exit(0);
     }, 1000);
   } catch (error: any) {
+    exitMaintenance();
     console.error('Restore from upload error:', error);
     if (!res.headersSent) {
       res.status(500).json({ error: error.message || 'Failed to restore from uploaded file' });
