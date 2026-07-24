@@ -12,6 +12,7 @@ import { config } from './lib/config.js';
 import { ensureNetwork } from './services/docker.js';
 import { logBootstrapIfNeeded } from './lib/bootstrap.js';
 import { isTrustedOrigin } from './lib/originCheck.js';
+import { isMaintenanceMode, maintenanceReason } from './lib/maintenance.js';
 
 import projectsRouter from './routes/projects.js';
 import deploymentsRouter from './routes/deployments.js';
@@ -28,6 +29,7 @@ import { setupTerminalWebSocket, cleanupAllSessions } from './services/terminal.
 import { startCertRenewWatcher } from './services/certs.js';
 import { reloadNginx, syncNginxConfigs } from './services/nginx.js';
 import prisma from './lib/prisma.js';
+import { recoverDeploymentStateOnBoot } from './lib/deploymentRecovery.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -90,8 +92,8 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // Trust only the first proxy (nginx) - prevents IP spoofing for rate limiting
 app.set('trust proxy', 1);
 
-// Ensure directories exist
-const dataDir = path.resolve('./data');
+// Ensure directories exist — always use configured DATA_PATH (not a hardcoded ./data)
+const dataDir = config.dataPath;
 const deploymentsDir = config.deploymentsPath;
 
 if (!fs.existsSync(dataDir)) {
@@ -100,9 +102,24 @@ if (!fs.existsSync(dataDir)) {
 if (!fs.existsSync(deploymentsDir)) {
   fs.mkdirSync(deploymentsDir, { recursive: true });
 }
+if (!fs.existsSync(config.backupPath)) {
+  fs.mkdirSync(config.backupPath, { recursive: true });
+}
 
 // Generate a unique ID for this server instance at startup
 const INSTANCE_ID = crypto.randomUUID();
+
+// Block mutating API traffic while a restore is replacing the SQLite file
+app.use((req, res, next) => {
+  if (!isMaintenanceMode()) return next();
+  if (req.path === '/api/health' || req.path.startsWith('/api/backup/restore')) {
+    return next();
+  }
+  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
+    return next();
+  }
+  return res.status(503).json({ error: maintenanceReason(), maintenance: true });
+});
 
 // Health check (public)
 app.get('/api/health', (req, res) => {
@@ -224,6 +241,8 @@ async function main() {
 
     // Fresh install: print bootstrap secret to logs (never via public API)
     await logBootstrapIfNeeded();
+
+    await recoverDeploymentStateOnBoot();
 
     // After certbot renew updates PEMs, reload nginx-proxy
     startCertRenewWatcher(() => reloadNginx());
