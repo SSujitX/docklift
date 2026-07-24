@@ -20,20 +20,26 @@ Docklift uses a token-based authentication system (JWT) to secure the API and fr
 
 1.  **Registration**:
     -   `POST /api/auth/register`
-    -   Only allows registration if **zero** users exist in the database (first user becomes admin).
+    -   Only allows registration if **zero** users exist (first user becomes admin).
+    -   **Bootstrap claim**: exclusive `fs.rename` of `data/.bootstrap-secret` → `.claimed-<random>`
+        (`lib/bootstrap.ts`). Only the winner may create the admin; losers get 403.
+    -   Crash recovery: on boot with no users, `recoverStaleBootstrapClaims()` restores a leftover
+        `.claimed-*` back to `.bootstrap-secret` so setup is not bricked.
 
 2.  **Login**:
     -   `POST /api/auth/login`
     -   Validates email/password (bcrypt, 12 salt rounds).
-    -   Returns a JWT `token` (7-day expiry).
+    -   Returns a JWT `token` (7-day expiry) that includes a **`pwdv`** claim.
     -   Rate limited via `express-rate-limit` on all `/api/auth` routes.
 
 3.  **Session Management**:
     -   Frontend stores the token in `localStorage` key `docklift_token`.
-    -   Token is sent in `Authorization: Bearer <token>` header via `getAuthHeaders()` in `frontend/src/lib/auth.ts`.
-    -   `AuthProvider.tsx` validates the token against `/api/auth/me` on page load and clears invalid tokens.
-    -   **Password change invalidates old sessions**: `User.passwordChangedAt` is compared against the
-        JWT `iat`, so tokens issued before a password change are rejected even though they have not expired.
+    -   **Always use `authFetch()`** for protected APIs — it attaches the Bearer header and on **401**
+        clears storage + calls `logout()` (registered from `AuthProvider`). Prefer it over raw
+        `fetch` + `getAuthHeaders()`.
+    -   `AuthProvider.tsx` validates `/api/auth/me` on page load and clears invalid tokens.
+    -   **Password change invalidates old sessions**: JWT must carry `pwdv === passwordChangedAt.getTime()`.
+        Exact match (not `iat` comparison) — same-second reissue after password change works correctly.
 
 ## Protected Routes
 
@@ -60,8 +66,10 @@ Server-Sent Events (logs) use **short-lived tokens** instead of long-lived JWTs 
 
 Located in `backend/src/lib/authMiddleware.ts`.
 
--   **`authMiddleware`**: Bearer session JWT; rejects SSE-purpose tokens; never reads `?token=`.
--   **`sseAuthMiddleware`**: Query SSE token only; rejects tokens without `purpose: 'sse'`.
+-   **`authMiddleware`**: Bearer session JWT; rejects SSE-purpose tokens; never reads `?token=`;
+    rejects when `pwdv` is missing or does not match `passwordChangedAt`.
+-   **`sseAuthMiddleware`**: Query SSE token only; rejects tokens without `purpose: 'sse'`; same `pwdv` check.
+-   Setup-token path always uses `config.dataPath` (never a hardcoded `./data`).
 
 ## Security Hardening
 
