@@ -63,9 +63,13 @@ import {
   Download,
   Pause,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Box,
   HardDrive,
 } from "lucide-react";
+
+const HISTORY_PAGE_SIZE = 6;
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import {
@@ -623,8 +627,9 @@ export default function ProjectDetail() {
   const [autoDeploy, setAutoDeploy] = useState(false);
   const [autoDeployLoading, setAutoDeployLoading] = useState(false);
 
-  // Pagination state
-  const [historyLimit, setHistoryLimit] = useState(10);
+  // Deployment history pagination (6 per page)
+  const [historyPage, setHistoryPage] = useState(0);
+  const [deploymentTotal, setDeploymentTotal] = useState(0);
   const [historyLoading, setHistoryLoading] = useState(false);
 
   // Track currently viewed deployment for auto-deploy real-time logs
@@ -652,7 +657,8 @@ export default function ProjectDetail() {
 
   const fetchProject = useCallback(async () => {
     try {
-      const [projectRes, filesRes, deploymentsRes, servicesRes] =
+      const historyOffset = historyPage * HISTORY_PAGE_SIZE;
+      const [projectRes, filesRes, deploymentsRes, servicesRes, latestRes] =
         await Promise.all([
           fetch(`${API_URL}/api/projects/${projectId}`, {
             headers: getAuthHeaders(),
@@ -661,12 +667,19 @@ export default function ProjectDetail() {
             headers: getAuthHeaders(),
           }),
           fetch(
-            `${API_URL}/api/deployments/${projectId}?limit=${historyLimit}`,
+            `${API_URL}/api/deployments/${projectId}?limit=${HISTORY_PAGE_SIZE}&offset=${historyOffset}&meta=1`,
             { headers: getAuthHeaders() },
           ),
           fetch(`${API_URL}/api/deployments/${projectId}/services`, {
             headers: getAuthHeaders(),
           }),
+          // Always resolve the newest deployment for live log tracking when not on page 1
+          historyPage > 0
+            ? fetch(
+                `${API_URL}/api/deployments/${projectId}?limit=1&offset=0`,
+                { headers: getAuthHeaders() },
+              )
+            : Promise.resolve(null),
         ]);
 
       if (!projectRes.ok) {
@@ -680,25 +693,48 @@ export default function ProjectDetail() {
       const projectData = await projectRes.json();
       setProject(projectData);
       setFiles(await filesRes.json());
-      const deps = await deploymentsRes.json();
+
+      const depsPayload = await deploymentsRes.json();
+      const deps: Deployment[] = Array.isArray(depsPayload)
+        ? depsPayload
+        : (depsPayload.items ?? []);
+      const total =
+        typeof depsPayload?.total === "number"
+          ? depsPayload.total
+          : deps.length;
       setDeployments(deps);
+      setDeploymentTotal(total);
+
+      // Clamp page if history shrank (e.g. purged) while viewing a later page
+      const maxPage = Math.max(0, Math.ceil(total / HISTORY_PAGE_SIZE) - 1);
+      if (historyPage > maxPage) {
+        setHistoryPage(maxPage);
+      }
 
       if (servicesRes.ok) {
         setServices(await servicesRes.json());
       }
 
+      let latestList = deps;
+      if (latestRes) {
+        const latestPayload = await latestRes.json();
+        latestList = Array.isArray(latestPayload) ? latestPayload : [];
+      }
+
       // Handle real-time logs for deployments (including auto-deploy via webhooks)
       // Skip log updates during manual actions (they stream logs directly)
-      if (deps.length > 0 && !actionLoading) {
-        const latestDeployment = deps[0];
+      if (latestList.length > 0 && !actionLoading) {
+        const latestDeployment = latestList[0];
         const isBuilding =
           projectData.status === "building" || projectData.status === "pending";
         const isLatestInProgress = latestDeployment.status === "in_progress";
 
-        // Find the deployment we're currently viewing
-        const viewedDeployment = viewingDeploymentId
-          ? deps.find((d: Deployment) => d.id === viewingDeploymentId)
-          : null;
+        // Find the deployment we're currently viewing (may be on another page)
+        const viewedDeployment =
+          viewingDeploymentId === latestDeployment.id
+            ? latestDeployment
+            : deps.find((d: Deployment) => d.id === viewingDeploymentId) ||
+              null;
 
         // Detect when to update logs:
         // 1. Initial page load
@@ -718,6 +754,15 @@ export default function ProjectDetail() {
           setLogs(latestDeployment.logs || "🚀 Starting deployment...\n");
           setViewingDeploymentId(latestDeployment.id);
 
+          // Jump back to the newest page so the active deploy is visible
+          if (
+            isLatestInProgress &&
+            viewingDeploymentId !== latestDeployment.id &&
+            historyPage !== 0
+          ) {
+            setHistoryPage(0);
+          }
+
           // Auto-switch to deployments tab when a new build starts
           if (isLatestInProgress && activeTab !== "deployments") {
             setActiveTab("deployments");
@@ -728,19 +773,39 @@ export default function ProjectDetail() {
       console.error(error);
     } finally {
       setLoading(false);
+      setHistoryLoading(false);
     }
   }, [
     projectId,
     navigate,
     loading,
     actionLoading,
-    historyLimit,
+    historyPage,
     viewingDeploymentId,
     activeTab,
   ]);
 
-  const loadMoreHistory = () => {
-    setHistoryLimit((prev) => prev + 10);
+  useEffect(() => {
+    setHistoryPage(0);
+    setDeploymentTotal(0);
+  }, [projectId]);
+
+  const historyPageCount = Math.max(
+    1,
+    Math.ceil(deploymentTotal / HISTORY_PAGE_SIZE),
+  );
+  const historyFrom =
+    deploymentTotal === 0 ? 0 : historyPage * HISTORY_PAGE_SIZE + 1;
+  const historyTo = Math.min(
+    (historyPage + 1) * HISTORY_PAGE_SIZE,
+    deploymentTotal,
+  );
+
+  const goHistoryPage = (page: number) => {
+    const next = Math.max(0, Math.min(page, historyPageCount - 1));
+    if (next === historyPage) return;
+    setHistoryLoading(true);
+    setHistoryPage(next);
   };
 
   useEffect(() => {
@@ -1492,7 +1557,7 @@ export default function ProjectDetail() {
                 </div>
                 <div className="space-y-0.5 sm:space-y-1">
                   <p className="text-lg sm:text-2xl font-bold tracking-tight">
-                    {deployments.length}
+                    {deploymentTotal}
                   </p>
                   <p className="text-[10px] sm:text-xs text-muted-foreground">
                     Total deployments
@@ -1625,10 +1690,10 @@ export default function ProjectDetail() {
             value="deployments"
             className="animate-in fade-in slide-in-from-bottom-2 duration-400"
           >
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className="lg:col-span-2 space-y-6">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-xl font-bold flex items-center gap-2">
+            <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+              <div className="min-w-0 space-y-4 sm:space-y-6 xl:col-span-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="text-lg font-bold flex items-center gap-2 sm:text-xl">
                     <TerminalIcon className="h-5 w-5 text-amber-500" />
                     Live Terminal Output
                   </h3>
@@ -1642,23 +1707,35 @@ export default function ProjectDetail() {
                 <Terminal
                   logs={logs}
                   isBuilding={project?.status === "building"}
-                  className="h-[550px]"
+                  className="h-[min(55vh,28rem)] sm:h-[550px]"
                 />
               </div>
 
-              <div className="space-y-6">
-                <h3 className="text-xl font-bold flex items-center gap-2">
-                  <History className="h-5 w-5 text-muted-foreground" />
-                  Recent History
-                </h3>
-                <Card className="divide-y divide-border/40 border-border/40 overflow-hidden relative">
+              <div className="min-w-0 space-y-4 sm:space-y-6">
+                <div className="flex flex-wrap items-end justify-between gap-2">
+                  <h3 className="text-lg font-bold flex items-center gap-2 sm:text-xl">
+                    <History className="h-5 w-5 text-muted-foreground" />
+                    Recent History
+                  </h3>
+                  {deploymentTotal > 0 && (
+                    <span className="text-[11px] tabular-nums text-muted-foreground">
+                      {historyFrom}–{historyTo} of {deploymentTotal}
+                    </span>
+                  )}
+                </div>
+                <Card
+                  className={cn(
+                    "divide-y divide-border/40 border-border/40 overflow-hidden relative transition-opacity",
+                    historyLoading && "opacity-60",
+                  )}
+                >
                   {project.status === "building" && (
                     <div className="absolute top-0 left-0 w-full h-1 bg-secondary overflow-hidden z-10">
                       <div className="absolute top-0 h-full bg-gradient-to-r from-cyan-500 via-blue-500 to-cyan-500 animate-progress-scan" />
                     </div>
                   )}
                   {deployments.length === 0 ? (
-                    <div className="text-muted-foreground text-sm py-20 text-center flex flex-col items-center gap-3">
+                    <div className="text-muted-foreground text-sm py-16 sm:py-20 text-center flex flex-col items-center gap-3 px-4">
                       <div className="p-4 rounded-full bg-secondary/50">
                         <History className="h-8 w-8 text-muted-foreground/30" />
                       </div>
@@ -1672,7 +1749,7 @@ export default function ProjectDetail() {
                         <div
                           key={deployment.id}
                           className={cn(
-                            "flex flex-col gap-2 px-5 py-4 cursor-pointer transition-all duration-200 border-l-4",
+                            "flex flex-col gap-2 px-3 py-3 sm:px-5 sm:py-4 cursor-pointer transition-all duration-200 border-l-4 min-w-0",
                             deployment.status === "success"
                               ? "border-l-emerald-500 lg:hover:bg-emerald-500/5"
                               : deployment.status === "failed"
@@ -1700,9 +1777,9 @@ export default function ProjectDetail() {
                             });
                           }}
                         >
-                          <div className="flex items-start justify-between">
-                            <div className="flex flex-col gap-1">
-                              <span className="font-bold text-sm tracking-tight">
+                          <div className="flex items-start justify-between gap-2 min-w-0">
+                            <div className="flex flex-col gap-1 min-w-0">
+                              <span className="font-bold text-sm tracking-tight truncate">
                                 {deployment.trigger === "webhook"
                                   ? "Auto-Deploy (GitHub)"
                                   : deployment.trigger === "restart"
@@ -1713,7 +1790,7 @@ export default function ProjectDetail() {
                                         ? "Manual Redeploy"
                                         : "Manual Deployment"}
                               </span>
-                              <div className="flex items-center gap-2">
+                              <div className="flex flex-wrap items-center gap-1.5">
                                 <span
                                   className={cn(
                                     "text-[10px] font-bold px-1.5 py-0.5 rounded-md uppercase tracking-wider",
@@ -1733,8 +1810,8 @@ export default function ProjectDetail() {
                                 </span>
                               </div>
                             </div>
-                            <div className="flex flex-col items-end gap-1">
-                              <span className="text-[10px] font-medium text-muted-foreground flex items-center gap-1.5 bg-secondary/30 px-2 py-0.5 rounded-full border border-border/20">
+                            <div className="flex shrink-0 flex-col items-end gap-1">
+                              <span className="text-[10px] font-medium text-muted-foreground flex items-center gap-1 sm:gap-1.5 bg-secondary/30 px-1.5 sm:px-2 py-0.5 rounded-full border border-border/20 whitespace-nowrap">
                                 <Clock className="h-3 w-3" />
                                 {new Date(
                                   deployment.created_at,
@@ -1743,7 +1820,7 @@ export default function ProjectDetail() {
                                   minute: "2-digit",
                                 })}
                               </span>
-                              <span className="text-[10px] text-muted-foreground/60 flex items-center gap-1.5 mr-1">
+                              <span className="text-[10px] text-muted-foreground/60 flex items-center gap-1 sm:gap-1.5 whitespace-nowrap">
                                 <Calendar className="h-3 w-3" />
                                 {new Date(
                                   deployment.created_at,
@@ -1755,14 +1832,14 @@ export default function ProjectDetail() {
                               </span>
                             </div>
                           </div>
-                          <p className="text-[11px] text-muted-foreground line-clamp-1 italic">
+                          <p className="text-[11px] text-muted-foreground line-clamp-1 italic hidden sm:block">
                             Click to restore log output to terminal
                           </p>
 
                           {deployment.commit_message && (
-                            <div className="mt-2 flex items-center gap-2 px-3 py-2 bg-secondary/30 rounded-lg border border-border/20">
-                              <GitBranch className="h-3 w-3 text-cyan-500" />
-                              <span className="text-[10px] font-medium text-foreground/80 line-clamp-1">
+                            <div className="mt-1 sm:mt-2 flex items-center gap-2 px-2.5 py-1.5 sm:px-3 sm:py-2 bg-secondary/30 rounded-lg border border-border/20 min-w-0">
+                              <GitBranch className="h-3 w-3 shrink-0 text-cyan-500" />
+                              <span className="text-[10px] font-medium text-foreground/80 line-clamp-1 min-w-0">
                                 {deployment.commit_message}
                               </span>
                             </div>
@@ -1772,19 +1849,40 @@ export default function ProjectDetail() {
                     })
                   )}
 
-                  {deployments.length >= historyLimit && (
-                    <div className="p-4 bg-secondary/20 flex justify-center border-t border-border/40">
+                  {deploymentTotal > HISTORY_PAGE_SIZE && (
+                    <div className="p-3 sm:p-4 bg-secondary/20 flex flex-wrap items-center justify-between gap-2 border-t border-border/40">
                       <Button
                         variant="ghost"
                         size="sm"
+                        disabled={historyPage <= 0 || historyLoading}
                         onClick={(e) => {
                           e.stopPropagation();
-                          loadMoreHistory();
+                          goHistoryPage(historyPage - 1);
                         }}
-                        className="text-xs font-bold gap-2 hover:bg-cyan-500/10 hover:text-cyan-500 transition-all"
+                        className="text-xs font-bold gap-1.5 hover:bg-cyan-500/10 hover:text-cyan-500 transition-all"
+                        aria-label="Previous history page"
                       >
-                        <RefreshCw className="h-3 w-3" />
-                        LOAD MORE HISTORY
+                        <ChevronLeft className="h-3.5 w-3.5" />
+                        Prev
+                      </Button>
+                      <span className="text-[11px] font-medium tabular-nums text-muted-foreground order-first w-full text-center sm:order-none sm:w-auto">
+                        Page {historyPage + 1} of {historyPageCount}
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={
+                          historyPage >= historyPageCount - 1 || historyLoading
+                        }
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          goHistoryPage(historyPage + 1);
+                        }}
+                        className="text-xs font-bold gap-1.5 hover:bg-cyan-500/10 hover:text-cyan-500 transition-all ml-auto sm:ml-0"
+                        aria-label="Next history page"
+                      >
+                        Next
+                        <ChevronRight className="h-3.5 w-3.5" />
                       </Button>
                     </div>
                   )}
