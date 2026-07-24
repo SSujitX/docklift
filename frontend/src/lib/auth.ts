@@ -2,6 +2,19 @@
 
 import { API_URL } from "@/lib/utils";
 
+let unauthorizedHandler: (() => void) | null = null;
+
+/** Called once from AuthProvider so 401 responses clear session app-wide. */
+export function registerAuthUnauthorizedHandler(handler: () => void): void {
+  unauthorizedHandler = handler;
+}
+
+function handleUnauthorized(response: Response): void {
+  if (response.status === 401 && unauthorizedHandler) {
+    unauthorizedHandler();
+  }
+}
+
 // Get auth headers for API calls
 export function getAuthHeaders(): HeadersInit {
   if (typeof window === "undefined") return {};
@@ -12,11 +25,10 @@ export function getAuthHeaders(): HeadersInit {
 
 /** Start GitHub App install: sets HttpOnly nonce cookie, returns GitHub URL to open/navigate. */
 export async function startGithubInstallSession(returnUrl?: string): Promise<string> {
-  const res = await fetch(`${API_URL}/api/github/install-session`, {
+  const res = await authFetch(`${API_URL}/api/github/install-session`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      ...getAuthHeaders(),
     },
     credentials: "include",
     body: JSON.stringify({ returnUrl: returnUrl || window.location.href }),
@@ -64,10 +76,12 @@ export async function authFetch(url: string, options: RequestInit = {}): Promise
     ...options.headers,
   };
 
-  return fetch(url, {
+  const response = await fetch(url, {
     ...options,
     headers,
   });
+  handleUnauthorized(response);
+  return response;
 }
 
 // Typed fetch that handles auth and returns JSON
@@ -83,6 +97,9 @@ export async function fetchWithAuth<T>(endpoint: string, options: RequestInit = 
   });
 
   if (!response.ok) {
+    if (response.status === 401) {
+      throw new Error("Session expired");
+    }
     const error = await response.json().catch(() => ({ error: "Request failed" }));
     throw new Error(error.error || `HTTP ${response.status}`);
   }
