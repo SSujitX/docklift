@@ -2,7 +2,7 @@
 // bar and the routed page. The rail is fixed rather than a flex column so the
 // document keeps its normal scroll behaviour (sticky page elements, xterm sizing).
 
-import type { CSSProperties } from "react";
+import { useState, type CSSProperties } from "react";
 import { Outlet } from "react-router-dom";
 import { CommandPalette } from "@/components/shell/CommandPalette";
 import { Sidebar } from "@/components/shell/Sidebar";
@@ -12,18 +12,24 @@ import { cn } from "@/lib/utils";
 
 function ShellFrame() {
   const { collapsed, mobileOpen, setMobileOpen } = useShell();
+  const [desktopRailHovered, setDesktopRailHovered] = useState(false);
+  const previewExpanded = collapsed && desktopRailHovered;
 
   return (
     <div
       className="min-h-screen bg-background"
       style={
-        collapsed
+        collapsed && !previewExpanded
           ? ({ "--shell-rail": "var(--shell-rail-collapsed)" } as CSSProperties)
           : undefined
       }
     >
-      <aside className="shell-rail fixed inset-y-0 left-0 z-40 hidden transition-[width] duration-200 ease-out lg:block">
-        <Sidebar variant="desktop" />
+      <aside
+        className="shell-rail fixed inset-y-0 left-0 z-40 hidden transition-[width] duration-200 ease-out lg:block"
+        onMouseEnter={() => collapsed && setDesktopRailHovered(true)}
+        onMouseLeave={() => setDesktopRailHovered(false)}
+      >
+        <Sidebar variant="desktop" expandedOnHover={previewExpanded} />
       </aside>
 
       <div
