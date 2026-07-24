@@ -7,7 +7,8 @@ export const BackupRestore = () => (
       Backup & Restore
     </h2>
     <p className="text-muted-foreground mb-6">
-      Create full system backups and restore them on any Docklift server. Backups include your database, projects, configurations, and secrets.
+      Back up DockLift&apos;s control database, source projects, configurations, certificates, and secrets.
+      Docker named-volume contents and external databases require their own database/file backup.
     </p>
 
     {/* What's Included */}
@@ -21,7 +22,7 @@ export const BackupRestore = () => (
           <CheckCircle2 className="h-5 w-5 text-emerald-500 mt-0.5 shrink-0" />
           <div>
             <p className="font-semibold text-sm">Database</p>
-            <p className="text-xs text-muted-foreground">Projects, users, settings, environment variables</p>
+            <p className="text-xs text-muted-foreground">DockLift projects, users, settings, environment variables, and storage definitions</p>
           </div>
         </div>
         <div className="flex items-start gap-3">

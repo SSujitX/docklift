@@ -8,13 +8,13 @@ export const Deployment = () => (
       Deployment
     </h2>
     <p className="text-muted-foreground mb-4">
-      Docklift automatically builds Docker containers from your Dockerfiles and manages their lifecycle.
+      Docklift prefers your Dockerfile and automatically falls back to Railpack when one is not present.
     </p>
     
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-6">
       <div className="bg-secondary/50 rounded-xl p-4">
         <h4 className="font-semibold text-cyan-500">Deploy</h4>
-        <p className="text-sm text-muted-foreground">Build and start container from Dockerfile</p>
+        <p className="text-sm text-muted-foreground">Detect, build, and start a new image</p>
       </div>
       <div className="bg-secondary/50 rounded-xl p-4">
         <h4 className="font-semibold text-red-500">Stop</h4>
@@ -26,7 +26,7 @@ export const Deployment = () => (
       </div>
       <div className="bg-secondary/50 rounded-xl p-4">
         <h4 className="font-semibold text-emerald-500">Redeploy</h4>
-        <p className="text-sm text-muted-foreground">Pull latest code, rebuild, and restart</p>
+        <p className="text-sm text-muted-foreground">Recreate from the last successfully built image</p>
       </div>
     </div>
 
@@ -34,10 +34,10 @@ export const Deployment = () => (
       <h4 className="font-semibold mb-3">Deployment Process</h4>
       <ol className="list-decimal list-inside space-y-2 text-muted-foreground">
         <li>Pull latest code from GitHub (if applicable)</li>
-        <li>Scan project for Dockerfiles</li>
-        <li>Auto-allocate ports (6000-7999 range)</li>
-        <li>Generate <code className="bg-primary/10 px-1.5 py-0.5 rounded text-primary">docker-compose.yml</code></li>
-        <li>Run <code className="bg-primary/10 px-1.5 py-0.5 rounded text-primary">docker compose up -d --build</code></li>
+        <li>Use a repository Dockerfile, or let Railpack detect the framework</li>
+        <li>Build a tagged image and auto-allocate a port (5500-5600 by default)</li>
+        <li>Generate DockLift runtime state outside the source repository</li>
+        <li>Run the built image with persistent storage attached</li>
         <li>Update Nginx reverse proxy config</li>
         <li>Stream logs to browser in real-time</li>
       </ol>
@@ -46,7 +46,7 @@ export const Deployment = () => (
     <div className="bg-secondary/50 rounded-xl p-6">
       <h4 className="font-semibold mb-3">Multi-Service Projects</h4>
       <p className="text-sm text-muted-foreground mb-4">
-        Docklift supports projects with multiple Dockerfiles. Each service gets its own port and can have custom domains.
+        Dockerfile projects can contain multiple services. Railpack projects currently resolve to one application service.
       </p>
       <StaticCodeBlock 
         title="Project Structure"

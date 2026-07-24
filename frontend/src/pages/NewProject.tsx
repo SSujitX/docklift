@@ -32,6 +32,7 @@ import {
   X,
   Eye,
   EyeOff,
+  Box,
 } from "lucide-react";
 import { API_URL, cn } from "@/lib/utils";
 import { getAuthHeaders, startGithubInstallAndNavigate } from "@/lib/auth";
@@ -81,6 +82,10 @@ function NewProjectContent() {
   const [githubBranch, setGithubBranch] = useState("");
   const [files, setFiles] = useState<FileList | null>(null);
   const [dragActive, setDragActive] = useState(false);
+  const [buildType, setBuildType] = useState<"auto" | "dockerfile" | "railpack">("auto");
+  const [baseDirectory, setBaseDirectory] = useState(".");
+  const [dockerfilePath, setDockerfilePath] = useState("Dockerfile");
+  const [internalPort, setInternalPort] = useState(3000);
 
   // Environment Variables State
   const [envVars, setEnvVars] = useState<{key: string, value: string, is_build_arg: boolean, is_runtime: boolean}[]>([]);
@@ -246,6 +251,18 @@ function NewProjectContent() {
       toast.error("Project name is required");
       return;
     }
+    if (!baseDirectory.trim()) {
+      toast.error("Base directory is required");
+      return;
+    }
+    if (buildType === "dockerfile" && !dockerfilePath.trim()) {
+      toast.error("Dockerfile path is required");
+      return;
+    }
+    if (!Number.isInteger(internalPort) || internalPort < 1 || internalPort > 65535) {
+      toast.error("Internal port must be between 1 and 65535");
+      return;
+    }
 
     setLoading(true);
     try {
@@ -253,6 +270,13 @@ function NewProjectContent() {
       formData.append("name", name);
       formData.append("source_type", sourceType === "public" ? "github" : sourceType);
       formData.append("project_type", projectType);
+      formData.append("build_type", buildType);
+      formData.append("base_directory", baseDirectory.trim());
+      formData.append(
+        "dockerfile_path",
+        buildType === "dockerfile" ? dockerfilePath.trim() : "",
+      );
+      formData.append("internal_port", String(internalPort));
 
       if (sourceType === "github" || sourceType === "public") {
         formData.append("github_url", githubUrl);
@@ -633,6 +657,88 @@ function NewProjectContent() {
                       >
                         Change
                       </Button>
+                    </div>
+                  )}
+                </Card>
+
+                {/* Build Config */}
+                <Card className="p-5 space-y-5 rounded-2xl border-border/30">
+                  <div>
+                    <h3 className="text-base font-semibold flex items-center gap-2">
+                      <Box className="h-4 w-4 text-orange-500" />
+                      Build
+                    </h3>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Choose how DockLift turns your source into a container.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    {([
+                      ["auto", "Auto", "Detect the best builder"],
+                      ["dockerfile", "Dockerfile", "Use your Dockerfile"],
+                      ["railpack", "Railpack", "Build from app manifests"],
+                    ] as const).map(([value, label, description]) => (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => setBuildType(value)}
+                        className={cn(
+                          "p-3 rounded-xl border text-left transition-all",
+                          buildType === value
+                            ? "border-orange-500/40 bg-orange-500/5"
+                            : "border-border/40 hover:bg-secondary/30",
+                        )}
+                      >
+                        <span className="text-sm font-bold">{label}</span>
+                        <span className="block text-[10px] text-muted-foreground mt-1">
+                          {description}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Base Directory</label>
+                      <Input
+                        value={baseDirectory}
+                        onChange={(e) => setBaseDirectory(e.target.value)}
+                        placeholder="."
+                        className="h-10 bg-secondary/30 font-mono"
+                      />
+                      <p className="text-[10px] text-muted-foreground">
+                        Relative to the project root, for example <code>apps/web</code>.
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Internal Port</label>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={65535}
+                        value={internalPort}
+                        onChange={(e) => setInternalPort(Number(e.target.value))}
+                        className="h-10 bg-secondary/30 font-mono"
+                      />
+                      <p className="text-[10px] text-muted-foreground">
+                        The port your application listens on inside its container.
+                      </p>
+                    </div>
+                  </div>
+
+                  {buildType === "dockerfile" && (
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Dockerfile Path</label>
+                      <Input
+                        value={dockerfilePath}
+                        onChange={(e) => setDockerfilePath(e.target.value)}
+                        placeholder="Dockerfile"
+                        className="h-10 bg-secondary/30 font-mono"
+                      />
+                      <p className="text-[10px] text-muted-foreground">
+                        Path relative to the base directory.
+                      </p>
                     </div>
                   )}
                 </Card>
@@ -1059,6 +1165,10 @@ SESSION_SECRET=your-secret-here
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-muted-foreground">Source</span>
                       <span className="font-medium capitalize">{sourceType}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">Build</span>
+                      <span className="font-medium capitalize">{buildType}</span>
                     </div>
                     <div className="pt-2 border-t border-border/30">
                        <p className="text-xs text-muted-foreground mb-1">Project</p>

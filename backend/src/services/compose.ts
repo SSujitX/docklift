@@ -9,8 +9,6 @@ interface ServiceConfig {
   dockerfile_path: string;
   context_path: string;
   internal_port: number;
-  port?: number;
-  container_name?: string;
 }
 
 interface EnvVar {
@@ -18,6 +16,15 @@ interface EnvVar {
   value: string;
   is_build_arg: boolean;
   is_runtime: boolean;
+}
+
+export interface RuntimeServiceConfig {
+  name: string;
+  image: string;
+  internal_port: number;
+  port: number;
+  container_name: string;
+  volumes?: Array<{ key: string; name: string; mountPath: string }>;
 }
 
 // Directories to ignore when scanning
@@ -63,7 +70,10 @@ export function scanDockerfiles(projectPath: string, maxDepth = 2): ServiceConfi
       
       for (const item of items) {
         const itemPath = path.join(dirPath, item);
-        const stat = fs.statSync(itemPath);
+        const stat = fs.lstatSync(itemPath);
+        // Never traverse repository symlinks: build discovery must stay inside the
+        // checked-out source tree.
+        if (stat.isSymbolicLink()) continue;
         
         if (stat.isDirectory()) {
           if (!IGNORE_DIRS.has(item)) {
@@ -93,15 +103,22 @@ export function scanDockerfiles(projectPath: string, maxDepth = 2): ServiceConfi
   return services;
 }
 
-// Generate docker-compose.yml
-export function generateCompose(
-  projectId: string,
-  projectPath: string,
-  services: ServiceConfig[],
-  envVars: EnvVar[] = [],
-  projectType = 'app'
+/**
+ * Write DockLift-owned runtime state outside the source checkout. Repository
+ * Dockerfiles and docker-compose.yml files are never modified.
+ */
+export function generateRuntimeCompose(
+  composePath: string,
+  services: RuntimeServiceConfig[],
+  envVars: EnvVar[] = []
 ): void {
-  const composeConfig: Record<string, unknown> = {
+  const runtimeEnv = envVars
+    .filter((item) => item.is_runtime)
+    .reduce<Record<string, string>>((acc, item) => {
+      acc[item.key] = item.value;
+      return acc;
+    }, {});
+  const composeConfig: Record<string, any> = {
     services: {},
     networks: {
       default: {
@@ -110,46 +127,33 @@ export function generateCompose(
       },
     },
   };
-  
-  for (const svc of services) {
-    const serviceDef: Record<string, unknown> = {
-      build: {
-        context: svc.context_path,
-        dockerfile: path.basename(svc.dockerfile_path),
-      },
-      container_name: svc.container_name || `dl_${projectId.substring(0, 8)}_${svc.name}`,
-      ports: [`${svc.port}:${svc.internal_port}`],
-      restart: 'unless-stopped',
-    };
-    
-    // Add runtime environment variables
-    const runtimeVars = envVars.filter(v => v.is_runtime);
-    if (runtimeVars.length > 0) {
-      serviceDef.environment = runtimeVars.reduce((acc, v) => {
-        acc[v.key] = v.value;
-        return acc;
-      }, {} as Record<string, string>);
-    }
-    
-    // Add build args
-    const buildArgs = envVars.filter(v => v.is_build_arg);
-    if (buildArgs.length > 0) {
-      (serviceDef.build as Record<string, unknown>).args = buildArgs.reduce((acc, v) => {
-        acc[v.key] = v.value;
-        return acc;
-      }, {} as Record<string, string>);
-    }
-    
-    (composeConfig.services as Record<string, unknown>)[svc.name] = serviceDef;
-  }
-  
-  const yamlContent = yaml.dump(composeConfig, { lineWidth: -1 });
-  fs.writeFileSync(path.join(projectPath, 'docker-compose.yml'), yamlContent);
-}
+  const topLevelVolumes: Record<string, { name: string; external: true }> = {};
 
-// Check if compose file exists
-export function checkComposeExists(projectPath: string): boolean {
-  return fs.existsSync(path.join(projectPath, 'docker-compose.yml'));
+  for (const service of services) {
+    const definition: Record<string, unknown> = {
+      image: service.image,
+      container_name: service.container_name,
+      ports: [`${service.port}:${service.internal_port}`],
+      restart: 'unless-stopped',
+      environment: {
+        ...runtimeEnv,
+        PORT: String(service.internal_port),
+      },
+    };
+    if (service.volumes?.length) {
+      definition.volumes = service.volumes.map((volume) => {
+        topLevelVolumes[volume.key] = { name: volume.name, external: true };
+        return `${volume.key}:${volume.mountPath}`;
+      });
+    }
+    composeConfig.services[service.name] = definition;
+  }
+  if (Object.keys(topLevelVolumes).length) {
+    composeConfig.volumes = topLevelVolumes;
+  }
+
+  fs.mkdirSync(path.dirname(composePath), { recursive: true });
+  fs.writeFileSync(composePath, yaml.dump(composeConfig, { lineWidth: -1, noRefs: true }));
 }
 
 // Validate that build args are declared in Dockerfile

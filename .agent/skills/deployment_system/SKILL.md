@@ -12,7 +12,8 @@ This guide details the lifecycle of a deployment in Docklift, from source code t
 -   **`projects.ts`**: Manages Project CRUD and triggers deployments.
 -   **`deployments.ts`**: Manages deployment history, logs, and streaming deploy/stop/restart/redeploy.
 -   **`docker.ts`**: Wrapper for `dockerode` to control containers and stream compose operations.
--   **`compose.ts`**: Generates `docker-compose.yml` files dynamically (scans Dockerfiles, detects ports).
+-   **`buildResolver.ts` / `buildRunner.ts`**: Select Dockerfile or Railpack and build tagged images.
+-   **`compose.ts`**: Scans Dockerfiles and writes DockLift-owned runtime Compose state.
 -   **`git.ts`**: Handles cloning (`git clone`) and pulling (`fetch + hard reset + clean`) repositories.
 
 ## Deployment Lifecycle
@@ -34,14 +35,15 @@ This guide details the lifecycle of a deployment in Docklift, from source code t
     -   If pull fails, token is still removed from the remote URL (prevents credential leakage).
     -   Uses `spawnSync()` with argument arrays for any shell commands (e.g., `docker rm -f`) — never string interpolation.
 
-3.  **Configuration Generation**:
-    -   `compose.scanDockerfiles()` searches for Dockerfiles.
-    -   `compose.generateCompose()` creates a `docker-compose.yml` in the project root.
-    -   **Env Injection**: Environment variables (Build Args & Runtime) are injected into the compose file.
-    -   **Middleware Bypass**: `middlewareBypass.ts` patches framework host checks in user apps when detected.
+3.  **Build Resolution and Configuration**:
+    -   Auto mode prefers repository Dockerfiles and falls back to Railpack.
+    -   Dockerfile and Railpack may also be selected explicitly with a base directory.
+    -   Each deployment builds a tagged image.
+    -   Runtime Compose is written under `deployments/.docklift/<projectId>/compose.yml`; source files are never patched or overwritten.
+    -   Runtime environment variables and configured external named volumes are attached to services.
 
 4.  **Build & Run**:
-    -   Command: `docker compose -p <projectId> up -d --build`
+    -   Command: `docker compose -f <runtime-compose> -p <projectName> up -d`
     -   Output is streamed via SSE (Server-Sent Events) to the frontend console.
 
 5.  **Verification**:
@@ -66,8 +68,11 @@ This prevents server crashes if the client disconnects mid-stream and ensures th
 
 ```
 deployments/
-  <projectId>/        # Application source (clone/upload root — not a nested source/ folder)
-    docker-compose.yml # Generated Config
+  <projectId>/        # Application source (clone/upload root; never modified by deployment generation)
+  .docklift/
+    <projectId>/
+      compose.yml     # Generated runtime state
+      *-railpack-*.json
     .env              # Runtime Environment Variables (when used)
 ```
 

@@ -11,6 +11,12 @@ import { getInstallationToken, getSetting, getInstallationIdForRepo } from './gi
 import { cleanupServiceDomain } from '../services/nginx.js';
 import { safeExtractZip } from '../lib/safeUnzip.js';
 import crypto from 'crypto';
+import {
+  normalizeBuildType,
+  resolveProjectBuild,
+} from '../services/buildResolver.js';
+import { composeProjectName, dockerSlug, shortProjectId } from '../lib/naming.js';
+import { spawnSync } from 'child_process';
 
 const router = Router();
 const uploadDir = path.join(config.dataPath, 'uploads');
@@ -210,7 +216,19 @@ router.post('/', (req: Request, res: Response, next: NextFunction) => {
   });
 }, async (req: Request, res: Response) => {
   try {
-    const { name, description, source_type, github_url, project_type, github_branch, domain } = req.body;
+    const {
+      name,
+      description,
+      source_type,
+      github_url,
+      project_type,
+      github_branch,
+      domain,
+      build_type,
+      base_directory,
+      dockerfile_path,
+      internal_port,
+    } = req.body;
 
     // Validate domain format to prevent Nginx config injection
     if (domain && !isValidDomainList(domain)) {
@@ -230,6 +248,10 @@ router.post('/', (req: Request, res: Response, next: NextFunction) => {
         status: 'pending',
         auto_deploy: source_type === 'github',
         webhook_secret: source_type === 'github' ? generateWebhookSecret() : null,
+        build_type: normalizeBuildType(build_type),
+        base_directory: String(base_directory || '.').trim() || '.',
+        dockerfile_path: dockerfile_path ? String(dockerfile_path).trim() : null,
+        internal_port: Math.min(65535, Math.max(1, parseInt(internal_port, 10) || 3000)),
       },
     });
     
@@ -326,7 +348,17 @@ router.post('/', (req: Request, res: Response, next: NextFunction) => {
 // Update project
 router.patch('/:id', async (req: Request, res: Response) => {
   try {
-    const { name, description, github_url, project_type, domain } = req.body;
+    const {
+      name,
+      description,
+      github_url,
+      project_type,
+      domain,
+      build_type,
+      base_directory,
+      dockerfile_path,
+      internal_port,
+    } = req.body;
 
     // Validate domain format if provided
     if (domain && !isValidDomainList(domain)) {
@@ -341,6 +373,16 @@ router.patch('/:id', async (req: Request, res: Response) => {
         ...(github_url !== undefined && { github_url: github_url }),
         ...(project_type && { project_type: project_type }),
         ...(domain !== undefined && { domain: domain }),
+        ...(build_type !== undefined && { build_type: normalizeBuildType(build_type) }),
+        ...(base_directory !== undefined && {
+          base_directory: String(base_directory || '.').trim() || '.',
+        }),
+        ...(dockerfile_path !== undefined && {
+          dockerfile_path: dockerfile_path ? String(dockerfile_path).trim() : null,
+        }),
+        ...(internal_port !== undefined && {
+          internal_port: Math.min(65535, Math.max(1, parseInt(internal_port, 10) || 3000)),
+        }),
       },
     });
     
@@ -351,24 +393,162 @@ router.patch('/:id', async (req: Request, res: Response) => {
   }
 });
 
+// Resolve Auto/Dockerfile/Railpack without starting a build.
+router.get('/:id/build/detect', async (req: Request, res: Response) => {
+  try {
+    const project = await prisma.project.findUnique({ where: { id: req.params.id } });
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+    const projectPath = path.join(config.deploymentsPath, project.id);
+    if (!fs.existsSync(projectPath)) {
+      return res.status(400).json({ error: 'Project files not found' });
+    }
+    const resolved = resolveProjectBuild(projectPath, {
+      buildType: project.build_type,
+      baseDirectory: project.base_directory,
+      dockerfilePath: project.dockerfile_path,
+      internalPort: project.internal_port,
+    });
+    res.json({
+      requestedType: resolved.requestedType,
+      resolvedType: resolved.resolvedType,
+      baseDirectory: resolved.baseDirectory,
+      dockerfilePath: resolved.dockerfilePath,
+      detected: resolved.detected,
+      manifests: resolved.manifests,
+    });
+  } catch (error: any) {
+    res.status(400).json({ error: error.message || 'Failed to detect build type' });
+  }
+});
+
+const STORAGE_NAME_REGEX = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,31}$/;
+const BLOCKED_MOUNT_PATHS = ['/proc', '/sys', '/dev', '/etc', '/var/run', '/var/run/docker.sock'];
+
+function validateMountPath(value: unknown): string {
+  const mountPath = String(value || '').trim().replace(/\/+$/, '') || '/';
+  if (!mountPath.startsWith('/') || mountPath.includes(':') || mountPath.includes('\0')) {
+    throw new Error('Mount path must be an absolute container path');
+  }
+  if (
+    mountPath === '/' ||
+    BLOCKED_MOUNT_PATHS.some((blocked) => mountPath === blocked || mountPath.startsWith(`${blocked}/`))
+  ) {
+    throw new Error('This system mount path is not allowed');
+  }
+  return mountPath;
+}
+
+router.get('/:id/storage', async (req: Request, res: Response) => {
+  try {
+    const storage = await prisma.persistentVolume.findMany({
+      where: { project_id: req.params.id },
+      orderBy: { created_at: 'asc' },
+    });
+    res.json(storage);
+  } catch {
+    res.status(500).json({ error: 'Failed to list persistent storage' });
+  }
+});
+
+router.post('/:id/storage', async (req: Request, res: Response) => {
+  try {
+    const project = await prisma.project.findUnique({ where: { id: req.params.id } });
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+    const serviceName = String(req.body?.service_name || '').trim();
+    const label = String(req.body?.name || '').trim();
+    if (!STORAGE_NAME_REGEX.test(label)) {
+      return res.status(400).json({ error: 'Storage name must use 1-32 letters, numbers, _ or -' });
+    }
+    const service = await prisma.service.findFirst({
+      where: { project_id: project.id, name: serviceName },
+    });
+    if (!service) return res.status(400).json({ error: 'Select a valid project service' });
+    const mountPath = validateMountPath(req.body?.mount_path);
+    const volumeName = `dl-${shortProjectId(project.id)}-${dockerSlug(label, 32)}`;
+    const created = await prisma.persistentVolume.create({
+      data: {
+        project_id: project.id,
+        service_name: serviceName,
+        name: volumeName,
+        display_name: label,
+        mount_path: mountPath,
+      },
+    });
+    const result = spawnSync(
+      'docker',
+      [
+        'volume',
+        'create',
+        '--label',
+        `com.docker.compose.project=${composeProjectName(project.name, project.id)}`,
+        '--label',
+        `com.docklift.project=${project.id}`,
+        volumeName,
+      ],
+      { encoding: 'utf8', shell: false, timeout: 30000 }
+    );
+    if (result.status !== 0) {
+      await prisma.persistentVolume.delete({ where: { id: created.id } }).catch(() => {});
+      return res.status(500).json({ error: result.stderr?.trim() || 'Failed to create Docker volume' });
+    }
+    res.status(201).json(created);
+  } catch (error: any) {
+    if (error?.code === 'P2002') {
+      return res.status(409).json({ error: 'That storage name or mount path already exists' });
+    }
+    res.status(400).json({ error: error.message || 'Failed to create persistent storage' });
+  }
+});
+
+router.delete('/:id/storage/:storageId', async (req: Request, res: Response) => {
+  try {
+    if (req.query.removeVolume !== 'true') {
+      return res.status(400).json({ error: 'Confirm permanent data deletion with removeVolume=true' });
+    }
+    const volume = await prisma.persistentVolume.findFirst({
+      where: { id: req.params.storageId, project_id: req.params.id },
+    });
+    if (!volume) return res.status(404).json({ error: 'Persistent storage not found' });
+    const result = spawnSync('docker', ['volume', 'rm', '-f', volume.name], {
+      encoding: 'utf8',
+      shell: false,
+    });
+    if (result.status !== 0) {
+      return res.status(409).json({
+        error: result.stderr?.trim() || 'Stop the project before deleting storage',
+      });
+    }
+    await prisma.persistentVolume.delete({ where: { id: volume.id } });
+    res.json({ status: 'deleted' });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to delete persistent storage' });
+  }
+});
+
 // Delete project
 router.delete('/:id', async (req: Request, res: Response) => {
   try {
     const projectId = req.params.id;
     const project = await prisma.project.findUnique({ where: { id: projectId } });
     const projectPath = path.join(config.deploymentsPath, projectId);
+    const statePath = path.join(config.deploymentsPath, '.docklift', projectId);
+    const runtimeCompose = path.join(statePath, 'compose.yml');
+    const persistentVolumes = await prisma.persistentVolume.findMany({
+      where: { project_id: projectId },
+    });
     
     // Attempt to stop and remove Docker containers first
-    if (fs.existsSync(projectPath)) {
+    if (project) {
       try {
-        const { spawnSync } = await import('child_process');
         const { composeProjectAliases } = await import('../lib/naming.js');
-        const aliases = project
-          ? composeProjectAliases(project.name, projectId)
-          : [projectId];
+        const aliases = composeProjectAliases(project.name, projectId);
         // Stop current + legacy compose project names (UUID-era)
         for (const alias of aliases) {
-          spawnSync('docker', ['compose', '-p', alias, 'down', '--volumes', '--remove-orphans', '--rmi', 'all'], {
+          const composeArgs =
+            alias === composeProjectName(project.name, projectId) && fs.existsSync(runtimeCompose)
+              ? ['compose', '-f', runtimeCompose, '-p', alias]
+              : ['compose', '-p', alias];
+          spawnSync('docker', [...composeArgs, 'down', '--remove-orphans', '--rmi', 'all'], {
             cwd: projectPath,
             timeout: 60000,
             shell: false,
@@ -377,10 +557,26 @@ router.delete('/:id', async (req: Request, res: Response) => {
       } catch (dockerError) {
         console.warn(`Docker cleanup warned for project ${projectId}:`, dockerError);
       }
+
+      for (const volume of persistentVolumes) {
+        const removed = spawnSync('docker', ['volume', 'rm', '-f', volume.name], {
+          timeout: 30000,
+          shell: false,
+          encoding: 'utf8',
+        });
+        const output = `${removed.stdout || ''}\n${removed.stderr || ''}`;
+        if (removed.error || (removed.status !== 0 && !/no such volume/i.test(output))) {
+          return res.status(409).json({
+            error: `Could not remove persistent volume "${volume.display_name}". Detach any containers using it, then retry project deletion.`,
+          });
+        }
+        await prisma.persistentVolume.delete({ where: { id: volume.id } });
+      }
       
       // Remove project files
       try {
         fs.rmSync(projectPath, { recursive: true, force: true });
+        fs.rmSync(statePath, { recursive: true, force: true });
       } catch (fileError) {
         console.warn(`File cleanup warned for project ${projectId}:`, fileError);
       }

@@ -16,7 +16,7 @@ export const EnvironmentVariables = () => (
         Security First
       </h4>
       <p className="text-sm text-muted-foreground mb-4">
-        Environment variables are stored in the database and automatically injected into your containers at runtime via the generated <code className="bg-primary/10 px-1.5 py-0.5 rounded text-primary">.env</code> file.
+        Environment variables are stored in DockLift&apos;s database and injected directly into the container at runtime.
       </p>
       
       <div className="bg-zinc-900 rounded-xl p-4 border border-white/5 font-mono text-xs">
@@ -31,6 +31,16 @@ export const EnvironmentVariables = () => (
           <span className="text-cyan-500">sk_live_51Mzh...</span>
         </div>
       </div>
+    </div>
+
+    <div className="bg-secondary/50 rounded-xl p-6 mb-4">
+      <h4 className="font-semibold mb-3">Database and File Persistence</h4>
+      <ul className="list-disc list-inside text-sm text-muted-foreground space-y-2">
+        <li>An external PostgreSQL/MySQL connection in <code className="bg-primary/10 px-1.5 py-0.5 rounded text-primary">DATABASE_URL</code> is not replaced during image builds.</li>
+        <li>SQLite databases and uploaded files inside the container need a named mount from the project&apos;s Storage tab.</li>
+        <li>Persistent volumes survive deploy, redeploy, stop, restart, and image replacement.</li>
+        <li>Application migrations can still alter database contents; persistence is not a substitute for backups.</li>
+      </ul>
     </div>
 
     <div className="bg-secondary/50 rounded-xl p-6">

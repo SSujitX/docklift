@@ -12,8 +12,17 @@ import { FileTree } from "@/components/FileTree";
 import { EnvVarsManager } from "@/components/EnvVarsManager";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Project, ProjectFile, Deployment, Service } from "@/lib/types";
+import {
+  Project,
+  ProjectFile,
+  Deployment,
+  Service,
+  BuildType,
+  BuildDetection,
+  StorageMount,
+} from "@/lib/types";
 import { API_URL, cn, copyToClipboard } from "@/lib/utils";
 import { getAuthHeaders } from "@/lib/auth";
 import {
@@ -55,6 +64,8 @@ import {
   Download,
   Pause,
   ChevronDown,
+  Box,
+  HardDrive,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
@@ -588,6 +599,21 @@ export default function ProjectDetail() {
   } | null>(null);
   const [activeTab, setActiveTab] = useState("overview");
   const [serverIP, setServerIP] = useState<string>("...");
+  const [buildType, setBuildType] = useState<BuildType>("auto");
+  const [baseDirectory, setBaseDirectory] = useState(".");
+  const [dockerfilePath, setDockerfilePath] = useState("Dockerfile");
+  const [internalPort, setInternalPort] = useState(3000);
+  const [buildInitialized, setBuildInitialized] = useState(false);
+  const [buildSaving, setBuildSaving] = useState(false);
+  const [buildDetecting, setBuildDetecting] = useState(false);
+  const [buildDetection, setBuildDetection] = useState<BuildDetection | null>(null);
+  const [storageMounts, setStorageMounts] = useState<StorageMount[]>([]);
+  const [storageLoading, setStorageLoading] = useState(false);
+  const [storageSaving, setStorageSaving] = useState(false);
+  const [storageService, setStorageService] = useState("");
+  const [storageName, setStorageName] = useState("");
+  const [storagePath, setStoragePath] = useState("");
+  const [storageToDelete, setStorageToDelete] = useState<StorageMount | null>(null);
 
   // Confirmation Dialog State
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
@@ -724,6 +750,140 @@ export default function ProjectDetail() {
     const interval = setInterval(fetchProject, pollInterval);
     return () => clearInterval(interval);
   }, [fetchProject, project?.status]);
+
+  useEffect(() => {
+    if (!project || buildInitialized) return;
+    setBuildType(project.build_type || "auto");
+    setBaseDirectory(project.base_directory || ".");
+    setDockerfilePath(project.dockerfile_path || "Dockerfile");
+    setInternalPort(project.internal_port || 3000);
+    setBuildInitialized(true);
+  }, [project, buildInitialized]);
+
+  useEffect(() => {
+    if (!storageService && services.length > 0) {
+      setStorageService(services[0].name);
+    }
+  }, [services, storageService]);
+
+  const fetchBuildDetection = useCallback(async () => {
+    setBuildDetecting(true);
+    try {
+      const res = await fetch(`${API_URL}/api/projects/${projectId}/build/detect`, {
+        headers: getAuthHeaders(),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Failed to detect build");
+      setBuildDetection(data);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to detect build");
+    } finally {
+      setBuildDetecting(false);
+    }
+  }, [projectId]);
+
+  const fetchStorage = useCallback(async () => {
+    setStorageLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/api/projects/${projectId}/storage`, {
+        headers: getAuthHeaders(),
+      });
+      const data = await res.json().catch(() => []);
+      if (!res.ok) throw new Error(data.error || "Failed to load storage");
+      setStorageMounts(data);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to load storage");
+    } finally {
+      setStorageLoading(false);
+    }
+  }, [projectId]);
+
+  useEffect(() => {
+    if (activeTab === "build") fetchBuildDetection();
+    if (activeTab === "storage") fetchStorage();
+  }, [activeTab, fetchBuildDetection, fetchStorage]);
+
+  const handleSaveBuild = async () => {
+    if (!baseDirectory.trim()) return toast.error("Base directory is required");
+    if (buildType === "dockerfile" && !dockerfilePath.trim()) {
+      return toast.error("Dockerfile path is required");
+    }
+    if (!Number.isInteger(internalPort) || internalPort < 1 || internalPort > 65535) {
+      return toast.error("Internal port must be between 1 and 65535");
+    }
+
+    setBuildSaving(true);
+    try {
+      const res = await fetch(`${API_URL}/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify({
+          build_type: buildType,
+          base_directory: baseDirectory.trim(),
+          dockerfile_path: buildType === "dockerfile" ? dockerfilePath.trim() : null,
+          internal_port: internalPort,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Failed to save build settings");
+      setProject((current) => current ? { ...current, ...data } : current);
+      toast.success("Build settings saved — Deploy to build with them");
+      await fetchBuildDetection();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to save build settings");
+    } finally {
+      setBuildSaving(false);
+    }
+  };
+
+  const handleAddStorage = async () => {
+    if (!storageService) return toast.error("Select a service");
+    if (!storageName.trim()) return toast.error("Storage label is required");
+    if (!storagePath.startsWith("/")) return toast.error("Mount path must be absolute");
+
+    setStorageSaving(true);
+    try {
+      const res = await fetch(`${API_URL}/api/projects/${projectId}/storage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify({
+          service_name: storageService,
+          name: storageName.trim(),
+          mount_path: storagePath.trim(),
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Failed to create storage");
+      setStorageName("");
+      setStoragePath("");
+      toast.success("Persistent storage attached — Deploy to apply it");
+      await fetchStorage();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to create storage");
+    } finally {
+      setStorageSaving(false);
+    }
+  };
+
+  const handleDeleteStorage = async () => {
+    if (!storageToDelete) return;
+    setStorageSaving(true);
+    try {
+      const res = await fetch(
+        `${API_URL}/api/projects/${projectId}/storage/${storageToDelete.id}?removeVolume=true`,
+        { method: "DELETE", headers: getAuthHeaders() },
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Failed to delete storage");
+      toast.success("Storage and volume deleted");
+      setStorageToDelete(null);
+      await fetchStorage();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to delete storage");
+    } finally {
+      setStorageSaving(false);
+    }
+  };
 
   // Fetch auto-deploy status
   useEffect(() => {
@@ -1149,6 +1309,20 @@ export default function ProjectDetail() {
                 <span className="xs:hidden">Env</span>
               </TabsTrigger>
               <TabsTrigger
+                value="build"
+                className="gap-1.5 sm:gap-2 rounded-full px-3 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-bold transition-all duration-300 data-[state=active]:bg-white data-[state=active]:dark:bg-cyan-500/20 data-[state=active]:text-cyan-600 data-[state=active]:dark:text-cyan-400 data-[state=active]:shadow-sm data-[state=active]:border-cyan-200/50 data-[state=active]:dark:border-cyan-500/30 border border-transparent hover:bg-secondary/50 whitespace-nowrap"
+              >
+                <Box className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                Build
+              </TabsTrigger>
+              <TabsTrigger
+                value="storage"
+                className="gap-1.5 sm:gap-2 rounded-full px-3 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-bold transition-all duration-300 data-[state=active]:bg-white data-[state=active]:dark:bg-cyan-500/20 data-[state=active]:text-cyan-600 data-[state=active]:dark:text-cyan-400 data-[state=active]:shadow-sm data-[state=active]:border-cyan-200/50 data-[state=active]:dark:border-cyan-500/30 border border-transparent hover:bg-secondary/50 whitespace-nowrap"
+              >
+                <HardDrive className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                Storage
+              </TabsTrigger>
+              <TabsTrigger
                 value="source"
                 className="gap-1.5 sm:gap-2 rounded-full px-3 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-bold transition-all duration-300 data-[state=active]:bg-white data-[state=active]:dark:bg-cyan-500/20 data-[state=active]:text-cyan-600 data-[state=active]:dark:text-cyan-400 data-[state=active]:shadow-sm data-[state=active]:border-cyan-200/50 data-[state=active]:dark:border-cyan-500/30 border border-transparent hover:bg-secondary/50 whitespace-nowrap"
               >
@@ -1508,6 +1682,8 @@ export default function ProjectDetail() {
                               ? "border-l-emerald-500 lg:hover:bg-emerald-500/5"
                               : deployment.status === "failed"
                                 ? "border-l-red-500 lg:hover:bg-red-500/5"
+                                : deployment.status === "cancelled"
+                                  ? "border-l-slate-500 lg:hover:bg-slate-500/5"
                                 : "border-l-amber-500",
                             isViewing &&
                               "bg-secondary/30 ring-1 ring-inset ring-border/50",
@@ -1550,6 +1726,8 @@ export default function ProjectDetail() {
                                       ? "bg-emerald-500/10 text-emerald-500"
                                       : deployment.status === "failed"
                                         ? "bg-red-500/10 text-red-500"
+                                        : deployment.status === "cancelled"
+                                          ? "bg-slate-500/10 text-slate-500"
                                         : "bg-amber-500/10 text-amber-500",
                                   )}
                                 >
@@ -1638,6 +1816,264 @@ export default function ProjectDetail() {
                 </div>
               </div>
               <EnvVarsManager projectId={projectId} />
+            </div>
+          </TabsContent>
+
+          <TabsContent
+            value="build"
+            className="animate-in fade-in slide-in-from-bottom-2 duration-400"
+          >
+            <div className="max-w-4xl mx-auto space-y-6">
+              <div>
+                <h3 className="text-xl font-bold flex items-center gap-2">
+                  <Box className="h-5 w-5 text-orange-500" />
+                  Build Settings
+                </h3>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Configure the builder, source directory, and container port used by deployments.
+                </p>
+              </div>
+
+              <Card className="p-6 space-y-6 border-border/40">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {([
+                    ["auto", "Auto", "Detect Dockerfile or app manifests"],
+                    ["dockerfile", "Dockerfile", "Build with a specific Dockerfile"],
+                    ["railpack", "Railpack", "Generate an image from manifests"],
+                  ] as const).map(([value, label, description]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setBuildType(value)}
+                      className={cn(
+                        "p-4 rounded-xl border text-left transition-all",
+                        buildType === value
+                          ? "border-orange-500/40 bg-orange-500/5"
+                          : "border-border/40 hover:bg-secondary/30",
+                      )}
+                    >
+                      <span className="font-bold text-sm">{label}</span>
+                      <span className="block text-[11px] text-muted-foreground mt-1">
+                        {description}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Base Directory</label>
+                    <Input
+                      value={baseDirectory}
+                      onChange={(e) => setBaseDirectory(e.target.value)}
+                      placeholder="."
+                      className="font-mono bg-secondary/20"
+                    />
+                    <p className="text-[11px] text-muted-foreground">
+                      Relative to the repository root, such as <code>apps/web</code>.
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Internal Port</label>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={65535}
+                      value={internalPort}
+                      onChange={(e) => setInternalPort(Number(e.target.value))}
+                      className="font-mono bg-secondary/20"
+                    />
+                    <p className="text-[11px] text-muted-foreground">
+                      Port exposed by the application inside its container.
+                    </p>
+                  </div>
+                </div>
+
+                {buildType === "dockerfile" && (
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Dockerfile Path</label>
+                    <Input
+                      value={dockerfilePath}
+                      onChange={(e) => setDockerfilePath(e.target.value)}
+                      placeholder="Dockerfile"
+                      className="font-mono bg-secondary/20"
+                    />
+                    <p className="text-[11px] text-muted-foreground">
+                      Path relative to the base directory.
+                    </p>
+                  </div>
+                )}
+
+                <div className="flex justify-end">
+                  <Button onClick={handleSaveBuild} disabled={buildSaving}>
+                    {buildSaving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                    Save Build Settings
+                  </Button>
+                </div>
+              </Card>
+
+              <Card className="p-6 border-border/40">
+                <div className="flex items-center justify-between gap-4 mb-5">
+                  <div>
+                    <h4 className="font-bold">Detected Build</h4>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      DockLift&apos;s current resolution for this source.
+                    </p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={fetchBuildDetection}
+                    disabled={buildDetecting}
+                  >
+                    <RefreshCw className={cn("h-3.5 w-3.5 mr-2", buildDetecting && "animate-spin")} />
+                    Detect Again
+                  </Button>
+                </div>
+                {buildDetection ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="p-4 rounded-xl bg-secondary/30 border border-border/40">
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                        Requested
+                      </span>
+                      <p className="font-bold capitalize mt-1">{buildDetection.requestedType}</p>
+                    </div>
+                    <div className="p-4 rounded-xl bg-orange-500/5 border border-orange-500/20">
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-orange-500">
+                        Resolved
+                      </span>
+                      <p className="font-bold capitalize mt-1">{buildDetection.resolvedType}</p>
+                    </div>
+                    <div className="sm:col-span-2 text-xs text-muted-foreground space-y-2">
+                      <p>
+                        Base: <code>{buildDetection.baseDirectory}</code>
+                        {buildDetection.dockerfilePath && (
+                          <> · Dockerfile: <code>{buildDetection.dockerfilePath}</code></>
+                        )}
+                      </p>
+                      <p>
+                        {buildDetection.detected}
+                        {buildDetection.manifests.length > 0 && (
+                          <> Manifests: {buildDetection.manifests.join(", ")}</>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="py-8 text-center text-sm text-muted-foreground">
+                    {buildDetecting ? "Detecting build configuration…" : "No detection result available."}
+                  </div>
+                )}
+              </Card>
+            </div>
+          </TabsContent>
+
+          <TabsContent
+            value="storage"
+            className="animate-in fade-in slide-in-from-bottom-2 duration-400"
+          >
+            <div className="max-w-4xl mx-auto space-y-6">
+              <div>
+                <h3 className="text-xl font-bold flex items-center gap-2">
+                  <HardDrive className="h-5 w-5 text-blue-500" />
+                  Persistent Storage
+                </h3>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Attach Docker volumes to keep application data across redeployments. Deploy after changing mounts.
+                </p>
+              </div>
+
+              <Card className="p-5 border-blue-500/20 bg-blue-500/5">
+                <div className="flex gap-3">
+                  <Info className="h-5 w-5 text-blue-500 shrink-0 mt-0.5" />
+                  <div className="text-xs text-muted-foreground leading-relaxed space-y-1">
+                    <p>An external <code>DATABASE_URL</code> points to a separate database and is unaffected by these mounts.</p>
+                    <p>SQLite files and user uploads need a mount at the directory where the app writes them. Application migrations may still modify or remove stored data, so keep backups.</p>
+                  </div>
+                </div>
+              </Card>
+
+              <Card className="p-6 space-y-5 border-border/40">
+                <h4 className="font-bold">Attach Storage</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Service</label>
+                    <select
+                      value={storageService}
+                      onChange={(e) => setStorageService(e.target.value)}
+                      disabled={services.length === 0}
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                    >
+                      {services.length === 0 && <option value="">No services available</option>}
+                      {services.map((service) => (
+                        <option key={service.id} value={service.name}>{service.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Label</label>
+                    <Input
+                      value={storageName}
+                      onChange={(e) => setStorageName(e.target.value)}
+                      placeholder="uploads"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Absolute Mount Path</label>
+                    <Input
+                      value={storagePath}
+                      onChange={(e) => setStoragePath(e.target.value)}
+                      placeholder="/app/uploads"
+                      className="font-mono"
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-end">
+                  <Button
+                    onClick={handleAddStorage}
+                    disabled={storageSaving || services.length === 0}
+                  >
+                    {storageSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Plus className="h-4 w-4 mr-2" />}
+                    Attach Storage
+                  </Button>
+                </div>
+              </Card>
+
+              <div className="space-y-3">
+                <h4 className="font-bold">Attached Mounts</h4>
+                {storageLoading ? (
+                  <div className="py-10 flex justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+                ) : storageMounts.length === 0 ? (
+                  <Card className="p-10 text-center text-sm text-muted-foreground border-dashed">
+                    No persistent storage attached.
+                  </Card>
+                ) : storageMounts.map((mount) => (
+                  <Card key={mount.id} className="p-4 border-border/40">
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="p-2.5 rounded-xl bg-blue-500/10">
+                          <HardDrive className="h-5 w-5 text-blue-500" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-bold truncate">{mount.display_name || mount.name}</p>
+                          <p className="text-xs text-muted-foreground truncate">
+                            {mount.service_name} · <code>{mount.mount_path}</code>
+                          </p>
+                        </div>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setStorageToDelete(mount)}
+                        className="text-muted-foreground hover:text-red-500 hover:bg-red-500/10 shrink-0"
+                        title="Delete storage"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </Card>
+                ))}
+              </div>
             </div>
           </TabsContent>
 
@@ -1841,6 +2277,35 @@ export default function ProjectDetail() {
                 <Loader2 className="h-4 w-4 animate-spin mr-2" />
               ) : null}
               {actionDetails.confirmText}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={!!storageToDelete}
+        onOpenChange={(open) => !open && setStorageToDelete(null)}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Trash2 className="h-6 w-6 text-red-600" />
+              Delete Persistent Storage
+            </DialogTitle>
+            <DialogDescription className="pt-2">
+              This permanently deletes the <strong>{storageToDelete?.display_name || storageToDelete?.name}</strong> mount and its Docker volume. Stop the project first. Stored files cannot be recovered.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setStorageToDelete(null)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleDeleteStorage}
+              disabled={storageSaving}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              {storageSaving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+              Delete Storage and Data
             </Button>
           </DialogFooter>
         </DialogContent>

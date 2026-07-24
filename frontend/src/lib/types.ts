@@ -5,6 +5,10 @@ export interface Project {
   description: string | null;
   source_type: "upload" | "github";
   project_type: "app" | "database";
+  build_type: BuildType;
+  base_directory: string;
+  dockerfile_path: string | null;
+  internal_port: number;
   github_url: string | null;
   github_branch: string;
   domain: string | null;
@@ -15,10 +19,31 @@ export interface Project {
   updated_at: string;
 }
 
+export type BuildType = "auto" | "dockerfile" | "railpack";
+
+export interface BuildDetection {
+  requestedType: BuildType;
+  resolvedType: Exclude<BuildType, "auto">;
+  baseDirectory: string;
+  dockerfilePath: string | null;
+  detected: string;
+  manifests: string[];
+}
+
+export interface StorageMount {
+  id: string;
+  project_id: string;
+  service_name: string;
+  name: string;
+  display_name: string;
+  mount_path: string;
+  created_at: string;
+}
+
 export interface Deployment {
   id: string;
   project_id: string;
-  status: "queued" | "in_progress" | "success" | "failed" | "pending";
+  status: "queued" | "in_progress" | "success" | "failed" | "pending" | "cancelled";
   trigger?: string;
   commit_message?: string;
   logs: string;

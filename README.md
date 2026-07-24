@@ -102,7 +102,7 @@ flowchart LR
 ### Deploy path
 
 1. You create a project (GitHub repo or ZIP). Source lands under `deployments/<project-id>/`.
-2. Backend builds the image from your `Dockerfile` and runs a container on `docklift_network`.
+2. Backend uses your `Dockerfile` when present, otherwise Railpack detects the framework and builds an image.
 3. A host port from the pool (`5500`–`5600` by default) is published so you can hit the app by IP:port.
 4. If you set a **custom domain**, backend writes an nginx vhost and asks certbot for HTTPS.
 5. With GitHub connected, a push webhook triggers rebuild/redeploy automatically.
@@ -212,7 +212,10 @@ cd frontend && bun install && bun run dev
 4. Click **Deploy** → Watch live build logs
 5. Access at `http://your-ip:<assigned-port>`
 
-> **Requirement:** Your project must have a `Dockerfile`
+> **Build selection:** Auto mode prefers a repository `Dockerfile` and falls back to Railpack.
+> Choose Dockerfile or Railpack explicitly in project settings when you need to override detection.
+> SQLite databases and uploaded files inside the container require a persistent mount configured
+> in the project Storage tab; external databases referenced by `DATABASE_URL` are unaffected by rebuilds.
 
 ### 🛡️ Bypassing Cloudflare / Web Scraping Blocks
 If your deployed apps are blocked by Cloudflare (but work on your server terminal), Docker's network fingerprint is being detected. Run a lightweight proxy on your host network to bypass this:

@@ -1,6 +1,6 @@
 // Backup routes - API endpoints for backup and restore operations
 import { Router, Request, Response } from 'express';
-import { exec } from 'child_process';
+import { exec, spawnSync } from 'child_process';
 import { promisify } from 'util';
 import fs from 'fs';
 import fsp from 'fs/promises';
@@ -41,11 +41,31 @@ async function reconcileSystem(writeLog: (text: string) => void) {
       if (fs.existsSync(projectPath)) {
         writeLog(`      > Redeploying ${project.name} (${project.id})...\n`);
         try {
-          // Verify docker-compose.yml exists
-          if (fs.existsSync(path.join(projectPath, 'docker-compose.yml'))) {
+          const runtimeCompose = path.join(
+            config.deploymentsPath,
+            '.docklift',
+            project.id,
+            'compose.yml'
+          );
+          // Current backups include DockLift's generated runtime state. Older backups
+          // fall back to their source-root compose file.
+          const composeFile = fs.existsSync(runtimeCompose)
+            ? runtimeCompose
+            : path.join(projectPath, 'docker-compose.yml');
+          if (fs.existsSync(composeFile)) {
              // -p must match deploy naming (dl-<slug>-<shortId>) so images/containers stay consistent
              const composeProject = composeProjectName(project.name, project.id);
-             await execAsync(`docker compose -p ${composeProject} up -d --build`, {
+             const volumes = await prisma.persistentVolume.findMany({
+               where: { project_id: project.id },
+             });
+             for (const volume of volumes) {
+               spawnSync('docker', ['volume', 'create', volume.name], {
+                 shell: false,
+                 stdio: 'ignore',
+                 timeout: 30000,
+               });
+             }
+             await execAsync(`docker compose -f "${composeFile}" -p ${composeProject} up -d`, {
                cwd: projectPath,
                env: { ...process.env, DOCKER_BUILDKIT: '1', COMPOSE_DOCKER_CLI_BUILD: '1' },
                maxBuffer: 50 * 1024 * 1024, // 50MB buffer for verbose build output
@@ -53,7 +73,7 @@ async function reconcileSystem(writeLog: (text: string) => void) {
              });
              writeLog(`        + Success (${composeProject})\n`);
           } else {
-             writeLog(`        ! Skipped (No docker-compose.yml)\n`);
+             writeLog(`        ! Skipped (No DockLift runtime compose; deploy manually)\n`);
           }
         } catch (e: any) {
              writeLog(`        ! Failed: ${e.message.split('\n')[0]}\n`);

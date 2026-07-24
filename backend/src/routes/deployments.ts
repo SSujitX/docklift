@@ -6,10 +6,11 @@ import fs from 'fs';
 import prisma from '../lib/prisma.js';
 import { config } from '../lib/config.js';
 import * as dockerService from '../services/docker.js';
-import { scanDockerfiles, generateCompose, validateDockerBuildArgs } from '../services/compose.js';
+import { generateRuntimeCompose, validateDockerBuildArgs } from '../services/compose.js';
+import { resolveProjectBuild } from '../services/buildResolver.js';
+import { buildServiceImage } from '../services/buildRunner.js';
 import { pullRepo, getLastCommitMessage } from '../services/git.js';
-import { patchMiddlewareHosts, logMiddlewareBypassResult } from '../lib/middlewareBypass.js';
-import { updateServiceDomain } from '../services/nginx.js';
+import { cleanupServiceDomain, updateServiceDomain } from '../services/nginx.js';
 import {
   clearSslMeta,
   getCertificateStatus,
@@ -18,10 +19,23 @@ import {
 import {
   composeProjectName,
   composeProjectAliases,
+  dockerSlug,
   serviceContainerName,
 } from '../lib/naming.js';
 
 const router = Router();
+
+function runtimeComposePath(projectId: string): string {
+  return path.join(config.deploymentsPath, '.docklift', projectId, 'compose.yml');
+}
+
+function composeFileArgs(projectId: string): string[] {
+  const composePath = runtimeComposePath(projectId);
+  if (!fs.existsSync(composePath)) {
+    throw new Error('DockLift runtime configuration is missing. Deploy the project first.');
+  }
+  return ['-f', composePath];
+}
 
 // Track in-flight compose builds so /cancel can actually stop them
 interface ActiveBuild {
@@ -30,6 +44,8 @@ interface ActiveBuild {
   cancelled: boolean;
 }
 const activeBuilds = new Map<string, ActiveBuild>();
+const activeDeploymentProjects = new Set<string>();
+const cancelledDeployments = new Set<string>();
 
 function killComposeProcess(proc: ChildProcess) {
   if (!proc.pid) return;
@@ -83,6 +99,7 @@ function clearBuild(projectId: string, deploymentId: string) {
 }
 
 function wasBuildCancelled(projectId: string, deploymentId: string): boolean {
+  if (cancelledDeployments.has(deploymentId)) return true;
   const entry = activeBuilds.get(projectId);
   if (!entry) return false;
   if (entry.deploymentId !== deploymentId) return true;
@@ -347,7 +364,7 @@ router.put('/:projectId/services/:serviceId', async (req: Request, res: Response
 });
 
 // Stream deployment logs
-router.post('/:projectId/deploy', async (req: Request, res: Response) => {
+async function deployProject(req: Request, res: Response) {
   const { projectId } = req.params;
   let deploymentId: string | null = null;
   const logs: string[] = [];
@@ -368,13 +385,10 @@ router.post('/:projectId/deploy', async (req: Request, res: Response) => {
     if (!fs.existsSync(projectPath)) {
       return res.status(400).json({ error: 'Project files not found' });
     }
-    
-    // Scan for all Dockerfiles in the project
-    const dockerfiles = scanDockerfiles(projectPath);
-    
-    if (dockerfiles.length === 0) {
-      return res.status(400).json({ error: 'No Dockerfile found in project. Docklift is based on Docker and requires a Dockerfile to automatically build and run your application.' });
+    if (activeDeploymentProjects.has(projectId)) {
+      return res.status(409).json({ error: 'A deployment is already running for this project' });
     }
+    activeDeploymentProjects.add(projectId);
     
     const { trigger, commit_message } = req.body || {};
 
@@ -470,13 +484,46 @@ router.post('/:projectId/deploy', async (req: Request, res: Response) => {
         }
       }
     }
+
+    if (cancelledDeployments.has(deployment.id)) throw new Error('Deployment cancelled');
+    const resolvedBuild = resolveProjectBuild(projectPath, {
+      buildType: project.build_type,
+      baseDirectory: project.base_directory,
+      dockerfilePath: project.dockerfile_path,
+      internalPort: project.internal_port,
+    });
+    const buildServices = resolvedBuild.services.map((service) => ({
+      ...service,
+      dockerfile_path: service.dockerfilePath || '[railpack]',
+      context_path: service.contextPath,
+      internal_port: service.internalPort,
+    }));
     
     writeLog(`\n${'━'.repeat(50)}\n`);
-    writeLog(`📦 DETECTED ${dockerfiles.length} DOCKERFILE(S)\n`);
+    writeLog(`📦 BUILD: ${resolvedBuild.detected}\n`);
     writeLog(`${'━'.repeat(50)}\n\n`);
+
+    const activeServiceNames = new Set(buildServices.map((service) => service.name));
+    const staleServices = await prisma.service.findMany({
+      where: { project_id: projectId, name: { notIn: [...activeServiceNames] } },
+    });
+    for (const stale of staleServices) {
+      writeLog(`  🧹 Removing stale service: ${stale.name}\n`);
+      await cleanupServiceDomain(stale.id);
+      if (stale.container_name) {
+        spawnSync('docker', ['rm', '-f', stale.container_name], { stdio: 'ignore', shell: false });
+      }
+      if (stale.port != null) {
+        await prisma.port.updateMany({
+          where: { project_id: projectId, port: stale.port },
+          data: { project_id: null, is_locked: false },
+        });
+      }
+      await prisma.service.delete({ where: { id: stale.id } });
+    }
     
-    for (const df of dockerfiles) {
-      writeLog(`  🐳 ${df.name}: ${df.dockerfile_path}\n`);
+    for (const df of buildServices) {
+      writeLog(`  ${df.builder === 'railpack' ? '🛤️' : '🐳'} ${df.name}: ${df.dockerfile_path}\n`);
       writeLog(`     Internal port: ${df.internal_port}\n`);
       
       let service = await prisma.service.findFirst({
@@ -488,7 +535,7 @@ router.post('/:projectId/deploy', async (req: Request, res: Response) => {
         const containerName = serviceContainerName(project.name, projectId, df.name);
         
         // If project has a domain and this is the first service being created, assign it
-        const shouldAssignProjectDomain = project.domain && !service && dockerfiles.indexOf(df) === 0;
+        const shouldAssignProjectDomain = project.domain && !service && buildServices.indexOf(df) === 0;
 
         service = await prisma.service.create({
           data: {
@@ -530,13 +577,22 @@ router.post('/:projectId/deploy', async (req: Request, res: Response) => {
           const port = await allocatePort(projectId);
           service = await prisma.service.update({
             where: { id: service.id },
-            data: { port, status: 'building' },
+            data: {
+              port,
+              status: 'building',
+              dockerfile_path: df.dockerfile_path,
+              internal_port: df.internal_port,
+            },
           });
           writeLog(`     Assigned missing port to service: ${df.name} (Port: ${port})\n`);
         } else {
           await prisma.service.update({
             where: { id: service.id },
-            data: { status: 'building' },
+            data: {
+              status: 'building',
+              dockerfile_path: df.dockerfile_path,
+              internal_port: df.internal_port,
+            },
           });
           writeLog(`     Updating existing service: ${df.name} (Port: ${service.port})\n`);
         }
@@ -563,7 +619,7 @@ router.post('/:projectId/deploy', async (req: Request, res: Response) => {
     // Validate build args against Dockerfiles
     const buildArgKeys = envVars.filter(v => v.is_build_arg).map(v => v.key);
     if (buildArgKeys.length > 0) {
-      for (const df of dockerfiles) {
+      for (const df of buildServices.filter((item) => item.builder === 'dockerfile')) {
          const missingArgs = validateDockerBuildArgs(path.join(projectPath, df.dockerfile_path), buildArgKeys);
          if (missingArgs.length > 0) {
            writeLog(`\n⚠️  WARNING: The following build arguments are configured but missing 'ARG' instructions in ${df.dockerfile_path}:\n`);
@@ -573,40 +629,59 @@ router.post('/:projectId/deploy', async (req: Request, res: Response) => {
       }
     }
     
-    generateCompose(projectId, projectPath, servicesData, envVars.map(v => ({
+    const statePath = path.join(config.deploymentsPath, '.docklift', projectId);
+    const composePath = path.join(statePath, 'compose.yml');
+    const persistentVolumes = await prisma.persistentVolume.findMany({
+      where: { project_id: projectId },
+      orderBy: { created_at: 'asc' },
+    });
+    const runtimeServices: Array<{
+      name: string;
+      image: string;
+      internal_port: number;
+      port: number;
+      container_name: string;
+      volumes?: Array<{ key: string; name: string; mountPath: string }>;
+    }> = [];
+    for (const serviceData of servicesData) {
+      if (cancelledDeployments.has(deployment.id)) throw new Error('Deployment cancelled');
+      const buildService = resolvedBuild.services.find((item) => item.name === serviceData.name);
+      if (!buildService) throw new Error(`Build plan missing service ${serviceData.name}`);
+      const imageTag = `docklift-${projectId.slice(0, 8)}-${dockerSlug(serviceData.name)}:${deployment.id.slice(0, 8)}`;
+      writeLog(`\n${'─'.repeat(40)}\n`);
+      await buildServiceImage({
+        projectPath,
+        statePath,
+        service: buildService,
+        imageTag,
+        envVars,
+        writeLog,
+        onProcess: (child) => registerBuild(projectId, child, deployment.id),
+      });
+      clearBuild(projectId, deployment.id);
+      runtimeServices.push({
+        name: serviceData.name,
+        image: imageTag,
+        internal_port: serviceData.internal_port,
+        port: serviceData.port,
+        container_name: serviceData.container_name,
+        volumes: persistentVolumes
+          .filter((volume) => volume.service_name === serviceData.name)
+          .map((volume, index) => ({
+            key: `storage_${serviceData.name.replace(/[^a-zA-Z0-9_]/g, '_')}_${index}`,
+            name: volume.name,
+            mountPath: volume.mount_path,
+          })),
+      });
+    }
+    if (cancelledDeployments.has(deployment.id)) throw new Error('Deployment cancelled');
+    generateRuntimeCompose(composePath, runtimeServices, envVars.map(v => ({
       key: v.key,
       value: v.value,
       is_build_arg: v.is_build_arg ?? false,
       is_runtime: v.is_runtime ?? true,
-    })), project.project_type ?? 'app');
-    writeLog(`✅ docker-compose.yml created with ${servicesData.length} service(s)\n\n`);
-    
-    // Patch middleware host restrictions for local access
-    const allDomains: string[] = [];
-    const allPorts: number[] = [];
-    for (const svc of servicesData) {
-      if (svc.port) allPorts.push(svc.port);
-      // Get domains from service table
-      const svcRecord = await prisma.service.findFirst({
-        where: { project_id: projectId, name: svc.name },
-        select: { domain: true },
-      });
-      if (svcRecord?.domain) {
-        allDomains.push(...svcRecord.domain.split(',').map((d: string) => d.trim()).filter(Boolean));
-      }
-    }
-    
-    // Scan each service directory for middleware
-    for (const svc of servicesData) {
-      if (!svc.dockerfile_path) continue; // Skip if no dockerfile_path
-      const svcPath = path.join(projectPath, path.dirname(svc.dockerfile_path));
-      const result = await patchMiddlewareHosts({
-        projectPath: svcPath,
-        port: svc.port || 3000,
-        domains: allDomains,
-      });
-      logMiddlewareBypassResult(result, (msg) => writeLog(msg));
-    }
+    })));
+    writeLog(`✅ DockLift runtime compose created outside the repository\n\n`);
     
     writeLog(`${'─'.repeat(40)}\n`);
     writeLog(`🚀 Starting containers...\n`);
@@ -625,7 +700,7 @@ router.post('/:projectId/deploy', async (req: Request, res: Response) => {
     }
     
     // Run docker compose up — detached process group so cancel can signal plugin children
-    const dockerProcess = spawn('docker', ['compose', '-p', composeProject, 'up', '-d', '--build'], {
+    const dockerProcess = spawn('docker', ['compose', ...composeFileArgs(projectId), '-p', composeProject, 'up', '-d', '--remove-orphans'], {
       cwd: projectPath,
       shell: false,
       detached: process.platform !== 'win32',
@@ -660,6 +735,7 @@ router.post('/:projectId/deploy', async (req: Request, res: Response) => {
     });
     
     dockerProcess.on('close', async (code) => {
+      activeDeploymentProjects.delete(projectId);
       const cancelled = wasBuildCancelled(projectId, deployment.id);
       clearBuild(projectId, deployment.id);
 
@@ -675,6 +751,7 @@ router.post('/:projectId/deploy', async (req: Request, res: Response) => {
             finished_at: new Date(),
           },
         }).catch(() => {});
+        cancelledDeployments.delete(deployment.id);
         if (!res.writableEnded) res.end();
         return;
       }
@@ -736,21 +813,36 @@ router.post('/:projectId/deploy', async (req: Request, res: Response) => {
       }
       
       writeLog(`\n📊 Deployment complete! Status: ${success ? 'SUCCESS ✅' : 'FAILED ❌'}\n`);
+      cancelledDeployments.delete(deployment.id);
       if (!res.writableEnded) res.end();
     });
     
     dockerProcess.on('error', async (err) => {
+      activeDeploymentProjects.delete(projectId);
       clearBuild(projectId, deployment.id);
       writeLog(`\n❌ Docker execution error: ${err.message}\n`);
       await failDeploymentState(projectId, deployment.id, logs.join(''));
+      cancelledDeployments.delete(deployment.id);
       if (!res.writableEnded) res.end();
     });
     
   } catch (error: any) {
+    activeDeploymentProjects.delete(projectId);
     console.error(error);
     if (deploymentId) {
-      logs.push(`\n❌ Error: ${error.message}\n`);
-      await failDeploymentState(projectId, deploymentId, logs.join(''));
+      const cancelled = wasBuildCancelled(projectId, deploymentId);
+      clearBuild(projectId, deploymentId);
+      if (cancelled) {
+        logs.push(`\n❌ Deployment cancelled\n`);
+        await prisma.deployment.update({
+          where: { id: deploymentId },
+          data: { status: 'cancelled', logs: logs.join(''), finished_at: new Date() },
+        }).catch(() => {});
+      } else {
+        logs.push(`\n❌ Error: ${error.message}\n`);
+        await failDeploymentState(projectId, deploymentId, logs.join(''));
+      }
+      cancelledDeployments.delete(deploymentId);
     }
     try {
       if (!res.headersSent) {
@@ -763,14 +855,20 @@ router.post('/:projectId/deploy', async (req: Request, res: Response) => {
       /* ignore */
     }
   }
-});
+}
+
+router.post('/:projectId/deploy', deployProject);
 
 // Stop project (STREAMING)
 router.post('/:projectId/stop', async (req: Request, res: Response) => {
   try {
     const { projectId } = req.params;
+    if (activeDeploymentProjects.has(projectId)) {
+      return res.status(409).json({ error: 'Cannot stop while a deployment is running; cancel it first' });
+    }
     const project = await prisma.project.findUnique({ where: { id: projectId } });
     if (!project) return res.status(404).json({ error: 'Project not found' });
+    composeFileArgs(projectId);
     const composeProject = composeProjectName(project.name, projectId);
     const projectPath = path.join(config.deploymentsPath, projectId);
     
@@ -810,7 +908,7 @@ router.post('/:projectId/stop', async (req: Request, res: Response) => {
       });
     }
     
-    const dockerProcess = spawn('docker', ['compose', '-p', composeProject, 'down'], {
+    const dockerProcess = spawn('docker', ['compose', ...composeFileArgs(projectId), '-p', composeProject, 'down'], {
       cwd: projectPath,
       shell: false,
     });
@@ -872,8 +970,12 @@ router.post('/:projectId/stop', async (req: Request, res: Response) => {
 router.post('/:projectId/restart', async (req: Request, res: Response) => {
   try {
     const { projectId } = req.params;
+    if (activeDeploymentProjects.has(projectId)) {
+      return res.status(409).json({ error: 'Cannot restart while a deployment is running' });
+    }
     const project = await prisma.project.findUnique({ where: { id: projectId } });
     if (!project) return res.status(404).json({ error: 'Project not found' });
+    composeFileArgs(projectId);
     const composeProject = composeProjectName(project.name, projectId);
     const projectPath = path.join(config.deploymentsPath, projectId);
     
@@ -912,7 +1014,7 @@ router.post('/:projectId/restart', async (req: Request, res: Response) => {
 
     writeLog(`\n${'━'.repeat(50)}\n🔄 RESTARTING PROJECT\n📅 ${timestamp}\n${'━'.repeat(50)}\n\n`);
     
-    const dockerProcess = spawn('docker', ['compose', '-p', composeProject, 'restart'], {
+    const dockerProcess = spawn('docker', ['compose', ...composeFileArgs(projectId), '-p', composeProject, 'restart'], {
       cwd: projectPath,
       shell: false,
     });
@@ -992,166 +1094,8 @@ router.post('/:projectId/restart', async (req: Request, res: Response) => {
   }
 });
 
-// Redeploy project (STREAMING)
-router.post('/:projectId/redeploy', async (req: Request, res: Response) => {
-  const { projectId } = req.params;
-  let deploymentId: string | null = null;
-  const logs: string[] = [];
-
-  try {
-    const project = await prisma.project.findUnique({ where: { id: projectId } });
-    if (!project) return res.status(404).json({ error: 'Project not found' });
-    const composeProject = composeProjectName(project.name, projectId);
-    const projectPath = path.join(config.deploymentsPath, projectId);
-    
-    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('Cache-Control', 'no-cache, no-transform');
-    res.setHeader('Transfer-Encoding', 'chunked');
-    
-    const writeLog = (text: string) => {
-      try { if (!res.writableEnded) res.write(text); } catch {}
-      logs.push(text);
-    };
-
-    const timestamp = new Date().toISOString();
-    
-    // Create deployment record for redeploy action
-    const deployment = await prisma.deployment.create({
-      data: {
-        project_id: projectId,
-        status: 'in_progress',
-        trigger: 'redeploy',
-        logs: '🔄 Starting redeploy...\n', // Initialize with starting message for real-time polling
-      },
-    });
-    deploymentId = deployment.id;
-
-    // Set project and all services to 'building' immediately
-    await prisma.project.update({
-      where: { id: projectId },
-      data: { status: 'building' },
-    });
-    await prisma.service.updateMany({
-      where: { project_id: projectId },
-      data: { status: 'building' },
-    });
-
-    writeLog(`\n${'━'.repeat(50)}\n🔄 REDEPLOYING CONTAINER\n📅 ${timestamp}\n${'━'.repeat(50)}\n\n📦 Rebuilding with --force-recreate...\n   Compose project: ${composeProject}\n${'─'.repeat(40)}\n`);
-    
-    const dockerProcess = spawn('docker', ['compose', '-p', composeProject, 'up', '-d', '--build', '--force-recreate'], {
-      cwd: projectPath,
-      shell: false,
-      detached: process.platform !== 'win32',
-    });
-    registerBuild(projectId, dockerProcess, deployment.id);
-    
-    dockerProcess.stdout?.on('data', (data) => {
-      writeLog(data.toString());
-    });
-    
-    dockerProcess.stderr?.on('data', (data) => {
-      writeLog(data.toString());
-    });
-    
-    dockerProcess.on('close', async (code) => {
-      const cancelled = wasBuildCancelled(projectId, deployment.id);
-      clearBuild(projectId, deployment.id);
-
-      if (cancelled) {
-        writeLog(`\n${'━'.repeat(50)}\n❌ REDEPLOY CANCELLED\n${'━'.repeat(50)}\n`);
-        await prisma.deployment.update({
-          where: { id: deployment.id },
-          data: {
-            status: 'cancelled',
-            logs: logs.join(''),
-            finished_at: new Date(),
-          },
-        }).catch(() => {});
-        if (!res.writableEnded) res.end();
-        return;
-      }
-
-      const success = code === 0;
-      
-      writeLog(`\n${'─'.repeat(40)}\n`);
-      
-      if (success) {
-        writeLog(`\n${'━'.repeat(50)}\n✅ REDEPLOY SUCCESSFUL!\n${'━'.repeat(50)}\n`);
-        
-        await prisma.project.update({
-          where: { id: projectId },
-          data: { status: 'running' },
-        });
-        
-        await prisma.service.updateMany({
-          where: { project_id: projectId },
-          data: { status: 'running' },
-        });
-
-        try {
-          await activateServiceDomains(projectId);
-          writeLog(`🌐 Nginx domains activated\n`);
-        } catch (e: any) {
-          writeLog(`⚠️ Domain activation warning: ${e?.message || 'failed'}\n`);
-        }
-        
-        // AUTO-PURGE: Clean up build artifacts and free memory
-        writeLog(`\n🧹 Running auto-purge to free resources...\n`);
-        const purgeResult = await runPostDeploymentPurge();
-        writeLog(`   ${purgeResult.message}\n`);
-      } else {
-        writeLog(`\n${'━'.repeat(50)}\n❌ REDEPLOY FAILED (code ${code})\n${'━'.repeat(50)}\n`);
-
-        // Update both project AND all services to 'error' for consistency
-        await prisma.project.update({
-          where: { id: projectId },
-          data: { status: 'error' },
-        });
-        await prisma.service.updateMany({
-          where: { project_id: projectId },
-          data: { status: 'error' },
-        });
-      }
-      
-      // Update deployment record with logs
-      await prisma.deployment.update({
-        where: { id: deployment.id },
-        data: {
-          status: success ? 'success' : 'failed',
-          logs: logs.join(''),
-          finished_at: new Date(),
-        },
-      });
-      
-      if (!res.writableEnded) res.end();
-    });
-
-    dockerProcess.on('error', async (err) => {
-      clearBuild(projectId, deployment.id);
-      writeLog(`\n❌ Docker execution error: ${err.message}\n`);
-      await failDeploymentState(projectId, deployment.id, logs.join(''));
-      if (!res.writableEnded) res.end();
-    });
-    
-  } catch (error: any) {
-    console.error(error);
-    if (deploymentId) {
-      logs.push(`\n❌ Error: ${error.message}\n`);
-      await failDeploymentState(projectId, deploymentId, logs.join(''));
-    }
-    try {
-      if (!res.headersSent) {
-        res.status(500).json({ error: 'Redeploy failed' });
-      } else {
-        try { if (!res.writableEnded) res.write(`\n❌ Error: ${error.message}\n`); } catch {}
-        if (!res.writableEnded) res.end();
-      }
-    } catch {
-      /* ignore */
-    }
-  }
-});
+// Redeploy runs the same source pull, build, and rollout pipeline as deploy.
+router.post('/:projectId/redeploy', deployProject);
 
 // Cancel build — kill tracked compose process + tear down project containers
 router.post('/:projectId/cancel', async (req: Request, res: Response) => {
@@ -1159,12 +1103,10 @@ router.post('/:projectId/cancel', async (req: Request, res: Response) => {
     const { projectId } = req.params;
     const project = await prisma.project.findUnique({ where: { id: projectId } });
     const projectPath = path.join(config.deploymentsPath, projectId);
-    const aliases = project
-      ? composeProjectAliases(project.name, projectId)
-      : [projectId];
     const composeProject = project
       ? composeProjectName(project.name, projectId)
       : projectId;
+    const hasRuntimeCompose = fs.existsSync(runtimeComposePath(projectId));
     
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -1182,6 +1124,14 @@ router.post('/:projectId/cancel', async (req: Request, res: Response) => {
       res.write(`ℹ️ No tracked build process — tearing down containers if present...\n`);
     }
 
+    // Keep an in-memory marker so cancellation also interrupts repository pulls,
+    // before the first Docker/Railpack child process exists.
+    const inProgress = await prisma.deployment.findMany({
+      where: { project_id: projectId, status: 'in_progress' },
+      select: { id: true },
+    });
+    inProgress.forEach((deployment) => cancelledDeployments.add(deployment.id));
+
     // Mark any in-progress deployment rows cancelled immediately
     await prisma.deployment.updateMany({
       where: { project_id: projectId, status: 'in_progress' },
@@ -1189,19 +1139,20 @@ router.post('/:projectId/cancel', async (req: Request, res: Response) => {
     });
 
     // Best-effort: kill services then down (argv arrays, no shell; timeout avoids blocking forever)
-    if (fs.existsSync(projectPath)) {
-      for (const alias of aliases) {
-        spawnSync('docker', ['compose', '-p', alias, 'kill'], {
-          cwd: projectPath,
-          stdio: 'ignore',
-          shell: false,
-          timeout: 30000,
-          killSignal: 'SIGKILL',
-        });
-      }
+    if (fs.existsSync(projectPath) && hasRuntimeCompose) {
+      spawnSync('docker', ['compose', ...composeFileArgs(projectId), '-p', composeProject, 'kill'], {
+        cwd: projectPath,
+        stdio: 'ignore',
+        shell: false,
+        timeout: 30000,
+        killSignal: 'SIGKILL',
+      });
     }
 
-    const dockerProcess = spawn('docker', ['compose', '-p', composeProject, 'down', '--remove-orphans'], {
+    const dockerArgs = hasRuntimeCompose
+      ? ['compose', ...composeFileArgs(projectId), '-p', composeProject, 'down', '--remove-orphans']
+      : ['version', '--format', '{{.Server.Version}}'];
+    const dockerProcess = spawn('docker', dockerArgs, {
       cwd: fs.existsSync(projectPath) ? projectPath : process.cwd(),
       shell: false,
     });

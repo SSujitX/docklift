@@ -33,9 +33,21 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 ENV PORT=8000
+ARG TARGETARCH
+ARG RAILPACK_VERSION=0.33.0
 
-# Install Docker CLI, Git, and procps (for accurate ps/top)
-RUN apk add --no-cache docker-cli docker-cli-compose git procps bash util-linux
+# Install Docker CLI + BuildKit plugins, Git, and procps (for accurate ps/top)
+RUN apk add --no-cache docker-cli docker-cli-buildx docker-cli-compose git procps bash util-linux
+
+# Pinned automatic application builder. Railpack publishes musl binaries for Alpine.
+RUN case "$TARGETARCH" in \
+      amd64) RAILPACK_ARCH=x86_64 ;; \
+      arm64) RAILPACK_ARCH=arm64 ;; \
+      *) echo "Unsupported Railpack architecture: $TARGETARCH" >&2; exit 1 ;; \
+    esac \
+    && wget -qO- "https://github.com/railwayapp/railpack/releases/download/v${RAILPACK_VERSION}/railpack-v${RAILPACK_VERSION}-${RAILPACK_ARCH}-unknown-linux-musl.tar.gz" \
+      | tar -xz -C /usr/local/bin \
+    && railpack --version
 
 # Create non-root user
 RUN addgroup --system --gid 1001 nodejs
