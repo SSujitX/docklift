@@ -11,7 +11,10 @@ Docklift integrates with GitHub using a GitHub App. This allows for accessing pr
 
 -   **Routes**: `backend/src/routes/github.ts`
 -   **Service**: `backend/src/services/git.ts` (for cloning/pulling)
+-   **Frontend helpers**: `startGithubInstallSession()` / `startGithubInstallAndNavigate()` in `frontend/src/lib/auth.ts`
 -   **Authentication**: Uses JWT signed with a private key to authenticate as the GitHub App.
+-   **Callback URL**: derived from `DOCKLIFT_FRONTEND_URL` — it must be the public dashboard URL, or
+    GitHub redirects the user somewhere unreachable.
 
 ## Setup Flow (Manifest Flow)
 
@@ -22,6 +25,18 @@ Docklift integrates with GitHub using a GitHub App. This allows for accessing pr
 5.  **Exchange**: Backend exchanges code for App Credentials (ID, Client ID, Secret, Private Key, Webhook Secret).
 6.  **Storage**: Credentials are stored in the `Settings` table in the database.
 7.  **Installation**: User is redirected to install the newly created app on their account/orgs.
+
+### CSRF Protection on the Setup Flow
+
+The manifest and install callbacks are **public** endpoints (GitHub calls them unauthenticated), so
+they are guarded by a one-time nonce instead:
+
+-   `createGithubSetupState()` stores a random 24-byte `state` in `Settings`
+    (`github_setup_state` + `github_setup_state_at`) and also sets it as an `HttpOnly`,
+    `SameSite=Lax` cookie (`docklift_github_state`, `Secure` over HTTPS).
+-   `verifyGithubSetupState()` compares with `timingSafeEqual`, enforces a TTL, and **deletes the
+    state on use** — the nonce is single-use whether it validates or not.
+-   The nonce is read from the query string (manifest callback) or from the cookie (install redirect).
 
 ## Key Components
 
