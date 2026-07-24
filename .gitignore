@@ -73,15 +73,20 @@ backend/deployments/*
 !backend/deployments/.gitkeep
 
 # Nginx proxy configs (auto-generated, keep default)
-nginx-proxy/conf.d/*
+**/nginx-proxy/conf.d/*
 !nginx-proxy/conf.d/.gitkeep
 !nginx-proxy/conf.d/default.conf
 
 # Let's Encrypt private keys / accounts (never commit)
-nginx-proxy/certbot/conf/*
+**/nginx-proxy/certbot/conf/*
 !nginx-proxy/certbot/conf/.gitkeep
-nginx-proxy/certbot/www/*
+**/nginx-proxy/certbot/www/*
 !nginx-proxy/certbot/www/.gitkeep
+
+# `bun run dev` resolves ./nginx-proxy and ./data from backend/, so a local run
+# scatters generated vhosts, certs and uploads there. None of it belongs in git.
+backend/nginx-proxy/
+backend/data/
 
 .claude/
 AGENTS.md
