@@ -12,6 +12,10 @@ import {
   ensureBootstrapSecret,
   verifyBootstrapSecret,
   consumeBootstrapSecret,
+  tryClaimBootstrapSecret,
+  verifyBootstrapSecretAtPath,
+  finalizeBootstrapClaim,
+  abortBootstrapClaim,
 } from '../lib/bootstrap.js';
 
 const router = express.Router();
@@ -31,9 +35,15 @@ function requireBootstrap(req: Request, res: Response): boolean {
   return true;
 }
 
-function signSessionToken(user: { id: string; email: string; role: string }) {
+function signSessionToken(user: {
+  id: string;
+  email: string;
+  role: string;
+  passwordChangedAt?: Date | null;
+}) {
+  const pwdv = user.passwordChangedAt?.getTime() ?? 0;
   return jwt.sign(
-    { userId: user.id, email: user.email, role: user.role },
+    { userId: user.id, email: user.email, role: user.role, pwdv },
     JWT_SECRET,
     { expiresIn: JWT_EXPIRES_IN }
   );
@@ -87,33 +97,62 @@ router.post('/register', async (req: Request, res: Response) => {
 
     if (!requireBootstrap(req, res)) return;
 
-    const hashedPassword = await bcrypt.hash(password, 12);
-    const now = new Date();
+    const header = (req.headers['x-bootstrap-secret'] as string | undefined)?.trim();
+    const bodySecret =
+      typeof req.body?.bootstrapSecret === 'string' ? req.body.bootstrapSecret.trim() : undefined;
+    const providedBootstrap = header || bodySecret;
 
-    const user = await prisma.user.create({
-      data: {
-        name,
-        email: email.toLowerCase(),
-        password: hashedPassword,
-        role: 'admin',
-        passwordChangedAt: now,
-      },
-    });
+    const claimPath = tryClaimBootstrapSecret();
+    if (!claimPath) {
+      return res.status(403).json({ error: 'Registration unavailable. Setup may already be in progress or complete.' });
+    }
 
-    consumeBootstrapSecret();
+    try {
+      if (!verifyBootstrapSecretAtPath(claimPath, providedBootstrap)) {
+        abortBootstrapClaim(claimPath);
+        return res.status(403).json({
+          error: 'Bootstrap secret required. Copy it from the backend logs (or data/.bootstrap-secret on the host).',
+        });
+      }
 
-    const token = signSessionToken(user);
+      const userCountAfterClaim = await prisma.user.count();
+      if (userCountAfterClaim > 0) {
+        abortBootstrapClaim(claimPath);
+        return res.status(403).json({ error: 'Setup already complete. Use login instead.' });
+      }
 
-    res.status(201).json({
-      message: 'Registration successful',
-      token,
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-      },
-    });
+      const hashedPassword = await bcrypt.hash(password, 12);
+      const now = new Date();
+
+      const user = await prisma.user.create({
+        data: {
+          name,
+          email: email.toLowerCase(),
+          password: hashedPassword,
+          role: 'admin',
+          passwordChangedAt: now,
+        },
+      });
+
+      finalizeBootstrapClaim(claimPath);
+      consumeBootstrapSecret();
+
+      const token = signSessionToken(user);
+
+      res.status(201).json({
+        message: 'Registration successful',
+        token,
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+        },
+      });
+    } catch (innerError: any) {
+      abortBootstrapClaim(claimPath);
+      throw innerError;
+    }
   } catch (error: any) {
     if (error.code === 'P2002') {
       return res.status(400).json({ error: 'Email already exists' });
@@ -282,11 +321,10 @@ router.get('/setup-token', async (req: Request, res: Response) => {
 
     if (!requireBootstrap(req, res)) return;
 
-    const dataDir = config.dataPath || './data';
-    const tokenPath = path.join(dataDir, '.setup-token');
+    const tokenPath = path.join(config.dataPath, '.setup-token');
 
     if (!fs.existsSync(tokenPath)) {
-      fs.mkdirSync(dataDir, { recursive: true });
+      fs.mkdirSync(config.dataPath, { recursive: true });
       const token = crypto.randomBytes(32).toString('hex');
       fs.writeFileSync(tokenPath, token, { mode: 0o600 });
     }
@@ -305,6 +343,11 @@ router.get('/setup-token', async (req: Request, res: Response) => {
 router.post('/sse-token', authMiddleware, async (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
+    const dbUser = await prisma.user.findUnique({
+      where: { id: user.userId },
+      select: { passwordChangedAt: true },
+    });
+    const pwdv = dbUser?.passwordChangedAt?.getTime() ?? 0;
 
     const sseToken = jwt.sign(
       {
@@ -312,6 +355,7 @@ router.post('/sse-token', authMiddleware, async (req: Request, res: Response) =>
         email: user?.email,
         role: user?.role,
         purpose: 'sse',
+        pwdv,
       },
       JWT_SECRET,
       { expiresIn: '5m' }
@@ -327,6 +371,11 @@ router.post('/sse-token', authMiddleware, async (req: Request, res: Response) =>
 router.post('/terminal-token', authMiddleware, async (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
+    const dbUser = await prisma.user.findUnique({
+      where: { id: user.userId },
+      select: { passwordChangedAt: true },
+    });
+    const pwdv = dbUser?.passwordChangedAt?.getTime() ?? 0;
 
     const terminalToken = jwt.sign(
       {
@@ -334,6 +383,7 @@ router.post('/terminal-token', authMiddleware, async (req: Request, res: Respons
         email: user?.email,
         role: user?.role,
         purpose: 'terminal',
+        pwdv,
       },
       JWT_SECRET,
       { expiresIn: '5m' }
