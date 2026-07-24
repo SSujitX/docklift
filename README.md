@@ -8,13 +8,14 @@
 <p align="center">
   <a href="https://github.com/SSujitX/docklift/stargazers"><img src="https://img.shields.io/github/stars/SSujitX/docklift?style=flat-square&color=cyan" alt="Stars"></a>
   <a href="https://github.com/SSujitX/docklift/releases"><img src="https://img.shields.io/github/v/release/SSujitX/docklift?style=flat-square&color=green" alt="Release"></a>
-  <a href="https://nextjs.org"><img src="https://img.shields.io/badge/Next.js-16-black" alt="Next.js"></a>
+  <a href="https://vite.dev"><img src="https://img.shields.io/badge/Vite-React-646CFF" alt="Vite"></a>
   <a href="https://expressjs.com"><img src="https://img.shields.io/badge/Express-Node.js-green" alt="Express"></a>
   <img src="https://img.shields.io/badge/Docker-Compose-blue?style=flat-square" alt="Docker">
 </p>
 
 <p align="center">
   <a href="#-quick-start">Quick Start</a> •
+  <a href="#-how-it-works">How it Works</a> •
   <a href="#-features">Features</a> •
   <a href="#-commands">Commands</a> •
   <a href="#-contributing">Contributing</a>
@@ -45,6 +46,7 @@ If you want to deploy Docker containers quickly without wrestling with configura
 ## 📑 Table of Contents
 
 - [Quick Start](#-quick-start)
+- [How it Works](#-how-it-works)
 - [Why Docklift](#-why-docklift)
 - [Features](#-features)
 - [Installation](#-installation)
@@ -65,7 +67,51 @@ One-command install on Ubuntu/Debian:
 curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh | sudo bash
 ```
 
-Access your dashboard at `http://your-ip:8080`
+Access the dashboard at `http://YOUR_SERVER_IP:8080`. For HTTPS on a hostname, add a panel domain under **Settings → Domain**. Unknown hostnames on ports 80/443 do not fall through to the dashboard.
+
+---
+
+## ⚙️ How it Works
+
+Docklift is a small Docker Compose stack that turns your VPS into a PaaS: a web UI for projects, a backend that talks to the Docker socket, and nginx that routes public traffic to your apps.
+
+```mermaid
+flowchart LR
+  Browser -->|:8080| DashNginx[docklift-nginx]
+  DashNginx --> UI[Frontend]
+  DashNginx --> API[Backend]
+  Internet -->|:80 / :443| AppProxy[nginx-proxy]
+  AppProxy -->|panel domain| DashNginx
+  AppProxy -->|project domain| AppCtr[Your app containers]
+  API -->|docker.sock| Docker[Docker Engine]
+  API -->|write vhosts| AppProxy
+  Certbot[certbot] -->|Let's Encrypt| AppProxy
+  GitHub -->|webhook / push| API
+```
+
+### Stack pieces
+
+| Service | Role |
+|---------|------|
+| **Frontend** | React (Vite) dashboard — projects, logs, settings, terminal |
+| **Backend** | Express + Prisma/SQLite — deploy, auth, GitHub App, nginx/SSL |
+| **docklift-nginx** | Dashboard gateway on **`:8080`** |
+| **nginx-proxy** | Public **`:80` / `:443`** for project & panel domains |
+| **certbot** | Issues/renews Let's Encrypt certs (HTTP-01) |
+
+### Deploy path
+
+1. You create a project (GitHub repo or ZIP). Source lands under `deployments/<project-id>/`.
+2. Backend builds the image from your `Dockerfile` and runs a container on `docklift_network`.
+3. A host port from the pool (`5500`–`5600` by default) is published so you can hit the app by IP:port.
+4. If you set a **custom domain**, backend writes an nginx vhost and asks certbot for HTTPS.
+5. With GitHub connected, a push webhook triggers rebuild/redeploy automatically.
+
+### Access model
+
+- **Admin UI:** `http://SERVER_IP:8080`, or a domain under **Settings → Domain**.
+- **Your apps:** public hostnames on `:80`/`:443` via nginx-proxy (unknown hosts are rejected — they do not fall through to the dashboard).
+- **Secrets:** JWT and internal keys auto-persist under `data/.secrets`; local overrides use `backend/.env.local`.
 
 ---
 
@@ -76,7 +122,7 @@ Access your dashboard at `http://your-ip:8080`
 | 📦 **One-Click Deploy** | Push code → Docklift builds & runs it |
 | 🐙 **GitHub Integration** | Connect private repos via GitHub Apps |
 | 🔄 **Auto-Deploy** | Webhook-triggered redeploys on push |
-| 🌐 **Custom Domains** | Automatic Nginx proxy & SSL ready |
+| 🌐 **Custom Domains** | Nginx proxy + automatic Let's Encrypt HTTPS (Full strict ready) |
 | 📊 **System Monitoring** | CPU, RAM, GPU, disk & network stats |
 | 💻 **Web Terminal** | SSH-like access in your browser |
 | 📜 **Live Build Logs** | Real-time streaming output |
@@ -135,7 +181,9 @@ cd docklift
 
 **Backend:**
 ```bash
-cd backend && cp .env.example .env
+cd backend
+cp .env.local.example .env.local   # your machine only (gitignored)
+# edit .env.local if needed — GitHub optional; or use Settings → Create App
 bun install
 bun run db:generate && bun run db:push
 bun run dev
@@ -146,7 +194,9 @@ bun run dev
 cd frontend && bun install && bun run dev
 ```
 
-**Dev URLs:** Frontend `localhost:3000` | Backend `localhost:4000`
+**Dev URLs:** Frontend `localhost:3600` | Backend `localhost:8000`  
+
+**Env files:** `backend/.env` = server/production (committed). `backend/.env.local.example` = local template (committed) → copy to `.env.local` (gitignored) for Vite CORS / optional GitHub.
 
 ---
 
@@ -177,7 +227,8 @@ Then, update your app's code (like `curl_cffi` or Python `requests`) to route th
 |---------|-------------|
 | `docker logs docklift-backend -f` | Backend logs |
 | `docker logs docklift-frontend -f` | Frontend logs |
-| `docker logs docklift-nginx-proxy -f` | Nginx proxy logs |
+| `docker logs docklift-nginx -f` | Dashboard gateway (:8080) |
+| `docker logs docklift-nginx-proxy -f` | App domains proxy (:80) |
 | `docker ps --filter name=dl_` | List project containers |
 
 ### 🗄️ Database
@@ -214,10 +265,10 @@ Docklift uses [semantic-release](https://github.com/semantic-release/semantic-re
 
 | Command | Description |
 |---------|-------------|
-| `for port in {3001..3050}; do sudo fuser -k ${port}/tcp 2>/dev/null; done` | Kill ports 3001-3050 |
-| `cd backend && bun run reset-password` | Reset admin password |
+| `for port in {5500..5600}; do sudo fuser -k ${port}/tcp 2>/dev/null; done` | Kill app port pool |
+| `docker exec -it docklift-backend node dist/scripts/reset-password.js` | Reset admin password |
 
-> 📖 Full commands guide: [commands.md](commands.md)
+> 📖 Full commands guide: [COMMANDS.md](COMMANDS.md)
 
 ---
 
