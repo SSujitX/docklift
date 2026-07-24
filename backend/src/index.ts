@@ -11,6 +11,7 @@ import { fileURLToPath } from 'url';
 import { config } from './lib/config.js';
 import { ensureNetwork } from './services/docker.js';
 import { logBootstrapIfNeeded } from './lib/bootstrap.js';
+import { isTrustedOrigin } from './lib/originCheck.js';
 
 import projectsRouter from './routes/projects.js';
 import deploymentsRouter from './routes/deployments.js';
@@ -61,86 +62,17 @@ app.use((req, res, next) => {
   next();
 });
 
-// CORS: allowlist + same Host as this request (panel domains behind TLS termination)
-function normalizeOrigin(value: string): string | null {
-  try {
-    const u = new URL(value);
-    const port = u.port || (u.protocol === 'https:' ? '443' : u.protocol === 'http:' ? '80' : '');
-    return `${u.protocol}//${u.hostname}${port ? `:${port}` : ''}`;
-  } catch {
-    return null;
-  }
-}
-
-function requestHostname(req: express.Request): string {
-  const host = (req.headers['x-forwarded-host'] || req.headers.host || '')
-    .toString()
-    .split(',')[0]
-    .trim();
-  if (!host) return '';
-  try {
-    return new URL(`http://${host}`).hostname.toLowerCase();
-  } catch {
-    return host.split(':')[0].toLowerCase();
-  }
-}
-
+// CORS: explicit allowlist, else same origin (scheme + host + port) as this request
 app.use((req, res, next) => {
   cors({
     origin: (origin, callback) => {
+      // Non-browser clients omit Origin; the JWT is still the gate
       if (!origin) return callback(null, true);
-
-      try {
-        const originNorm = normalizeOrigin(origin);
-        if (!originNorm) return callback(null, false);
-        const originHost = new URL(origin).hostname.toLowerCase();
-
-        // Explicit allowlist (dev Vite, etc.) — additive, not exclusive
-        if (process.env.CORS_ORIGIN) {
-          for (const part of process.env.CORS_ORIGIN.split(',')) {
-            const allowed = part.trim();
-            if (!allowed) continue;
-            if (allowed === origin || normalizeOrigin(allowed) === originNorm) {
-              return callback(null, true);
-            }
-          }
-        }
-
-        const host = (req.headers['x-forwarded-host'] || req.headers.host || '')
-          .toString()
-          .split(',')[0]
-          .trim();
-        const reqHost = requestHostname(req);
-
-        // Same hostname as the API request (covers https panel → http internal hop)
-        if (reqHost && originHost === reqHost) {
-          return callback(null, true);
-        }
-
-        if (host) {
-          const proto = (req.headers['x-forwarded-proto'] || req.protocol || 'http')
-            .toString()
-            .split(',')[0]
-            .trim();
-          const reqNorm = normalizeOrigin(`${proto}://${host}`);
-          if (reqNorm && originNorm === reqNorm) return callback(null, true);
-        }
-
-        if (config.frontendUrl) {
-          const feNorm = normalizeOrigin(config.frontendUrl);
-          if (feNorm && originNorm === feNorm) return callback(null, true);
-          try {
-            if (new URL(config.frontendUrl).hostname.toLowerCase() === originHost) {
-              return callback(null, true);
-            }
-          } catch {
-            /* ignore */
-          }
-        }
-      } catch {
-        /* fall through */
-      }
-      return callback(null, false);
+      const allowed = isTrustedOrigin(origin, req.headers, {
+        fallbackProto: req.protocol,
+        allow: [config.frontendUrl],
+      });
+      return callback(null, allowed);
     },
     credentials: true,
   })(req, res, next);

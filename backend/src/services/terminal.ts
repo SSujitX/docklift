@@ -7,6 +7,7 @@ import bcrypt from 'bcrypt';
 import { JWT_SECRET, assertPasswordStillValid, type JwtPayload } from '../lib/authMiddleware.js';
 import { PrismaClient } from '@prisma/client';
 import { config } from '../lib/config.js';
+import { isTrustedOrigin } from '../lib/originCheck.js';
 
 const prisma = new PrismaClient();
 
@@ -71,41 +72,7 @@ function isAllowedOrigin(request: IncomingMessage): boolean {
     return process.env.TERMINAL_ALLOW_NO_ORIGIN === 'true';
   }
 
-  try {
-    const originUrl = new URL(origin);
-    const allowed = new Set<string>();
-
-    if (process.env.CORS_ORIGIN) {
-      for (const o of process.env.CORS_ORIGIN.split(',')) {
-        try {
-          allowed.add(new URL(o.trim()).host);
-        } catch {
-          /* skip */
-        }
-      }
-    }
-
-    if (config.frontendUrl) {
-      try {
-        allowed.add(new URL(config.frontendUrl).host);
-      } catch {
-        /* skip */
-      }
-    }
-
-    const hostHeader = (request.headers['x-forwarded-host'] || request.headers.host || '')
-      .toString()
-      .split(',')[0]
-      .trim();
-    if (hostHeader) {
-      allowed.add(hostHeader);
-      allowed.add(hostHeader.split(':')[0]);
-    }
-
-    return allowed.has(originUrl.host) || allowed.has(originUrl.hostname);
-  } catch {
-    return false;
-  }
+  return isTrustedOrigin(origin, request.headers, { allow: [config.frontendUrl] });
 }
 
 async function verifyTerminalToken(token: string): Promise<{ userId: string; email: string } | null> {
