@@ -16,12 +16,18 @@ import { SidebarStatus } from "./SidebarStatus";
 import { SidebarUser } from "./SidebarUser";
 import { useShell } from "./ShellContext";
 
-export function Sidebar({ variant }: { variant: "desktop" | "mobile" }) {
+export function Sidebar({
+  variant,
+  expandedOnHover = false,
+}: {
+  variant: "desktop" | "mobile";
+  expandedOnHover?: boolean;
+}) {
   const { pathname } = useLocation();
   const { collapsed, toggleCollapsed, setMobileOpen, setPaletteOpen } = useShell();
   const isMobile = variant === "mobile";
   // The drawer is always full width; only the desktop rail can collapse.
-  const isCollapsed = !isMobile && collapsed;
+  const isCollapsed = !isMobile && collapsed && !expandedOnHover;
 
   return (
     <div className="shell-rail-surface flex h-full flex-col border-r border-sidebar-border text-sidebar-foreground">
@@ -33,7 +39,10 @@ export function Sidebar({ variant }: { variant: "desktop" | "mobile" }) {
       >
         <Link
           to="/"
-          className="group flex min-w-0 flex-1 items-center gap-2.5"
+          className={cn(
+            "group flex min-w-0 items-center gap-2.5",
+            isCollapsed ? "flex-none justify-center" : "flex-1",
+          )}
           onClick={() => isMobile && setMobileOpen(false)}
         >
           <span className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand to-blue-600 shadow-lg shadow-brand/20 transition-transform duration-300 group-hover:scale-105">
@@ -65,29 +74,25 @@ export function Sidebar({ variant }: { variant: "desktop" | "mobile" }) {
             <button
               type="button"
               onClick={toggleCollapsed}
-              title="Collapse sidebar (Ctrl+B)"
-              aria-label="Collapse sidebar"
+              title={
+                expandedOnHover
+                  ? "Keep sidebar open (Ctrl+B)"
+                  : "Collapse sidebar (Ctrl+B)"
+              }
+              aria-label={expandedOnHover ? "Keep sidebar open" : "Collapse sidebar"}
               className="flex h-8 w-8 items-center justify-center rounded-lg text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
             >
-              <PanelLeftClose className="h-4 w-4" />
+              {expandedOnHover ? (
+                <PanelLeftOpen className="h-4 w-4" />
+              ) : (
+                <PanelLeftClose className="h-4 w-4" />
+              )}
             </button>
           )
         )}
       </div>
 
       <div className={cn("shrink-0 space-y-2 pt-3", isCollapsed ? "px-2" : "px-3")}>
-        {isCollapsed && (
-          <button
-            type="button"
-            onClick={toggleCollapsed}
-            title="Expand sidebar (Ctrl+B)"
-            aria-label="Expand sidebar"
-            className="flex h-9 w-full items-center justify-center rounded-xl text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
-          >
-            <PanelLeftOpen className="h-4 w-4" />
-          </button>
-        )}
-
         <Link
           to="/projects/new"
           onClick={() => isMobile && setMobileOpen(false)}
