@@ -12,7 +12,7 @@ import { GithubIcon } from "@/components/icons/GithubIcon";
 import { toast } from "sonner";
 import { API_URL, copyToClipboard } from "@/lib/utils";
 import { GitHubConnect } from "@/components/GitHubConnect";
-import { getAuthHeaders, startGithubInstallAndNavigate } from "@/lib/auth";
+import { authFetch, startGithubInstallAndNavigate } from "@/lib/auth";
 import { useAuth } from "@/components/AuthProvider";
 import { SslStatusBadge, type SslInfo } from "@/components/SslStatusBadge";
 import { consumeProgressStream } from "@/lib/streamProgress";
@@ -148,7 +148,7 @@ function SettingsContent() {
 
   const fetchServerIP = async () => {
     try {
-      const res = await fetch(`${API_URL}/api/system/ip`, { headers: getAuthHeaders() });
+      const res = await authFetch(`${API_URL}/api/system/ip`);
       if (res.ok) {
         const data = await res.json();
         setServerIP(data.ip || 'N/A');
@@ -163,9 +163,8 @@ function SettingsContent() {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
       
-      const res = await fetch(`${API_URL}/api/github/status`, {
+      const res = await authFetch(`${API_URL}/api/github/status`, {
         signal: controller.signal,
-        headers: getAuthHeaders()
       });
       clearTimeout(timeoutId);
       const data = await res.json();
@@ -174,7 +173,7 @@ function SettingsContent() {
       // Also fetch all installations if connected
       if (data.connected) {
         try {
-          const instRes = await fetch(`${API_URL}/api/github/installations`, { headers: getAuthHeaders() });
+          const instRes = await authFetch(`${API_URL}/api/github/installations`);
           if (instRes.ok) {
             const instData = await instRes.json();
             setGithubInstallations(instData.installations || []);
@@ -205,7 +204,7 @@ function SettingsContent() {
   const handleDisconnectGitHub = async () => {
     setDisconnecting(true);
     try {
-      await fetch(`${API_URL}/api/github/disconnect`, { method: "POST", headers: getAuthHeaders() });
+      await authFetch(`${API_URL}/api/github/disconnect`, { method: "POST" });
       setGithubStatus({ connected: false });
       toast.success("GitHub disconnected");
     } catch {
@@ -218,12 +217,12 @@ function SettingsContent() {
   const fetchDomains = async () => {
     setLoadingDomains(true);
     try {
-      const res = await fetch(`${API_URL}/api/domains`, { headers: getAuthHeaders() });
+      const res = await authFetch(`${API_URL}/api/domains`);
       if (res.ok) {
         const data = await res.json();
         setDomains(data);
       }
-      const emailRes = await fetch(`${API_URL}/api/domains/ssl/email`, { headers: getAuthHeaders() });
+      const emailRes = await authFetch(`${API_URL}/api/domains/ssl/email`);
       if (emailRes.ok) {
         const emailData = await emailRes.json();
         setAcmeEmail(emailData.email || '');
@@ -238,9 +237,9 @@ function SettingsContent() {
   const handleSaveAcmeEmail = async () => {
     setSavingAcmeEmail(true);
     try {
-      const res = await fetch(`${API_URL}/api/domains/ssl/email`, {
+      const res = await authFetch(`${API_URL}/api/domains/ssl/email`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: acmeEmail }),
       });
       const data = await res.json();
@@ -256,9 +255,8 @@ function SettingsContent() {
   const handleRetryPanelSsl = async (domain: string) => {
     setRetryingSslDomain(domain);
     try {
-      const res = await fetch(`${API_URL}/api/domains/${encodeURIComponent(domain)}/ssl/retry`, {
+      const res = await authFetch(`${API_URL}/api/domains/${encodeURIComponent(domain)}/ssl/retry`, {
         method: "POST",
-        headers: getAuthHeaders(),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "SSL retry failed");
@@ -285,9 +283,9 @@ function SettingsContent() {
 
     setAddingDomain(true);
     try {
-      const res = await fetch(`${API_URL}/api/domains`, {
+      const res = await authFetch(`${API_URL}/api/domains`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           domain: newDomain.domain,
           port: parseInt(port)
@@ -327,9 +325,8 @@ function SettingsContent() {
 
     setDeletingDomain(true);
     try {
-      const res = await fetch(`${API_URL}/api/domains/${domainToDelete}`, {
+      const res = await authFetch(`${API_URL}/api/domains/${domainToDelete}`, {
         method: "DELETE",
-        headers: getAuthHeaders()
       });
       
       if (!res.ok) throw new Error("Failed to delete domain");
@@ -347,9 +344,9 @@ function SettingsContent() {
     e.preventDefault();
     setUpdatingProfile(true);
     try {
-      const res = await fetch(`${API_URL}/api/auth/profile`, {
+      const res = await authFetch(`${API_URL}/api/auth/profile`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: profileData.name,
           email: profileData.email
@@ -377,9 +374,9 @@ function SettingsContent() {
 
     setUpdatingPassword(true);
     try {
-      const res = await fetch(`${API_URL}/api/auth/change-password`, {
+      const res = await authFetch(`${API_URL}/api/auth/change-password`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           currentPassword: passwordData.currentPassword,
           newPassword: passwordData.newPassword
@@ -407,7 +404,7 @@ function SettingsContent() {
   const fetchBackups = async () => {
     setLoadingBackups(true);
     try {
-      const res = await fetch(`${API_URL}/api/backup`, { headers: getAuthHeaders() });
+      const res = await authFetch(`${API_URL}/api/backup`);
       if (res.ok) {
         const data = await res.json();
         setBackups(data);
@@ -422,7 +419,7 @@ function SettingsContent() {
   const fetchUploadedFiles = async () => {
     setLoadingUploads(true);
     try {
-      const res = await fetch(`${API_URL}/api/backup/uploads`, { headers: getAuthHeaders() });
+      const res = await authFetch(`${API_URL}/api/backup/uploads`);
       if (res.ok) {
         const data = await res.json();
         setUploadedFiles(data);
@@ -439,9 +436,8 @@ function SettingsContent() {
 
     setDeletingUpload(true);
     try {
-      const res = await fetch(`${API_URL}/api/backup/uploads/${uploadToDelete}`, {
+      const res = await authFetch(`${API_URL}/api/backup/uploads/${uploadToDelete}`, {
         method: 'DELETE',
-        headers: getAuthHeaders(),
       });
 
       if (!res.ok) throw new Error("Failed to delete file");
@@ -466,9 +462,8 @@ function SettingsContent() {
     setShowRestoreUploadConfirm(false);
 
     try {
-      const res = await fetch(`${API_URL}/api/backup/restore-from-upload/${uploadToRestore}`, {
+      const res = await authFetch(`${API_URL}/api/backup/restore-from-upload/${uploadToRestore}`, {
         method: 'POST',
-        headers: getAuthHeaders(),
       });
 
       const result = await consumeProgressStream(res, (line) => {
@@ -496,9 +491,9 @@ function SettingsContent() {
     setShowBackupProgress(true);
 
     try {
-      const res = await fetch(`${API_URL}/api/backup/create`, {
+      const res = await authFetch(`${API_URL}/api/backup/create`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: backupName.trim() || undefined }),
       });
 
@@ -526,9 +521,8 @@ function SettingsContent() {
 
     setDeletingBackup(true);
     try {
-      const res = await fetch(`${API_URL}/api/backup/${backupToDelete}`, {
+      const res = await authFetch(`${API_URL}/api/backup/${backupToDelete}`, {
         method: 'DELETE',
-        headers: getAuthHeaders(),
       });
 
       if (!res.ok) throw new Error("Failed to delete backup");
@@ -546,9 +540,7 @@ function SettingsContent() {
 
   const handleDownloadBackup = async (filename: string) => {
     try {
-      const res = await fetch(`${API_URL}/api/backup/download/${filename}`, {
-        headers: getAuthHeaders(),
-      });
+      const res = await authFetch(`${API_URL}/api/backup/download/${filename}`);
       if (!res.ok) throw new Error('Download failed');
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
@@ -627,16 +619,8 @@ function SettingsContent() {
       const formData = new FormData();
       formData.append('backup', selectedUploadFile);
 
-      // Get auth token but don't set Content-Type (let browser set it for multipart/form-data)
-      const token = localStorage.getItem('docklift_token');
-      const headers: HeadersInit = {};
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-
-      const res = await fetch(`${API_URL}/api/backup/restore-upload`, {
+      const res = await authFetch(`${API_URL}/api/backup/restore-upload`, {
         method: 'POST',
-        headers,
         body: formData,
       });
 
