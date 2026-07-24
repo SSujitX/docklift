@@ -18,12 +18,21 @@ import {
   buildPanelProxyLocation,
 } from '../services/nginxSsl.js';
 import { certificateFilesExist } from '../services/certs.js';
+import { assertHostnamesAvailable } from '../lib/domainOwnership.js';
 
 const router: Router = express.Router();
 const NGINX_CONF_PATH = config.nginxConfPath;
 
 const DOMAIN_REGEX =
   /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)+$/;
+
+function parsePanelPortInput(value: unknown): number | null {
+  const raw = String(value ?? '').trim();
+  if (!/^\d+$/.test(raw)) return null;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 1 || n > 65535) return null;
+  return n;
+}
 
 function panelConfPath(domain: string): string {
   return path.join(NGINX_CONF_PATH, `${domain}.conf`);
@@ -133,16 +142,22 @@ router.get('/', async (_req: Request, res: Response) => {
 router.post('/', async (req: Request, res: Response) => {
   const { domain, port } = req.body;
 
-  if (!domain || !port || isNaN(parseInt(port))) {
+  const normalized = String(domain ?? '').trim().toLowerCase();
+  const portNum = parsePanelPortInput(port);
+
+  if (!normalized || portNum == null) {
     return res.status(400).json({ error: 'Invalid domain or port' });
   }
 
-  const normalized = String(domain).trim().toLowerCase();
   if (!DOMAIN_REGEX.test(normalized)) {
     return res.status(400).json({ error: 'Invalid domain format' });
   }
 
-  const portNum = parseInt(port, 10);
+  try {
+    await assertHostnamesAvailable([normalized]);
+  } catch (conflict: any) {
+    return res.status(409).json({ error: conflict.message || 'Domain already in use' });
+  }
 
   try {
     const ssl = await provisionPanelSsl(normalized, portNum);
