@@ -2,8 +2,6 @@
 
 import { useState, useEffect, Suspense } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Header } from "@/components/Header";
-import { Footer } from "@/components/Footer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
@@ -362,10 +360,7 @@ function NewProjectContent() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-background">
-      <Header />
-
-      <main className="flex-1 container max-w-4xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
+    <div className="mx-auto w-full max-w-4xl">
         {/* Navigation & Header */}
         <div className="mb-8 sm:mb-10">
           <button 
@@ -1155,7 +1150,7 @@ SESSION_SECRET=your-secret-here
               </div>
 
               <div>
-                <Card className="p-5 bg-secondary/20 border-border/30 rounded-2xl sticky top-24">
+                <Card className="p-5 bg-secondary/20 border-border/30 rounded-2xl sticky top-20">
                   <h4 className="text-xs font-semibold text-muted-foreground mb-4">Summary</h4>
                   <div className="space-y-3">
                     <div className="flex items-center justify-between text-sm">
@@ -1188,9 +1183,6 @@ SESSION_SECRET=your-secret-here
             </div>
           )}
         </div>
-      </main>
-
-      <Footer />
     </div>
   );
 }
@@ -1198,8 +1190,8 @@ SESSION_SECRET=your-secret-here
 export default function NewProjectPage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen flex items-center justify-center bg-black">
-        <Loader2 className="h-8 w-8 animate-spin text-cyan-500" />
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-brand" />
       </div>
     }>
       <NewProjectContent />

@@ -2,8 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Header } from "@/components/Header";
-import { Footer } from "@/components/Footer";
+import { useBreadcrumbLeaf } from "@/components/shell/ShellContext";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Terminal } from "@/components/Terminal";
 import { LogViewer } from "@/components/LogViewer";
@@ -586,6 +585,7 @@ export default function ProjectDetail() {
   const projectId = params.id as string;
 
   const [project, setProject] = useState<Project | null>(null);
+  useBreadcrumbLeaf(project?.name);
   const [files, setFiles] = useState<ProjectFile[]>([]);
   const [deployments, setDeployments] = useState<Deployment[]>([]);
   const [services, setServices] = useState<Service[]>([]);
@@ -1113,12 +1113,9 @@ export default function ProjectDetail() {
 
   if (loading) {
     return (
-      <div className="min-h-screen">
-        <Header />
-        <main className="container max-w-6xl mx-auto px-4 md:px-6 py-8">
-          <div className="shimmer h-10 w-48 bg-secondary rounded-xl mb-6" />
-          <div className="shimmer h-64 bg-secondary rounded-2xl" />
-        </main>
+      <div>
+        <div className="shimmer h-10 w-48 bg-secondary rounded-xl mb-6" />
+        <div className="shimmer h-64 bg-secondary rounded-2xl" />
       </div>
     );
   }
@@ -1126,10 +1123,8 @@ export default function ProjectDetail() {
   if (!project) return null;
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <Header />
-
-      <main className="flex-1 container max-w-6xl mx-auto px-4 md:px-6 py-8">
+    <>
+      <div>
         <Link
           to="/"
           className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground mb-6 transition-colors"
@@ -1282,7 +1277,7 @@ export default function ProjectDetail() {
           onValueChange={setActiveTab}
           className="space-y-6"
         >
-          <div className="sticky top-[72px] z-10 -mx-4 px-4 md:mx-0 md:px-0 overflow-x-auto md:overflow-visible md:flex md:justify-center">
+          <div className="sticky top-14 z-10 -mx-4 px-4 md:mx-0 md:px-0 overflow-x-auto md:overflow-visible md:flex md:justify-center">
             <TabsList className="w-max inline-flex justify-start md:justify-center bg-secondary/50 dark:bg-zinc-900 backdrop-blur-xl border border-border/40 dark:border-white/10 p-1 rounded-full shadow-sm items-center gap-1">
               <TabsTrigger
                 value="overview"
@@ -2237,7 +2232,7 @@ export default function ProjectDetail() {
             />
           </TabsContent>
         </Tabs>
-      </main>
+      </div>
 
       {editingFile && (
         <FileEditor
@@ -2252,7 +2247,6 @@ export default function ProjectDetail() {
         />
       )}
 
-      <Footer />
       <Dialog open={isConfirmOpen} onOpenChange={setIsConfirmOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -2310,6 +2304,6 @@ export default function ProjectDetail() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   );
 }

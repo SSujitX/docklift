@@ -1,6 +1,4 @@
 import { useLocation, Link, Outlet } from "react-router-dom";
-import { Header } from "@/components/Header";
-import { Footer } from "@/components/Footer";
 import { cn } from "@/lib/utils";
 import {
   Info,
@@ -48,55 +46,49 @@ export default function DocsLayout() {
   const { pathname } = useLocation();
 
   return (
-    <div className="min-h-screen bg-background font-sans selection:bg-cyan-500/30 selection:text-cyan-200">
-      <Header />
-
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
-        <div className="flex flex-col lg:flex-row gap-12">
-          <aside className="lg:w-64 lg:shrink-0">
-            <div className="sticky top-24 space-y-1">
-              <h4 className="text-xs font-black text-muted-foreground/60 uppercase tracking-[0.2em] mb-4 ml-3">
-                Documentation
-              </h4>
-              <nav className="space-y-1">
-                {sections.map((section) => {
-                  const isActive =
-                    pathname === section.path ||
-                    (pathname === "/docs" && section.id === "introduction");
-                  return (
-                    <Link
-                      key={section.id}
-                      to={section.path}
-                      className={cn(
-                        "w-full flex items-center gap-3 px-3 py-2.5 text-sm font-bold rounded-xl transition-all duration-200 group text-left",
-                        isActive
-                          ? "bg-cyan-500/10 text-cyan-500 shadow-[0_0_20px_rgba(6,182,212,0.1)]"
-                          : "text-muted-foreground hover:bg-secondary/80 hover:text-foreground",
-                      )}
-                    >
-                      <section.icon
-                        className={cn(
-                          "h-4 w-4 transition-transform group-hover:scale-110",
-                          isActive ? "text-cyan-500" : "text-muted-foreground/50",
-                        )}
-                      />
-                      {section.title}
-                    </Link>
-                  );
-                })}
-              </nav>
-            </div>
-          </aside>
-
-          <main className="flex-1 max-w-4xl">
-            <div className="pb-20">
-              <Outlet />
-            </div>
-          </main>
+    <div className="flex flex-col gap-10 lg:flex-row lg:gap-12">
+      {/* Secondary navigation — the primary rail stays on the far left */}
+      <aside className="lg:w-60 lg:shrink-0">
+        <div className="shell-scroll sticky top-20 space-y-1 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:pr-2">
+          <h4 className="mb-3 ml-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground/70">
+            Documentation
+          </h4>
+          <nav className="flex gap-1 overflow-x-auto pb-2 lg:flex-col lg:overflow-visible lg:pb-0">
+            {sections.map((section) => {
+              const isActive =
+                pathname === section.path ||
+                (pathname === "/docs" && section.id === "introduction");
+              return (
+                <Link
+                  key={section.id}
+                  to={section.path}
+                  className={cn(
+                    "group relative flex shrink-0 items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium transition-colors",
+                    isActive
+                      ? "bg-brand/10 text-brand"
+                      : "text-muted-foreground hover:bg-secondary/70 hover:text-foreground",
+                  )}
+                >
+                  {isActive && (
+                    <span className="absolute left-0 top-1/2 hidden h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-brand lg:block" />
+                  )}
+                  <section.icon
+                    className={cn(
+                      "h-4 w-4 shrink-0",
+                      isActive ? "text-brand" : "text-muted-foreground/50",
+                    )}
+                  />
+                  <span className="whitespace-nowrap">{section.title}</span>
+                </Link>
+              );
+            })}
+          </nav>
         </div>
-      </div>
+      </aside>
 
-      <Footer />
+      <main className="min-w-0 flex-1 pb-10">
+        <Outlet />
+      </main>
     </div>
   );
 }

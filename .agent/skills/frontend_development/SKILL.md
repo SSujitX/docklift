@@ -24,14 +24,36 @@ Docklift uses **Vite + React + React Router** for its dashboard (static SPA in p
 | `/settings` | `pages/Settings.tsx` | Settings + GitHub |
 | `/docs/*` | `pages/docs/*` | Built-in documentation |
 
-Router: `src/app/router.tsx` (lazy route chunks).
+Router: `src/app/router.tsx` (lazy route chunks). `/sign-in` and `/setup` render
+bare; every other route is nested under `app/AppShell.tsx`.
+
+## App shell (`components/shell/`)
+
+All navigation lives in a fixed left rail. Pages render only their own content —
+they must not add a page header bar, footer, or outer `container`/`min-h-screen`
+wrapper, because `AppShell` already supplies the top bar, max width and padding.
+
+| Component | Purpose |
+|-----------|---------|
+| `AppShell.tsx` (`app/`) | Fixed rail, mobile drawer, top bar, content `<main>` |
+| `Sidebar.tsx` | Brand, New Project, search, grouped nav, status, user |
+| `navigation.ts` | Nav groups + breadcrumbs — add new pages here once |
+| `SidebarUser.tsx` | Account block: identity, theme switcher, sign out |
+| `SidebarStatus.tsx` | Version, upgrade prompt, GitHub stars |
+| `TopBar.tsx` | Breadcrumbs, mobile menu trigger, palette trigger |
+| `CommandPalette.tsx` | Ctrl/Cmd+K: pages, projects, actions |
+| `PageHeader.tsx` | `PageHeader` + `StatChip` for consistent page titles |
+
+Shortcuts: `Ctrl/Cmd+K` opens the palette, `Ctrl/Cmd+B` collapses the rail
+(persisted in `docklift_sidebar_collapsed`).
+
+Sticky page elements sit below the 3.5rem top bar — use `top-14` for flush
+elements and `top-20` for spaced ones.
 
 ## Key Components
 
 | Component | Location | Purpose |
 |-----------|----------|---------|
-| `Header.tsx` | `components/` | Global navigation |
-| `Footer.tsx` | `components/` | Global footer |
 | `LogViewer.tsx` | `components/` | Shared log viewer |
 | `SystemLogsPanel.tsx` | `components/` | SSE system logs |
 | `TerminalView.tsx` | `components/` | xterm.js + WS terminal |

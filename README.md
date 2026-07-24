@@ -127,6 +127,7 @@ flowchart LR
 | 💻 **Web Terminal** | SSH-like access in your browser |
 | 📜 **Live Build Logs** | Real-time streaming output |
 | 🔐 **Env Variables** | Secure build-time & runtime secrets |
+| 🧭 **Sidebar Workspace** | Everything in one collapsible left rail, with `Ctrl+K` search |
 
 ---
 

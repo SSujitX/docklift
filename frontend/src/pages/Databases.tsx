@@ -1,7 +1,7 @@
+// Databases page - project list filtered to managed data services
 
 import { useEffect, useState, useCallback } from "react";
-import { Header } from "@/components/Header";
-import { Footer } from "@/components/Footer";
+import { PageHeader, StatChip } from "@/components/shell/PageHeader";
 import { ProjectCard } from "@/components/ProjectCard";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
@@ -39,77 +39,73 @@ export default function DatabasesPage() {
   const stoppedCount = projects.filter((p) => p.status === "stopped").length;
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <Header />
-
-      <main className="flex-1 container max-w-7xl mx-auto px-4 md:px-6 py-8">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3">
-              <Database className="h-8 w-8 text-blue-500" />
-              Databases
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              {projects.length} database services · <span className="text-emerald-500">{runningCount} running</span> · {stoppedCount} stopped
-            </p>
-          </div>
-          
-          <div className="flex items-center gap-3">
-            <Button 
-              variant="outline" 
-              size="icon" 
+    <>
+      <PageHeader
+        eyebrow="Deploy"
+        title="Databases"
+        description="Dedicated data services running alongside your applications."
+        icon={Database}
+        meta={
+          <>
+            <StatChip label="Services" value={projects.length} />
+            <StatChip label="Running" value={runningCount} tone="success" />
+            <StatChip label="Stopped" value={stoppedCount} />
+          </>
+        }
+        actions={
+          <>
+            <Button
+              variant="outline"
+              size="icon"
               onClick={fetchProjects}
-              className="hover:bg-secondary"
+              title="Refresh databases"
+              className="h-10 w-10 border-border/60 bg-background hover:bg-secondary/80"
             >
-              <RefreshCw className="h-4 w-4" />
+              <RefreshCw className="h-4 w-4 text-muted-foreground" />
             </Button>
-            <Button 
-              onClick={() => navigate("/projects/new")} 
-              className="gap-2 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white shadow-lg shadow-blue-500/25"
+            <Button
+              onClick={() => navigate("/projects/new")}
+              className="h-10 bg-brand px-5 font-semibold text-brand-foreground shadow-lg shadow-brand/20 hover:brightness-110"
             >
               <Plus className="h-4 w-4" />
               New Database
             </Button>
-          </div>
+          </>
+        }
+      />
+
+      {loading ? (
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="h-44 rounded-2xl bg-card border border-border shimmer" />
+          ))}
         </div>
-
-        {loading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="h-44 rounded-2xl bg-card border border-border shimmer" />
-            ))}
+      ) : projects.length === 0 ? (
+        <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-border/60 px-4 py-20 text-center">
+          <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-[28px] border border-blue-500/20 bg-blue-500/10">
+            <Database className="h-9 w-9 text-blue-500" />
           </div>
-        ) : projects.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-24">
-            <div className="relative mb-6">
-              <div className="absolute inset-0 bg-gradient-to-br from-blue-500/30 to-indigo-500/30 rounded-3xl blur-2xl" />
-              <div className="relative bg-gradient-to-br from-card to-secondary p-8 rounded-3xl border border-border shadow-xl">
-                <Database className="h-12 w-12 text-blue-500 animate-float" />
-              </div>
-            </div>
-            <h2 className="text-2xl font-bold mb-2">No databases yet</h2>
-            <p className="text-muted-foreground text-center mb-8 max-w-md">
-              Create a dedicated database service. We support PostgreSQL, MySQL, Redis, and more through standard Docker images.
-            </p>
-            <Button 
-              onClick={() => navigate("/projects/new")} 
-              size="lg" 
-              className="gap-2 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white shadow-lg shadow-blue-500/25"
-            >
-              <Sparkles className="h-5 w-5" />
-              Launch Database Service
-            </Button>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {projects.map((project) => (
-              <ProjectCard key={project.id} project={project} onRefresh={fetchProjects} />
-            ))}
-          </div>
-        )}
-      </main>
-
-      <Footer />
-    </div>
+          <h2 className="mb-3 text-2xl font-bold">No databases yet</h2>
+          <p className="mb-8 max-w-md leading-relaxed text-muted-foreground">
+            Create a dedicated database service. PostgreSQL, MySQL, Redis and more run
+            from standard Docker images.
+          </p>
+          <Button
+            onClick={() => navigate("/projects/new")}
+            size="lg"
+            className="h-12 bg-gradient-to-r from-blue-500 to-indigo-600 px-8 font-semibold text-white shadow-xl shadow-blue-500/20 hover:brightness-110"
+          >
+            <Sparkles className="h-4 w-4" />
+            Launch Database Service
+          </Button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
+          {projects.map((project) => (
+            <ProjectCard key={project.id} project={project} onRefresh={fetchProjects} />
+          ))}
+        </div>
+      )}
+    </>
   );
 }

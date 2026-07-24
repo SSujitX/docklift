@@ -2,13 +2,12 @@
 
 import { useState, useEffect, Suspense } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Header } from "@/components/Header";
-import { Footer } from "@/components/Footer";
+import { PageHeader } from "@/components/shell/PageHeader";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Server, Network, Container, Info, Loader2, Check, X, Sparkles, Globe, Plus, Trash2, ExternalLink, Copy, AlertTriangle, User, Lock, ShieldCheck, KeyRound, Mail, UserCircle, HardDrive, Download, RotateCcw, Archive, Upload, FileUp } from "lucide-react";
+import { Server, Network, Container, Info, Loader2, Check, X, Sparkles, Globe, Plus, Trash2, ExternalLink, Copy, AlertTriangle, User, Lock, ShieldCheck, KeyRound, Mail, UserCircle, HardDrive, Download, RotateCcw, Archive, Upload, FileUp, SlidersHorizontal } from "lucide-react";
 import { GithubIcon } from "@/components/icons/GithubIcon";
 import { toast } from "sonner";
 import { API_URL, copyToClipboard } from "@/lib/utils";
@@ -675,14 +674,14 @@ function SettingsContent() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-background">
-      <Header />
-
-      <main className="flex-1 container max-w-6xl mx-auto px-4 md:px-6 py-8">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
-          <p className="text-muted-foreground mt-1">Manage your server, integrations, and domains</p>
-        </div>
+    <>
+      <div>
+        <PageHeader
+          eyebrow="Workspace"
+          title="Settings"
+          description="Manage your account, server, integrations, and domains."
+          icon={SlidersHorizontal}
+        />
 
         <div className="flex flex-col md:flex-row gap-8">
           {/* Sidebar Navigation */}
@@ -704,13 +703,16 @@ function SettingsContent() {
                   <button
                     key={item.id}
                     onClick={() => handleTabChange(item.id)}
-                    className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all whitespace-nowrap
-                      ${isActive 
-                        ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20 scale-[1.02]" 
-                        : "hover:bg-muted text-muted-foreground hover:text-foreground"
+                    className={`relative flex shrink-0 items-center gap-3 whitespace-nowrap rounded-xl px-3 py-2.5 text-sm font-medium transition-colors
+                      ${isActive
+                        ? "bg-brand/10 text-brand"
+                        : "text-muted-foreground hover:bg-secondary/70 hover:text-foreground"
                       }`}
                   >
-                    <Icon className={`h-4 w-4 ${isActive ? "text-primary-foreground" : ""}`} />
+                    {isActive && (
+                      <span className="absolute left-0 top-1/2 hidden h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-brand md:block" />
+                    )}
+                    <Icon className={`h-4 w-4 ${isActive ? "text-brand" : "text-muted-foreground/60"}`} />
                     {item.label}
                   </button>
                 );
@@ -1641,9 +1643,7 @@ function SettingsContent() {
 
           </div>
         </div>
-      </main>
-
-      <Footer />
+      </div>
 
       {/* Delete Domain Confirmation Dialog */}
       <Dialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
@@ -1870,15 +1870,15 @@ function SettingsContent() {
         </DialogContent>
       </Dialog>
 
-    </div>
+    </>
   );
 }
 
 export default function SettingsPage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen flex items-center justify-center bg-black">
-        <Loader2 className="h-8 w-8 animate-spin text-cyan-500" />
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-brand" />
       </div>
     }>
       <SettingsContent />

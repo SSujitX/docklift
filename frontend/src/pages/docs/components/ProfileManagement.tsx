@@ -20,7 +20,7 @@ export const ProfileManagement = () => (
           You can change your full name and email address at any time:
         </p>
         <ul className="list-disc list-inside text-sm text-muted-foreground space-y-2">
-           <li>Click your name in the top right corner</li>
+           <li>Click your name at the bottom of the left sidebar</li>
            <li>Select <span className="text-foreground font-bold">Profile Settings</span></li>
            <li>Update your info and click <span className="text-foreground font-bold">Update Profile</span></li>
         </ul>

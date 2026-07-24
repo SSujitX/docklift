@@ -34,6 +34,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/shell/PageHeader";
 
 interface SystemStats {
   cpu: {
@@ -381,16 +382,14 @@ export function SystemOverview() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight">System Overview</h2>
-          <p className="text-muted-foreground text-sm mt-1">
-            Real-time server statistics · Updated{" "}
-            {lastUpdate ? lastUpdate.toLocaleTimeString() : "now"}
-          </p>
-        </div>
-        <div className="flex items-center gap-3 self-start sm:self-auto">
+      <PageHeader
+        eyebrow="Operate"
+        title="System Overview"
+        description={`Real-time server statistics · Updated ${lastUpdate ? lastUpdate.toLocaleTimeString() : "now"}`}
+        icon={Gauge}
+        className="mb-0"
+        actions={
+          <>
             <button
               onClick={() => setShowPurgeDialog(true)}
               disabled={purging}
@@ -415,8 +414,9 @@ export function SystemOverview() {
             >
               <RefreshCw className="h-4 w-4" />
             </button>
-        </div>
-      </div>
+          </>
+        }
+      />
 
       {/* Main Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">

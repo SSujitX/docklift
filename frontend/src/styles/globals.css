@@ -34,6 +34,15 @@
     --chart-3: 197 37% 24%;
     --chart-4: 43 74% 66%;
     --chart-5: 27 87% 67%;
+
+    /* Shell surface — the sidebar is its own plane, slightly recessed from content */
+    --sidebar: 0 0% 98%;
+    --sidebar-foreground: 0 0% 3.9%;
+    --sidebar-muted: 0 0% 45.1%;
+    --sidebar-border: 0 0% 91%;
+    --sidebar-accent: 0 0% 94%;
+    --brand: 189 94% 40%;
+    --brand-foreground: 0 0% 100%;
   }
 
   .dark {
@@ -63,6 +72,14 @@
     --chart-3: 30 80% 55%;
     --chart-4: 280 65% 60%;
     --chart-5: 340 75% 55%;
+
+    --sidebar: 0 0% 5.5%;
+    --sidebar-foreground: 0 0% 98%;
+    --sidebar-muted: 0 0% 60%;
+    --sidebar-border: 0 0% 13%;
+    --sidebar-accent: 0 0% 12%;
+    --brand: 189 94% 48%;
+    --brand-foreground: 0 0% 4%;
   }
 
   * {
@@ -185,4 +202,39 @@ body::after {
 
 .glass-strong {
   @apply bg-card/95 backdrop-blur-2xl border border-border/50;
+}
+
+/* ─── App shell ─────────────────────────────────────────────────────────────
+   The sidebar is fixed so the document keeps scrolling normally; content is
+   inset by the current rail width, which AppShell overrides when collapsed. */
+:root {
+  --shell-rail: 17rem;
+  --shell-rail-collapsed: 4.75rem;
+  --shell-topbar: 3.5rem;
+}
+
+.shell-rail {
+  width: var(--shell-rail);
+}
+
+.shell-inset {
+  padding-left: 0;
+}
+
+@media (min-width: 1024px) {
+  .shell-inset {
+    padding-left: var(--shell-rail);
+  }
+}
+
+/* Hairline texture that gives the rail depth without a heavy border */
+.shell-rail-surface {
+  background-image:
+    linear-gradient(hsl(var(--sidebar)), hsl(var(--sidebar))),
+    radial-gradient(120% 60% at 0% 0%, hsl(var(--brand) / 0.09), transparent 70%);
+}
+
+.shell-scroll {
+  scrollbar-width: thin;
+  overscroll-behavior: contain;
 }

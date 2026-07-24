@@ -1,14 +1,13 @@
 // Dashboard page - displays all projects with status, actions, and navigation
 
 import { useEffect, useState, useCallback } from "react";
-import { Header } from "@/components/Header";
-import { Footer } from "@/components/Footer";
+import { PageHeader, StatChip } from "@/components/shell/PageHeader";
 import { ProjectCard } from "@/components/ProjectCard";
 import { Button } from "@/components/ui/button";
 import { Project } from "@/lib/types";
 import { API_URL } from "@/lib/utils";
 import { getAuthHeaders } from "@/lib/auth";
-import { Plus, RefreshCw, Container, Sparkles } from "lucide-react";
+import { Plus, RefreshCw, Container, LayoutGrid, Sparkles } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 export default function Dashboard() {
@@ -53,88 +52,76 @@ export default function Dashboard() {
   }, [fetchProjects, isBuilding]);
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <Header />
-
-      <main className="flex-1 container max-w-7xl mx-auto px-4 md:px-6 py-8 sm:py-12">
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-10">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight mb-4">Projects</h1>
-            <div className="flex flex-wrap gap-3">
-              <div className="px-4 py-2 rounded-xl bg-secondary/50 dark:bg-zinc-900/50 border border-border/50 dark:border-white/10 text-sm font-medium shadow-sm">
-                <span className="text-muted-foreground mr-2">Total</span>
-                <span className="font-bold text-foreground">{projects.length}</span>
-              </div>
-              <div className="px-4 py-2 rounded-xl bg-emerald-500/10 dark:bg-emerald-500/5 border border-emerald-500/20 dark:border-emerald-500/30 text-sm font-medium text-emerald-600 dark:text-emerald-400 shadow-sm shadow-emerald-500/5">
-                <span className="mr-2 opacity-70">Running</span>
-                <span className="font-bold">{runningCount}</span>
-              </div>
-              {buildingCount > 0 && (
-                <div className="px-4 py-2 rounded-xl bg-amber-500/10 dark:bg-amber-500/5 border border-amber-500/20 dark:border-amber-500/30 text-sm font-medium text-amber-600 dark:text-amber-400 shadow-sm shadow-amber-500/5 animate-pulse">
-                  <span className="mr-2 opacity-70">Building</span>
-                  <span className="font-bold">{buildingCount}</span>
-                </div>
-              )}
-              <div className="px-4 py-2 rounded-xl bg-secondary/50 dark:bg-zinc-900/50 border border-border/50 dark:border-white/10 text-sm font-medium shadow-sm">
-                <span className="text-muted-foreground mr-2 opacity-70">Stopped</span>
-                <span className="font-bold text-foreground">{stoppedCount}</span>
-              </div>
-            </div>
-          </div>
-          
-          <div className="flex items-center gap-3">
-            <Button 
-              variant="outline" 
-              size="icon" 
+    <>
+      <PageHeader
+        eyebrow="Deploy"
+        title="Projects"
+        description="Every application and database Docklift builds and runs on this server."
+        icon={LayoutGrid}
+        meta={
+          <>
+            <StatChip label="Total" value={projects.length} />
+            <StatChip label="Running" value={runningCount} tone="success" />
+            {buildingCount > 0 && (
+              <StatChip label="Building" value={buildingCount} tone="warning" pulse />
+            )}
+            <StatChip label="Stopped" value={stoppedCount} />
+          </>
+        }
+        actions={
+          <>
+            <Button
+              variant="outline"
+              size="icon"
               onClick={fetchProjects}
-              className="h-10 w-10 rounded-xl border-border/60 hover:bg-secondary/80 bg-background"
+              title="Refresh projects"
+              className="h-10 w-10 border-border/60 bg-background hover:bg-secondary/80"
             >
               <RefreshCw className="h-4 w-4 text-muted-foreground" />
             </Button>
-            <Button 
-              onClick={() => navigate("/projects/new")} 
-              className="h-10 px-6 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white shadow-lg shadow-zinc-900/10 font-medium"
+            <Button
+              onClick={() => navigate("/projects/new")}
+              className="h-10 bg-brand px-5 font-semibold text-brand-foreground shadow-lg shadow-brand/20 hover:brightness-110"
             >
-              <Plus className="h-4 w-4 mr-2" />
+              <Plus className="h-4 w-4" />
               New Project
             </Button>
-          </div>
+          </>
+        }
+      />
+
+      {loading ? (
+        <div className="flex flex-col gap-4">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="h-28 rounded-2xl bg-secondary/20 border border-border/40 animate-pulse" />
+          ))}
         </div>
-
-        {loading ? (
-          <div className="flex flex-col gap-4">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="h-28 rounded-2xl bg-secondary/20 border border-border/40 animate-pulse" />
-            ))}
+      ) : projects.length === 0 ? (
+        <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-border/60 px-4 py-20 text-center">
+          <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-[28px] border border-brand/20 bg-brand/10">
+            <Container className="h-9 w-9 text-brand" />
           </div>
-        ) : projects.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 px-4 text-center">
-            <div className="h-24 w-24 rounded-[32px] bg-secondary/30 flex items-center justify-center mb-6">
-              <Container className="h-10 w-10 text-muted-foreground/40" />
-            </div>
-            <h2 className="text-2xl font-bold mb-3">No projects found</h2>
-            <p className="text-muted-foreground mb-8 max-w-sm leading-relaxed">
-              Get started by creating your first project. We'll handle the build and deployment for you.
-            </p>
-            <Button 
-              onClick={() => navigate("/projects/new")} 
-              size="lg" 
-              className="h-12 px-8 rounded-2xl bg-zinc-900 hover:bg-zinc-800 text-white shadow-xl shadow-zinc-900/10 font-bold"
-            >
-              <Sparkles className="h-4 w-4 mr-2" />
-              Create Project
-            </Button>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-4">
-            {projects.map((project) => (
-              <ProjectCard key={project.id} project={project} onRefresh={fetchProjects} />
-            ))}
-          </div>
-        )}
-      </main>
-
-      <Footer />
-    </div>
+          <h2 className="mb-3 text-2xl font-bold">No projects yet</h2>
+          <p className="mb-8 max-w-sm leading-relaxed text-muted-foreground">
+            Connect a repository or upload your source. Docklift detects the build,
+            creates the image, and keeps it running.
+          </p>
+          <Button
+            onClick={() => navigate("/projects/new")}
+            size="lg"
+            className="h-12 bg-brand px-8 font-semibold text-brand-foreground shadow-xl shadow-brand/20 hover:brightness-110"
+          >
+            <Sparkles className="h-4 w-4" />
+            Create Project
+          </Button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-4">
+          {projects.map((project) => (
+            <ProjectCard key={project.id} project={project} onRefresh={fetchProjects} />
+          ))}
+        </div>
+      )}
+    </>
   );
 }
