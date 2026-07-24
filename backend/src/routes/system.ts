@@ -19,6 +19,24 @@ const execAsync = promisify(exec);
 
 const router = Router();
 
+/** Every container the DockLift stack owns — see docker-compose.yml. */
+const CORE_CONTAINERS = [
+  'docklift-backend',
+  'docklift-frontend',
+  'docklift-nginx',
+  'docklift-nginx-proxy',
+  'docklift-certbot',
+] as const;
+
+/** Friendly log service name → container, used by the SSE log stream. */
+const LOG_SERVICE_CONTAINERS: Record<string, string> = {
+  backend: 'docklift-backend',
+  frontend: 'docklift-frontend',
+  proxy: 'docklift-nginx-proxy',
+  nginx: 'docklift-nginx',
+  certbot: 'docklift-certbot',
+};
+
 // Cache for reducing system calls
 let cachedStats: SystemStats | null = null;
 let lastFetch = 0;
@@ -513,20 +531,11 @@ router.get('/logs/:service', async (req: Request, res: Response) => {
     const { service } = req.params;
     const tail = parseInt(req.query.tail as string) || 200;
 
-    // Map friendly service names to container names (must match docker-compose.yml)
-    const serviceMap: Record<string, string> = {
-      'backend': 'docklift-backend',
-      'frontend': 'docklift-frontend',
-      'proxy': 'docklift-nginx-proxy',
-      'nginx': 'docklift-nginx',
-      'certbot': 'docklift-certbot'
-    };
-
-    const containerName = serviceMap[service];
+    const containerName = LOG_SERVICE_CONTAINERS[service];
     
     if (!containerName) {
       return res.status(400).json({
-        error: `Invalid service name. Available: ${Object.keys(serviceMap).join(', ')}`,
+        error: `Invalid service name. Available: ${Object.keys(LOG_SERVICE_CONTAINERS).join(', ')}`,
       });
     }
 
@@ -608,7 +617,7 @@ router.post('/purge', async (req: Request, res: Response) => {
           const { stdout: containerNames } = await execAsync(`docker inspect --format='{{.Id}} {{.Name}}' ${allContainerIds.join(' ')}`, { timeout: 10000 });
           
           // Filter out Docklift containers
-          const dockliftContainers = ['docklift-backend', 'docklift-frontend', 'docklift-nginx', 'docklift-nginx-proxy'];
+          const dockliftContainers = CORE_CONTAINERS;
           const userContainers = containerNames
             .trim()
             .split('\n')
@@ -786,7 +795,7 @@ router.post('/reset', async (req: Request, res: Response) => {
 
     // Production: Attempt to restart docker containers
     // Use detached execution to allow response to complete
-    const containers = 'docklift-backend docklift-frontend docklift-nginx docklift-nginx-proxy';
+    const containers = CORE_CONTAINERS.join(' ');
     const command = `sleep 1 && docker restart ${containers}`;
     
     console.log(`Reset triggered. Restarting: ${containers}`);
