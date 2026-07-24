@@ -66,6 +66,7 @@ export function GitHubConnect({ open, onOpenChange, onConnected }: GitHubConnect
     try {
       const res = await fetch(`${API_URL}/api/github/manifest`, {
         method: "POST",
+        credentials: "same-origin",
         headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         body: JSON.stringify({ 
           appName: appName.trim(),
