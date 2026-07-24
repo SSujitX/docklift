@@ -14,6 +14,9 @@ Docklift uses SQLite as its database, managed by Prisma ORM.
 Database file: `data/docklift.db` on the host → `/app/data/docklift.db` in the backend container
 (`DATABASE_URL=file:/app/data/docklift.db`).
 
+Prisma client is a Proxy singleton (`lib/prisma.ts`) with `reconnectPrisma()` after restore replaces
+the SQLite file. Backups use `VACUUM INTO` snapshots — see `system_administration` skill.
+
 ## Migration Model: `db push`, not migrations
 
 There is **no** `prisma/migrations` directory. The backend container runs
@@ -50,7 +53,7 @@ bun run db:push --force-reset
 
 | Model | Table | Purpose |
 |-------|-------|---------|
-| `User` | `users` | Admin accounts. `passwordChangedAt` invalidates older JWTs |
+| `User` | `users` | Admin accounts. `passwordChangedAt` → JWT `pwdv` claim |
 | `Project` | `projects` | An application: source, build settings, status |
 | `Service` | `services` | One deployable unit within a project (Dockerfile, domain, ports) |
 | `Deployment` | `deployments` | Build/deploy history, trigger, captured logs |
