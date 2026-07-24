@@ -87,7 +87,8 @@ export async function updateServiceDomain(
   } catch (error) {
     console.error('Failed to write Nginx config:', error);
     appendSslEvent(domainsArray, 'error', 'Failed to write the nginx vhost — check backend logs.');
-    return;
+    // Surface reload/write failure — callers must not report domain save as success
+    throw error;
   }
 
   // 2) Issue certificate (optional — default true on domain updates)
@@ -110,7 +111,16 @@ export async function updateServiceDomain(
           enableHttps: true,
         });
         fs.writeFileSync(confPath, content);
-        await reloadNginx();
+        try {
+          await reloadNginx();
+        } catch (reloadErr) {
+          appendSslEvent(
+            domainsArray,
+            'error',
+            'Certificate may exist but nginx reload failed — HTTPS vhost not live.',
+          );
+          throw reloadErr;
+        }
         console.log(
           `Updated Nginx+SSL config for ${service.name} (${mainDomainsStr}) status=${status.status}`
         );
@@ -128,6 +138,10 @@ export async function updateServiceDomain(
     } catch (e: any) {
       console.error(`SSL issue failed for ${primaryDomain}:`, e?.message || e);
       appendSslEvent(domainsArray, 'error', e?.message || 'Certificate issuance failed unexpectedly.');
+      // Propagate nginx reload failures; soft-fail only pure certbot issuance errors
+      if (String(e?.message || e).includes('Nginx reload failed')) {
+        throw e;
+      }
     }
   } else {
     console.log(`Updated Nginx config for ${service.name} (${mainDomainsStr})`);
@@ -217,8 +231,29 @@ export async function cleanupServiceDomain(serviceId: string) {
   }
 }
 
-export async function reloadNginx() {
-  return new Promise<void>((resolve) => {
+function attemptSelfHealFromReloadError(stderrBuffer: string): boolean {
+  const match = stderrBuffer.match(
+    /host not found in upstream .* in (.*\/service-[a-zA-Z0-9-]+\.conf):/
+  );
+  if (!match?.[1]) return false;
+
+  const filename = path.basename(match[1]);
+  const localPath = path.join(config.nginxConfPath, filename);
+
+  if (!fs.existsSync(localPath)) return false;
+
+  console.log(`Self-Healing: Removing bad Nginx config causing crash: ${filename}`);
+  try {
+    fs.unlinkSync(localPath);
+    return true;
+  } catch (err) {
+    console.error('Failed to remove bad config:', err);
+    return false;
+  }
+}
+
+function runNginxReload(): Promise<{ ok: boolean; code: number | null; stderr: string; spawnError?: Error }> {
+  return new Promise((resolve) => {
     console.log('Reloading Nginx proxy...');
     const child = spawn('docker', ['exec', 'docklift-nginx-proxy', 'nginx', '-s', 'reload']);
 
@@ -234,34 +269,32 @@ export async function reloadNginx() {
     child.on('close', (code) => {
       if (code === 0) {
         console.log('Nginx proxy reloaded successfully');
-        resolve();
+        resolve({ ok: true, code, stderr: stderrBuffer });
       } else {
         console.error(`Nginx reload failed with code ${code}`);
-
-        const match = stderrBuffer.match(
-          /host not found in upstream .* in (.*\/service-[a-zA-Z0-9-]+\.conf):/
-        );
-        if (match && match[1]) {
-          const filename = path.basename(match[1]);
-          const localPath = path.join(config.nginxConfPath, filename);
-
-          if (fs.existsSync(localPath)) {
-            console.log(`Self-Healing: Removing bad Nginx config causing crash: ${filename}`);
-            try {
-              fs.unlinkSync(localPath);
-            } catch (err) {
-              console.error('Failed to remove bad config:', err);
-            }
-          }
-        }
-
-        resolve();
+        resolve({ ok: false, code, stderr: stderrBuffer });
       }
     });
 
     child.on('error', (err) => {
       console.error('Failed to spawn docker exec:', err);
-      resolve();
+      resolve({ ok: false, code: null, stderr: stderrBuffer, spawnError: err });
     });
   });
+}
+
+export async function reloadNginx(): Promise<void> {
+  const first = await runNginxReload();
+  if (first.ok) return;
+
+  attemptSelfHealFromReloadError(first.stderr);
+
+  const second = await runNginxReload();
+  if (second.ok) return;
+
+  const detail =
+    second.spawnError?.message ||
+    second.stderr.trim() ||
+    (second.code != null ? `exit code ${second.code}` : 'unknown error');
+  throw new Error(`Nginx reload failed: ${detail}`);
 }
