@@ -29,9 +29,10 @@ import {
   Clock
 } from "lucide-react";
 import { API_URL } from "@/lib/utils";
-import { getAuthHeaders } from "@/lib/auth";
+import { authFetch } from "@/lib/auth";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 
 interface ProjectCardProps {
   project: Project;
@@ -51,10 +52,18 @@ export function ProjectCard({ project, onRefresh }: ProjectCardProps) {
     setLoading(true);
     setActionType(action);
     try {
-      await fetch(`${API_URL}/api/deployments/${project.id}/${action}`, { method: "POST", headers: getAuthHeaders() });
+      const res = await authFetch(`${API_URL}/api/deployments/${project.id}/${action}`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        toast.error((data as { error?: string }).error || `Failed to ${action} project`);
+        return;
+      }
       setTimeout(onRefresh, 2000);
     } catch (error) {
       console.error(error);
+      toast.error(`Failed to ${action} project`);
     } finally {
       setLoading(false);
       setActionType(null);
@@ -71,11 +80,17 @@ export function ProjectCard({ project, onRefresh }: ProjectCardProps) {
     if (e) e.stopPropagation();
     setDeleting(true);
     try {
-      await fetch(`${API_URL}/api/projects/${project.id}`, { method: "DELETE", headers: getAuthHeaders() });
+      const res = await authFetch(`${API_URL}/api/projects/${project.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        toast.error((data as { error?: string }).error || "Failed to delete project");
+        return;
+      }
       setDeleteDialogOpen(false);
       onRefresh();
     } catch (error) {
       console.error(error);
+      toast.error("Failed to delete project");
     } finally {
       setDeleting(false);
     }
