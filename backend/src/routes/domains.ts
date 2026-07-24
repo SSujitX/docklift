@@ -1,60 +1,136 @@
-// Domains routes - API endpoints for custom domain configuration
+// Domains routes - panel/server custom domains + Let's Encrypt SSL
 import express, { Request, Response, Router } from 'express';
 import fs from 'fs/promises';
+import fssync from 'fs';
 import path from 'path';
-import { exec } from 'child_process';
-import util from 'util';
+import { config } from '../lib/config.js';
+import {
+  clearSslMeta,
+  getAcmeEmail,
+  getCertificateStatus,
+  issueCertificate,
+  setAcmeEmail,
+} from '../services/certs.js';
+import { reloadNginx } from '../services/nginx.js';
+import {
+  PANEL_CONF_MARKER,
+  buildHttpHttpsServers,
+  buildPanelProxyLocation,
+  buildWwwRedirectServers,
+} from '../services/nginxSsl.js';
+import { certificateFilesExist } from '../services/certs.js';
 
-const execAsync = util.promisify(exec);
 const router: Router = express.Router();
+const NGINX_CONF_PATH = config.nginxConfPath;
 
-// Path to Nginx configuration directory (mounted volume)
-// Backend sees this at /nginx-conf (mapped to ./nginx-proxy/conf.d on host)
-const NGINX_CONF_PATH = process.env.NGINX_CONF_PATH || '/nginx-conf';
+const DOMAIN_REGEX =
+  /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)+$/;
 
-interface DomainConfig {
-  domain: string;
-  port: number;
+function panelConfPath(domain: string): string {
+  return path.join(NGINX_CONF_PATH, `${domain}.conf`);
 }
 
-// Helper: Reload Nginx Proxy
-async function reloadNginxProxy() {
-  try {
-    // Execute reload command inside the docklift-nginx-proxy container
-    // Requires permissions (backend runs as privileged)
-    await execAsync('docker exec docklift-nginx-proxy nginx -s reload');
-    console.log('Nginx proxy reloaded successfully');
-  } catch (error) {
-    console.error('Failed to reload Nginx proxy:', error);
-    throw new Error('Failed to reload Nginx configuration');
+function parsePanelPort(content: string): number | null {
+  // New style: docklift-nginx (dashboard)
+  if (content.includes('docklift-nginx') || content.includes('$dashboard')) {
+    const m = content.match(/# docklift-panel-port:\s*(\d+)/);
+    return m ? parseInt(m[1], 10) : 8080;
   }
+  const portMatch = content.match(/proxy_pass\s+http:\/\/host\.docker\.internal:(\d+);/);
+  return portMatch ? parseInt(portMatch[1], 10) : null;
 }
 
-// GET /api/domains - List all configured domains
-router.get('/', async (req: Request, res: Response) => {
+async function writePanelDomainConfig(domain: string, port: number, enableHttps: boolean) {
+  await fs.mkdir(NGINX_CONF_PATH, { recursive: true });
+  const proxyLocation = buildPanelProxyLocation(port);
+  const body = buildHttpHttpsServers({
+    comment: `Panel domain ${domain}`,
+    serverNames: domain,
+    primaryDomain: domain,
+    proxyLocation,
+    enableHttps,
+  });
+  const wwwRedirects =
+    !domain.startsWith('www.') && !domain.match(/^[\d.]+$/) && !domain.includes('localhost')
+      ? [`www.${domain}`]
+      : [];
+  const wwwBlock = buildWwwRedirectServers(wwwRedirects, domain, enableHttps && certificateFilesExist(domain));
+  const nginxConfig = `${PANEL_CONF_MARKER}
+# docklift-panel-port: ${port}
+${body}
+${wwwBlock}`;
+  await fs.writeFile(panelConfPath(domain), nginxConfig);
+}
+
+async function provisionPanelSsl(domain: string, port: number, opts?: { force?: boolean }) {
+  await writePanelDomainConfig(domain, port, false);
+  await reloadNginx();
+
+  // Include www SAN (same pattern as service domains) when not already www.*
+  const sans = [domain];
+  if (!domain.startsWith('www.') && !domain.match(/^[\d.]+$/) && !domain.includes('localhost')) {
+    sans.push(`www.${domain}`);
+  }
+
+  const status = await issueCertificate(sans, { force: opts?.force });
+  if (
+    status.status === 'active' ||
+    status.status === 'expiring' ||
+    certificateFilesExist(domain)
+  ) {
+    await writePanelDomainConfig(domain, port, true);
+    await reloadNginx();
+  }
+  return status;
+}
+
+// GET /api/domains/ssl/email — ACME account email
+router.get('/ssl/email', async (_req: Request, res: Response) => {
   try {
-    // Ensure directory exists
+    const email = await getAcmeEmail().catch(() => '');
+    res.json({ email });
+  } catch (error: any) {
+    res.status(500).json({ error: 'Failed to get ACME email' });
+  }
+});
+
+// PUT /api/domains/ssl/email
+router.put('/ssl/email', async (req: Request, res: Response) => {
+  try {
+    const { email } = req.body || {};
+    await setAcmeEmail(email);
+    res.json({ success: true, email: email.trim().toLowerCase() });
+  } catch (error: any) {
+    res.status(400).json({ error: error.message || 'Failed to save ACME email' });
+  }
+});
+
+// GET /api/domains - List panel domains with SSL status
+router.get('/', async (_req: Request, res: Response) => {
+  try {
     await fs.mkdir(NGINX_CONF_PATH, { recursive: true });
 
     const files = await fs.readdir(NGINX_CONF_PATH);
-    const configs: DomainConfig[] = [];
+    const configs: Array<{ domain: string; port: number; ssl: Awaited<ReturnType<typeof getCertificateStatus>> }> = [];
 
     for (const file of files) {
-      if (file.endsWith('.conf') && file !== 'default.conf') {
-        const content = await fs.readFile(path.join(NGINX_CONF_PATH, file), 'utf-8');
-        
-        // Simple regex to parse domain and port from the generated config
-        // Matches: server_name example.com; ... proxy_pass http://host.docker.internal:3001;
-        const domainMatch = content.match(/server_name\s+(.*?);/);
-        const portMatch = content.match(/proxy_pass\s+http:\/\/host\.docker\.internal:(\d+);/);
-
-        if (domainMatch && portMatch) {
-          configs.push({
-            domain: domainMatch[1],
-            port: parseInt(portMatch[1])
-          });
-        }
+      if (!file.endsWith('.conf') || file === 'default.conf' || file.startsWith('service-')) {
+        continue;
       }
+      const content = await fs.readFile(path.join(NGINX_CONF_PATH, file), 'utf-8');
+      if (!content.includes(PANEL_CONF_MARKER) && !content.includes('host.docker.internal') && !content.includes('docklift-nginx')) {
+        continue;
+      }
+      // Skip if it looks like a leftover non-panel file
+      if (content.includes('service-') && content.includes('Main server block')) continue;
+
+      const domainMatch = content.match(/server_name\s+([^;]+);/);
+      const port = parsePanelPort(content);
+      if (!domainMatch || port == null) continue;
+
+      const domain = domainMatch[1].trim().split(/\s+/)[0];
+      const ssl = await getCertificateStatus(domain);
+      configs.push({ domain, port, ssl });
     }
 
     res.json(configs);
@@ -64,7 +140,7 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/domains - Add a new domain mapping
+// POST /api/domains - Add panel domain + issue SSL
 router.post('/', async (req: Request, res: Response) => {
   const { domain, port } = req.body;
 
@@ -72,67 +148,58 @@ router.post('/', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Invalid domain or port' });
   }
 
-  // Strict domain validation - must be valid hostname format (same as DELETE endpoint)
-  if (!/^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)+$/.test(domain)) {
+  const normalized = String(domain).trim().toLowerCase();
+  if (!DOMAIN_REGEX.test(normalized)) {
     return res.status(400).json({ error: 'Invalid domain format' });
   }
 
-  const configFilename = `${domain}.conf`;
-  const configPath = path.join(NGINX_CONF_PATH, configFilename);
-
-  // Nginx Configuration Template
-  // Uses host.docker.internal to reach services running on the host machine
-  const nginxConfig = `server {
-    listen 80;
-    server_name ${domain};
-
-    location / {
-        proxy_pass http://host.docker.internal:${port};
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}`;
+  const portNum = parseInt(port, 10);
 
   try {
-    // Write config file
-    await fs.writeFile(configPath, nginxConfig);
-    console.log(`Created Nginx config for ${domain} -> Port ${port}`);
-
-    // Reload Nginx
-    await reloadNginxProxy();
-
-    res.json({ success: true, domain, port });
+    const ssl = await provisionPanelSsl(normalized, portNum);
+    res.json({ success: true, domain: normalized, port: portNum, ssl });
   } catch (error: any) {
     console.error('Add domain error:', error);
     res.status(500).json({ error: error.message || 'Failed to add domain' });
   }
 });
 
-// DELETE /api/domains/:domain - Remove a domain mapping
-router.delete('/:domain', async (req: Request, res: Response) => {
-  const { domain } = req.params;
-
-  // Strict domain validation - must be valid hostname format
-  if (!domain || !/^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)+$/.test(domain)) {
+// POST /api/domains/:domain/ssl/retry
+router.post('/:domain/ssl/retry', async (req: Request, res: Response) => {
+  const domain = String(req.params.domain || '').trim().toLowerCase();
+  if (!DOMAIN_REGEX.test(domain)) {
     return res.status(400).json({ error: 'Invalid domain format' });
   }
 
-  const configFilename = `${domain}.conf`;
-  const configPath = path.join(NGINX_CONF_PATH, configFilename);
+  try {
+    const content = await fs.readFile(panelConfPath(domain), 'utf-8');
+    const port = parsePanelPort(content) ?? 8080;
+    await clearSslMeta(domain);
+    const ssl = await provisionPanelSsl(domain, port, { force: true });
+    res.json({ success: true, domain, ssl });
+  } catch (error: any) {
+    if (error.code === 'ENOENT') {
+      return res.status(404).json({ error: 'Domain configuration not found' });
+    }
+    console.error('SSL retry error:', error);
+    res.status(500).json({ error: error.message || 'SSL retry failed' });
+  }
+});
+
+// DELETE /api/domains/:domain
+router.delete('/:domain', async (req: Request, res: Response) => {
+  const domain = String(req.params.domain || '').trim().toLowerCase();
+
+  if (!DOMAIN_REGEX.test(domain)) {
+    return res.status(400).json({ error: 'Invalid domain format' });
+  }
 
   try {
-    // Check if file exists
-    await fs.access(configPath);
-    
-    // Delete file
-    await fs.unlink(configPath);
+    await fs.access(panelConfPath(domain));
+    await fs.unlink(panelConfPath(domain));
+    await clearSslMeta(domain);
     console.log(`Deleted Nginx config for ${domain}`);
-
-    // Reload Nginx
-    await reloadNginxProxy();
-
+    await reloadNginx();
     res.json({ success: true });
   } catch (error: any) {
     if (error.code === 'ENOENT') {
