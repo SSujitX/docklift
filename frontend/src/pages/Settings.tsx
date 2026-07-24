@@ -15,6 +15,7 @@ import { GitHubConnect } from "@/components/GitHubConnect";
 import { getAuthHeaders, startGithubInstallAndNavigate } from "@/lib/auth";
 import { useAuth } from "@/components/AuthProvider";
 import { SslStatusBadge, type SslInfo } from "@/components/SslStatusBadge";
+import { consumeProgressStream } from "@/lib/streamProgress";
 
 interface GitHubStatus {
   connected: boolean;
