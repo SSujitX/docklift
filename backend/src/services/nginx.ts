@@ -8,7 +8,7 @@ import {
   buildHttpHttpsServers,
   buildServiceProxyLocation,
 } from './nginxSsl.js';
-import { certificateFilesExist, issueCertificate } from './certs.js';
+import { appendSslEvent, certificateFilesExist, issueCertificate } from './certs.js';
 
 export async function updateServiceDomain(
   service: any,
@@ -83,8 +83,10 @@ export async function updateServiceDomain(
   try {
     fs.writeFileSync(confPath, content);
     await reloadNginx();
+    appendSslEvent(domainsArray, 'info', 'HTTP vhost written and nginx reloaded — ACME challenge path is live.');
   } catch (error) {
     console.error('Failed to write Nginx config:', error);
+    appendSslEvent(domainsArray, 'error', 'Failed to write the nginx vhost — check backend logs.');
     return;
   }
 
@@ -112,13 +114,20 @@ export async function updateServiceDomain(
         console.log(
           `Updated Nginx+SSL config for ${service.name} (${mainDomainsStr}) status=${status.status}`
         );
+        appendSslEvent(domainsArray, 'success', `HTTPS enabled for ${mainDomainsStr}.`);
       } else {
         console.warn(
           `SSL not active for ${primaryDomain}: ${status.status} ${status.error || ''}`
         );
+        appendSslEvent(
+          domainsArray,
+          'warn',
+          'Still serving plain HTTP — HTTPS turns on automatically once a certificate exists.'
+        );
       }
     } catch (e: any) {
       console.error(`SSL issue failed for ${primaryDomain}:`, e?.message || e);
+      appendSslEvent(domainsArray, 'error', e?.message || 'Certificate issuance failed unexpectedly.');
     }
   } else {
     console.log(`Updated Nginx config for ${service.name} (${mainDomainsStr})`);
