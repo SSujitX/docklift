@@ -9,6 +9,8 @@ import { LogViewer } from "@/components/LogViewer";
 import { FileEditor } from "@/components/FileEditor";
 import { FileTree } from "@/components/FileTree";
 import { EnvVarsManager } from "@/components/EnvVarsManager";
+import { DnsGuideCard } from "@/components/domains/DnsGuideCard";
+import { ServiceDomainCard } from "@/components/domains/ServiceDomainCard";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -22,7 +24,7 @@ import {
   BuildDetection,
   StorageMount,
 } from "@/lib/types";
-import { API_URL, cn, copyToClipboard } from "@/lib/utils";
+import { API_URL, cn } from "@/lib/utils";
 import { getAuthHeaders } from "@/lib/auth";
 import {
   ArrowLeft,
@@ -47,15 +49,10 @@ import {
   Database,
   Cloud,
   Clock,
-  Check,
   Trash2,
-  Copy,
   Info,
   AlertTriangle,
-  ArrowRight,
   Plus,
-  Lock,
-  Globe2,
   Rocket,
   Calendar,
   RefreshCw,
@@ -68,8 +65,6 @@ import {
   Box,
   HardDrive,
 } from "lucide-react";
-
-const HISTORY_PAGE_SIZE = 6;
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import {
@@ -80,8 +75,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { SslStatusBadge, type SslInfo } from "@/components/SslStatusBadge";
 
+const HISTORY_PAGE_SIZE = 6;
 const MAX_LOG_LINES = 10000;
 
 // Real-time container logs panel
@@ -342,246 +337,6 @@ function ContainerLogsPanel({
   );
 }
 
-
-function ServiceDomainManager({
-  service,
-  projectId,
-  onUpdate,
-}: {
-  service: Service;
-  projectId: string;
-  onUpdate: () => void;
-}) {
-  const [domains, setDomains] = useState<string[]>(
-    service.domain
-      ? service.domain
-          .split(",")
-          .map((d) => d.trim())
-          .filter(Boolean)
-      : [],
-  );
-  const [sslMap, setSslMap] = useState<Record<string, SslInfo>>({});
-  const [loading, setLoading] = useState(false);
-  const [retrying, setRetrying] = useState(false);
-
-  // Sync with prop if it changes externally
-  useEffect(() => {
-    setDomains(
-      service.domain
-        ? service.domain
-            .split(",")
-            .map((d) => d.trim())
-            .filter(Boolean)
-        : [],
-    );
-  }, [service.domain]);
-
-  const fetchSsl = useCallback(async () => {
-    if (!service.domain) {
-      setSslMap({});
-      return;
-    }
-    try {
-      const res = await fetch(
-        `${API_URL}/api/deployments/${projectId}/services/${service.id}/ssl`,
-        { headers: getAuthHeaders() },
-      );
-      if (res.ok) {
-        const data = await res.json();
-        setSslMap(data.ssl || {});
-      }
-    } catch {
-      /* ignore */
-    }
-  }, [projectId, service.id, service.domain]);
-
-  useEffect(() => {
-    fetchSsl();
-  }, [fetchSsl]);
-
-  const handleAddRow = () => {
-    setDomains([...domains, ""]);
-  };
-
-  const handleRemoveRow = (index: number) => {
-    const newDomains = [...domains];
-    newDomains.splice(index, 1);
-    setDomains(newDomains);
-  };
-
-  const handleChange = (index: number, value: string) => {
-    const newDomains = [...domains];
-    newDomains[index] = value;
-    setDomains(newDomains);
-  };
-
-  const handleSave = async () => {
-    setLoading(true);
-    const cleanDomains = domains.map((d) => d.trim()).filter(Boolean);
-    const domainString = cleanDomains.join(",");
-
-    try {
-      const res = await fetch(
-        `${API_URL}/api/deployments/${projectId}/services/${service.id}`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-          body: JSON.stringify({ domain: domainString }),
-        },
-      );
-
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || "Failed to update domains");
-
-      if (data.ssl) setSslMap(data.ssl);
-      toast.success("Domains saved — Let's Encrypt will issue if DNS is ready");
-      onUpdate();
-      await fetchSsl();
-    } catch (err) {
-      console.error(err);
-      toast.error("Failed to save domains");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleRetrySsl = async () => {
-    setRetrying(true);
-    try {
-      const res = await fetch(
-        `${API_URL}/api/deployments/${projectId}/services/${service.id}/ssl/retry`,
-        { method: "POST", headers: getAuthHeaders() },
-      );
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || "SSL retry failed");
-      if (data.ssl) setSslMap(data.ssl);
-      toast.success("SSL retry finished — check status per domain");
-    } catch (err: any) {
-      toast.error(err.message || "SSL retry failed");
-    } finally {
-      setRetrying(false);
-    }
-  };
-
-  return (
-    <Card className="p-6 border-border/40 hover:border-purple-500/30 transition-all bg-purple-500/5">
-      <div className="flex flex-col md:flex-row gap-6">
-        {/* Service Info */}
-        <div className="md:w-1/3 flex items-start gap-4">
-          <div className="h-12 w-12 rounded-xl bg-purple-500/10 flex items-center justify-center shrink-0">
-            <Server className="h-6 w-6 text-purple-500" />
-          </div>
-          <div>
-            <h4 className="font-bold text-lg">{service.name}</h4>
-            <div className="flex items-center gap-2 mt-1">
-              <span className="text-xs font-mono bg-secondary px-2 py-0.5 rounded">
-                Port: {service.port}
-              </span>
-              <span className="text-xs text-muted-foreground">
-                Internal: {service.internal_port}
-              </span>
-            </div>
-            <p className="text-xs text-muted-foreground mt-2 leading-relaxed">
-              Map one or more custom domains. HTTPS is issued automatically via Let&apos;s Encrypt.
-            </p>
-            {service.domain && (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="mt-3 h-8 text-xs"
-                onClick={handleRetrySsl}
-                disabled={retrying}
-              >
-                {retrying ? (
-                  <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                ) : (
-                  <RefreshCw className="h-3 w-3 mr-1" />
-                )}
-                Retry SSL for service
-              </Button>
-            )}
-          </div>
-        </div>
-
-        {/* Domain Editor */}
-        <div className="flex-1 space-y-4">
-          <div className="flex items-center justify-between">
-            <label className="text-sm font-bold text-purple-500 uppercase tracking-wider">
-              Active Domains
-            </label>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleAddRow}
-              className="h-7 text-xs gap-1 text-purple-500 hover:text-purple-600 hover:bg-purple-500/10"
-            >
-              <Plus className="h-3 w-3" /> Add Domain
-            </Button>
-          </div>
-
-          <div className="space-y-3">
-            {domains.length === 0 && (
-              <div className="text-sm text-muted-foreground italic p-3 border border-dashed rounded-lg text-center bg-background/50">
-                No domains configured. Click "Add Domain" to start.
-              </div>
-            )}
-
-            {domains.map((domain, idx) => (
-              <div
-                key={idx}
-                className="space-y-1.5 animate-in fade-in slide-in-from-left-2 duration-300"
-              >
-                <div className="flex gap-2">
-                  <div className="relative flex-1 group">
-                    <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
-                      <span className="text-muted-foreground text-sm font-medium group-focus-within:text-foreground">
-                        https://
-                      </span>
-                    </div>
-                    <input
-                      type="text"
-                      value={domain}
-                      onChange={(e) => handleChange(idx, e.target.value)}
-                      placeholder="app.example.com"
-                      className="flex h-10 w-full rounded-lg border border-input bg-background pl-[4.5rem] pr-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-purple-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 transition-all font-mono"
-                    />
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => handleRemoveRow(idx)}
-                    className="h-10 w-10 text-muted-foreground hover:text-red-500 hover:bg-red-500/10 rounded-lg shrink-0"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-                {domain.trim() && (
-                  <SslStatusBadge ssl={sslMap[domain.trim().toLowerCase()] || sslMap[domain.trim()]} />
-                )}
-              </div>
-            ))}
-            <p className="text-xs text-muted-foreground">
-              Each row is an exact hostname. Add both example.com and www.example.com only
-              if both have DNS records and should serve this service.
-            </p>
-          </div>
-
-          <div className="flex justify-end pt-2">
-            <Button
-              onClick={handleSave}
-              disabled={loading}
-              className="bg-purple-600 hover:bg-purple-700 text-white shadow-lg shadow-purple-500/20 font-bold"
-            >
-              {loading && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-              Save Changes
-            </Button>
-          </div>
-        </div>
-      </div>
-    </Card>
-  );
-}
 
 export default function ProjectDetail() {
   const params = useParams();
@@ -2191,126 +1946,34 @@ export default function ProjectDetail() {
             value="domains"
             className="animate-in fade-in slide-in-from-bottom-2 duration-400"
           >
-            <div className="max-w-4xl mx-auto space-y-8">
-              {/* DNS Guide Section */}
-              <Card className="p-6 border-cyan-500/20 bg-cyan-500/5">
-                <div className="flex flex-col sm:flex-row items-start gap-3 sm:gap-4">
-                  <div className="p-2 bg-cyan-500/10 rounded-lg shrink-0">
-                    <Info className="h-5 w-5 text-cyan-500" />
-                  </div>
-                  <div className="space-y-4 flex-1 min-w-0 w-full">
-                    <div>
-                      <h3 className="text-lg font-bold text-foreground">
-                        DNS Configuration Guide
-                      </h3>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        Configure your DNS records to point to your deployment
-                        server. Support for Cloudflare (Full/Strict) SSL is
-                        recommended.
-                      </p>
-                    </div>
+            <div className="mx-auto max-w-4xl space-y-6">
+              <DnsGuideCard serverIP={serverIP} />
 
-                    <div className="grid md:grid-cols-2 gap-6">
-                      <div className="bg-background/50 p-4 rounded-xl border border-border/50">
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                            Server IP (A Record)
-                          </span>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-6 w-6 hover:bg-background"
-                            onClick={() => {
-                              copyToClipboard(serverIP);
-                              toast.success("IP copied to clipboard");
-                            }}
-                          >
-                            <Copy className="h-3 w-3" />
-                          </Button>
-                        </div>
-                        <code className="text-xl font-mono font-bold text-cyan-500 block">
-                          {serverIP}
-                        </code>
-                        <p className="text-[10px] text-muted-foreground mt-2">
-                          Target for all <strong>A Records</strong>.
-                        </p>
-                      </div>
-
-                      <div className="space-y-2 text-sm overflow-x-auto">
-                        <div className="flex flex-col sm:grid sm:grid-cols-[80px_1fr_auto_1fr] gap-1 sm:gap-2 sm:items-center p-2 rounded-lg hover:bg-white/5 transition-colors group">
-                          <span className="font-bold text-muted-foreground group-hover:text-cyan-400 transition-colors">
-                            Root
-                          </span>
-                          <span className="font-mono text-sm truncate">
-                            example.com
-                          </span>
-                          <span className="hidden sm:block">
-                            <ArrowRight className="h-4 w-4 text-muted-foreground/50" />
-                          </span>
-                          <span className="font-mono bg-secondary px-2 py-1 rounded-md text-xs text-center sm:text-left border border-white/5 w-fit">
-                            A Record (@)
-                          </span>
-                        </div>
-                        <div className="flex flex-col sm:grid sm:grid-cols-[80px_1fr_auto_1fr] gap-1 sm:gap-2 sm:items-center p-2 rounded-lg hover:bg-white/5 transition-colors group">
-                          <span className="font-bold text-muted-foreground group-hover:text-cyan-400 transition-colors">
-                            Subdomain
-                          </span>
-                          <span className="font-mono text-sm truncate">
-                            app.example.com
-                          </span>
-                          <span className="hidden sm:block">
-                            <ArrowRight className="h-4 w-4 text-muted-foreground/50" />
-                          </span>
-                          <span className="font-mono bg-secondary px-2 py-1 rounded-md text-xs text-center sm:text-left border border-white/5 w-fit">
-                            A Record (app)
-                          </span>
-                        </div>
-                        <div className="flex flex-col sm:grid sm:grid-cols-[80px_1fr_auto_1fr] gap-1 sm:gap-2 sm:items-center p-2 rounded-lg hover:bg-white/5 transition-colors group">
-                          <span className="font-bold text-muted-foreground group-hover:text-cyan-400 transition-colors">
-                            WWW
-                          </span>
-                          <span className="font-mono text-sm truncate">
-                            www.example.com
-                          </span>
-                          <span className="hidden sm:block">
-                            <ArrowRight className="h-4 w-4 text-muted-foreground/50" />
-                          </span>
-                          <span className="font-mono bg-secondary px-2 py-1 rounded-md text-xs text-center sm:text-left border border-white/5 w-fit">
-                            CNAME (@)
-                          </span>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2 mt-2 pt-2 border-t border-border/30 text-xs text-emerald-500 font-medium">
-                          <Lock className="h-3 w-3" />
-                          After SSL shows Active: Cloudflare{" "}
-                          <strong>Full (strict)</strong> (not Flexible). DNS A
-                          must point at this server for Let&apos;s Encrypt.
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </Card>
-
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-xl font-bold flex items-center gap-2">
-                    <Globe className="h-5 w-5 text-purple-500" />
-                    Service Domains
+              <div className="space-y-3">
+                <div>
+                  <h3 className="flex items-center gap-2 text-lg font-bold sm:text-xl">
+                    <Globe className="h-5 w-5 text-brand" />
+                    Service domains
                   </h3>
+                  <p className="mt-1 text-xs text-muted-foreground sm:text-sm">
+                    Adding a domain saves it immediately, wires up the reverse proxy and
+                    requests a certificate. Progress and failures show up per domain.
+                  </p>
                 </div>
 
                 <div className="grid gap-4">
                   {services.map((svc) => (
-                    <ServiceDomainManager
+                    <ServiceDomainCard
                       key={svc.id}
                       service={svc}
                       projectId={projectId}
+                      serverIP={serverIP}
                       onUpdate={fetchProject}
                     />
                   ))}
 
                   {services.length === 0 && (
-                    <div className="text-center py-12 text-muted-foreground bg-secondary/20 rounded-xl border border-dashed border-border">
+                    <div className="rounded-xl border border-dashed border-border bg-secondary/20 py-12 text-center text-muted-foreground">
                       No services found for this project.
                     </div>
                   )}
