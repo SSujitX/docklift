@@ -22,7 +22,7 @@ import { toast } from "sonner";
 import type { SslInfo } from "@/components/SslStatusBadge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { getAuthHeaders } from "@/lib/auth";
+import { authFetch } from "@/lib/auth";
 import { dnsRecordHint, normalizeDomainInput } from "@/lib/domain";
 import type { DomainDnsCheck, Service, SslEvent } from "@/lib/types";
 import { API_URL, cn, copyToClipboard } from "@/lib/utils";
@@ -154,13 +154,25 @@ export function ServiceDomainCard({
   serverIP: string;
   onUpdate: () => void;
 }) {
-  const domains = useMemo(() => splitDomains(service.domain), [service.domain]);
+  const propDomains = useMemo(() => splitDomains(service.domain), [service.domain]);
+  const [domains, setDomains] = useState<string[]>(propDomains);
+  const domainsRef = useRef(propDomains);
+  const mutationQueue = useRef(Promise.resolve());
+  const [busy, setBusy] = useState<BusyAction | null>(null);
 
+  useEffect(() => {
+    domainsRef.current = domains;
+  }, [domains]);
+
+  useEffect(() => {
+    if (busy === null) {
+      setDomains(propDomains);
+    }
+  }, [propDomains, busy]);
   const [input, setInput] = useState("");
   const [sslMap, setSslMap] = useState<Record<string, SslInfo>>({});
   const [events, setEvents] = useState<SslEvent[]>([]);
   const [dnsChecks, setDnsChecks] = useState<Record<string, DomainDnsCheck>>({});
-  const [busy, setBusy] = useState<BusyAction | null>(null);
   const [checking, setChecking] = useState<string | null>(null);
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
   const [pollExpired, setPollExpired] = useState(false);
@@ -179,7 +191,7 @@ export function ServiceDomainCard({
       return;
     }
     try {
-      const res = await fetch(`${serviceEndpoint}/ssl`, { headers: getAuthHeaders() });
+      const res = await authFetch(`${serviceEndpoint}/ssl`);
       if (!res.ok) return;
       const data = await res.json();
       setSslMap(data.ssl || {});
@@ -220,29 +232,44 @@ export function ServiceDomainCard({
     if (el) el.scrollTop = el.scrollHeight;
   }, [events]);
 
-  const persist = async (next: string[], action: BusyAction) => {
-    setBusy(action);
-    setPollExpired(false);
-    try {
-      const res = await fetch(serviceEndpoint, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-        body: JSON.stringify({ domain: next.join(",") }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || "Failed to save domains");
+  const persist = (next: string[], action: BusyAction): Promise<boolean> => {
+    const run = async (): Promise<boolean> => {
+      const previous = domainsRef.current;
+      setDomains(next);
+      setBusy(action);
+      setPollExpired(false);
+      try {
+        const res = await authFetch(serviceEndpoint, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ domain: next.join(",") }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "Failed to save domains");
 
-      if (data.ssl) setSslMap(data.ssl);
-      if (data.events) setEvents(data.events);
-      onUpdate();
-      return true;
-    } catch (err: any) {
-      toast.error(err?.message || "Failed to save domains");
-      return false;
-    } finally {
-      setBusy(null);
-      void fetchSsl(true);
-    }
+        if (typeof data.domain === "string") {
+          setDomains(splitDomains(data.domain));
+        }
+        if (data.ssl) setSslMap(data.ssl);
+        if (data.events) setEvents(data.events);
+        onUpdate();
+        return true;
+      } catch (err: any) {
+        setDomains(previous);
+        toast.error(err?.message || "Failed to save domains");
+        return false;
+      } finally {
+        setBusy(null);
+        void fetchSsl(true);
+      }
+    };
+
+    const result = mutationQueue.current.then(run);
+    mutationQueue.current = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
   };
 
   const handleAdd = async (e: React.FormEvent) => {
@@ -276,9 +303,8 @@ export function ServiceDomainCard({
     setBusy("retry");
     setPollExpired(false);
     try {
-      const res = await fetch(`${serviceEndpoint}/ssl/retry`, {
+      const res = await authFetch(`${serviceEndpoint}/ssl/retry`, {
         method: "POST",
-        headers: getAuthHeaders(),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "SSL retry failed");
@@ -296,9 +322,9 @@ export function ServiceDomainCard({
   const runDnsCheck = async (hostnames: string[]) => {
     setChecking(hostnames[0] ?? null);
     try {
-      const res = await fetch(`${serviceEndpoint}/dns-check`, {
+      const res = await authFetch(`${serviceEndpoint}/dns-check`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ domains: hostnames }),
       });
       const data = await res.json().catch(() => ({}));
