@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { EnvVariable } from "@/lib/types";
 import { API_URL } from "@/lib/utils";
-import { getAuthHeaders } from "@/lib/auth";
+import { authFetch } from "@/lib/auth";
 import { Plus, Trash2, Eye, EyeOff, Key, Loader2, RotateCw, Shield, FlaskConical, Globe, AlertCircle, Info } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -31,9 +31,7 @@ export function EnvVarsManager({ projectId }: EnvVarsManagerProps) {
 
   const fetchEnvVars = async () => {
     try {
-      const res = await fetch(`${API_URL}/api/projects/${projectId}/env`, {
-        headers: getAuthHeaders(),
-      });
+      const res = await authFetch(`${API_URL}/api/projects/${projectId}/env`);
       if (res.ok) {
         setEnvVars(await res.json());
       }
@@ -56,9 +54,9 @@ export function EnvVarsManager({ projectId }: EnvVarsManagerProps) {
 
     setAdding(true);
     try {
-      const res = await fetch(`${API_URL}/api/projects/${projectId}/env`, {
+      const res = await authFetch(`${API_URL}/api/projects/${projectId}/env`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           key: newKey.trim(),
           value: newValue.trim(),
@@ -90,9 +88,9 @@ export function EnvVarsManager({ projectId }: EnvVarsManagerProps) {
 
     setBulkAdding(true);
     try {
-      const res = await fetch(`${API_URL}/api/projects/${projectId}/env/bulk`, {
+      const res = await authFetch(`${API_URL}/api/projects/${projectId}/env/bulk`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           content: bulkContent,
           is_build_arg: isBuildArg,
@@ -119,9 +117,8 @@ export function EnvVarsManager({ projectId }: EnvVarsManagerProps) {
 
   const handleDelete = async (envId: string, key: string) => {
     try {
-      const res = await fetch(`${API_URL}/api/projects/${projectId}/env/${envId}`, {
+      const res = await authFetch(`${API_URL}/api/projects/${projectId}/env/${envId}`, {
         method: "DELETE",
-        headers: getAuthHeaders(),
       });
       if (res.ok) {
         fetchEnvVars();
