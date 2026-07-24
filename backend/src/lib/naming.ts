@@ -5,6 +5,8 @@
  * Container:             dl_<slug>_<8charId>_<svc> → dl_python-smoke_53b01966_app
  */
 
+import { createHash } from 'crypto';
+
 const SLUG_MAX = 24;
 const SERVICE_MAX = 20;
 
@@ -46,4 +48,19 @@ export function composeProjectAliases(projectName: string, projectId: string): s
   const current = composeProjectName(projectName, projectId);
   const aliases = [current, projectId];
   return [...new Set(aliases)];
+}
+
+/** Short stable suffix from a repo-relative path (e.g. for deduping scanned service names). */
+export function shortPathHash(relativePath: string): string {
+  return createHash('sha256').update(relativePath).digest('hex').slice(0, 4);
+}
+
+/** Compose top-level volume key for a service persistent mount. */
+export function storageVolumeComposeKey(
+  serviceName: string,
+  mountIndex: number,
+  volumeDockerName: string,
+): string {
+  const svc = dockerSlug(serviceName, SERVICE_MAX);
+  return `storage_${svc}_${mountIndex}_${shortPathHash(volumeDockerName)}`;
 }
