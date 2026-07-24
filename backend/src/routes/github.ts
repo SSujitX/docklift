@@ -190,36 +190,25 @@ router.post('/manifest', async (req: Request, res: Response) => {
     }
 
     if (returnUrl) {
-      await saveSetting('github_return_url', returnUrl);
+      await saveSetting('github_return_url', sanitizeGithubReturnUrl(returnUrl, req));
     }
     
     // Sanitize app name
     const sanitizedName = appName.toLowerCase().replace(/[^a-z0-9-]/g, '-').slice(0, 34);
-    
-    const host = (req.headers['x-forwarded-host'] || req.headers.host || 'localhost:8000') as string;
-    const hostWithoutPort = host.split(':')[0];
-    const isLocalhost = hostWithoutPort === 'localhost' || hostWithoutPort === '127.0.0.1';
-    const isIPAddress = /^(\d{1,3}\.){3}\d{1,3}$/.test(hostWithoutPort);
-    
-    const forwardedProto = req.headers['x-forwarded-proto'] as string | undefined;
-    let protocol: string;
-    
-    if (!isLocalhost && !isIPAddress) {
-      protocol = 'https';
-    } else if (forwardedProto) {
-      protocol = Array.isArray(forwardedProto) ? forwardedProto[0] : forwardedProto;
-    } else {
-      protocol = 'http';
-    }
-    const serverUrl = `${protocol}://${host}`;
+
+    const serverUrl = resolveGithubPublicBaseUrl(req);
     const state = await createGithubSetupState();
-    
-    // Build the manifest — CSRF state only on OAuth-style callback URLs (not permanent setup_url)
+    setGithubStateCookie(res, state, req);
+
+    // GitHub rejects redirect_url values that include a query string
+    // ("redirect_url must be a valid URL"). Keep callbacks clean; CSRF goes on
+    // the form action (?state=) per GitHub's manifest docs, plus HttpOnly cookie.
+    const callbackPath = '/api/github/manifest/callback';
     const manifest = {
       name: `docklift-${sanitizedName}`,
       url: 'https://github.com/SSujitX/docklift',
-      redirect_url: `${serverUrl}/api/github/manifest/callback?state=${state}`,
-      callback_urls: [`${serverUrl}/api/github/manifest/callback?state=${state}`],
+      redirect_url: `${serverUrl}${callbackPath}`,
+      callback_urls: [`${serverUrl}${callbackPath}`],
       setup_url: `${serverUrl}/api/github/setup`,
       hook_attributes: {
         url: `${serverUrl}/api/github/webhook`,
@@ -232,14 +221,14 @@ router.post('/manifest', async (req: Request, res: Response) => {
         metadata: 'read'
       }
     };
-    
+
     // Store the app name for later
     await saveSetting('github_pending_app_name', sanitizedName);
-    
+
     // Return data for frontend to create form and submit
     res.json({
       manifest: JSON.stringify(manifest),
-      action: 'https://github.com/settings/apps/new',
+      action: `https://github.com/settings/apps/new?state=${encodeURIComponent(state)}`,
       serverUrl
     });
   } catch (error) {
@@ -252,9 +241,8 @@ router.post('/manifest', async (req: Request, res: Response) => {
 router.get('/manifest/callback', async (req: Request, res: Response) => {
   try {
     const code = req.query.code as string;
-    const state = req.query.state as string;
 
-    if (!(await verifyGithubSetupState(state))) {
+    if (!(await requireGithubSetupState(req))) {
       return res.redirect(`${config.frontendUrl}/settings?github_error=invalid_state`);
     }
     
@@ -262,7 +250,7 @@ router.get('/manifest/callback', async (req: Request, res: Response) => {
       // This might be a setup callback without code
       const installationId = req.query.installation_id as string;
       if (installationId) {
-        return res.redirect(`/api/github/setup?installation_id=${encodeURIComponent(installationId)}&state=${encodeURIComponent(state)}`);
+        return res.redirect(`/api/github/setup?installation_id=${encodeURIComponent(installationId)}`);
       }
       return res.redirect(`${config.frontendUrl}/settings?github_error=no_code`);
     }
@@ -420,6 +408,48 @@ router.post('/check-installation', async (req: Request, res: Response) => {
 function isLoopbackHost(hostname: string): boolean {
   const h = hostname.toLowerCase().replace(/^\[|\]$/g, '');
   return h === 'localhost' || h === '127.0.0.1' || h === '::1';
+}
+
+/** Public origin GitHub should call back to (no path/query/hash). */
+function resolveGithubPublicBaseUrl(req: Request): string {
+  const fallback = (() => {
+    try {
+      return new URL(config.frontendUrl).origin;
+    } catch {
+      return 'http://127.0.0.1:8080';
+    }
+  })();
+
+  const rawHost = (req.headers['x-forwarded-host'] || req.headers.host || '')
+    .toString()
+    .split(',')[0]
+    .trim()
+    .replace(/[/?#].*$/, '');
+  const rawProto = (req.headers['x-forwarded-proto'] || req.protocol || 'http')
+    .toString()
+    .split(',')[0]
+    .trim()
+    .toLowerCase();
+
+  if (!rawHost) return fallback;
+
+  let hostname = rawHost;
+  try {
+    // URL() needs a scheme to parse Host:port / [ipv6]:port reliably
+    hostname = new URL(`http://${rawHost}`).hostname;
+  } catch {
+    return fallback;
+  }
+
+  const isLocal = isLoopbackHost(hostname) || /^(\d{1,3}\.){3}\d{1,3}$/.test(hostname);
+  const protocol = !isLocal ? 'https' : rawProto === 'https' ? 'https' : 'http';
+
+  try {
+    const origin = new URL(`${protocol}://${rawHost}`).origin;
+    return origin && origin !== 'null' ? origin : fallback;
+  } catch {
+    return fallback;
+  }
 }
 
 /** Origins we may redirect back to after GitHub install (avoid open redirects). */
