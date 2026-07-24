@@ -51,7 +51,7 @@ type(scope): description
 | `BREAKING CHANGE` (type, scope, or subject) | **major** |
 | `*force minor*` in subject | minor |
 | `*force major*` in subject | major |
-| `*force patch*` in subject | patch |
+| `*force patch*` / `*force release*` in subject | patch |
 | `*skip release*` in subject | no release |
 
 > **Note:** ALL commit types trigger a **patch** release. This is intentional — Docklift treats every commit type as release-worthy.
