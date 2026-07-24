@@ -5,6 +5,7 @@ export type SslInfo = {
   status: "missing" | "pending" | "active" | "expiring" | "expired" | "failed";
   expiresAt?: string | null;
   error?: string | null;
+  diagnosticCommand?: string | null;
 };
 
 const STYLES: Record<SslInfo["status"], string> = {
@@ -72,9 +73,17 @@ export function SslStatusBadge({
           )}
       </div>
       {status === "failed" && ssl?.error && (
-        <p className="text-[11px] text-red-500/90 line-clamp-2 break-all" title={ssl.error}>
-          {ssl.error}
-        </p>
+        <div className="space-y-1.5">
+          <p className="text-xs text-red-500/90 break-words">{ssl.error}</p>
+          {ssl.diagnosticCommand && (
+            <div className="space-y-1">
+              <p className="text-[11px] text-muted-foreground">Full error on server:</p>
+              <code className="block max-w-full overflow-x-auto rounded bg-secondary px-2 py-1.5 text-[11px] text-foreground select-all">
+                {ssl.diagnosticCommand}
+              </code>
+            </div>
+          )}
+        </div>
       )}
     </div>
   );

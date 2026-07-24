@@ -19,11 +19,51 @@ export interface CertificateStatus {
   domain: string;
   expiresAt: string | null;
   error: string | null;
+  diagnosticCommand: string | null;
   certPath: string | null;
 }
 
 const EXPIRING_DAYS = 21;
 const STATUS_KEY_PREFIX = 'ssl_meta_';
+
+function certbotLogCommand(): string {
+  return `sudo docker exec ${config.certbotContainer} tail -n 100 /var/log/letsencrypt/letsencrypt.log`;
+}
+
+/** Turn Certbot's verbose output into the first useful, user-facing cause. */
+export function summarizeCertbotError(stdout: string, stderr: string): string {
+  const output = [stderr, stdout]
+    .filter(Boolean)
+    .join('\n')
+    .replace(/\u001b\[[0-9;]*m/g, '')
+    .replace(/\r/g, '');
+  const lines = output.split('\n').map((line) => line.trim());
+
+  // HTTP-01 failures are emitted as Domain / Type / Detail blocks. Prefer the
+  // CA's detail (NXDOMAIN, wrong IP, timeout, invalid response) over Certbot's
+  // generic "Some challenges have failed" footer.
+  for (let i = 0; i < lines.length; i += 1) {
+    const domain = /^Domain:\s*(.+)$/i.exec(lines[i])?.[1]?.trim();
+    if (!domain) continue;
+    for (let j = i + 1; j < Math.min(lines.length, i + 8); j += 1) {
+      const detail = /^Detail:\s*(.+)$/i.exec(lines[j])?.[1]?.trim();
+      if (detail) return `${domain}: ${detail}`.slice(0, 700);
+      if (/^Domain:/i.test(lines[j])) break;
+    }
+  }
+
+  const boilerplate = /^(saving debug log|ask for help|search for solutions|see the logfile|some challenges have failed|certbot failed to authenticate|the certificate authority reported|an unexpected error occurred|hint:)/i;
+  const useful = lines.find(
+    (line) =>
+      line &&
+      !boilerplate.test(line) &&
+      /(error|failed|invalid|unauthorized|forbidden|nxdomain|timeout|timed out|connection|refused|rate limit|no such|not found|permission denied)/i.test(line)
+  );
+  if (useful) return useful.slice(0, 700);
+
+  return lines.find((line) => line && !boilerplate.test(line))?.slice(0, 700)
+    || 'Certificate issuance failed for an unknown reason';
+}
 
 function liveDir(primaryDomain: string): string {
   return path.join(config.letsencryptPath, 'live', primaryDomain);
@@ -165,6 +205,7 @@ export async function getCertificateStatus(hostname: string): Promise<Certificat
         domain,
         expiresAt: null,
         error: meta?.error || 'Certificate file unreadable',
+        diagnosticCommand: null,
         certPath: fullchainPath(certName),
       };
     }
@@ -175,6 +216,7 @@ export async function getCertificateStatus(hostname: string): Promise<Certificat
         domain,
         expiresAt: expires.toISOString(),
         error: null,
+        diagnosticCommand: null,
         certPath: fullchainPath(certName),
       };
     }
@@ -184,6 +226,7 @@ export async function getCertificateStatus(hostname: string): Promise<Certificat
         domain,
         expiresAt: expires.toISOString(),
         error: null,
+        diagnosticCommand: null,
         certPath: fullchainPath(certName),
       };
     }
@@ -192,6 +235,7 @@ export async function getCertificateStatus(hostname: string): Promise<Certificat
       domain,
       expiresAt: expires.toISOString(),
       error: null,
+      diagnosticCommand: null,
       certPath: fullchainPath(certName),
     };
   }
@@ -202,6 +246,7 @@ export async function getCertificateStatus(hostname: string): Promise<Certificat
       domain,
       expiresAt: null,
       error: null,
+      diagnosticCommand: null,
       certPath: null,
     };
   }
@@ -212,6 +257,7 @@ export async function getCertificateStatus(hostname: string): Promise<Certificat
       domain,
       expiresAt: null,
       error: meta.error,
+      diagnosticCommand: certbotLogCommand(),
       certPath: null,
     };
   }
@@ -221,6 +267,7 @@ export async function getCertificateStatus(hostname: string): Promise<Certificat
     domain,
     expiresAt: null,
     error: null,
+    diagnosticCommand: null,
     certPath: null,
   };
 }
@@ -326,9 +373,7 @@ export async function issueCertificate(
   const result = await runDockerExec(args);
 
   if (result.code !== 0 || !certificateFilesExist(primary)) {
-    const err =
-      (result.stderr || result.stdout || 'certbot failed').trim().slice(0, 800) ||
-      'Certificate issuance failed';
+    const err = summarizeCertbotError(result.stdout, result.stderr);
     console.error(`[SSL] Issue failed for ${primary}:`, err);
     await setMeta(primary, { status: 'failed', error: err });
     return getCertificateStatus(primary);
