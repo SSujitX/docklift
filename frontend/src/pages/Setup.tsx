@@ -8,6 +8,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Container, Eye, EyeOff, Loader2, Check, AlertCircle, Upload, RotateCcw, FileUp, ArrowLeft } from "lucide-react";
 import { API_URL } from "@/lib/utils";
+import { consumeProgressStream } from "@/lib/streamProgress";
 
 export default function SetupPage() {
   const navigate = useNavigate();
@@ -140,18 +141,13 @@ export default function SetupPage() {
         body: upload,
       });
 
-      const reader = res.body?.getReader();
-      const decoder = new TextDecoder();
+      const result = await consumeProgressStream(res, (line) => {
+        if (line.trim()) setRestoreProgress((prev) => [...prev, line]);
+      });
 
-      if (reader) {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          const text = decoder.decode(value);
-          const lines = text.split('\n').filter(line => line.trim());
-          setRestoreProgress(prev => [...prev, ...lines]);
-        }
+      if (!result.ok) {
+        setError(result.error || "Restore failed");
+        return;
       }
 
       setRestoreComplete(true);
