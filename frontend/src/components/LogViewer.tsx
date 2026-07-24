@@ -78,9 +78,10 @@ function AnsiLine({ text, highlight }: { text: string; highlight?: string }) {
     } else if (part) {
       if (highlight && highlight.length > 0) {
         const regex = new RegExp(`(${highlight.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "gi");
+        const needle = highlight.toLowerCase();
         const segments = part.split(regex);
         segments.forEach((seg, j) => {
-          if (regex.test(seg)) {
+          if (seg && seg.toLowerCase() === needle) {
             elements.push(
               <mark key={`${i}-${j}`} className="bg-yellow-500/30 text-yellow-200 rounded-[2px] px-0.5">{seg}</mark>
             );
@@ -218,8 +219,8 @@ export function LogViewer({
   // Search match count
   const matchCount = useMemo(() => {
     if (!searchQuery) return 0;
-    const regex = new RegExp(searchQuery.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
-    return logs.filter((l) => regex.test(l)).length;
+    const q = searchQuery.toLowerCase();
+    return logs.filter((l) => l.toLowerCase().includes(q)).length;
   }, [logs, searchQuery]);
 
   const handleDownload = useCallback(() => {
