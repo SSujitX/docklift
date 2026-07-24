@@ -2,8 +2,8 @@
 
 End-to-end reference for install, day-to-day ops, logs, nginx, password reset, and versioning.
 
-**Compose services** → `backend` · `frontend` · `nginx` · `nginx-proxy`  
-**Container names** → `docklift-backend` · `docklift-frontend` · `docklift-nginx` · `docklift-nginx-proxy`  
+**Compose services** → `backend` · `frontend` · `nginx` · `nginx-proxy` · `certbot`  
+**Container names** → `docklift-backend` · `docklift-frontend` · `docklift-nginx` · `docklift-nginx-proxy` · `docklift-certbot`  
 **App containers** → `dl_<project-slug>_<id>_<service>` (e.g. `dl_python-smoke_53b01966_app`)  
 **Dashboard** → `http://SERVER_IP:8080` · **App publish ports** → `5500–5600`  
 **Fresh setup** → copy **bootstrap secret** from `docker logs docklift-backend` (or `data/.bootstrap-secret`) into the Setup page
