@@ -30,6 +30,8 @@ services:
       - DEPLOYMENTS_PATH=/deployments
       - NGINX_CONF_PATH=/nginx-conf
       - DOCKER_NETWORK=docklift_network
+      - BACKUP_PATH=/data/backups
+      - DATA_PATH=/app/data
       # App publish ports (5500+ avoids Windows Hyper-V reserved 3000–5000)
       - PORT_RANGE_START=${PORT_RANGE_START:-5500}
       - PORT_RANGE_END=${PORT_RANGE_END:-5600}
