@@ -5,7 +5,7 @@ import os from 'os';
 import path from 'path';
 import yaml from 'js-yaml';
 import { resolveProjectBuild } from './buildResolver.js';
-import { buildServiceImage } from './buildRunner.js';
+import { buildServiceImage, summarizeBuildFailure } from './buildRunner.js';
 import { generateRuntimeCompose } from './compose.js';
 
 function fixture(): string {
@@ -79,6 +79,16 @@ test('Protected host variables cannot be used as build variables', async () => {
     /reserved by DockLift/
   );
   fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('Stale npm lockfiles produce an actionable build error', () => {
+  const message = summarizeBuildFailure(
+    'docker',
+    'npm error `npm ci` can only install packages when your package.json and package-lock.json are in sync.',
+    1
+  );
+  assert.match(message, /Run "npm install"/);
+  assert.match(message, /commit the updated package-lock\.json/);
 });
 
 test('Runtime compose uses images and persistent named volumes without touching source compose', () => {

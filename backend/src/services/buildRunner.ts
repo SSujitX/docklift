@@ -14,6 +14,20 @@ interface BuildEnv {
   is_build_arg: boolean | null;
 }
 
+export function summarizeBuildFailure(command: string, output: string, code: number): string {
+  if (
+    /npm ci.*can only install packages|package\.json and package-lock\.json.*in sync/is.test(
+      output
+    )
+  ) {
+    return 'package.json and package-lock.json are out of sync. Run "npm install" in the project, commit the updated package-lock.json, then redeploy.';
+  }
+  if (/frozen lockfile|lockfile.*outdated|lockfile.*not.*up.to.date/is.test(output)) {
+    return 'The dependency lockfile is out of sync with the project manifest. Regenerate and commit the lockfile with the project package manager, then redeploy.';
+  }
+  return `${command} exited with code ${code}`;
+}
+
 function run(
   command: string,
   args: string[],
@@ -21,18 +35,27 @@ function run(
   writeLog: (text: string) => void
 ): Promise<void> {
   return new Promise((resolve, reject) => {
+    let output = '';
+    const capture = (chunk: unknown) => {
+      const text = String(chunk);
+      output = `${output}${text}`.slice(-128 * 1024);
+      writeLog(text);
+    };
     const child = spawn(command, args, {
       cwd: opts.cwd,
       env: opts.env || process.env,
       shell: false,
     });
     opts.onProcess?.(child);
-    child.stdout.on('data', (chunk) => writeLog(chunk.toString()));
-    child.stderr.on('data', (chunk) => writeLog(chunk.toString()));
+    child.stdout.on('data', capture);
+    child.stderr.on('data', capture);
     child.on('error', reject);
     child.on('close', (code) => {
       if (code === 0) resolve();
-      else reject(new Error(`${command} exited with code ${code ?? 1}`));
+      else {
+        const exitCode = code ?? 1;
+        reject(new Error(summarizeBuildFailure(command, output, exitCode)));
+      }
     });
   });
 }
