@@ -4,6 +4,7 @@ import { useState, useCallback } from "react";
 import Editor from "@monaco-editor/react";
 import { Button } from "./ui/button";
 import { API_URL } from "@/lib/utils";
+import { authFetch } from "@/lib/auth";
 import { Save, Loader2, X, Code2, Sparkles } from "lucide-react";
 
 interface FileEditorProps {
@@ -21,11 +22,15 @@ export function FileEditor({ projectId, filename, content, onClose, onSave }: Fi
   const handleSave = async () => {
     setSaving(true);
     try {
-      await fetch(`${API_URL}/api/files/${projectId}/content?path=${encodeURIComponent(filename)}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filename, content: value }),
-      });
+      const res = await authFetch(
+        `${API_URL}/api/files/${projectId}/content?path=${encodeURIComponent(filename)}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ filename, content: value }),
+        },
+      );
+      if (!res.ok) throw new Error("Save failed");
       onSave();
     } catch (error) {
       console.error(error);
