@@ -15,7 +15,7 @@ This skill provides instructions for developing the Docklift project, a self-hos
 ## Project Structure
 
 - **backend/**: Node.js Express API server.
-- **frontend/**: Next.js 16 React application.
+- **frontend/**: Vite + React + React Router dashboard.
 - **nginx-proxy/**: Reverse proxy configuration for deployed projects.
 - **data/**: SQLite database storage (mounted volume).
 - **deployments/**: Storage for project files (mounted volume).
@@ -32,13 +32,13 @@ This skill provides instructions for developing the Docklift project, a self-hos
     Open a terminal and run:
     ```bash
     cd backend
-    cp .env.example .env
+    # Ensure backend/.env exists for local (gitignored; JWT auto-generates if empty)
     bun install
     bun run db:generate
     bun run db:push
     bun run dev
     ```
-    The backend will start on `http://localhost:4000`.
+    The backend will start on `http://localhost:8000`.
 
 3.  **Frontend Setup:**
     Open a **new** terminal and run:
@@ -47,7 +47,7 @@ This skill provides instructions for developing the Docklift project, a self-hos
     bun install
     bun run dev
     ```
-    The frontend will start on `http://localhost:3000`.
+    The frontend will start on `http://localhost:3600` (see `frontend/.env`).
 
 ## Common Commands
 
@@ -57,8 +57,8 @@ This skill provides instructions for developing the Docklift project, a self-hos
 -   `bun run reset-password`: Reset the admin password.
 
 ### Frontend
--   `bun run build`: Create a production build of the Next.js app.
--   `bun run lint`: Run ESLint checks.
+-   `bun run build`: Create a production Vite build (`dist/`).
+-   `bun run preview`: Preview the production build.
 
 ### Docker (Infrastructure)
 -   `docker compose up -d`: Start the production-like environment (nginx, backend, frontend).

@@ -10,6 +10,16 @@ import { scanDockerfiles, generateCompose, validateDockerBuildArgs } from '../se
 import { pullRepo, getLastCommitMessage } from '../services/git.js';
 import { patchMiddlewareHosts, logMiddlewareBypassResult } from '../lib/middlewareBypass.js';
 import { updateServiceDomain } from '../services/nginx.js';
+import {
+  clearSslMeta,
+  getCertificateStatus,
+  type CertificateStatus,
+} from '../services/certs.js';
+import {
+  composeProjectName,
+  composeProjectAliases,
+  serviceContainerName,
+} from '../lib/naming.js';
 
 const router = Router();
 
@@ -174,16 +184,18 @@ async function runPostDeploymentPurge(): Promise<{ success: boolean; message: st
 
 // Allocate a port for the project
 async function allocatePort(projectId: string): Promise<number> {
-  // Find next available port starting from 3001
   const usedPorts = await prisma.port.findMany({
     where: { is_locked: true },
     select: { port: true },
   });
   const usedSet = new Set(usedPorts.map(p => p.port));
-  
-  let port = 3001;
+
+  let port = config.portRangeStart;
   while (usedSet.has(port)) {
     port++;
+    if (port > config.portRangeEnd) {
+      throw new Error(`No free ports in range ${config.portRangeStart}-${config.portRangeEnd}`);
+    }
   }
   
   // Use upsert to handle if the port record already exists but is unlocked
@@ -232,6 +244,71 @@ router.get('/:projectId/services', async (req: Request, res: Response) => {
   }
 });
 
+async function sslMapForDomainString(domainStr: string | null | undefined): Promise<Record<string, CertificateStatus>> {
+  const domains = (domainStr || '')
+    .split(',')
+    .map((d) => d.trim().toLowerCase())
+    .filter(Boolean);
+  const ssl: Record<string, CertificateStatus> = {};
+  for (const d of domains) {
+    // Status is keyed by primary LE name (first domain in group); each listed domain checked individually
+    ssl[d] = await getCertificateStatus(d);
+  }
+  return ssl;
+}
+
+// GET service SSL status for each configured domain
+router.get('/:projectId/services/:serviceId/ssl', async (req: Request, res: Response) => {
+  try {
+    const { projectId, serviceId } = req.params;
+    const service = await prisma.service.findFirst({
+      where: { id: serviceId, project_id: projectId },
+    });
+    if (!service) {
+      return res.status(404).json({ error: 'Service not found' });
+    }
+    const ssl = await sslMapForDomainString(service.domain);
+    res.json({ ssl });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to get SSL status' });
+  }
+});
+
+// Retry Let's Encrypt for all domains on a service
+router.post('/:projectId/services/:serviceId/ssl/retry', async (req: Request, res: Response) => {
+  try {
+    const { projectId, serviceId } = req.params;
+    const service = await prisma.service.findFirst({
+      where: { id: serviceId, project_id: projectId },
+    });
+    if (!service) {
+      return res.status(404).json({ error: 'Service not found' });
+    }
+    if (!service.domain || !service.container_name) {
+      return res.status(400).json({ error: 'Service has no domain or is not deployed' });
+    }
+
+    const primaries = service.domain
+      .split(',')
+      .map((d) => d.trim().toLowerCase())
+      .filter(Boolean);
+    for (const d of primaries) {
+      await clearSslMeta(d);
+    }
+
+    await updateServiceDomain(
+      { ...service, status: service.status || 'running' },
+      { issueSsl: true, forceSsl: true }
+    );
+    const ssl = await sslMapForDomainString(service.domain);
+    res.json({ success: true, ssl });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'SSL retry failed' });
+  }
+});
+
 // Update service domain
 router.put('/:projectId/services/:serviceId', async (req: Request, res: Response) => {
   try {
@@ -258,10 +335,11 @@ router.put('/:projectId/services/:serviceId', async (req: Request, res: Response
     });
     
     if (service && service.container_name) {
-      await updateServiceDomain(service);
+      await updateServiceDomain(service, { issueSsl: true });
     }
 
-    res.json({ success: true });
+    const ssl = await sslMapForDomainString(service?.domain);
+    res.json({ success: true, ssl });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Failed to update service' });
@@ -282,6 +360,8 @@ router.post('/:projectId/deploy', async (req: Request, res: Response) => {
     if (!project) {
       return res.status(404).json({ error: 'Project not found' });
     }
+
+    const composeProject = composeProjectName(project.name, projectId);
     
     const projectPath = path.join(config.deploymentsPath, projectId);
     
@@ -405,10 +485,7 @@ router.post('/:projectId/deploy', async (req: Request, res: Response) => {
       
       if (!service) {
         const port = await allocatePort(projectId);
-        const shortId = projectId.substring(0, 8);
-        // Truncate service name if it's too long to stay under 64 char DNS limit
-        const sanitizedName = df.name.substring(0, 50); 
-        const containerName = `dl_${shortId}_${sanitizedName}`;
+        const containerName = serviceContainerName(project.name, projectId, df.name);
         
         // If project has a domain and this is the first service being created, assign it
         const shouldAssignProjectDomain = project.domain && !service && dockerfiles.indexOf(df) === 0;
@@ -426,14 +503,13 @@ router.post('/:projectId/deploy', async (req: Request, res: Response) => {
           },
         });
         writeLog(`     Assigned new service: ${df.name} (Port: ${port})${shouldAssignProjectDomain ? ` with domain: ${project.domain}` : ''}\n`);
+        writeLog(`     Container: ${containerName}\n`);
       } else {
-        // Migration: If existing service has long container name, shorten it
-        const shortId = projectId.substring(0, 8);
-        const sanitizedName = df.name.substring(0, 50);
-        const targetName = `dl_${shortId}_${sanitizedName}`;
+        // Migration: rename to slug-based container if needed
+        const targetName = serviceContainerName(project.name, projectId, df.name);
         
         if (service.container_name !== targetName) {
-           writeLog(`     🛠️ Migrating container name to shorter format...\n`);
+           writeLog(`     🛠️ Migrating container name → ${targetName}\n`);
            
            // Force remove the old container name to free up ports
            // SECURITY: Use spawnSync with argument array to prevent command injection
@@ -534,10 +610,22 @@ router.post('/:projectId/deploy', async (req: Request, res: Response) => {
     
     writeLog(`${'─'.repeat(40)}\n`);
     writeLog(`🚀 Starting containers...\n`);
+    writeLog(`   Compose project: ${composeProject}\n`);
     writeLog(`${'─'.repeat(40)}\n\n`);
+
+    // Tear down legacy UUID-named compose projects once (pre-slug naming)
+    for (const alias of composeProjectAliases(project.name, projectId)) {
+      if (alias === composeProject) continue;
+      spawnSync('docker', ['compose', '-p', alias, 'down', '--remove-orphans'], {
+        cwd: projectPath,
+        stdio: 'ignore',
+        shell: false,
+        timeout: 60000,
+      });
+    }
     
     // Run docker compose up — detached process group so cancel can signal plugin children
-    const dockerProcess = spawn('docker', ['compose', '-p', projectId, 'up', '-d', '--build'], {
+    const dockerProcess = spawn('docker', ['compose', '-p', composeProject, 'up', '-d', '--build'], {
       cwd: projectPath,
       shell: false,
       detached: process.platform !== 'win32',
@@ -681,6 +769,9 @@ router.post('/:projectId/deploy', async (req: Request, res: Response) => {
 router.post('/:projectId/stop', async (req: Request, res: Response) => {
   try {
     const { projectId } = req.params;
+    const project = await prisma.project.findUnique({ where: { id: projectId } });
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+    const composeProject = composeProjectName(project.name, projectId);
     const projectPath = path.join(config.deploymentsPath, projectId);
     
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
@@ -707,8 +798,19 @@ router.post('/:projectId/stop', async (req: Request, res: Response) => {
     });
 
     writeLog(`\n${'━'.repeat(50)}\n🛑 STOPPING PROJECT\n📅 ${timestamp}\n${'━'.repeat(50)}\n\n`);
+
+    // Also clear legacy UUID compose project if present
+    for (const alias of composeProjectAliases(project.name, projectId)) {
+      if (alias === composeProject) continue;
+      spawnSync('docker', ['compose', '-p', alias, 'down'], {
+        cwd: projectPath,
+        stdio: 'ignore',
+        shell: false,
+        timeout: 60000,
+      });
+    }
     
-    const dockerProcess = spawn('docker', ['compose', '-p', projectId, 'down'], {
+    const dockerProcess = spawn('docker', ['compose', '-p', composeProject, 'down'], {
       cwd: projectPath,
       shell: false,
     });
@@ -770,6 +872,9 @@ router.post('/:projectId/stop', async (req: Request, res: Response) => {
 router.post('/:projectId/restart', async (req: Request, res: Response) => {
   try {
     const { projectId } = req.params;
+    const project = await prisma.project.findUnique({ where: { id: projectId } });
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+    const composeProject = composeProjectName(project.name, projectId);
     const projectPath = path.join(config.deploymentsPath, projectId);
     
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
@@ -807,7 +912,7 @@ router.post('/:projectId/restart', async (req: Request, res: Response) => {
 
     writeLog(`\n${'━'.repeat(50)}\n🔄 RESTARTING PROJECT\n📅 ${timestamp}\n${'━'.repeat(50)}\n\n`);
     
-    const dockerProcess = spawn('docker', ['compose', '-p', projectId, 'restart'], {
+    const dockerProcess = spawn('docker', ['compose', '-p', composeProject, 'restart'], {
       cwd: projectPath,
       shell: false,
     });
@@ -894,6 +999,9 @@ router.post('/:projectId/redeploy', async (req: Request, res: Response) => {
   const logs: string[] = [];
 
   try {
+    const project = await prisma.project.findUnique({ where: { id: projectId } });
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+    const composeProject = composeProjectName(project.name, projectId);
     const projectPath = path.join(config.deploymentsPath, projectId);
     
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
@@ -929,9 +1037,9 @@ router.post('/:projectId/redeploy', async (req: Request, res: Response) => {
       data: { status: 'building' },
     });
 
-    writeLog(`\n${'━'.repeat(50)}\n🔄 REDEPLOYING CONTAINER\n📅 ${timestamp}\n${'━'.repeat(50)}\n\n📦 Rebuilding with --force-recreate...\n${'─'.repeat(40)}\n`);
+    writeLog(`\n${'━'.repeat(50)}\n🔄 REDEPLOYING CONTAINER\n📅 ${timestamp}\n${'━'.repeat(50)}\n\n📦 Rebuilding with --force-recreate...\n   Compose project: ${composeProject}\n${'─'.repeat(40)}\n`);
     
-    const dockerProcess = spawn('docker', ['compose', '-p', projectId, 'up', '-d', '--build', '--force-recreate'], {
+    const dockerProcess = spawn('docker', ['compose', '-p', composeProject, 'up', '-d', '--build', '--force-recreate'], {
       cwd: projectPath,
       shell: false,
       detached: process.platform !== 'win32',
@@ -1049,7 +1157,14 @@ router.post('/:projectId/redeploy', async (req: Request, res: Response) => {
 router.post('/:projectId/cancel', async (req: Request, res: Response) => {
   try {
     const { projectId } = req.params;
+    const project = await prisma.project.findUnique({ where: { id: projectId } });
     const projectPath = path.join(config.deploymentsPath, projectId);
+    const aliases = project
+      ? composeProjectAliases(project.name, projectId)
+      : [projectId];
+    const composeProject = project
+      ? composeProjectName(project.name, projectId)
+      : projectId;
     
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -1075,16 +1190,18 @@ router.post('/:projectId/cancel', async (req: Request, res: Response) => {
 
     // Best-effort: kill services then down (argv arrays, no shell; timeout avoids blocking forever)
     if (fs.existsSync(projectPath)) {
-      spawnSync('docker', ['compose', '-p', projectId, 'kill'], {
-        cwd: projectPath,
-        stdio: 'ignore',
-        shell: false,
-        timeout: 30000,
-        killSignal: 'SIGKILL',
-      });
+      for (const alias of aliases) {
+        spawnSync('docker', ['compose', '-p', alias, 'kill'], {
+          cwd: projectPath,
+          stdio: 'ignore',
+          shell: false,
+          timeout: 30000,
+          killSignal: 'SIGKILL',
+        });
+      }
     }
 
-    const dockerProcess = spawn('docker', ['compose', '-p', projectId, 'down', '--remove-orphans'], {
+    const dockerProcess = spawn('docker', ['compose', '-p', composeProject, 'down', '--remove-orphans'], {
       cwd: fs.existsSync(projectPath) ? projectPath : process.cwd(),
       shell: false,
     });

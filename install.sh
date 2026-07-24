@@ -10,6 +10,23 @@ format_time() {
     [ $h -gt 0 ] && printf "%dh %dm %ds" $h $m $s || ([ $m -gt 0 ] && printf "%dm %ds" $m $s || printf "%ds" $s)
 }
 
+print_access_info() {
+    PUB4=$(curl -4 -s --connect-timeout 2 https://api.ipify.org 2>/dev/null || echo "")
+    PUB6=$(curl -6 -s --connect-timeout 2 https://api64.ipify.org 2>/dev/null || echo "")
+    PRV=$(hostname -I 2>/dev/null | tr ' ' '\n' | grep -v "${PUB4:-NOT_SET}" | grep -E '^(10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|192\.168\.)' | head -1 || echo "")
+    echo -e "  ${BOLD}Access Docklift:${NC}\n"
+    if [ -n "$PUB4" ] || [ -n "$PRV" ]; then
+        [ -n "$PUB4" ] && printf "  ${CYAN}Public:  ${NC} http://${PUB4}:8080\n"
+        [ -n "$PUB6" ] && printf "  ${CYAN}IPv6:    ${NC} http://[${PUB6}]:8080\n"
+        [ -n "$PRV" ] && printf "  ${DIM}Private: ${NC} http://${PRV}:8080\n"
+    else
+        echo -e "  ${CYAN}Dashboard:${NC} http://SERVER_IP:8080"
+    fi
+    echo -e "\n  ${DIM}Optional HTTPS panel domain: Settings → Domain${NC}"
+    echo -e "  ${DIM}First boot — bootstrap secret:${NC}"
+    echo -e "  ${DIM}  docker logs docklift-backend  |  or  cat $INSTALL_DIR/data/.bootstrap-secret${NC}\n"
+}
+
 # Header
 clear 2>/dev/null || true
 echo -e "\n  ${CYAN}____             _    _ _  __ _   ${NC}"
@@ -59,14 +76,21 @@ echo -e " ${GREEN}done${NC} ${DIM}($(format_time $(($(date +%s) - FETCH_ST))))$N
 VERSION=$(grep -o '"version": *"[^"]*"' "$INSTALL_DIR/backend/package.json" 2>/dev/null | head -1 | cut -d'"' -f4 || echo "1.0.0")
 echo -e "        ${DIM}➞ Version: $VERSION${NC}"
 
-# Step 3-5: Setup & Build
-printf "  ${CYAN}[3/5]${NC} Creating directories... " && mkdir -p "$INSTALL_DIR/data" "$INSTALL_DIR/deployments" "$INSTALL_DIR/nginx-proxy/conf.d" && echo -e "${GREEN}done${NC}"
+# Step 3-5: Setup & Build (keep repo default.conf — do not overwrite secure catch-all)
+printf "  ${CYAN}[3/5]${NC} Creating directories... "
+mkdir -p \
+  "$INSTALL_DIR/data" \
+  "$INSTALL_DIR/deployments" \
+  "$INSTALL_DIR/backups" \
+  "$INSTALL_DIR/nginx-proxy/conf.d" \
+  "$INSTALL_DIR/nginx-proxy/snippets" \
+  "$INSTALL_DIR/nginx-proxy/certbot/www" \
+  "$INSTALL_DIR/nginx-proxy/certbot/conf"
+echo -e "${GREEN}done${NC}"
+
 printf "  ${CYAN}[4/5]${NC} Cleaning network... " && (docker network rm docklift_network 2>/dev/null || true) && echo -e "${GREEN}done${NC}"
 
 BUILD_ST=$(date +%s); echo -e "\n  ${CYAN}[5/5]${NC} Building containers...\n        ${DIM}This may take a few minutes...${NC}"
-cat > "$INSTALL_DIR/nginx-proxy/conf.d/default.conf" <<EOF
-server { listen 80 default_server; server_name _; return 404; }
-EOF
 
 LOG=$(mktemp)
 if ! docker compose up -d --build --remove-orphans > "$LOG" 2>&1; then
@@ -81,15 +105,7 @@ RUNNING=$(docker compose ps --format "{{.Name}}" | grep -c "docklift" || echo "0
 if [ "$RUNNING" -gt 0 ]; then
     echo -e "\n  ${GREEN}${BOLD}Installation Complete!${NC}\n  ${DIM}Build: $(format_time $BUILD_TIME) | Total: $(format_time $TOTAL_TIME)${NC}\n"
     if [ "$CI" != "true" ]; then
-        PUB4=$(curl -4 -s --connect-timeout 2 https://api.ipify.org 2>/dev/null || echo "")
-        PUB6=$(curl -6 -s --connect-timeout 2 https://api64.ipify.org 2>/dev/null || echo "")
-        PRV=$(hostname -I 2>/dev/null | tr ' ' '\n' | grep -v "${PUB4:-NOT_SET}" | grep -E '^(10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|192\.168\.)' | head -1 || echo "")
-        if [ -n "$PUB4" ] || [ -n "$PRV" ]; then
-            echo -e "  ${BOLD}Access Docklift:${NC}\n"
-            [ -n "$PUB4" ] && printf "  ${CYAN}Public:  ${NC} http://${PUB4}:8080\n"
-            [ -n "$PUB6" ] && printf "  ${CYAN}IPv6:    ${NC} http://[${PUB6}]:8080\n"
-            [ -n "$PRV" ] && printf "  ${DIM}Private: ${NC} http://${PRV}:8080\n"
-        fi
+        print_access_info
     else echo -e "  ${DIM}Version: $VERSION | Build: $(format_time $BUILD_TIME)${NC}\n"
     fi
 else echo -e "  ${RED}Error: Containers not running${NC}\n  ${DIM}Run: cd $INSTALL_DIR && docker compose logs${NC}\n"

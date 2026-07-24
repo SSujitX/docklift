@@ -33,7 +33,7 @@ These are the **only** valid system services (must match `docker-compose.yml`):
 | Service | Container Name | Description |
 |---------|---------------|-------------|
 | `backend` | `docklift-backend` | API server |
-| `frontend` | `docklift-frontend` | Next.js dashboard |
+| `frontend` | `docklift-frontend` | Vite SPA dashboard |
 | `proxy` | `docklift-nginx-proxy` | Custom domain routing (port 80) |
 | `nginx` | `docklift-nginx` | Dashboard gateway (port 8080) |
 

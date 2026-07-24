@@ -1,5 +1,8 @@
+name: docklift
+
 services:
-  docklift-backend:
+  backend:
+    image: docklift-backend
     build: ./backend
     container_name: docklift-backend
     restart: unless-stopped
@@ -10,22 +13,51 @@ services:
       - ./data:/app/data
       - ./deployments:/deployments
       - ./nginx-proxy/conf.d:/nginx-conf
+      - ./nginx-proxy/certbot/conf:/etc/letsencrypt
     environment:
       - DOCKLIFT_DEPLOYMENTS_PATH=/deployments
       - DOCKLIFT_NGINX_CONF_PATH=/nginx-conf
       - DOCKLIFT_DOCKER_NETWORK=docklift_network
+      - CERTBOT_STAGING=${CERTBOT_STAGING:-true}
+      - LETSENCRYPT_PATH=/etc/letsencrypt
+      - CERTBOT_CONTAINER=docklift-certbot
     networks:
       - docklift_network
 
-  docklift-nginx-proxy:
+  nginx-proxy:
     image: nginx:stable-alpine
     container_name: docklift-nginx-proxy
     restart: unless-stopped
     ports:
       - "80:80"
+      - "443:443"
     volumes:
       - ./nginx-proxy/conf.d:/etc/nginx/conf.d:ro
       - ./nginx-proxy/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx-proxy/snippets:/etc/nginx/snippets:ro
+      - ./nginx-proxy/certbot/www:/var/www/certbot:ro
+      - ./nginx-proxy/certbot/conf:/etc/letsencrypt:ro
+    networks:
+      - docklift_network
+    depends_on:
+      - certbot
+
+  certbot:
+    image: certbot/certbot
+    container_name: docklift-certbot
+    restart: unless-stopped
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        trap exit TERM
+        while :; do
+          certbot renew --webroot -w /var/www/certbot --quiet || true
+          sleep 12h
+        done
+    volumes:
+      - ./nginx-proxy/certbot/www:/var/www/certbot
+      - ./nginx-proxy/certbot/conf:/etc/letsencrypt
     networks:
       - docklift_network
 
@@ -38,5 +70,3 @@ networks:
       config:
         - subnet: 172.28.0.0/16
         - subnet: fd12:3456:789a::/64
-
-

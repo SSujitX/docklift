@@ -14,4 +14,14 @@ export const config = {
   githubPrivateKeyPath: process.env.DOCKLIFT_GITHUB_PRIVATE_KEY_PATH || './github-app.pem',
   frontendUrl: process.env.DOCKLIFT_FRONTEND_URL || 'http://localhost:3000',
   nginxConfPath: path.resolve(process.env.NGINX_CONF_PATH || './nginx-proxy/conf.d'),
+  /** Host port pool for deployed apps (avoid Hyper-V reserved ranges on Windows Docker) */
+  portRangeStart: parseInt(process.env.PORT_RANGE_START || '5500', 10),
+  portRangeEnd: parseInt(process.env.PORT_RANGE_END || '5600', 10),
+
+  // Let's Encrypt / certbot sidecar
+  letsencryptPath: path.resolve(process.env.LETSENCRYPT_PATH || './nginx-proxy/certbot/conf'),
+  certbotContainer: process.env.CERTBOT_CONTAINER || 'docklift-certbot',
+  certbotEmail: process.env.CERTBOT_EMAIL || '',
+  certbotStaging:
+    process.env.CERTBOT_STAGING === 'true' || process.env.CERTBOT_STAGING === '1',
 };

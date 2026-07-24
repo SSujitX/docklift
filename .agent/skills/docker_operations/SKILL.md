@@ -14,7 +14,7 @@ The main Docklift platform consists of exactly **4 containers** (defined in `doc
 | Container | Port | Purpose |
 |-----------|------|---------|
 | `docklift-backend` | 8000 (internal) | Express API server |
-| `docklift-frontend` | 3000 (internal) | Next.js dashboard |
+| `docklift-frontend` | 3000 (internal) | Vite SPA (static nginx) |
 | `docklift-nginx` | 8080:80 | Dashboard gateway (routes to frontend + backend) |
 | `docklift-nginx-proxy` | 80:80 | Custom domain proxy for user-deployed apps |
 

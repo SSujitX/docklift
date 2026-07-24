@@ -4,8 +4,9 @@ import { Server as HttpServer, IncomingMessage } from 'http';
 import { spawn, ChildProcess } from 'child_process';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
-import { JWT_SECRET } from '../lib/authMiddleware.js';
+import { JWT_SECRET, assertPasswordStillValid, type JwtPayload } from '../lib/authMiddleware.js';
 import { PrismaClient } from '@prisma/client';
+import { config } from '../lib/config.js';
 
 const prisma = new PrismaClient();
 
@@ -23,6 +24,11 @@ const MAX_CONCURRENT_SESSIONS = 3;
 const MAX_AUTH_ATTEMPTS = 5;
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 
+// Global password brute-force limit (survives reconnect)
+const globalAuthFails = new Map<string, { count: number; windowStart: number }>();
+const GLOBAL_AUTH_WINDOW_MS = 15 * 60 * 1000;
+const GLOBAL_AUTH_MAX_FAILS = 20;
+
 // Message types from client
 interface ClientMessage {
   type: 'auth' | 'input' | 'resize';
@@ -32,14 +38,85 @@ interface ClientMessage {
   rows?: number;
 }
 
-function verifyToken(token: string): { userId: string; email: string } | null {
+function clientKey(request: IncomingMessage, userId: string): string {
+  const ip = request.socket.remoteAddress || 'unknown';
+  return `${ip}:${userId}`;
+}
+
+function isGloballyRateLimited(key: string): boolean {
+  const entry = globalAuthFails.get(key);
+  if (!entry) return false;
+  if (Date.now() - entry.windowStart > GLOBAL_AUTH_WINDOW_MS) {
+    globalAuthFails.delete(key);
+    return false;
+  }
+  return entry.count >= GLOBAL_AUTH_MAX_FAILS;
+}
+
+function recordGlobalAuthFail(key: string): void {
+  const now = Date.now();
+  const entry = globalAuthFails.get(key);
+  if (!entry || now - entry.windowStart > GLOBAL_AUTH_WINDOW_MS) {
+    globalAuthFails.set(key, { count: 1, windowStart: now });
+    return;
+  }
+  entry.count += 1;
+}
+
+function isAllowedOrigin(request: IncomingMessage): boolean {
+  const origin = request.headers.origin;
+  // Non-browser clients may omit Origin; still require a valid terminal JWT
+  if (!origin) {
+    // If Origin is missing, allow only when TERMINAL_ALLOW_NO_ORIGIN=true (ops escape hatch)
+    return process.env.TERMINAL_ALLOW_NO_ORIGIN === 'true';
+  }
+
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as any;
-    // Terminal upgrade uses the session JWT — reject short-lived SSE tokens
-    if (decoded.purpose === 'sse') {
+    const originUrl = new URL(origin);
+    const allowed = new Set<string>();
+
+    if (process.env.CORS_ORIGIN) {
+      for (const o of process.env.CORS_ORIGIN.split(',')) {
+        try {
+          allowed.add(new URL(o.trim()).host);
+        } catch {
+          /* skip */
+        }
+      }
+    }
+
+    if (config.frontendUrl) {
+      try {
+        allowed.add(new URL(config.frontendUrl).host);
+      } catch {
+        /* skip */
+      }
+    }
+
+    const hostHeader = (request.headers['x-forwarded-host'] || request.headers.host || '')
+      .toString()
+      .split(',')[0]
+      .trim();
+    if (hostHeader) {
+      allowed.add(hostHeader);
+      allowed.add(hostHeader.split(':')[0]);
+    }
+
+    return allowed.has(originUrl.host) || allowed.has(originUrl.hostname);
+  } catch {
+    return false;
+  }
+}
+
+async function verifyTerminalToken(token: string): Promise<{ userId: string; email: string } | null> {
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET) as JwtPayload;
+    if (decoded.purpose !== 'terminal') {
       return null;
     }
-    return { userId: decoded.userId || decoded.id, email: decoded.email };
+    const pwdErr = await assertPasswordStillValid(decoded);
+    if (pwdErr) return null;
+    return { userId: decoded.userId, email: decoded.email };
   } catch {
     return null;
   }
@@ -48,16 +125,21 @@ function verifyToken(token: string): { userId: string; email: string } | null {
 export function setupTerminalWebSocket(server: HttpServer) {
   const wss = new WebSocketServer({ noServer: true });
 
-  // Handle HTTP upgrade requests for /ws/terminal
-  server.on('upgrade', (request: IncomingMessage, socket, head) => {
+  server.on('upgrade', async (request: IncomingMessage, socket, head) => {
     const url = new URL(request.url || '', `http://${request.headers.host}`);
-    
+
     if (url.pathname !== '/ws/terminal') {
       socket.destroy();
       return;
     }
 
-    // Extract JWT from query string
+    if (!isAllowedOrigin(request)) {
+      console.warn('[TERMINAL] Rejected upgrade — Origin not allowed:', request.headers.origin);
+      socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+
     const token = url.searchParams.get('token');
     if (!token) {
       socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
@@ -65,24 +147,29 @@ export function setupTerminalWebSocket(server: HttpServer) {
       return;
     }
 
-    const user = verifyToken(token);
+    const user = await verifyTerminalToken(token);
     if (!user) {
       socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
       socket.destroy();
       return;
     }
 
-    // Upgrade connection
     wss.handleUpgrade(request, socket, head, (ws) => {
       wss.emit('connection', ws, request, user);
     });
   });
 
-  wss.on('connection', (ws: WebSocket, _request: IncomingMessage, user: { userId: string; email: string }) => {
-    // Enforce max concurrent sessions
+  wss.on('connection', (ws: WebSocket, request: IncomingMessage, user: { userId: string; email: string }) => {
     if (activeSessions.size >= MAX_CONCURRENT_SESSIONS) {
       console.warn(`[TERMINAL] Max concurrent sessions (${MAX_CONCURRENT_SESSIONS}) reached — rejecting user: ${user.email}`);
       ws.send(JSON.stringify({ type: 'auth_error', message: 'Too many active terminal sessions. Close one first.' }));
+      ws.close();
+      return;
+    }
+
+    const rateKey = clientKey(request, user.userId);
+    if (isGloballyRateLimited(rateKey)) {
+      ws.send(JSON.stringify({ type: 'auth_error', message: 'Too many failed attempts. Try again later.' }));
       ws.close();
       return;
     }
@@ -99,31 +186,29 @@ export function setupTerminalWebSocket(server: HttpServer) {
     activeSessions.add(session);
     console.log(`[TERMINAL] WebSocket connected for user: ${user.email}`);
 
-    // Send welcome — client must send password to authenticate
     ws.send(JSON.stringify({ type: 'auth_required' }));
 
     ws.on('message', async (rawData) => {
       try {
         const msg: ClientMessage = JSON.parse(rawData.toString());
 
-        // Handle authentication (password verification)
         if (msg.type === 'auth') {
           if (session.authenticated) return;
 
-          // Brute-force protection
-          if (session.authAttempts >= MAX_AUTH_ATTEMPTS) {
+          if (isGloballyRateLimited(rateKey) || session.authAttempts >= MAX_AUTH_ATTEMPTS) {
             console.warn(`[TERMINAL] Too many failed auth attempts for user: ${user.email}`);
-            ws.send(JSON.stringify({ type: 'auth_error', message: 'Too many failed attempts. Reconnect to try again.' }));
+            ws.send(JSON.stringify({ type: 'auth_error', message: 'Too many failed attempts. Reconnect later.' }));
             ws.close();
             return;
           }
-          
+
           if (!msg.password) {
             ws.send(JSON.stringify({ type: 'auth_error', message: 'Password required' }));
             return;
           }
 
-          const dbUser = await prisma.user.findFirst();
+          // Verify password for the JWT user — not an arbitrary first user
+          const dbUser = await prisma.user.findUnique({ where: { id: user.userId } });
           if (!dbUser) {
             ws.send(JSON.stringify({ type: 'auth_error', message: 'No user account found' }));
             return;
@@ -132,6 +217,7 @@ export function setupTerminalWebSocket(server: HttpServer) {
           const valid = await bcrypt.compare(msg.password, dbUser.password);
           if (!valid) {
             session.authAttempts++;
+            recordGlobalAuthFail(rateKey);
             console.warn(`[TERMINAL] Failed auth attempt ${session.authAttempts}/${MAX_AUTH_ATTEMPTS} for user: ${user.email}`);
             ws.send(JSON.stringify({ type: 'auth_error', message: 'Invalid password' }));
             return;
@@ -140,11 +226,10 @@ export function setupTerminalWebSocket(server: HttpServer) {
           session.authenticated = true;
           console.log(`[TERMINAL] User "${user.email}" authenticated for interactive terminal`);
 
-          // Spawn shell using 'script' for PTY emulation (works on Alpine, no native deps)
           try {
             const cols = msg.cols || 80;
             const rows = msg.rows || 24;
-            
+
             const shell = spawn('script', ['-q', '-c', '/bin/bash', '/dev/null'], {
               env: {
                 ...process.env,
@@ -153,7 +238,6 @@ export function setupTerminalWebSocket(server: HttpServer) {
                 LANG: 'C.UTF-8',
                 COLUMNS: String(cols),
                 LINES: String(rows),
-                // Colorful prompt: [green]root@docklift[reset]:[blue]~[reset]#
                 PS1: '\\[\\e[1;32m\\]\\u@\\h\\[\\e[0m\\]:\\[\\e[1;34m\\]\\w\\[\\e[0m\\]# ',
               },
               cwd: '/root',
@@ -162,7 +246,6 @@ export function setupTerminalWebSocket(server: HttpServer) {
 
             session.shell = shell;
 
-            // Stream shell output to WebSocket
             shell.stdout?.on('data', (data: Buffer) => {
               if (ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({ type: 'output', data: data.toString() }));
@@ -192,7 +275,6 @@ export function setupTerminalWebSocket(server: HttpServer) {
 
             ws.send(JSON.stringify({ type: 'auth_success' }));
 
-            // Start idle timeout — auto-kill after 30min of no input
             const resetIdleTimer = () => {
               if (session.idleTimer) clearTimeout(session.idleTimer);
               session.idleTimer = setTimeout(() => {
@@ -205,8 +287,6 @@ export function setupTerminalWebSocket(server: HttpServer) {
               }, IDLE_TIMEOUT_MS);
             };
             resetIdleTimer();
-
-            // Attach idle reset to session for input handler
             (session as any)._resetIdleTimer = resetIdleTimer;
           } catch (err) {
             console.error('[TERMINAL] Failed to spawn shell:', err);
@@ -215,19 +295,14 @@ export function setupTerminalWebSocket(server: HttpServer) {
           return;
         }
 
-        // All other messages require authentication
         if (!session.authenticated || !session.shell) return;
 
-        // Handle terminal input
         if (msg.type === 'input' && msg.data) {
           session.shell.stdin?.write(msg.data);
-          // Reset idle timer on input
           if ((session as any)._resetIdleTimer) (session as any)._resetIdleTimer();
         }
 
-        // Handle terminal resize (send SIGWINCH-style resize via stty)
         if (msg.type === 'resize' && msg.cols && msg.rows) {
-          // SECURITY: Validate cols/rows are safe integers to prevent command injection
           const cols = Number(msg.cols);
           const rows = Number(msg.rows);
           if (Number.isInteger(cols) && Number.isInteger(rows)
@@ -235,7 +310,7 @@ export function setupTerminalWebSocket(server: HttpServer) {
             session.shell.stdin?.write(`stty cols ${cols} rows ${rows}\n`);
           }
         }
-      } catch (err) {
+      } catch {
         // Silently ignore malformed messages
       }
     });
@@ -271,7 +346,6 @@ function killShell(session: TerminalSession) {
   }
 }
 
-// Cleanup all sessions (called on server shutdown)
 export function cleanupAllSessions() {
   for (const session of activeSessions) {
     killShell(session);

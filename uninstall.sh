@@ -5,6 +5,8 @@ set -e
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+BOLD='\033[1m'
+DIM='\033[2m'
 NC='\033[0m'
 
 echo -e "${RED}${BOLD}⚠️  THIS WILL DELETE ALL DOCKLIFT DATA, PROJECTS, AND DATABASES! ⚠️${NC}"
@@ -29,7 +31,7 @@ if [ -n "$DOCKLIFT_CONTAINERS" ]; then
     echo -e "${YELLOW}Found containers, stopping and removing...${NC}"
     docker stop $DOCKLIFT_CONTAINERS 2>/dev/null || true
     docker rm $DOCKLIFT_CONTAINERS 2>/dev/null || true
-    echo -e "${GREEN}✓ Removed all containers ($DOCKLIFT_CONTAINERS)${NC}"
+    echo -e "${GREEN}✓ Removed all containers${NC}"
 else
     echo -e "${DIM}No docklift or dl_ containers found.${NC}"
 fi
@@ -39,17 +41,16 @@ echo -e "${YELLOW}Cleaning up Docker resources...${NC}"
 docker network rm docklift_network 2>/dev/null || true
 docker network prune -f 2>/dev/null || true
 
-# Clean up any orphaned volumes/images related to docklift
+# Clean up any orphaned volumes related to docklift
 docker volume prune -f 2>/dev/null || true
 
-echo -e "${YELLOW}Killing any leftover processes on project ports (3001-3100)...${NC}"
-# Use fuser to kill anything holding our port range
-for port in {3001..3050}; do
+echo -e "${YELLOW}Killing any leftover processes on app port pool (5500-5600)...${NC}"
+for port in $(seq 5500 5600); do
     fuser -k ${port}/tcp 2>/dev/null || true
 done
 
 echo -e "${YELLOW}Removing installation directory (/opt/docklift)...${NC}"
 rm -rf /opt/docklift
 
-echo -e "${GREEN}✅ Uninstallation Complete. System is now 100% clean.${NC}"
+echo -e "${GREEN}✅ Uninstallation Complete. System is now clean.${NC}"
 echo -e "You can now run the installer again for a fresh start."

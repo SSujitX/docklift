@@ -77,21 +77,29 @@ else
     echo -e "        ${DIM}➞ Upgrading: $OLD_VERSION → ${GREEN}$NEW_VERSION${NC}"
 fi
 
+# Ensure ACME / proxy dirs exist (new in SSL releases)
+mkdir -p \
+  "$INSTALL_DIR/backups" \
+  "$INSTALL_DIR/nginx-proxy/conf.d" \
+  "$INSTALL_DIR/nginx-proxy/snippets" \
+  "$INSTALL_DIR/nginx-proxy/certbot/www" \
+  "$INSTALL_DIR/nginx-proxy/certbot/conf"
+
 # Step 3: Stop only Docklift containers (preserve user containers)
 printf "  ${CYAN}[3/5]${NC} Stopping Docklift containers..."
 {
-    docker compose stop docklift-backend docklift-frontend docklift-nginx docklift-nginx-proxy 2>/dev/null || true
+    docker compose stop backend frontend nginx nginx-proxy certbot 2>/dev/null || true
 } >/dev/null 2>&1
 echo -e " ${GREEN}done${NC}"
 echo -e "        ${DIM}➞ User project containers are untouched${NC}"
 
-# Step 4: Rebuild and restart
+# Step 4: Rebuild and restart (include certbot sidecar)
 BUILD_ST=$(date +%s)
 echo -e "\n  ${CYAN}[4/5]${NC} Rebuilding Docklift..."
 echo -e "        ${DIM}This may take a few minutes...${NC}"
 LOG="/opt/docklift/upgrade.log"
 echo "--- Upgrade started at $(date) ---" > "$LOG"
-if ! docker compose up -d --build docklift-backend docklift-frontend docklift-nginx docklift-nginx-proxy >> "$LOG" 2>&1; then
+if ! docker compose up -d --build --remove-orphans backend frontend nginx nginx-proxy certbot >> "$LOG" 2>&1; then
     echo -e "\n  ${RED}Build failed! Rolling back...${NC}"
     echo -e "  ${RED}Check $LOG for details.${NC}"
     # Restore backup
@@ -103,14 +111,14 @@ if ! docker compose up -d --build docklift-backend docklift-frontend docklift-ng
 fi
 echo -e "        ${GREEN}done${NC} ${DIM}($(format_time $(($(date +%s) - BUILD_ST))))$NC"
 
-# Step 5: Health check
+# Step 5: Health check (backend, frontend, nginx, nginx-proxy, certbot)
 printf "  ${CYAN}[5/5]${NC} Verifying..."
 sleep 5
 RUNNING=$(docker compose ps --format "{{.Name}}" 2>/dev/null | grep -c "docklift" || echo "0")
-if [ "$RUNNING" -ge 4 ]; then
+if [ "$RUNNING" -ge 5 ]; then
     echo -e " ${GREEN}all systems operational${NC}"
 else
-    echo -e " ${YELLOW}warning: only $RUNNING/4 containers running${NC}"
+    echo -e " ${YELLOW}warning: only $RUNNING/5 containers running${NC}"
 fi
 
 # Summary
@@ -124,7 +132,8 @@ echo -e "  ${DIM}Time: $(format_time $TOTAL_TIME) | Version: $NEW_VERSION${NC}\n
 echo -e "  ${BOLD}✓ Preserved:${NC}"
 echo -e "    ${GREEN}•${NC} Database (projects, settings, deployments)"
 echo -e "    ${GREEN}•${NC} All user containers (dl_* containers)"
-echo -e "    ${GREEN}•${NC} Nginx configurations"
+echo -e "    ${GREEN}•${NC} Nginx / panel domain configs"
+echo -e "    ${GREEN}•${NC} Let's Encrypt certificates (certbot/)"
 echo -e "    ${GREEN}•${NC} Project files in /deployments"
 echo -e ""
 
@@ -138,5 +147,7 @@ if [ "$CI" != "true" ]; then
     PUB4=$(curl -4 -s --connect-timeout 2 https://api.ipify.org 2>/dev/null || echo "")
     if [ -n "$PUB4" ]; then
         echo -e "  ${BOLD}Access Docklift:${NC} http://${PUB4}:8080\n"
+    else
+        echo -e "  ${BOLD}Access Docklift:${NC} http://SERVER_IP:8080\n"
     fi
 fi

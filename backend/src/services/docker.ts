@@ -89,7 +89,7 @@ export async function getContainerStats(containerName: string): Promise<Record<s
 }
 
 // Stream docker compose up
-export function streamComposeUp(projectPath: string, projectId: string, res: Response): void {
+export function streamComposeUp(projectPath: string, composeProject: string, res: Response): void {
   const timestamp = new Date().toISOString();
   
   res.write(`\n${'━'.repeat(50)}\n`);
@@ -100,7 +100,7 @@ export function streamComposeUp(projectPath: string, projectId: string, res: Res
   res.write(`📦 Phase 1: Building Docker Image...\n`);
   res.write(`${'─'.repeat(40)}\n`);
   
-  const childProcess = spawn('docker', ['compose', '-p', projectId, 'up', '-d', '--build'], {
+  const childProcess = spawn('docker', ['compose', '-p', composeProject, 'up', '-d', '--build'], {
     cwd: projectPath,
     env: { ...globalThis.process.env, DOCKER_BUILDKIT: '1', COMPOSE_DOCKER_CLI_BUILD: '1' },
     shell: false,
@@ -137,7 +137,7 @@ export function streamComposeUp(projectPath: string, projectId: string, res: Res
 }
 
 // Stream docker compose down
-export function streamComposeDown(projectPath: string, projectId: string, res: Response): void {
+export function streamComposeDown(projectPath: string, composeProject: string, res: Response): void {
   const timestamp = new Date().toISOString();
   
   res.write(`\n${'━'.repeat(50)}\n`);
@@ -145,7 +145,7 @@ export function streamComposeDown(projectPath: string, projectId: string, res: R
   res.write(`📅 ${timestamp}\n`);
   res.write(`${'━'.repeat(50)}\n\n`);
   
-  const childProcess = spawn('docker', ['compose', '-p', projectId, 'down'], {
+  const childProcess = spawn('docker', ['compose', '-p', composeProject, 'down'], {
     cwd: projectPath,
     shell: false,
   });
@@ -274,7 +274,7 @@ export function streamContainerLogs(containerName: string, res: Response, tail =
 }
 
 // Stream docker compose restart
-export function streamComposeRestart(projectPath: string, projectId: string, res: Response): void {
+export function streamComposeRestart(projectPath: string, composeProject: string, res: Response): void {
   const timestamp = new Date().toISOString();
   
   res.write(`\n${'━'.repeat(50)}\n`);
@@ -282,7 +282,7 @@ export function streamComposeRestart(projectPath: string, projectId: string, res
   res.write(`📅 ${timestamp}\n`);
   res.write(`${'━'.repeat(50)}\n\n`);
   
-  const childProcess = spawn('docker', ['compose', '-p', projectId, 'restart'], {
+  const childProcess = spawn('docker', ['compose', '-p', composeProject, 'restart'], {
     cwd: projectPath,
     shell: false,
   });

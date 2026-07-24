@@ -11,12 +11,12 @@ Docklift uses a multi-container Docker Compose setup for production, with separa
 
 ### Services (4 containers)
 
-| Service | Image | Port | Purpose |
-|---------|-------|------|---------|
-| `docklift-backend` | Custom (./backend) | 8000 (internal) | Express API server |
-| `docklift-frontend` | Custom (./frontend) | 3000 (internal) | Next.js standalone |
-| `docklift-nginx` | `nginx:stable-alpine` | 8080:80 | Dashboard gateway |
-| `docklift-nginx-proxy` | `nginx:stable-alpine` | 80:80 | Domain proxy for user apps |
+| Compose service | Image | Container name | Port | Purpose |
+|-----------------|-------|----------------|------|---------|
+| `backend` | `docklift-backend` | `docklift-backend` | 8000 (internal) | Express API |
+| `frontend` | `docklift-frontend` | `docklift-frontend` | 3000 (internal) | Vite SPA (nginx) |
+| `nginx` | `nginx:stable-alpine` | `docklift-nginx` | 8080:80 | Dashboard gateway |
+| `nginx-proxy` | `nginx:stable-alpine` | `docklift-nginx-proxy` | 80:80 | App domain proxy |
 
 ### Volume Mounts (Backend)
 
@@ -36,32 +36,9 @@ Docklift uses a multi-container Docker Compose setup for production, with separa
 
 ## Frontend Dockerfile (`frontend/Dockerfile`)
 
-Uses a 3-stage build for optimal image size:
+3-stage: Bun install → Vite build → `nginx:stable-alpine` serving `dist/` on port **3000** (SPA `try_files`).
 
-```dockerfile
-# Stage 1: Install deps with Bun (fast)
-FROM oven/bun:1-alpine AS deps
-RUN bun install --frozen-lockfile
-
-# Stage 2: Build with Node.js (stable on all CPUs)
-FROM node:22-alpine AS builder
-RUN npm run build
-
-# Stage 3: Production runtime
-FROM node:22-alpine AS runner
-CMD ["node", "server.js"]
-```
-
-> **CRITICAL**: The build stage uses **Node.js, NOT Bun**.
-> Bun crashes with `SIGILL (Illegal instruction)` on many VPS CPUs (especially those without
-> AVX512 support). Bun is only used for fast dependency installation.
-
-### Next.js Standalone Output
-
-The frontend uses Next.js `standalone` output mode to minimize image size:
-- `output: "standalone"` in `next.config.ts`
-- Copies only `.next/standalone` and `.next/static` to the runner
-- Final image is ~100MB instead of ~500MB
+Browser calls stay same-origin behind `docklift-nginx` (`VITE_API_URL` empty at build time).
 
 ## Backend Dockerfile (`backend/Dockerfile`)
 
@@ -110,16 +87,16 @@ cd backend && npm run dev     # Dev server at :4000 (nodemon)
 docker compose up -d --build
 
 # Rebuild a single service
-docker compose up -d --build docklift-frontend
+docker compose up -d --build frontend
 
 # View build logs
-docker compose logs -f docklift-frontend
+docker compose logs -f frontend
 ```
 
 ### Type Checking
 ```bash
-# Frontend (Next.js build includes TypeScript check)
-cd frontend && npx next build
+# Frontend (tsc + Vite)
+cd frontend && bun run build
 
 # Backend
 cd backend && npm run build   # runs tsc

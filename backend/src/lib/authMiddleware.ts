@@ -5,6 +5,7 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { config } from './config.js';
+import prisma from './prisma.js';
 
 // Generate secure random secret
 const generateSecureSecret = () => crypto.randomBytes(64).toString('hex');
@@ -74,11 +75,13 @@ export interface AuthenticatedRequest extends Request {
 // Export for use in auth.ts and github.ts
 export { JWT_SECRET, INTERNAL_API_SECRET };
 
-type JwtPayload = {
+export type JwtPayload = {
   userId: string;
   email: string;
   role: string;
   purpose?: string;
+  iat?: number;
+  exp?: number;
 };
 
 function authError(res: Response, error: any) {
@@ -91,11 +94,34 @@ function authError(res: Response, error: any) {
   return res.status(500).json({ error: 'Authentication failed' });
 }
 
+/** Reject session JWTs issued before the user's last password change. */
+export async function assertPasswordStillValid(decoded: JwtPayload): Promise<string | null> {
+  if (!decoded.userId || decoded.userId === 'internal') return null;
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.userId },
+      select: { passwordChangedAt: true },
+    });
+    if (!user) return 'User not found';
+    if (
+      user.passwordChangedAt &&
+      typeof decoded.iat === 'number' &&
+      decoded.iat < Math.floor(user.passwordChangedAt.getTime() / 1000)
+    ) {
+      return 'Session expired. Please log in again.';
+    }
+  } catch {
+    // Fail closed: DB/schema errors must not let revoked sessions through
+    return 'Authentication temporarily unavailable';
+  }
+  return null;
+}
+
 /**
  * Default API auth: Authorization Bearer session JWT only.
- * Does NOT accept query tokens (prevents SSE tokens from authorizing DELETE/reboot/etc).
+ * Does NOT accept query tokens (prevents SSE/terminal tokens from authorizing DELETE/reboot/etc).
  */
-export const authMiddleware = (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const authMiddleware = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     // Allow internal API calls with shared secret (for webhook auto-deploy)
     const internalSecret = req.headers['x-internal-secret'];
@@ -116,9 +142,14 @@ export const authMiddleware = (req: AuthenticatedRequest, res: Response, next: N
 
     const decoded = jwt.verify(token, JWT_SECRET) as JwtPayload;
 
-    // Short-lived SSE tokens must not authenticate normal API calls
-    if (decoded.purpose === 'sse') {
+    // Short-lived purpose tokens must not authenticate normal API calls
+    if (decoded.purpose === 'sse' || decoded.purpose === 'terminal') {
       return res.status(401).json({ error: 'Invalid token for this endpoint' });
+    }
+
+    const pwdErr = await assertPasswordStillValid(decoded);
+    if (pwdErr) {
+      return res.status(401).json({ error: pwdErr });
     }
 
     req.user = {
@@ -136,7 +167,7 @@ export const authMiddleware = (req: AuthenticatedRequest, res: Response, next: N
  * SSE-only auth: query ?token= with purpose === 'sse'.
  * Mount exclusively on log stream routes (EventSource cannot set Authorization headers).
  */
-export const sseAuthMiddleware = (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const sseAuthMiddleware = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const queryToken = req.query.token as string | undefined;
     if (!queryToken) {
@@ -146,6 +177,11 @@ export const sseAuthMiddleware = (req: AuthenticatedRequest, res: Response, next
     const decoded = jwt.verify(queryToken, JWT_SECRET) as JwtPayload;
     if (decoded.purpose !== 'sse') {
       return res.status(401).json({ error: 'SSE token required' });
+    }
+
+    const pwdErr = await assertPasswordStillValid(decoded);
+    if (pwdErr) {
+      return res.status(401).json({ error: pwdErr });
     }
 
     req.user = {

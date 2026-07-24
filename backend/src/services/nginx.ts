@@ -1,21 +1,33 @@
-// Nginx service - manages reverse proxy configurations for custom domains
+// Nginx service - manages reverse proxy configurations for custom domains + SSL
 import fs from 'fs';
 import path from 'path';
 import { spawn } from 'child_process';
 import { config } from '../lib/config.js';
 import * as dockerService from './docker.js';
+import {
+  buildHttpHttpsServers,
+  buildServiceProxyLocation,
+  buildWwwRedirectServers,
+} from './nginxSsl.js';
+import { certificateFilesExist, issueCertificate } from './certs.js';
 
-export async function updateServiceDomain(service: any) {
+export async function updateServiceDomain(
+  service: any,
+  opts?: { issueSsl?: boolean; forceSsl?: boolean }
+) {
   // Ensure config directory exists
   if (!fs.existsSync(config.nginxConfPath)) {
     fs.mkdirSync(config.nginxConfPath, { recursive: true });
   }
 
   const confPath = path.join(config.nginxConfPath, `service-${service.id}.conf`);
-  
+
   // Only generate config if service is running and has a domain
-  const shouldExist = service.domain && service.container_name && (service.status === 'running' || service.status === 'starting');
-  
+  const shouldExist =
+    service.domain &&
+    service.container_name &&
+    (service.status === 'running' || service.status === 'starting');
+
   if (!shouldExist) {
     if (fs.existsSync(confPath)) {
       fs.unlinkSync(confPath);
@@ -24,8 +36,6 @@ export async function updateServiceDomain(service: any) {
     return;
   }
 
-  // Resolver + variable proxy_pass (below) defers upstream DNS to request time, so nginx reload
-  // does not fail if the container is not up yet (restore / slow start). Log only.
   try {
     const containerStatus = await dockerService.getContainerStatus(service.container_name);
     if (!containerStatus.running && service.status !== 'starting') {
@@ -33,15 +43,18 @@ export async function updateServiceDomain(service: any) {
         `Nginx config for ${service.name}: container ${service.container_name} not running yet — config kept for when it starts.`
       );
     }
-  } catch (e) {
+  } catch {
     console.warn(
       `Nginx config for ${service.name}: could not inspect container ${service.container_name} — config kept.`
     );
   }
 
-  const domains = service.domain.split(',').map((d: string) => d.trim()).filter(Boolean).join(' ');
-  
-  if (!domains) {
+  const domainsArray = service.domain
+    .split(',')
+    .map((d: string) => d.trim().toLowerCase())
+    .filter(Boolean);
+
+  if (domainsArray.length === 0) {
     if (fs.existsSync(confPath)) {
       fs.unlinkSync(confPath);
       await reloadNginx();
@@ -49,101 +62,107 @@ export async function updateServiceDomain(service: any) {
     return;
   }
 
-  // Use container name and internal port for routing within the docker network
-  const upstream = `${service.container_name}:${service.internal_port}`;
-  
-  // Parse domains and generate www variants for redirect
-  const domainsArray = service.domain.split(',').map((d: string) => d.trim()).filter(Boolean);
-  
-  // Separate main domains from www domains
   const mainDomains: string[] = [];
   const wwwRedirects: string[] = [];
-  
+
   for (const domain of domainsArray) {
     if (domain.startsWith('www.')) {
-      // If user explicitly adds www, add it to main domains
       mainDomains.push(domain);
     } else {
-      // For non-www domains, add to main and create www redirect
       mainDomains.push(domain);
-      // Only add www redirect for actual domains (not IPs or localhost)
       if (!domain.match(/^[\d.]+$/) && !domain.includes('localhost')) {
         wwwRedirects.push(`www.${domain}`);
       }
     }
   }
-  
+
+  const primaryDomain = mainDomains[0];
   const mainDomainsStr = mainDomains.join(' ');
-  const wwwDomainsStr = wwwRedirects.join(' ');
-  
-  // Use a variable for proxy_pass and add a resolver. 
-  // This prevents Nginx from failing to start/reload if the container is not yet in DNS.
-  let content = `
-# Main server block for ${service.name}
-server {
-    listen 80;
-    server_name ${mainDomainsStr};
+  const proxyLocation = buildServiceProxyLocation(
+    service.id,
+    service.container_name,
+    service.internal_port
+  );
 
-    # Docker internal DNS resolver
-    resolver 127.0.0.11 valid=30s ipv6=off;
-    
-    location / {
-        set $target_${service.id.replace(/-/g, '_')} ${service.container_name};
-        proxy_pass http://$target_${service.id.replace(/-/g, '_')}:${service.internal_port};
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection $connection_upgrade;
-        proxy_set_header Host $http_host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-`;
-
-  // Add www redirect block if there are www domains to redirect
-  if (wwwRedirects.length > 0) {
-    content += `
-# WWW to non-WWW redirect for ${service.name}
-server {
-    listen 80;
-    server_name ${wwwDomainsStr};
-    
-    # 301 permanent redirect to non-www
-    return 301 http://$host$request_uri;
-}
-`;
-    // Fix: return 301 should redirect to the non-www version
-    // We need to extract the domain without www
-    content = content.replace(
-      'return 301 http://$host$request_uri;',
-      `return 301 $scheme://${mainDomains[0]}$request_uri;`
+  // 1) Write HTTP(+ACME) config so challenges can succeed
+  let content =
+    buildHttpHttpsServers({
+      comment: `Main server block for ${service.name}`,
+      serverNames: mainDomainsStr,
+      primaryDomain,
+      proxyLocation,
+      enableHttps: certificateFilesExist(primaryDomain),
+    }) +
+    buildWwwRedirectServers(
+      wwwRedirects,
+      primaryDomain,
+      certificateFilesExist(primaryDomain)
     );
-  }
-
 
   try {
     fs.writeFileSync(confPath, content);
-    console.log(`Updated Nginx config for ${service.name} (${mainDomainsStr}${wwwRedirects.length > 0 ? ` + www redirect` : ''})`);
     await reloadNginx();
   } catch (error) {
     console.error('Failed to write Nginx config:', error);
+    return;
+  }
+
+  // 2) Issue certificate (optional — default true on domain updates)
+  const shouldIssue = opts?.issueSsl !== false;
+  if (shouldIssue) {
+    const sans = [...mainDomains, ...wwwRedirects];
+    try {
+      const status = await issueCertificate(sans, { force: opts?.forceSsl === true });
+      // 3) Rewrite with HTTPS if active
+      if (
+        status.status === 'active' ||
+        status.status === 'expiring' ||
+        certificateFilesExist(primaryDomain)
+      ) {
+        content =
+          buildHttpHttpsServers({
+            comment: `Main server block for ${service.name}`,
+            serverNames: mainDomainsStr,
+            primaryDomain,
+            proxyLocation,
+            enableHttps: true,
+          }) + buildWwwRedirectServers(wwwRedirects, primaryDomain, true);
+        fs.writeFileSync(confPath, content);
+        await reloadNginx();
+        console.log(
+          `Updated Nginx+SSL config for ${service.name} (${mainDomainsStr}) status=${status.status}`
+        );
+      } else {
+        console.warn(
+          `SSL not active for ${primaryDomain}: ${status.status} ${status.error || ''}`
+        );
+      }
+    } catch (e: any) {
+      console.error(`SSL issue failed for ${primaryDomain}:`, e?.message || e);
+    }
+  } else {
+    console.log(
+      `Updated Nginx config for ${service.name} (${mainDomainsStr}${wwwRedirects.length > 0 ? ' + www redirect' : ''})`
+    );
   }
 }
 
 export async function syncNginxConfigs() {
   try {
     if (!fs.existsSync(config.nginxConfPath)) return;
-    
-    // 1. Get all existing conf files
-    const files = fs.readdirSync(config.nginxConfPath).filter(f => f.startsWith('service-') && f.endsWith('.conf'));
-    const fileServiceIds = new Set(files.map(f => {
-      const match = f.match(/^service-(.+)\.conf$/);
-      return match ? match[1] : null;
-    }).filter(Boolean) as string[]);
-    
-    // 2. Get all Services from DB that SHOULD have config
-    // (Running, have domain, have container_name)
+
+    const files = fs
+      .readdirSync(config.nginxConfPath)
+      .filter((f) => f.startsWith('service-') && f.endsWith('.conf'));
+    const fileServiceIds = new Set(
+      files
+        .map((f) => {
+          const match = f.match(/^service-(.+)\.conf$/);
+          return match ? match[1] : null;
+        })
+        .filter(Boolean) as string[]
+    );
+
     const { default: prisma } = await import('../lib/prisma.js');
 
     const knownWithDomain = await prisma.service.findMany({
@@ -162,31 +181,36 @@ export async function syncNginxConfigs() {
 
     let changeMade = false;
 
-    // 3. Recreate missing configs for services that should be routed (do not require Docker to be up yet)
     for (const service of allServices) {
-      const confPath = path.join(config.nginxConfPath, `service-${service.id}.conf`);
       if (!fileServiceIds.has(service.id)) {
         console.log(`Restoring missing Nginx config for ${service.name}`);
-        await updateServiceDomain(service);
+        // Avoid hammering LE on every restart — only write/reuse existing certs
+        await updateServiceDomain(service, { issueSsl: false });
+        // If cert missing, attempt issue once
+        const primary = (service.domain || '')
+          .split(',')
+          .map((d) => d.trim())
+          .filter(Boolean)[0];
+        if (primary && !certificateFilesExist(primary)) {
+          await updateServiceDomain(service, { issueSsl: true });
+        }
       }
     }
 
-    // 4. Delete orphans: conf file for a service id that no longer exists in DB (or domain removed)
     const filesToDelete = [...fileServiceIds].filter((id) => !knownServiceIds.has(id));
-    
+
     for (const id of filesToDelete) {
-        const file = `service-${id}.conf`;
-        console.log(`Removing invalid/orphaned Nginx config: ${file}`);
-        fs.unlinkSync(path.join(config.nginxConfPath, file));
-        changeMade = true;
+      const file = `service-${id}.conf`;
+      console.log(`Removing invalid/orphaned Nginx config: ${file}`);
+      fs.unlinkSync(path.join(config.nginxConfPath, file));
+      changeMade = true;
     }
-    
+
     if (changeMade) {
-        await reloadNginx();
+      await reloadNginx();
     } else {
-        console.log('Nginx configs are in sync.');
+      console.log('Nginx configs are in sync.');
     }
-    
   } catch (error) {
     console.error('Failed to sync Nginx configs:', error);
   }
@@ -194,7 +218,7 @@ export async function syncNginxConfigs() {
 
 export async function cleanupServiceDomain(serviceId: string) {
   const confPath = path.join(config.nginxConfPath, `service-${serviceId}.conf`);
-  
+
   if (fs.existsSync(confPath)) {
     try {
       fs.unlinkSync(confPath);
@@ -206,18 +230,18 @@ export async function cleanupServiceDomain(serviceId: string) {
   }
 }
 
-async function reloadNginx() {
-  return new Promise<void>((resolve, reject) => {
+export async function reloadNginx() {
+  return new Promise<void>((resolve) => {
     console.log('Reloading Nginx proxy...');
     const child = spawn('docker', ['exec', 'docklift-nginx-proxy', 'nginx', '-s', 'reload']);
-    
+
     let stderrBuffer = '';
 
     child.stdout.on('data', (data) => console.log(`Nginx stdout: ${data}`));
     child.stderr.on('data', (data) => {
-        const str = data.toString();
-        stderrBuffer += str;
-        console.error(`Nginx stderr: ${str}`);
+      const str = data.toString();
+      stderrBuffer += str;
+      console.error(`Nginx stderr: ${str}`);
     });
 
     child.on('close', (code) => {
@@ -226,33 +250,28 @@ async function reloadNginx() {
         resolve();
       } else {
         console.error(`Nginx reload failed with code ${code}`);
-        
-        // Self-Healing: Check for "host not found" error
-        const match = stderrBuffer.match(/host not found in upstream .* in (.*\/service-[a-zA-Z0-9-]+\.conf):/);
+
+        const match = stderrBuffer.match(
+          /host not found in upstream .* in (.*\/service-[a-zA-Z0-9-]+\.conf):/
+        );
         if (match && match[1]) {
-            const badConfPath = match[1];
-            // The path reported by Nginx is inside the container (/etc/nginx/conf.d/...)
-            // We need to map it to our local path
-            const filename = path.basename(badConfPath);
-            const localPath = path.join(config.nginxConfPath, filename);
-            
-            if (fs.existsSync(localPath)) {
-                console.log(`Self-Healing: Removing bad Nginx config causing crash: ${filename}`);
-                try {
-                    fs.unlinkSync(localPath);
-                    console.log('Bad config removed. Nginx should stabilize on next reload.');
-                    // Optional: Trigger another reload immediately? 
-                    // Let's just resolve to avoid infinite loops, next action will fix it.
-                } catch (err) {
-                    console.error('Failed to remove bad config:', err);
-                }
+          const filename = path.basename(match[1]);
+          const localPath = path.join(config.nginxConfPath, filename);
+
+          if (fs.existsSync(localPath)) {
+            console.log(`Self-Healing: Removing bad Nginx config causing crash: ${filename}`);
+            try {
+              fs.unlinkSync(localPath);
+            } catch (err) {
+              console.error('Failed to remove bad config:', err);
             }
+          }
         }
-        
+
         resolve();
       }
     });
-    
+
     child.on('error', (err) => {
       console.error('Failed to spawn docker exec:', err);
       resolve();

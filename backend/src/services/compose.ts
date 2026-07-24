@@ -117,7 +117,7 @@ export function generateCompose(
         context: svc.context_path,
         dockerfile: path.basename(svc.dockerfile_path),
       },
-      container_name: svc.container_name || `docklift_${projectId}_${svc.name}`,
+      container_name: svc.container_name || `dl_${projectId.substring(0, 8)}_${svc.name}`,
       ports: [`${svc.port}:${svc.internal_port}`],
       restart: 'unless-stopped',
     };
