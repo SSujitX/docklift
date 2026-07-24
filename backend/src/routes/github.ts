@@ -31,6 +31,80 @@ async function deleteSetting(key: string): Promise<void> {
   await prisma.settings.deleteMany({ where: { key } });
 }
 
+const GITHUB_STATE_TTL_MS = 60 * 60 * 1000; // 1 hour
+const GITHUB_STATE_COOKIE = 'docklift_github_state';
+
+async function createGithubSetupState(): Promise<string> {
+  const state = crypto.randomBytes(24).toString('hex');
+  await saveSetting('github_setup_state', state);
+  await saveSetting('github_setup_state_at', String(Date.now()));
+  return state;
+}
+
+async function verifyGithubSetupState(state: string | undefined): Promise<boolean> {
+  if (!state || typeof state !== 'string') return false;
+  const expected = await getSetting('github_setup_state');
+  const at = await getSetting('github_setup_state_at');
+  if (!expected || !at) return false;
+  if (Date.now() - Number(at) > GITHUB_STATE_TTL_MS) {
+    await deleteSetting('github_setup_state');
+    await deleteSetting('github_setup_state_at');
+    return false;
+  }
+  const a = Buffer.from(state);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+}
+
+async function clearGithubSetupState(): Promise<void> {
+  await deleteSetting('github_setup_state');
+  await deleteSetting('github_setup_state_at');
+  // Legacy keys from older pending-bypass flow
+  await deleteSetting('github_install_pending');
+  await deleteSetting('github_install_pending_at');
+}
+
+function readCookie(req: Request, name: string): string | undefined {
+  const raw = req.headers.cookie;
+  if (!raw) return undefined;
+  for (const part of raw.split(';')) {
+    const idx = part.indexOf('=');
+    if (idx === -1) continue;
+    const key = part.slice(0, idx).trim();
+    if (key === name) return decodeURIComponent(part.slice(idx + 1).trim());
+  }
+  return undefined;
+}
+
+function setGithubStateCookie(res: Response, state: string, req: Request): void {
+  const proto = (req.headers['x-forwarded-proto'] || req.protocol || 'http')
+    .toString()
+    .split(',')[0]
+    .trim();
+  const secure = proto === 'https' ? '; Secure' : '';
+  res.appendHeader(
+    'Set-Cookie',
+    `${GITHUB_STATE_COOKIE}=${encodeURIComponent(state)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(GITHUB_STATE_TTL_MS / 1000)}${secure}`
+  );
+}
+
+function clearGithubStateCookie(res: Response): void {
+  res.appendHeader(
+    'Set-Cookie',
+    `${GITHUB_STATE_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`
+  );
+}
+
+/** Accept CSRF nonce from query (manifest) or HttpOnly cookie (install redirect). */
+async function requireGithubSetupState(req: Request): Promise<boolean> {
+  const fromQuery = typeof req.query.state === 'string' ? req.query.state : undefined;
+  const fromCookie = readCookie(req, GITHUB_STATE_COOKIE);
+  if (await verifyGithubSetupState(fromQuery)) return true;
+  if (await verifyGithubSetupState(fromCookie)) return true;
+  return false;
+}
+
 // Helper: Get GitHub App private key from database (or fallback to file)
 export async function getPrivateKey(): Promise<string | null> {
   // First try database (from manifest flow)
@@ -138,13 +212,14 @@ router.post('/manifest', async (req: Request, res: Response) => {
       protocol = 'http';
     }
     const serverUrl = `${protocol}://${host}`;
+    const state = await createGithubSetupState();
     
-    // Build the manifest
+    // Build the manifest — CSRF state only on OAuth-style callback URLs (not permanent setup_url)
     const manifest = {
       name: `docklift-${sanitizedName}`,
       url: 'https://github.com/SSujitX/docklift',
-      redirect_url: `${serverUrl}/api/github/manifest/callback`,
-      callback_urls: [`${serverUrl}/api/github/manifest/callback`],
+      redirect_url: `${serverUrl}/api/github/manifest/callback?state=${state}`,
+      callback_urls: [`${serverUrl}/api/github/manifest/callback?state=${state}`],
       setup_url: `${serverUrl}/api/github/setup`,
       hook_attributes: {
         url: `${serverUrl}/api/github/webhook`,
@@ -177,14 +252,19 @@ router.post('/manifest', async (req: Request, res: Response) => {
 router.get('/manifest/callback', async (req: Request, res: Response) => {
   try {
     const code = req.query.code as string;
+    const state = req.query.state as string;
+
+    if (!(await verifyGithubSetupState(state))) {
+      return res.redirect(`${config.frontendUrl}/settings?github_error=invalid_state`);
+    }
     
     if (!code) {
       // This might be a setup callback without code
       const installationId = req.query.installation_id as string;
       if (installationId) {
-        return res.redirect(`/api/github/setup?installation_id=${installationId}`);
+        return res.redirect(`/api/github/setup?installation_id=${encodeURIComponent(installationId)}&state=${encodeURIComponent(state)}`);
       }
-      return res.redirect(`${config.frontendUrl}?github_error=no_code`);
+      return res.redirect(`${config.frontendUrl}/settings?github_error=no_code`);
     }
     
     // Exchange code for app credentials
@@ -199,7 +279,7 @@ router.get('/manifest/callback', async (req: Request, res: Response) => {
     if (!response.ok) {
       const errorText = await response.text();
       console.error('GitHub manifest conversion failed:', errorText);
-      return res.redirect(`${config.frontendUrl}?github_error=conversion_failed`);
+      return res.redirect(`${config.frontendUrl}/settings?github_error=conversion_failed`);
     }
     
     const data = await response.json() as {
@@ -213,7 +293,7 @@ router.get('/manifest/callback', async (req: Request, res: Response) => {
       owner: { login: string; avatar_url: string };
     };
     
-    // Store all credentials in settings
+    // Store all credentials in settings (only after state verified)
     await saveSetting('github_app_id', String(data.id));
     await saveSetting('github_app_slug', data.slug);
     await saveSetting('github_app_name', data.name);
@@ -223,6 +303,10 @@ router.get('/manifest/callback', async (req: Request, res: Response) => {
     await saveSetting('github_webhook_secret', data.webhook_secret || '');
     await saveSetting('github_username', data.owner?.login || '');
     await saveSetting('github_avatar_url', data.owner?.avatar_url || '');
+
+    // Fresh one-time nonce for the install → /setup return (HttpOnly cookie)
+    const installState = await createGithubSetupState();
+    setGithubStateCookie(res, installState, req);
     
     console.log(`GitHub App created successfully: ${data.name} (ID: ${data.id})`);
     
@@ -230,7 +314,7 @@ router.get('/manifest/callback', async (req: Request, res: Response) => {
     res.redirect(`https://github.com/apps/${data.slug}/installations/new`);
   } catch (error) {
     console.error('Manifest callback error:', error);
-    res.redirect(`${config.frontendUrl}?github_error=callback_failed`);
+    res.redirect(`${config.frontendUrl}/settings?github_error=callback_failed`);
   }
 });
 
@@ -333,27 +417,127 @@ router.post('/check-installation', async (req: Request, res: Response) => {
 // Existing GitHub App Installation Flow
 // ========================================
 
-// GET /install - Redirect to GitHub App installation page
+function isLoopbackHost(hostname: string): boolean {
+  const h = hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  return h === 'localhost' || h === '127.0.0.1' || h === '::1';
+}
+
+/** Origins we may redirect back to after GitHub install (avoid open redirects). */
+function allowedGithubReturnOrigins(req: Request): Set<string> {
+  const origins = new Set<string>();
+
+  const addOrigin = (value: string | undefined | null) => {
+    if (!value) return;
+    try {
+      const u = new URL(value.includes('://') ? value : `http://${value}`);
+      origins.add(u.origin);
+      // localhost ↔ 127.0.0.1 ↔ ::1 (same port) so localStorage session is preserved
+      if (isLoopbackHost(u.hostname)) {
+        const port = u.port ? `:${u.port}` : '';
+        for (const host of ['localhost', '127.0.0.1', '[::1]']) {
+          origins.add(`${u.protocol}//${host}${port}`);
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+  };
+
+  addOrigin(config.frontendUrl);
+
+  const proto = (req.headers['x-forwarded-proto'] || req.protocol || 'http')
+    .toString()
+    .split(',')[0]
+    .trim();
+  const host = (req.headers['x-forwarded-host'] || req.headers.host || '')
+    .toString()
+    .split(',')[0]
+    .trim();
+  if (host) addOrigin(`${proto}://${host}`);
+
+  // Explicit CORS allowlist (e.g. Vite :3600) and panel domains used as the UI origin
+  if (process.env.CORS_ORIGIN) {
+    for (const part of process.env.CORS_ORIGIN.split(',')) {
+      addOrigin(part.trim());
+    }
+  }
+
+  return origins;
+}
+
+function sanitizeGithubReturnUrl(raw: unknown, req: Request): string {
+  const fallback = `${config.frontendUrl}/settings`;
+  if (typeof raw !== 'string' || !raw.trim()) return fallback;
+  const value = raw.trim();
+  const allowed = allowedGithubReturnOrigins(req);
+  try {
+    if (value.startsWith('/') && !value.startsWith('//')) {
+      const proto = (req.headers['x-forwarded-proto'] || req.protocol || 'http')
+        .toString()
+        .split(',')[0]
+        .trim();
+      const host = (req.headers['x-forwarded-host'] || req.headers.host || '')
+        .toString()
+        .split(',')[0]
+        .trim();
+      const bases = [host ? `${proto}://${host}` : null, config.frontendUrl].filter(Boolean) as string[];
+      for (const base of bases) {
+        const resolved = new URL(value, base).toString();
+        if (allowed.has(new URL(resolved).origin)) return resolved;
+      }
+      return fallback;
+    }
+    const u = new URL(value);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return fallback;
+    if (allowed.has(u.origin)) return u.toString();
+  } catch {
+    /* fall through */
+  }
+  return fallback;
+}
+
+async function beginGithubInstallSession(
+  req: Request,
+  res: Response,
+  returnUrlRaw: unknown
+): Promise<{ installUrl: string } | { error: string; status: number }> {
+  const dbAppId = await getSetting('github_app_id');
+  const appId = config.githubAppId || dbAppId;
+
+  if (!appId) {
+    return { error: 'GitHub App not configured. Please create one first.', status: 400 };
+  }
+
+  await saveSetting('github_return_url', sanitizeGithubReturnUrl(returnUrlRaw, req));
+  const installState = await createGithubSetupState();
+  setGithubStateCookie(res, installState, req);
+
+  const appSlug = await getSetting('github_app_slug') || 'docklift-app';
+  return { installUrl: `https://github.com/apps/${appSlug}/installations/new` };
+}
+
+// POST /install-session — set HttpOnly CSRF cookie + return GitHub install URL (Bearer auth)
+router.post('/install-session', async (req: Request, res: Response) => {
+  try {
+    const result = await beginGithubInstallSession(req, res, req.body?.returnUrl ?? req.body?.return_url);
+    if ('error' in result) {
+      return res.status(result.status).json({ error: result.error });
+    }
+    res.json(result);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to initiate GitHub install' });
+  }
+});
+
+// GET /install — legacy redirect (still sets nonce cookie when called with Bearer via fetch+redirect)
 router.get('/install', async (req: Request, res: Response) => {
   try {
-    const dbAppId = await getSetting('github_app_id');
-    const appId = config.githubAppId || dbAppId;
-    
-    if (!appId) {
-      return res.status(400).json({
-        error: 'GitHub App not configured. Please create one first.',
-      });
+    const result = await beginGithubInstallSession(req, res, req.query.return_url);
+    if ('error' in result) {
+      return res.status(result.status).json({ error: result.error });
     }
-    
-    const returnUrl = req.query.return_url as string || `${config.frontendUrl}/settings`;
-    await saveSetting('github_return_url', returnUrl);
-    
-    // Get app slug for installation URL
-    const appSlug = await getSetting('github_app_slug') || 'docklift-app';
-    
-    // Redirect to GitHub App installation
-    const installUrl = `https://github.com/apps/${appSlug}/installations/new`;
-    res.redirect(installUrl);
+    res.redirect(result.installUrl);
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Failed to initiate GitHub install' });
@@ -362,48 +546,51 @@ router.get('/install', async (req: Request, res: Response) => {
 
 // GET /setup - Handle GitHub App installation callback
 router.get('/setup', async (req: Request, res: Response) => {
+  const returnBase = `${config.frontendUrl}/settings`;
   try {
     const installationId = req.query.installation_id as string;
-    
-    if (!installationId) {
-      return res.status(400).json({ error: 'No installation_id provided' });
+
+    if (!installationId || !/^\d+$/.test(installationId)) {
+      return res.redirect(`${returnBase}?github_error=invalid_installation`);
     }
-    
-    // Save the installation ID
-    await saveSetting('github_installation_id', installationId);
-    
-    // Get installation details to save username
-    try {
-      const jwtToken = await createJwtToken();
-      
-      const response = await fetch(
-        `${GITHUB_API_URL}/app/installations/${installationId}`,
-        {
-          headers: {
-            Authorization: `Bearer ${jwtToken}`,
-            Accept: 'application/vnd.github+json',
-            'X-GitHub-Api-Version': '2022-11-28',
-          },
-        }
-      );
-      
-      if (response.ok) {
-        const data = await response.json() as { account?: { login?: string; avatar_url?: string } };
-        const account = data.account || {};
-        await saveSetting('github_username', account.login || 'unknown');
-        await saveSetting('github_avatar_url', account.avatar_url || '');
+
+    if (!(await requireGithubSetupState(req))) {
+      return res.redirect(`${returnBase}?github_error=invalid_state`);
+    }
+
+    // Verify installation belongs to THIS GitHub App before persisting anything
+    const jwtToken = await createJwtToken();
+    const response = await fetch(
+      `${GITHUB_API_URL}/app/installations/${installationId}`,
+      {
+        headers: {
+          Authorization: `Bearer ${jwtToken}`,
+          Accept: 'application/vnd.github+json',
+          'X-GitHub-Api-Version': '2022-11-28',
+        },
       }
-    } catch {
-      // Continue even if we can't get details
+    );
+
+    if (!response.ok) {
+      console.warn(`[GITHUB] Installation verify failed for id=${installationId}: ${response.status}`);
+      return res.redirect(`${returnBase}?github_error=installation_verify_failed`);
     }
-    
-    // Redirect back to original page
-    const returnUrl = await getSetting('github_return_url') || `${config.frontendUrl}/settings`;
+
+    const data = await response.json() as { account?: { login?: string; avatar_url?: string } };
+    const account = data.account || {};
+
+    await saveSetting('github_installation_id', installationId);
+    await saveSetting('github_username', account.login || 'unknown');
+    await saveSetting('github_avatar_url', account.avatar_url || '');
+    await clearGithubSetupState();
+    clearGithubStateCookie(res);
+
+    const returnUrl = await getSetting('github_return_url') || returnBase;
     const separator = returnUrl.includes('?') ? '&' : '?';
     res.redirect(`${returnUrl}${separator}github=connected`);
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: 'Failed to complete GitHub setup' });
+    res.redirect(`${returnBase}?github_error=setup_failed`);
   }
 });
 
@@ -414,8 +601,10 @@ router.get('/callback', async (req: Request, res: Response) => {
     const code = req.query.code as string;
     
     if (installationId) {
-      // This is a setup callback, redirect to setup handler
-      return res.redirect(`/api/github/setup?installation_id=${installationId}`);
+      const state = req.query.state as string | undefined;
+      const qs = new URLSearchParams({ installation_id: installationId });
+      if (state) qs.set('state', state);
+      return res.redirect(`/api/github/setup?${qs.toString()}`);
     }
     
     if (!code) {

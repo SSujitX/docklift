@@ -1,5 +1,5 @@
 // Auth routes - registration, login, logout, session check
-import express, { Request, Response, NextFunction } from 'express';
+import express, { Request, Response } from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import fs from 'fs';
@@ -8,72 +8,101 @@ import crypto from 'crypto';
 import prisma from '../lib/prisma.js';
 import { JWT_SECRET, authMiddleware } from '../lib/authMiddleware.js';
 import { config } from '../lib/config.js';
+import {
+  ensureBootstrapSecret,
+  verifyBootstrapSecret,
+  consumeBootstrapSecret,
+} from '../lib/bootstrap.js';
+
 const router = express.Router();
 
 const JWT_EXPIRES_IN = '7d';
+
+function requireBootstrap(req: Request, res: Response): boolean {
+  const header = (req.headers['x-bootstrap-secret'] as string | undefined)?.trim();
+  const bodySecret = typeof req.body?.bootstrapSecret === 'string' ? req.body.bootstrapSecret.trim() : undefined;
+  const provided = header || bodySecret;
+  if (!verifyBootstrapSecret(provided)) {
+    res.status(403).json({
+      error: 'Bootstrap secret required. Copy it from the backend logs (or data/.bootstrap-secret on the host).',
+    });
+    return false;
+  }
+  return true;
+}
+
+function signSessionToken(user: { id: string; email: string; role: string }) {
+  return jwt.sign(
+    { userId: user.id, email: user.email, role: user.role },
+    JWT_SECRET,
+    { expiresIn: JWT_EXPIRES_IN }
+  );
+}
 
 // Check if setup is complete (any users exist)
 router.get('/status', async (req: Request, res: Response) => {
   try {
     const userCount = await prisma.user.count();
+    // Ensure secret exists for fresh installs (does not expose it)
+    if (userCount === 0) {
+      ensureBootstrapSecret();
+    }
     res.json({
       setupComplete: userCount > 0,
-      userCount
+      userCount,
+      bootstrapRequired: userCount === 0,
     });
   } catch (error: any) {
     // If database doesn't exist or table missing, setup is not complete
-    // This allows restore from backup on fresh install
     if (error.message?.includes('does not exist') || error.code === 'P2021') {
+      ensureBootstrapSecret();
       return res.json({
         setupComplete: false,
         userCount: 0,
-        needsRestore: true
+        needsRestore: true,
+        bootstrapRequired: true,
       });
     }
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// Register first user (only if no users exist)
+// Register first user (only if no users exist) — requires bootstrap secret
 router.post('/register', async (req: Request, res: Response) => {
   try {
     const { name, email, password } = req.body;
 
-    // Validate input
     if (!name || !email || !password) {
       return res.status(400).json({ error: 'Name, email, and password are required' });
     }
 
-    // Password validation
     if (password.length < 8) {
       return res.status(400).json({ error: 'Password must be at least 8 characters' });
     }
 
-    // Check if any users already exist
     const userCount = await prisma.user.count();
     if (userCount > 0) {
       return res.status(403).json({ error: 'Setup already complete. Use login instead.' });
     }
 
-    // Hash password
-    const hashedPassword = await bcrypt.hash(password, 12);
+    if (!requireBootstrap(req, res)) return;
 
-    // Create user
+    const hashedPassword = await bcrypt.hash(password, 12);
+    const now = new Date();
+
     const user = await prisma.user.create({
       data: {
         name,
         email: email.toLowerCase(),
         password: hashedPassword,
         role: 'admin',
+        passwordChangedAt: now,
       },
     });
 
-    // Generate token
-    const token = jwt.sign(
-      { userId: user.id, email: user.email, role: user.role },
-      JWT_SECRET,
-      { expiresIn: JWT_EXPIRES_IN }
-    );
+    consumeBootstrapSecret();
+
+    const token = signSessionToken(user);
 
     res.status(201).json({
       message: 'Registration successful',
@@ -103,7 +132,6 @@ router.post('/login', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Email and password are required' });
     }
 
-    // Find user
     const user = await prisma.user.findUnique({
       where: { email: email.toLowerCase() },
     });
@@ -112,18 +140,12 @@ router.post('/login', async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
 
-    // Verify password
     const isValidPassword = await bcrypt.compare(password, user.password);
     if (!isValidPassword) {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
 
-    // Generate token
-    const token = jwt.sign(
-      { userId: user.id, email: user.email, role: user.role },
-      JWT_SECRET,
-      { expiresIn: JWT_EXPIRES_IN }
-    );
+    const token = signSessionToken(user);
 
     res.json({
       message: 'Login successful',
@@ -202,7 +224,7 @@ router.patch('/profile', authMiddleware, async (req: Request, res: Response) => 
   }
 });
 
-// Change password
+// Change password — invalidates existing JWTs via passwordChangedAt
 router.post('/change-password', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { currentPassword, newPassword } = req.body;
@@ -216,7 +238,6 @@ router.post('/change-password', authMiddleware, async (req: Request, res: Respon
       return res.status(400).json({ error: 'New password must be at least 8 characters' });
     }
 
-    // Find user to verify current password
     const user = await prisma.user.findUnique({
       where: { id: authUser.userId },
     });
@@ -230,14 +251,17 @@ router.post('/change-password', authMiddleware, async (req: Request, res: Respon
       return res.status(400).json({ error: 'Invalid current password' });
     }
 
-    // Hash and update new password
     const hashedNewPassword = await bcrypt.hash(newPassword, 12);
-    await prisma.user.update({
+    const now = new Date();
+    const updated = await prisma.user.update({
       where: { id: user.id },
-      data: { password: hashedNewPassword },
+      data: { password: hashedNewPassword, passwordChangedAt: now },
     });
 
-    res.json({ message: 'Password changed successfully' });
+    // Issue a fresh session so the current client stays logged in
+    const token = signSessionToken(updated);
+
+    res.json({ message: 'Password changed successfully', token });
   } catch (error: any) {
     console.error('Password change error:', error);
     res.status(500).json({ error: 'Failed to change password' });
@@ -248,8 +272,7 @@ router.post('/change-password', authMiddleware, async (req: Request, res: Respon
 // Setup Token (for restore-upload on fresh install)
 // ========================================
 
-// GET /api/auth/setup-token - Get or generate a one-time setup token
-// Only works when no users exist (fresh install scenario)
+// GET /api/auth/setup-token — requires bootstrap secret (not a public dump)
 router.get('/setup-token', async (req: Request, res: Response) => {
   try {
     const userCount = await prisma.user.count();
@@ -257,10 +280,11 @@ router.get('/setup-token', async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'Setup already complete. Setup tokens are only available before first user registration.' });
     }
 
+    if (!requireBootstrap(req, res)) return;
+
     const dataDir = config.dataPath || './data';
     const tokenPath = path.join(dataDir, '.setup-token');
 
-    // Generate token if it doesn't exist
     if (!fs.existsSync(tokenPath)) {
       fs.mkdirSync(dataDir, { recursive: true });
       const token = crypto.randomBytes(32).toString('hex');
@@ -275,16 +299,13 @@ router.get('/setup-token', async (req: Request, res: Response) => {
 });
 
 // ========================================
-// SSE Token (short-lived tokens for SSE connections)
+// Short-lived purpose tokens (SSE / terminal query params)
 // ========================================
 
-// POST /api/auth/sse-token - Issue a short-lived JWT for SSE/streaming connections
-// This prevents the main JWT from appearing in URLs (server logs, browser history, etc.)
 router.post('/sse-token', authMiddleware, async (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
 
-    // Short-lived token for EventSource query params only (enforced by sseAuthMiddleware on stream routes)
     const sseToken = jwt.sign(
       {
         userId: user?.userId,
@@ -299,6 +320,28 @@ router.post('/sse-token', authMiddleware, async (req: Request, res: Response) =>
     res.json({ token: sseToken });
   } catch (error: any) {
     res.status(500).json({ error: 'Failed to generate SSE token' });
+  }
+});
+
+// POST /api/auth/terminal-token — short-lived WS upgrade token (not the 7d session JWT)
+router.post('/terminal-token', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+
+    const terminalToken = jwt.sign(
+      {
+        userId: user?.userId,
+        email: user?.email,
+        role: user?.role,
+        purpose: 'terminal',
+      },
+      JWT_SECRET,
+      { expiresIn: '5m' }
+    );
+
+    res.json({ token: terminalToken });
+  } catch (error: any) {
+    res.status(500).json({ error: 'Failed to generate terminal token' });
   }
 });
 

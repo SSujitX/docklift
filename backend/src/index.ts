@@ -1,15 +1,16 @@
 // Express server entry point - configures middleware, routes, and starts the Docklift backend
-import 'dotenv/config';
+import './lib/loadEnv.js';
 import express from 'express';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
+import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
 import { config } from './lib/config.js';
 import { ensureNetwork } from './services/docker.js';
-import { syncNginxConfigs } from './services/nginx.js';
+import { logBootstrapIfNeeded } from './lib/bootstrap.js';
 
 import projectsRouter from './routes/projects.js';
 import deploymentsRouter from './routes/deployments.js';
@@ -23,6 +24,8 @@ import logsRouter from './routes/logs.js';
 import authRouter from './routes/auth.js';
 import { authMiddleware, sseAuthMiddleware } from './lib/authMiddleware.js';
 import { setupTerminalWebSocket, cleanupAllSessions } from './services/terminal.js';
+import { startCertRenewWatcher } from './services/certs.js';
+import { reloadNginx, syncNginxConfigs } from './services/nginx.js';
 import prisma from './lib/prisma.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -49,26 +52,65 @@ app.use((req, res, next) => {
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('X-XSS-Protection', '1; mode=block');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  // HSTS only when the request itself is HTTPS (terminate TLS at reverse proxy)
+  const proto = (req.headers['x-forwarded-proto'] || req.protocol || '').toString();
+  if (proto === 'https') {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
   next();
 });
 
-// CORS - validate origin when CORS_ORIGIN is set, otherwise allow same-origin (self-hosted default)
-app.use(cors({
-  origin: (origin, callback) => {
-    // If CORS_ORIGIN is explicitly configured, enforce it
-    if (process.env.CORS_ORIGIN) {
-      const allowed = process.env.CORS_ORIGIN.split(',').map(s => s.trim());
-      if (!origin || allowed.includes(origin)) {
-        return callback(null, true);
+// CORS: explicit allowlist, else same-origin only (scheme + host + port)
+function normalizeOrigin(value: string): string | null {
+  try {
+    const u = new URL(value);
+    const port = u.port || (u.protocol === 'https:' ? '443' : u.protocol === 'http:' ? '80' : '');
+    return `${u.protocol}//${u.hostname}${port ? `:${port}` : ''}`;
+  } catch {
+    return null;
+  }
+}
+
+app.use((req, res, next) => {
+  cors({
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+
+      if (process.env.CORS_ORIGIN) {
+        const allowed = process.env.CORS_ORIGIN.split(',').map((s) => s.trim()).filter(Boolean);
+        if (allowed.includes(origin)) return callback(null, true);
+        return callback(new Error('CORS origin not allowed'));
+      }
+
+      try {
+        const originNorm = normalizeOrigin(origin);
+        if (!originNorm) return callback(new Error('CORS origin not allowed'));
+
+        const proto = (req.headers['x-forwarded-proto'] || req.protocol || 'http')
+          .toString()
+          .split(',')[0]
+          .trim();
+        const host = (req.headers['x-forwarded-host'] || req.headers.host || '')
+          .toString()
+          .split(',')[0]
+          .trim();
+        if (host) {
+          const reqNorm = normalizeOrigin(`${proto}://${host}`);
+          if (reqNorm && originNorm === reqNorm) return callback(null, true);
+        }
+        if (config.frontendUrl) {
+          const feNorm = normalizeOrigin(config.frontendUrl);
+          if (feNorm && originNorm === feNorm) return callback(null, true);
+        }
+      } catch {
+        /* fall through */
       }
       return callback(new Error('CORS origin not allowed'));
-    }
-    // Self-hosted default: allow all origins (JWT auth is the real gate)
-    // This ensures IP, subdomain, and custom domain access all work
-    callback(null, true);
-  },
-  credentials: true,
-}));
+    },
+    credentials: true,
+  })(req, res, next);
+});
 
 // Middleware
 // SECURITY: Capture raw body for webhook signature verification (HMAC needs original bytes)
@@ -213,6 +255,12 @@ async function main() {
 
     // Attach WebSocket terminal server to HTTP server
     setupTerminalWebSocket(server);
+
+    // Fresh install: print bootstrap secret to logs (never via public API)
+    await logBootstrapIfNeeded();
+
+    // After certbot renew updates PEMs, reload nginx-proxy
+    startCertRenewWatcher(() => reloadNginx());
 
     // Graceful shutdown: close connections cleanly on SIGTERM/SIGINT
     const shutdown = async (signal: string) => {

@@ -6,10 +6,11 @@ import fs from 'fs';
 import fsp from 'fs/promises';
 import path from 'path';
 import archiver from 'archiver';
-import unzipper from 'unzipper';
 import multer from 'multer';
 import { config } from '../lib/config.js';
 import prisma from '../lib/prisma.js';
+import { composeProjectName } from '../lib/naming.js';
+import { safeExtractZip } from '../lib/safeUnzip.js';
 
 const execAsync = promisify(exec);
 const router = Router();
@@ -42,17 +43,15 @@ async function reconcileSystem(writeLog: (text: string) => void) {
         try {
           // Verify docker-compose.yml exists
           if (fs.existsSync(path.join(projectPath, 'docker-compose.yml'))) {
-             // Run docker compose up -d --build with correct project name
-             // CRITICAL: -p flag must match the project ID used in streamComposeUp (docker.ts)
-             // Without -p, Docker uses the directory name, breaking container naming
-             // SECURITY: project.id is a UUID from DB — still pass via spawn argv style via quoted id
-             await execAsync(`docker compose -p ${project.id} up -d --build`, {
+             // -p must match deploy naming (dl-<slug>-<shortId>) so images/containers stay consistent
+             const composeProject = composeProjectName(project.name, project.id);
+             await execAsync(`docker compose -p ${composeProject} up -d --build`, {
                cwd: projectPath,
                env: { ...process.env, DOCKER_BUILDKIT: '1', COMPOSE_DOCKER_CLI_BUILD: '1' },
                maxBuffer: 50 * 1024 * 1024, // 50MB buffer for verbose build output
                timeout: 5 * 60 * 1000, // 5 minute timeout per project
              });
-             writeLog(`        + Success\n`);
+             writeLog(`        + Success (${composeProject})\n`);
           } else {
              writeLog(`        ! Skipped (No docker-compose.yml)\n`);
           }
@@ -99,7 +98,7 @@ const uploadStorage = multer.diskStorage({
 
 const uploadBackup = multer({
   storage: uploadStorage,
-  limits: { fileSize: 10 * 1024 * 1024 * 1024 }, // 10GB max
+  limits: { fileSize: 500 * 1024 * 1024 }, // 500MB — aligned with nginx client_max_body_size
   fileFilter: (req, file, cb) => {
     if (file.mimetype === 'application/zip' || file.originalname.endsWith('.zip')) {
       cb(null, true);
@@ -114,6 +113,7 @@ const BACKUP_DIR = process.env.BACKUP_PATH || '/data/backups';
 const UPLOADS_DIR = path.join(BACKUP_DIR, 'uploads'); // Separate directory for uploaded restore files
 const DEPLOYMENTS_PATH = config.deploymentsPath;
 const NGINX_CONF_PATH = config.nginxConfPath;
+const LETSENCRYPT_PATH = config.letsencryptPath;
 const GITHUB_KEY_PATH = config.githubPrivateKeyPath;
 
 // Helper: Resolve database path (handles both relative and absolute paths)
@@ -348,7 +348,7 @@ router.post('/create', async (req: Request, res: Response) => {
     }
 
     // 3. Add nginx configs
-    writeLog(`\n[3/4] Adding nginx configs...\n`);
+    writeLog(`\n[3/5] Adding nginx configs...\n`);
     if (fs.existsSync(NGINX_CONF_PATH)) {
       const nginxSize = await getDirectorySize(NGINX_CONF_PATH);
       archive.directory(NGINX_CONF_PATH, 'nginx-conf');
@@ -357,8 +357,18 @@ router.post('/create', async (req: Request, res: Response) => {
       writeLog(`      - Nginx config directory not found (skipped)\n`);
     }
 
-    // 4. Add GitHub key if exists
-    writeLog(`\n[4/4] Adding GitHub App key...\n`);
+    // 4. Add Let's Encrypt certificates
+    writeLog(`\n[4/5] Adding TLS certificates...\n`);
+    if (fs.existsSync(LETSENCRYPT_PATH)) {
+      const leSize = await getDirectorySize(LETSENCRYPT_PATH);
+      archive.directory(LETSENCRYPT_PATH, 'letsencrypt');
+      writeLog(`      + /letsencrypt/ (${formatBytes(leSize)})\n`);
+    } else {
+      writeLog(`      - No Let's Encrypt data (skipped)\n`);
+    }
+
+    // 5. Add GitHub key if exists
+    writeLog(`\n[5/5] Adding GitHub App key...\n`);
     if (fs.existsSync(GITHUB_KEY_PATH)) {
       archive.file(GITHUB_KEY_PATH, { name: 'github-app.pem' });
       writeLog(`      + github-app.pem\n`);
@@ -455,12 +465,7 @@ router.post('/restore/:filename', async (req: Request, res: Response) => {
     await fsp.rm(tempDir, { recursive: true, force: true });
     await fsp.mkdir(tempDir, { recursive: true });
 
-    await new Promise<void>((resolve, reject) => {
-      fs.createReadStream(backupPath)
-        .pipe(unzipper.Extract({ path: tempDir }))
-        .on('close', resolve)
-        .on('error', reject);
-    });
+    await safeExtractZip(backupPath, tempDir);
     writeLog(`      + Extraction complete\n`);
 
     // 3. Restore database
@@ -503,7 +508,7 @@ router.post('/restore/:filename', async (req: Request, res: Response) => {
     }
 
     // 5. Restore nginx configs
-    writeLog(`\n[5/7] Restoring nginx configs...\n`);
+    writeLog(`\n[5/8] Restoring nginx configs...\n`);
     const tempNginxPath = path.join(tempDir, 'nginx-conf');
     if (fs.existsSync(tempNginxPath)) {
       await fsp.mkdir(NGINX_CONF_PATH, { recursive: true });
@@ -521,8 +526,25 @@ router.post('/restore/:filename', async (req: Request, res: Response) => {
       writeLog(`      - No nginx configs in backup\n`);
     }
 
-    // 6. Restore GitHub key
-    writeLog(`\n[6/7] Restoring GitHub App key...\n`);
+    // 6. Restore Let's Encrypt certificates
+    writeLog(`\n[6/8] Restoring TLS certificates...\n`);
+    const tempLePath = path.join(tempDir, 'letsencrypt');
+    if (fs.existsSync(tempLePath)) {
+      await fsp.mkdir(LETSENCRYPT_PATH, { recursive: true });
+      await execAsync(`cp -r "${tempLePath}/." "${LETSENCRYPT_PATH}/"`);
+      writeLog(`      + Let's Encrypt certificates restored\n`);
+      try {
+        await execAsync('docker exec docklift-nginx-proxy nginx -s reload 2>/dev/null || true');
+        writeLog(`      + Nginx proxy reloaded\n`);
+      } catch {
+        writeLog(`      - Nginx reload skipped\n`);
+      }
+    } else {
+      writeLog(`      - No certificates in backup\n`);
+    }
+
+    // 7. Restore GitHub key
+    writeLog(`\n[7/8] Restoring GitHub App key...\n`);
     const tempGithubKeyPath = path.join(tempDir, 'github-app.pem');
     if (fs.existsSync(tempGithubKeyPath)) {
       await fsp.copyFile(tempGithubKeyPath, GITHUB_KEY_PATH);
@@ -535,7 +557,7 @@ router.post('/restore/:filename', async (req: Request, res: Response) => {
     await fsp.rm(tempDir, { recursive: true, force: true });
 
     // Delete all backup files from the server
-    writeLog(`\n[7/7] Cleaning up backup files...\n`);
+    writeLog(`\n[8/8] Cleaning up backup files...\n`);
     try {
       const backupFiles = await fsp.readdir(BACKUP_DIR);
       let deletedCount = 0;
@@ -712,12 +734,7 @@ router.post('/restore-upload', uploadBackup.single('backup'), async (req: Reques
     await fsp.rm(tempDir, { recursive: true, force: true });
     await fsp.mkdir(tempDir, { recursive: true });
 
-    await new Promise<void>((resolve, reject) => {
-      fs.createReadStream(backupPath)
-        .pipe(unzipper.Extract({ path: tempDir }))
-        .on('close', resolve)
-        .on('error', reject);
-    });
+    await safeExtractZip(backupPath, tempDir);
     writeLog(`      + Extraction complete\n`);
 
     // 3. Restore database
@@ -759,7 +776,7 @@ router.post('/restore-upload', uploadBackup.single('backup'), async (req: Reques
     }
 
     // 5. Restore nginx configs
-    writeLog(`\n[5/7] Restoring nginx configs...\n`);
+    writeLog(`\n[5/8] Restoring nginx configs...\n`);
     const tempNginxPath = path.join(tempDir, 'nginx-conf');
     if (fs.existsSync(tempNginxPath)) {
       await fsp.mkdir(NGINX_CONF_PATH, { recursive: true });
@@ -776,8 +793,24 @@ router.post('/restore-upload', uploadBackup.single('backup'), async (req: Reques
       writeLog(`      - No nginx configs in backup\n`);
     }
 
-    // 6. Restore GitHub key
-    writeLog(`\n[6/7] Restoring GitHub App key...\n`);
+    writeLog(`\n[6/8] Restoring TLS certificates...\n`);
+    const tempLePath = path.join(tempDir, 'letsencrypt');
+    if (fs.existsSync(tempLePath)) {
+      await fsp.mkdir(LETSENCRYPT_PATH, { recursive: true });
+      await execAsync(`cp -r "${tempLePath}/." "${LETSENCRYPT_PATH}/"`);
+      writeLog(`      + Let's Encrypt certificates restored\n`);
+      try {
+        await execAsync('docker exec docklift-nginx-proxy nginx -s reload 2>/dev/null || true');
+        writeLog(`      + Nginx proxy reloaded\n`);
+      } catch {
+        writeLog(`      - Nginx reload skipped\n`);
+      }
+    } else {
+      writeLog(`      - No certificates in backup\n`);
+    }
+
+    // 7. Restore GitHub key
+    writeLog(`\n[7/8] Restoring GitHub App key...\n`);
     const tempGithubKeyPath = path.join(tempDir, 'github-app.pem');
     if (fs.existsSync(tempGithubKeyPath)) {
       await fsp.copyFile(tempGithubKeyPath, GITHUB_KEY_PATH);
@@ -790,7 +823,7 @@ router.post('/restore-upload', uploadBackup.single('backup'), async (req: Reques
     await fsp.rm(tempDir, { recursive: true, force: true });
 
     // Mark file as restored by renaming (keep file for manual deletion)
-    writeLog(`\n[7/7] Marking file as restored...\n`);
+    writeLog(`\n[8/8] Marking file as restored...\n`);
     try {
       // Add restored timestamp to filename: file.zip -> file.restored-2024-01-08.zip
       const timestamp = new Date().toISOString().slice(0, 10);
@@ -897,12 +930,7 @@ router.post('/restore-from-upload/:filename', async (req: Request, res: Response
     await fsp.rm(tempDir, { recursive: true, force: true });
     await fsp.mkdir(tempDir, { recursive: true });
 
-    await new Promise<void>((resolve, reject) => {
-      fs.createReadStream(backupPath)
-        .pipe(unzipper.Extract({ path: tempDir }))
-        .on('close', resolve)
-        .on('error', reject);
-    });
+    await safeExtractZip(backupPath, tempDir);
     writeLog(`      + Extraction complete\n`);
 
     // 3. Restore database
@@ -942,7 +970,7 @@ router.post('/restore-from-upload/:filename', async (req: Request, res: Response
     }
 
     // 5. Restore nginx configs
-    writeLog(`\n[5/7] Restoring nginx configs...\n`);
+    writeLog(`\n[5/8] Restoring nginx configs...\n`);
     const tempNginxPath = path.join(tempDir, 'nginx-conf');
     if (fs.existsSync(tempNginxPath)) {
       await fsp.mkdir(NGINX_CONF_PATH, { recursive: true });
@@ -959,8 +987,24 @@ router.post('/restore-from-upload/:filename', async (req: Request, res: Response
       writeLog(`      - No nginx configs in backup\n`);
     }
 
-    // 6. Restore GitHub key
-    writeLog(`\n[6/7] Restoring GitHub App key...\n`);
+    writeLog(`\n[6/8] Restoring TLS certificates...\n`);
+    const tempLePath = path.join(tempDir, 'letsencrypt');
+    if (fs.existsSync(tempLePath)) {
+      await fsp.mkdir(LETSENCRYPT_PATH, { recursive: true });
+      await execAsync(`cp -r "${tempLePath}/." "${LETSENCRYPT_PATH}/"`);
+      writeLog(`      + Let's Encrypt certificates restored\n`);
+      try {
+        await execAsync('docker exec docklift-nginx-proxy nginx -s reload 2>/dev/null || true');
+        writeLog(`      + Nginx proxy reloaded\n`);
+      } catch {
+        writeLog(`      - Nginx reload skipped\n`);
+      }
+    } else {
+      writeLog(`      - No certificates in backup\n`);
+    }
+
+    // 7. Restore GitHub key
+    writeLog(`\n[7/8] Restoring GitHub App key...\n`);
     const tempGithubKeyPath = path.join(tempDir, 'github-app.pem');
     if (fs.existsSync(tempGithubKeyPath)) {
       await fsp.copyFile(tempGithubKeyPath, GITHUB_KEY_PATH);
@@ -973,7 +1017,7 @@ router.post('/restore-from-upload/:filename', async (req: Request, res: Response
     await fsp.rm(tempDir, { recursive: true, force: true });
 
     // Mark file as restored by renaming (keep file for manual deletion)
-    writeLog(`\n[7/7] Marking file as restored...\n`);
+    writeLog(`\n[8/8] Marking file as restored...\n`);
     try {
       // Add restored timestamp to filename: file.zip -> file.restored-2024-01-08.zip
       const timestamp = new Date().toISOString().slice(0, 10);

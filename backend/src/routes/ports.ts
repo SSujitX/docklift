@@ -1,6 +1,7 @@
 // Ports routes - API endpoints for port allocation management
 import { Router, Request, Response } from 'express';
 import prisma from '../lib/prisma.js';
+import { config } from '../lib/config.js';
 
 const router = Router();
 
@@ -18,9 +19,8 @@ router.get('/', async (req: Request, res: Response) => {
     // Create a map for easy lookup
     const portMap = new Map(dbPorts.map(p => [p.port, p]));
     
-    // Generate full range (3001 - 3100)
     const allPorts = [];
-    for (let p = 3001; p <= 3100; p++) {
+    for (let p = config.portRangeStart; p <= config.portRangeEnd; p++) {
       if (portMap.has(p)) {
         allPorts.push(portMap.get(p));
       } else {

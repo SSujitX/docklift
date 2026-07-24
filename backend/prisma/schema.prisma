@@ -92,12 +92,13 @@ model Settings {
 }
 
 model User {
-  id         String   @id @default(uuid())
-  name       String
-  email      String   @unique
-  password   String
-  role       String   @default("admin")
-  created_at DateTime @default(now())
+  id                String    @id @default(uuid())
+  name              String
+  email             String    @unique
+  password          String
+  role              String    @default("admin")
+  passwordChangedAt DateTime? // when set, JWTs with iat before this are rejected
+  created_at        DateTime  @default(now())
 
   @@map("users")
 }

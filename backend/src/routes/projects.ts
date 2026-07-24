@@ -1,21 +1,26 @@
 // Projects routes - API endpoints for project CRUD and environment variables
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
-import unzipper from 'unzipper';
 import prisma from '../lib/prisma.js';
 import { config } from '../lib/config.js';
 import { cloneRepo, getCurrentBranch } from '../services/git.js';
 import * as dockerService from '../services/docker.js';
 import { getInstallationToken, getSetting, getInstallationIdForRepo } from './github.js';
 import { cleanupServiceDomain } from '../services/nginx.js';
+import { safeExtractZip } from '../lib/safeUnzip.js';
 import crypto from 'crypto';
 
 const router = Router();
 const uploadDir = path.join(config.dataPath, 'uploads');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
-const upload = multer({ dest: uploadDir });
+const MAX_UPLOAD_ZIP_BYTES = 100 * 1024 * 1024; // 100 MiB compressed
+const MAX_EXTRACTED_BYTES = 512 * 1024 * 1024; // 512 MiB uncompressed
+const upload = multer({
+  dest: uploadDir,
+  limits: { fileSize: MAX_UPLOAD_ZIP_BYTES, files: 1 },
+});
 
 // Strict domain validation helper - validates single domain or comma-separated domains
 const DOMAIN_REGEX = /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)+$/;
@@ -192,7 +197,18 @@ router.get('/:id', async (req: Request, res: Response) => {
 });
 
 // Create project
-router.post('/', upload.single('files'), async (req: Request, res: Response) => {
+router.post('/', (req: Request, res: Response, next: NextFunction) => {
+  upload.single('files')(req, res, (err: unknown) => {
+    if (err) {
+      const code = (err as { code?: string }).code;
+      if (code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ error: `Upload too large (max ${MAX_UPLOAD_ZIP_BYTES} bytes)` });
+      }
+      return res.status(400).json({ error: 'Upload failed' });
+    }
+    next();
+  });
+}, async (req: Request, res: Response) => {
   try {
     const { name, description, source_type, github_url, project_type, github_branch, domain } = req.body;
 
@@ -281,14 +297,21 @@ router.post('/', upload.single('files'), async (req: Request, res: Response) => 
         return res.status(500).json({ error: 'Failed to secure repository credentials after clone' });
       }
     } else if (req.file) {
-      // Extract zip file
       fs.mkdirSync(projectPath, { recursive: true });
       try {
-        await fs.createReadStream(req.file.path)
-          .pipe(unzipper.Extract({ path: projectPath }))
-          .promise();
+        await safeExtractZip(req.file.path, projectPath, {
+          maxFiles: 20_000,
+          maxUncompressedBytes: MAX_EXTRACTED_BYTES,
+        });
+      } catch (extractErr: any) {
+        try { fs.rmSync(projectPath, { recursive: true, force: true }); } catch {}
+        try { await prisma.project.delete({ where: { id: project.id } }); } catch {}
+        const msg = extractErr?.message || 'Failed to extract upload';
+        if (String(msg).includes('exceeds limit') || String(msg).includes('too many files')) {
+          return res.status(400).json({ error: msg });
+        }
+        return res.status(400).json({ error: 'Invalid or unsafe ZIP upload' });
       } finally {
-        // Always clean up temp upload file
         try { fs.unlinkSync(req.file.path); } catch {}
       }
     }
@@ -332,18 +355,25 @@ router.patch('/:id', async (req: Request, res: Response) => {
 router.delete('/:id', async (req: Request, res: Response) => {
   try {
     const projectId = req.params.id;
+    const project = await prisma.project.findUnique({ where: { id: projectId } });
     const projectPath = path.join(config.deploymentsPath, projectId);
     
     // Attempt to stop and remove Docker containers first
     if (fs.existsSync(projectPath)) {
       try {
         const { spawnSync } = await import('child_process');
-        // Stop and remove containers, volumes, and images associated with the project
-        spawnSync('docker', ['compose', '-p', `${projectId}`, 'down', '--volumes', '--remove-orphans', '--rmi', 'all'], { 
-          cwd: projectPath,
-          timeout: 60000, // Increased to 60 seconds for image removal
-          shell: false
-        });
+        const { composeProjectAliases } = await import('../lib/naming.js');
+        const aliases = project
+          ? composeProjectAliases(project.name, projectId)
+          : [projectId];
+        // Stop current + legacy compose project names (UUID-era)
+        for (const alias of aliases) {
+          spawnSync('docker', ['compose', '-p', alias, 'down', '--volumes', '--remove-orphans', '--rmi', 'all'], {
+            cwd: projectPath,
+            timeout: 60000,
+            shell: false,
+          });
+        }
       } catch (dockerError) {
         console.warn(`Docker cleanup warned for project ${projectId}:`, dockerError);
       }
