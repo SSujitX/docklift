@@ -6,14 +6,14 @@ import { Card } from "@/components/ui/card";
 import { Port } from "@/lib/types";
 import { API_URL } from "@/lib/utils";
 import { Anchor, Lock, Unlock, Network } from "lucide-react";
-import { getAuthHeaders } from "@/lib/auth";
+import { authFetch } from "@/lib/auth";
 
 export default function PortsPage() {
   const [ports, setPorts] = useState<Port[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch(`${API_URL}/api/ports`, { headers: getAuthHeaders() })
+    authFetch(`${API_URL}/api/ports`)
       .then((res) => res.json())
       .then((data) => {
         setPorts(Array.isArray(data) ? data : []);
