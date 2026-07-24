@@ -12,7 +12,7 @@ Docklift uses a modern UI stack built on standards-compliant technologies.
 -   **Framework**: Tailwind CSS (v3 with `tailwindcss-animate` plugin)
 -   **Component Library**: Shadcn UI (Headless Radix UI + Tailwind)
 -   **Icons**: Lucide React
--   **Theming**: `next-themes` (Dark/Light mode support)
+-   **Theming**: Custom `ThemeProvider` (`frontend/src/lib/theme.tsx`)
 -   **Fonts**: Geist Sans & Geist Mono (via `next/font`)
 
 ## Tailwind Configuration

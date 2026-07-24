@@ -38,7 +38,7 @@ This guide details the lifecycle of a deployment in Docklift, from source code t
     -   `compose.scanDockerfiles()` searches for Dockerfiles.
     -   `compose.generateCompose()` creates a `docker-compose.yml` in the project root.
     -   **Env Injection**: Environment variables (Build Args & Runtime) are injected into the compose file.
-    -   **Middleware Bypass**: `middlewareBypass.ts` patches Next.js `allowedHosts` if detected.
+    -   **Middleware Bypass**: `middlewareBypass.ts` patches framework host checks in user apps when detected.
 
 4.  **Build & Run**:
     -   Command: `docker compose -p <projectId> up -d --build`
