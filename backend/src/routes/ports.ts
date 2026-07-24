@@ -2,6 +2,7 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../lib/prisma.js';
 import { config } from '../lib/config.js';
+import * as dockerService from '../services/docker.js';
 
 const router = Router();
 
@@ -42,8 +43,35 @@ router.get('/', async (req: Request, res: Response) => {
 // Delete port allocation
 router.delete('/:port', async (req: Request, res: Response) => {
   try {
-    const port = parseInt(req.params.port);
-    
+    const port = parseInt(req.params.port, 10);
+    if (!Number.isInteger(port)) {
+      return res.status(400).json({ error: 'Invalid port' });
+    }
+
+    const servicesOnPort = await prisma.service.findMany({
+      where: { port },
+      select: { container_name: true },
+    });
+    const projectRef = await prisma.project.findFirst({ where: { port } });
+
+    for (const svc of servicesOnPort) {
+      if (!svc.container_name) continue;
+      try {
+        const status = await dockerService.getContainerStatus(svc.container_name);
+        if (status.running) {
+          return res.status(409).json({ error: 'Port is in use by a running container' });
+        }
+      } catch {
+        // ignore inspect errors
+      }
+    }
+
+    if (servicesOnPort.length > 0 || projectRef) {
+      return res.status(409).json({
+        error: 'Port is still assigned to a service or project',
+      });
+    }
+
     await prisma.port.deleteMany({
       where: { port },
     });
