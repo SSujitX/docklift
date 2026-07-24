@@ -6,7 +6,6 @@ import path from 'path';
 import prisma from '../lib/prisma.js';
 import { config } from '../lib/config.js';
 import { cloneRepo, getCurrentBranch } from '../services/git.js';
-import * as dockerService from '../services/docker.js';
 import { getInstallationToken, getSetting, getInstallationIdForRepo } from './github.js';
 import { cleanupServiceDomain } from '../services/nginx.js';
 import { safeExtractZip } from '../lib/safeUnzip.js';
@@ -15,7 +14,9 @@ import {
   normalizeBuildType,
   resolveProjectBuild,
 } from '../services/buildResolver.js';
-import { composeProjectName, dockerSlug, shortProjectId } from '../lib/naming.js';
+import { composeProjectName, dockerSlug, shortPathHash, shortProjectId } from '../lib/naming.js';
+import { isProjectDeploying } from '../lib/deploymentState.js';
+import { syncProjectStatusFromContainers } from '../lib/projectStatusSync.js';
 import { spawnSync } from 'child_process';
 
 const router = Router();
@@ -34,6 +35,47 @@ function isValidDomainList(domainStr: string): boolean {
   if (!domainStr) return true; // Empty is valid (optional field)
   const domains = domainStr.split(',').map(d => d.trim()).filter(Boolean);
   return domains.every(d => DOMAIN_REGEX.test(d));
+}
+
+function generateWebhookSecret(): string {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+async function rollbackProject(project: { id: string }): Promise<void> {
+  const projectPath = path.join(config.deploymentsPath, project.id);
+  try {
+    fs.rmSync(projectPath, { recursive: true, force: true });
+  } catch {
+    /* ignore */
+  }
+  try {
+    await prisma.project.delete({ where: { id: project.id } });
+  } catch {
+    /* ignore */
+  }
+}
+
+function unlinkUploadedFile(req: Request): void {
+  if (req.file?.path) {
+    try {
+      fs.unlinkSync(req.file.path);
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+async function verifyOriginHasNoCredentials(projectPath: string): Promise<void> {
+  const { simpleGit } = await import('simple-git');
+  const remotes = await simpleGit(projectPath).getRemotes(true);
+  const origin = remotes.find((r) => r.name === 'origin');
+  const originUrl = origin?.refs?.fetch || origin?.refs?.push || '';
+  if (
+    originUrl.includes('x-access-token') ||
+    /https?:\/\/[^/@]+:[^/@]+@/.test(originUrl)
+  ) {
+    throw new Error('Origin remote still contains credentials after scrub');
+  }
 }
 
 // List all projects
@@ -71,45 +113,8 @@ router.get('/', async (req: Request, res: Response) => {
         }
       }
       
-      if (container_name) {
-        const status = await dockerService.getContainerStatus(container_name);
-
-        // IMPORTANT: Skip auto-sync if project is currently building
-        // The deployment process will handle status updates when it completes
-        if (project.status === 'building') {
-          // Don't auto-sync during active builds - let deployment handle it
-          continue;
-        }
-
-        if (status.running && project.status !== 'running') {
-          // Update both project AND all services to 'running' for consistency
-          await prisma.project.update({
-            where: { id: project.id },
-            data: { status: 'running' },
-          });
-          await prisma.service.updateMany({
-            where: { project_id: project.id },
-            data: { status: 'running' },
-          });
-          project.status = 'running';
-
-          // Also update IN_PROGRESS deployments to SUCCESS
-          await prisma.deployment.updateMany({
-            where: { project_id: project.id, status: 'in_progress' },
-            data: { status: 'success', finished_at: new Date() },
-          });
-        } else if (!status.running && status.status !== 'not_found' && project.status === 'running') {
-          // Update both project AND all services to 'stopped' for consistency
-          await prisma.project.update({
-            where: { id: project.id },
-            data: { status: 'stopped' },
-          });
-          await prisma.service.updateMany({
-            where: { project_id: project.id },
-            data: { status: 'stopped' },
-          });
-          project.status = 'stopped';
-        }
+      if (container_name && project.status !== 'building') {
+        project.status = await syncProjectStatusFromContainers(project.id);
       }
     }
     
@@ -157,42 +162,8 @@ router.get('/:id', async (req: Request, res: Response) => {
       }
     }
     
-    if (container_name) {
-      const status = await dockerService.getContainerStatus(container_name);
-
-      // IMPORTANT: Skip auto-sync if project is currently building
-      // The deployment process will handle status updates when it completes
-      if (project.status !== 'building') {
-        if (status.running && project.status !== 'running') {
-          // Update both project AND all services to 'running' for consistency
-          await prisma.project.update({
-            where: { id: project.id },
-            data: { status: 'running' },
-          });
-          await prisma.service.updateMany({
-            where: { project_id: project.id },
-            data: { status: 'running' },
-          });
-          project.status = 'running';
-
-          // Also update IN_PROGRESS deployments to SUCCESS
-          await prisma.deployment.updateMany({
-            where: { project_id: project.id, status: 'in_progress' },
-            data: { status: 'success', finished_at: new Date() },
-          });
-        } else if (!status.running && status.status !== 'not_found' && project.status === 'running') {
-          // Update both project AND all services to 'stopped' for consistency
-          await prisma.project.update({
-            where: { id: project.id },
-            data: { status: 'stopped' },
-          });
-          await prisma.service.updateMany({
-            where: { project_id: project.id },
-            data: { status: 'stopped' },
-          });
-          project.status = 'stopped';
-        }
-      }
+    if (container_name && project.status !== 'building') {
+      project.status = await syncProjectStatusFromContainers(project.id);
     }
 
     res.json(project);
@@ -206,6 +177,7 @@ router.get('/:id', async (req: Request, res: Response) => {
 router.post('/', (req: Request, res: Response, next: NextFunction) => {
   upload.single('files')(req, res, (err: unknown) => {
     if (err) {
+      unlinkUploadedFile(req);
       const code = (err as { code?: string }).code;
       if (code === 'LIMIT_FILE_SIZE') {
         return res.status(400).json({ error: `Upload too large (max ${MAX_UPLOAD_ZIP_BYTES} bytes)` });
@@ -215,6 +187,7 @@ router.post('/', (req: Request, res: Response, next: NextFunction) => {
     next();
   });
 }, async (req: Request, res: Response) => {
+  let createdProject: { id: string } | null = null;
   try {
     const {
       name,
@@ -232,6 +205,7 @@ router.post('/', (req: Request, res: Response, next: NextFunction) => {
 
     // Validate domain format to prevent Nginx config injection
     if (domain && !isValidDomainList(domain)) {
+      unlinkUploadedFile(req);
       return res.status(400).json({ error: 'Invalid domain format. Must be valid domain names (e.g., example.com, app.example.com).' });
     }
     
@@ -254,6 +228,7 @@ router.post('/', (req: Request, res: Response, next: NextFunction) => {
         internal_port: Math.min(65535, Math.max(1, parseInt(internal_port, 10) || 3000)),
       },
     });
+    createdProject = project;
     
     const projectPath = path.join(config.deploymentsPath, project.id);
     
@@ -263,9 +238,6 @@ router.post('/', (req: Request, res: Response, next: NextFunction) => {
     if (source_type === 'github' && github_url) {
       let authUrl = github_url;
       try {
-        // Extract owner/repo from URL to get correct installation
-        // Extract owner/repo from URL to get correct installation
-        // MODIFIED: Regex updated to support dots in repo name (e.g. quickdlr.com) and stripped .git
         const match = github_url.match(/github\.com[/:]([^/]+)\/([^\/]+)/);
         if (match) {
           const [, owner, rawRepo] = match;
@@ -273,10 +245,8 @@ router.post('/', (req: Request, res: Response, next: NextFunction) => {
           let installId: string | null = null;
           
           try {
-            // Try to get installation ID for this specific repo
             installId = await getInstallationIdForRepo(owner, repo);
           } catch (err) {
-            // Fallback to saved installation ID
             console.warn(`Dynamic installation lookup failed for ${owner}/${repo}, trying saved ID`);
             installId = await getSetting('github_installation_id');
           }
@@ -292,31 +262,24 @@ router.post('/', (req: Request, res: Response, next: NextFunction) => {
       } catch (err) {
         console.warn('Failed to inject GitHub token, trying public clone:', err);
       }
-      
-      await cloneRepo(authUrl, projectPath, github_branch || undefined);
-      // SECURITY: Never leave installation tokens in .git/config (included in backups).
-      // If scrub fails after an authenticated clone, delete the project — do not keep a credentialed repo.
+
       try {
-        const { scrubOriginRemote } = await import('../services/git.js');
-        await scrubOriginRemote(projectPath, github_url);
-        // Verify origin no longer embeds credentials when we used a tokenized URL
-        if (authUrl !== github_url) {
-          const { simpleGit } = await import('simple-git');
-          const remotes = await simpleGit(projectPath).getRemotes(true);
-          const origin = remotes.find((r) => r.name === 'origin');
-          const originUrl = origin?.refs?.fetch || origin?.refs?.push || '';
-          if (
-            originUrl.includes('x-access-token') ||
-            /https?:\/\/[^/@]+:[^/@]+@/.test(originUrl)
-          ) {
-            throw new Error('Origin remote still contains credentials after scrub');
+        await cloneRepo(authUrl, projectPath, github_branch || undefined);
+        try {
+          const { scrubOriginRemote } = await import('../services/git.js');
+          await scrubOriginRemote(projectPath, github_url);
+          if (authUrl !== github_url) {
+            await verifyOriginHasNoCredentials(projectPath);
           }
+        } catch (scrubErr) {
+          console.error('Failed to scrub git remote after clone — rolling back project:', scrubErr);
+          await rollbackProject(project);
+          return res.status(500).json({ error: 'Failed to secure repository credentials after clone' });
         }
-      } catch (scrubErr) {
-        console.error('Failed to scrub git remote after clone — rolling back project:', scrubErr);
-        try { fs.rmSync(projectPath, { recursive: true, force: true }); } catch {}
-        try { await prisma.project.delete({ where: { id: project.id } }); } catch {}
-        return res.status(500).json({ error: 'Failed to secure repository credentials after clone' });
+      } catch (cloneErr) {
+        console.error('Failed to clone repository — rolling back project:', cloneErr);
+        await rollbackProject(project);
+        return res.status(500).json({ error: 'Failed to clone repository' });
       }
     } else if (req.file) {
       fs.mkdirSync(projectPath, { recursive: true });
@@ -326,20 +289,23 @@ router.post('/', (req: Request, res: Response, next: NextFunction) => {
           maxUncompressedBytes: MAX_EXTRACTED_BYTES,
         });
       } catch (extractErr: any) {
-        try { fs.rmSync(projectPath, { recursive: true, force: true }); } catch {}
-        try { await prisma.project.delete({ where: { id: project.id } }); } catch {}
+        await rollbackProject(project);
         const msg = extractErr?.message || 'Failed to extract upload';
         if (String(msg).includes('exceeds limit') || String(msg).includes('too many files')) {
           return res.status(400).json({ error: msg });
         }
         return res.status(400).json({ error: 'Invalid or unsafe ZIP upload' });
       } finally {
-        try { fs.unlinkSync(req.file.path); } catch {}
+        unlinkUploadedFile(req);
       }
     }
     
     res.status(201).json(project);
   } catch (error) {
+    unlinkUploadedFile(req);
+    if (createdProject) {
+      await rollbackProject(createdProject);
+    }
     console.error(error);
     res.status(500).json({ error: 'Failed to create project' });
   }
@@ -464,7 +430,8 @@ router.post('/:id/storage', async (req: Request, res: Response) => {
     });
     if (!service) return res.status(400).json({ error: 'Select a valid project service' });
     const mountPath = validateMountPath(req.body?.mount_path);
-    const volumeName = `dl-${shortProjectId(project.id)}-${dockerSlug(label, 32)}`;
+    // Hash original label so a-b vs a_b (same dockerSlug) never collide
+    const volumeName = `dl-${shortProjectId(project.id)}-${dockerSlug(label, 28)}-${shortPathHash(label)}`;
     const created = await prisma.persistentVolume.create({
       data: {
         project_id: project.id,
@@ -529,6 +496,16 @@ router.delete('/:id/storage/:storageId', async (req: Request, res: Response) => 
 router.delete('/:id', async (req: Request, res: Response) => {
   try {
     const projectId = req.params.id;
+    if (isProjectDeploying(projectId)) {
+      return res.status(409).json({ error: 'Cannot delete project while a deployment is in progress' });
+    }
+    const activeDeploy = await prisma.deployment.findFirst({
+      where: { project_id: projectId, status: 'in_progress' },
+      select: { id: true },
+    });
+    if (activeDeploy) {
+      return res.status(409).json({ error: 'Cannot delete project while a deployment is in progress' });
+    }
     const project = await prisma.project.findUnique({ where: { id: projectId } });
     const projectPath = path.join(config.deploymentsPath, projectId);
     const statePath = path.join(config.deploymentsPath, '.docklift', projectId);
@@ -702,9 +679,13 @@ router.post('/:id/env/bulk', async (req: Request, res: Response) => {
 
 router.delete('/:id/env/:envId', async (req: Request, res: Response) => {
   try {
-    await prisma.envVariable.delete({
-      where: { id: req.params.envId },
+    const { id, envId } = req.params;
+    const result = await prisma.envVariable.deleteMany({
+      where: { id: envId, project_id: id },
     });
+    if (result.count === 0) {
+      return res.status(404).json({ error: 'Environment variable not found' });
+    }
     res.json({ status: 'deleted' });
   } catch (error) {
     res.status(500).json({ error: 'Failed to delete environment variable' });
@@ -714,11 +695,6 @@ router.delete('/:id/env/:envId', async (req: Request, res: Response) => {
 // ========================================
 // Auto-Deploy Management
 // ========================================
-
-// Helper: Generate random webhook secret
-function generateWebhookSecret(): string {
-  return crypto.randomBytes(32).toString('hex');
-}
 
 // PATCH /:id/auto-deploy - Toggle auto-deploy for a project
 router.patch('/:id/auto-deploy', async (req: Request, res: Response) => {
@@ -756,7 +732,8 @@ router.patch('/:id/auto-deploy', async (req: Request, res: Response) => {
     res.json({
       auto_deploy: updated.auto_deploy,
       webhook_secret: updated.webhook_secret,
-      webhook_url: enabled ? `/api/github/webhook/${id}` : null,
+      webhook_url: enabled ? '/api/github/webhook' : null,
+      // GitHub App delivers all repo pushes to this global URL; projects match by github_url.
     });
   } catch (error) {
     console.error(error);
@@ -785,7 +762,8 @@ router.get('/:id/auto-deploy', async (req: Request, res: Response) => {
     res.json({
       auto_deploy: project.auto_deploy || false,
       webhook_secret: project.auto_deploy ? project.webhook_secret : null,
-      webhook_url: project.auto_deploy ? `/api/github/webhook/${id}` : null,
+      webhook_url: project.auto_deploy ? '/api/github/webhook' : null,
+      // Projects are matched by repository URL on the global webhook endpoint.
       available: project.source_type === 'github',
     });
   } catch (error) {
