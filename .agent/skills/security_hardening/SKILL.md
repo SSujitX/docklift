@@ -12,9 +12,12 @@ This skill documents all security patterns implemented in Docklift. Follow these
 ### JWT Tokens
 -   **Signing**: `jsonwebtoken` with `JWT_SECRET` from environment (auto-generated on first run if empty).
 -   **Expiry**: 7 days for session tokens.
+-   **`pwdv` claim**: must equal `User.passwordChangedAt.getTime()`; middleware rejects mismatch or missing claim.
 -   **Middleware**: All protected routes use `authMiddleware` from `lib/authMiddleware.ts` — never manually decode JWTs in route handlers.
 -   **Storage**: Frontend stores in `localStorage` key `docklift_token`.
--   **Download Safety**: Backup downloads use `fetch` + `Authorization: Bearer` header + blob pattern — **never** put JWTs in URL query parameters.
+-   **Frontend**: use `authFetch()` so 401 clears session app-wide.
+-   **Download Safety**: Backup downloads use `authFetch` + blob pattern — **never** put JWTs in URL query parameters.
+-   **Bootstrap registration**: atomic rename claim of `.bootstrap-secret` (see `authentication` skill).
 
 ### SSE Tokens (Short-lived)
 -   SSE connections use dedicated 5-minute tokens (`purpose: 'sse'`).
@@ -165,25 +168,9 @@ Also in `docker.ts` `streamContainerLogs`: uses `safeWrite()` + `closed` flag + 
 ## Git Token Security
 
 ### Just-in-Time Token Pattern
-GitHub installation tokens are set just-in-time and immediately scrubbed after use (deploy pull **and** initial clone via `scrubOriginRemote`):
+GitHub installation tokens are set just-in-time and scrubbed after use (deploy pull **and** initial clone via `scrubOriginRemote`). After scrub, origin is verified to contain no credentials. **If scrub/verify fails, fail the deploy or roll back project create** — never continue with a token left in `.git/config`.
 
-```typescript
-let gitTokenSet = false;
-try {
-  // Set token in git remote URL
-  await gitInstance.remote(['set-url', 'origin', authenticatedUrl]);
-  gitTokenSet = true;
-  // Pull code
-  await pullRepo(projectPath, ...);
-} finally {
-  // SECURITY: Always scrub token from remote URL
-  if (gitTokenSet && gitInstance) {
-    await gitInstance.remote(['set-url', 'origin', cleanUrl]);
-  }
-}
-```
-
-Applied in: `deployments.ts` (deploy handler).
+Applied in: `deployments.ts` (deploy handler), `projects.ts` (clone).
 
 ## Terminal Security
 
@@ -271,10 +258,10 @@ try {
     [Origin Validation](#origin-validation-cors--websocket) above.
 
 ### Setup Token (Backup Restore)
--   One-time token stored in `.setup-token` file.
+-   One-time token stored under `config.dataPath` (`.setup-token`) — never a hardcoded `./data` path.
 -   Consumed (deleted) after single use.
 -   Only used for unauthenticated `/restore-upload` on fresh installs.
--   Frontend (`setup/page.tsx`) fetches token via `GET /api/auth/setup-token` and sends as `x-setup-token` header.
+-   Frontend Setup page fetches token via `GET /api/auth/setup-token` (bootstrap secret required) and sends `x-setup-token`.
 
 ### Graceful Shutdown
 Backend handles SIGTERM/SIGINT for clean exit:
