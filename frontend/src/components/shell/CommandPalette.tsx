@@ -13,7 +13,8 @@ import {
   Sun,
 } from "lucide-react";
 import { useAuth } from "@/components/AuthProvider";
-import { getAuthHeaders } from "@/lib/auth";
+import { authFetch } from "@/lib/auth";
+import { useFocusTrap } from "@/lib/focusTrap";
 import { useTheme } from "@/lib/theme";
 import { API_URL, cn } from "@/lib/utils";
 import type { Project } from "@/lib/types";
@@ -36,9 +37,12 @@ export function CommandPalette() {
   const [projects, setProjects] = useState<Project[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const { logout } = useAuth();
   const { resolvedTheme, setTheme } = useTheme();
+
+  useFocusTrap(paletteOpen, dialogRef);
 
   useEffect(() => {
     if (!paletteOpen) {
@@ -47,7 +51,7 @@ export function CommandPalette() {
       return;
     }
     inputRef.current?.focus();
-    fetch(`${API_URL}/api/projects`, { headers: getAuthHeaders() })
+    authFetch(`${API_URL}/api/projects`)
       .then((res) => (res.ok ? res.json() : []))
       .then((data) => setProjects(Array.isArray(data) ? data : []))
       .catch(() => {});
@@ -157,6 +161,7 @@ export function CommandPalette() {
       />
 
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label="Command palette"
