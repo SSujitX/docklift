@@ -1,8 +1,9 @@
 // Auth context provider - manages authentication state across the app
 
-import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { API_URL } from "@/lib/utils";
+import { registerAuthUnauthorizedHandler } from "@/lib/auth";
 import { Loader2 } from "lucide-react";
 
 interface User {
@@ -131,13 +132,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(newUser);
   };
 
-  const logout = () => {
+  const logout = useCallback(() => {
     localStorage.removeItem("docklift_token");
     localStorage.removeItem("docklift_user");
     setToken(null);
     setUser(null);
     navigate("/sign-in");
-  };
+  }, [navigate]);
+
+  useEffect(() => {
+    registerAuthUnauthorizedHandler(logout);
+  }, [logout]);
 
   // Show loading only for protected routes during initial check
   if (loading && !isPublicRoute) {
