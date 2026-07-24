@@ -61,6 +61,10 @@ Example: To make all buttons rounded, edit `frontend/src/components/ui/button.ts
 -   **Rail width**: driven by the `--shell-rail` custom property; `.shell-rail`
     sizes the rail and `.shell-inset` offsets content, so collapsing only has to
     override one variable.
+-   **Scroll containment**: long panes (logs, file trees, terminals) scroll
+    *inside* their own box with `.shell-scroll`. Never let a child call
+    `scrollIntoView()` — it scrolls the whole `<main>` and makes the fixed rail
+    and top bar feel like they jump.
 
 ## Troubleshooting Styles
 
