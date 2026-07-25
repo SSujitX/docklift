@@ -103,6 +103,7 @@ function SettingsContent() {
   const [uploadToRestore, setUploadToRestore] = useState<string | null>(null);
   const [showRestoreUploadConfirm, setShowRestoreUploadConfirm] = useState(false);
   const [backupName, setBackupName] = useState('');
+  const [restorePassword, setRestorePassword] = useState('');
 
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -455,6 +456,10 @@ function SettingsContent() {
 
   const handleRestoreFromUpload = async () => {
     if (!uploadToRestore) return;
+    if (!restorePassword.trim()) {
+      toast.error("Enter your account password to confirm restore");
+      return;
+    }
 
     setRestoringBackup(true);
     setRestoreProgress([]);
@@ -464,6 +469,8 @@ function SettingsContent() {
     try {
       const res = await authFetch(`${API_URL}/api/backup/restore-from-upload/${uploadToRestore}`, {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: restorePassword }),
       });
 
       const result = await consumeProgressStream(res, (line) => {
@@ -476,6 +483,7 @@ function SettingsContent() {
       }
 
       toast.success("Backup restored successfully");
+      setRestorePassword('');
       fetchUploadedFiles();
     } catch (error) {
       toast.error("Failed to restore from uploaded file");
@@ -609,6 +617,10 @@ function SettingsContent() {
 
   const handleUploadRestore = async () => {
     if (!selectedUploadFile) return;
+    if (!restorePassword.trim()) {
+      toast.error("Enter your account password to confirm restore");
+      return;
+    }
 
     setUploadingBackup(true);
     setRestoreProgress([]);
@@ -618,6 +630,7 @@ function SettingsContent() {
     try {
       const formData = new FormData();
       formData.append('backup', selectedUploadFile);
+      formData.append('password', restorePassword);
 
       const res = await authFetch(`${API_URL}/api/backup/restore-upload`, {
         method: 'POST',
@@ -634,6 +647,7 @@ function SettingsContent() {
       }
 
       toast.success("Backup restored successfully");
+      setRestorePassword('');
       fetchBackups();
     } catch (error) {
       toast.error("Failed to restore from uploaded backup");
@@ -1695,16 +1709,27 @@ function SettingsContent() {
               All current projects, deployments, and configurations will be replaced.
             </DialogDescription>
           </DialogHeader>
+          <div className="space-y-2 py-2">
+            <label className="text-sm font-medium">Confirm with account password</label>
+            <Input
+              type="password"
+              value={restorePassword}
+              onChange={(e) => setRestorePassword(e.target.value)}
+              placeholder="Your DockLift password"
+              autoComplete="current-password"
+            />
+          </div>
           <DialogFooter className="gap-2 sm:gap-0">
             <Button variant="outline" onClick={() => {
               setShowUploadRestoreConfirm(false);
               setSelectedUploadFile(null);
+              setRestorePassword('');
             }}>
               Cancel
             </Button>
             <Button
               onClick={handleUploadRestore}
-              disabled={uploadingBackup}
+              disabled={uploadingBackup || !restorePassword.trim()}
               className="bg-amber-600 hover:bg-amber-700"
             >
               {uploadingBackup ? (
@@ -1765,16 +1790,27 @@ function SettingsContent() {
               All current projects, deployments, and configurations will be replaced.
             </DialogDescription>
           </DialogHeader>
+          <div className="space-y-2 py-2">
+            <label className="text-sm font-medium">Confirm with account password</label>
+            <Input
+              type="password"
+              value={restorePassword}
+              onChange={(e) => setRestorePassword(e.target.value)}
+              placeholder="Your DockLift password"
+              autoComplete="current-password"
+            />
+          </div>
           <DialogFooter className="gap-2 sm:gap-0">
             <Button variant="outline" onClick={() => {
               setShowRestoreUploadConfirm(false);
               setUploadToRestore(null);
+              setRestorePassword('');
             }}>
               Cancel
             </Button>
             <Button
               onClick={handleRestoreFromUpload}
-              disabled={restoringBackup}
+              disabled={restoringBackup || !restorePassword.trim()}
               className="bg-amber-600 hover:bg-amber-700"
             >
               {restoringBackup ? (
