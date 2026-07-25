@@ -339,14 +339,14 @@ function ContainerLogsPanel({
 
         return (
           <LogViewer
-            key={svc.id}
+            key={containerName}
             logs={logLines}
             connected={!!connected[containerName]}
             title={svc.name}
             subtitle={containerName}
             onClear={() => clearLogs(containerName)}
             downloadFilename={`${containerName}-logs.txt`}
-            height="h-[550px]"
+            height="h-[min(70vh,720px)]"
           />
         );
       })}
