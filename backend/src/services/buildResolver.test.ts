@@ -96,6 +96,7 @@ test('Runtime compose uses images and persistent named volumes without touching 
   const sourceCompose = path.join(root, 'docker-compose.yml');
   const stateCompose = path.join(root, '.state', 'compose.yml');
   fs.writeFileSync(sourceCompose, 'services:\n  user-service:\n    image: user/image\n');
+  const projectId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
   generateRuntimeCompose(
     stateCompose,
     [{
@@ -114,7 +115,8 @@ test('Runtime compose uses images and persistent named volumes without touching 
         is_build_arg: false,
         is_runtime: true,
       },
-    ]
+    ],
+    { projectId, publishHostPort: true }
   );
   const generated = yaml.load(fs.readFileSync(stateCompose, 'utf8')) as any;
   assert.equal(generated.services.app.image, 'docklift-app:test');
@@ -123,6 +125,27 @@ test('Runtime compose uses images and persistent named volumes without touching 
   assert.equal(generated.volumes.storage_app_0.name, 'dl-test-data');
   assert.equal(generated.volumes.storage_app_0.external, true);
   assert.equal(generated.services.app.environment.DATABASE_URL, 'postgresql://db.example/app');
+  assert.deepEqual(generated.services.app.ports, ['5500:3000']);
+  assert.equal(generated.networks.project.name, 'dl-net-aaaaaaaa');
+  assert.equal(generated.services.app.labels['com.docklift.project'], projectId);
   assert.match(fs.readFileSync(sourceCompose, 'utf8'), /user\/image/);
+
+  // Without publishHostPort, no host ports
+  const noPublish = path.join(root, '.state', 'compose-nopub.yml');
+  generateRuntimeCompose(
+    noPublish,
+    [{
+      name: 'app',
+      image: 'docklift-app:test',
+      internal_port: 3000,
+      port: 5500,
+      container_name: 'dl_test_app',
+    }],
+    [],
+    { projectId, publishHostPort: false }
+  );
+  const nopub = yaml.load(fs.readFileSync(noPublish, 'utf8')) as any;
+  assert.equal(nopub.services.app.ports, undefined);
+
   fs.rmSync(root, { recursive: true, force: true });
 });
