@@ -4,8 +4,11 @@ import { spawn } from 'child_process';
 import { Response } from 'express';
 import path from 'path';
 import { config } from '../lib/config.js';
+import { projectNetworkName } from '../lib/naming.js';
 
 const docker = new Docker();
+
+const EDGE_PROXY_CONTAINER = process.env.NGINX_PROXY_CONTAINER || 'docklift-nginx-proxy';
 
 // Ensure Docker network exists
 export async function ensureNetwork(): Promise<void> {
@@ -15,7 +18,55 @@ export async function ensureNetwork(): Promise<void> {
     await docker.createNetwork({
       Name: config.dockerNetwork,
       Driver: 'bridge',
+      Labels: {
+        'com.docklift.managed': 'true',
+        'com.docklift.role': 'control-plane',
+      },
     });
+  }
+}
+
+export function isProxyAlreadyConnectedError(err: unknown): boolean {
+  const msg = String((err as { message?: string })?.message || err || '');
+  return /already exists|already connected/i.test(msg);
+}
+
+/**
+ * Attach edge proxy to a project network so it can resolve container_name DNS.
+ * Throws on failure (callers must mark deploy degraded/failed — never pretend success).
+ */
+export async function connectProxyToProjectNetwork(projectId: string): Promise<void> {
+  const netName = projectNetworkName(projectId);
+  const network = docker.getNetwork(netName);
+  await network.inspect();
+  try {
+    await network.connect({ Container: EDGE_PROXY_CONTAINER });
+  } catch (err: unknown) {
+    if (isProxyAlreadyConnectedError(err)) return;
+    console.error(`[docker] Failed to attach ${EDGE_PROXY_CONTAINER} to ${netName}:`, err);
+    throw err instanceof Error ? err : new Error(String(err));
+  }
+}
+
+/** Disconnect edge proxy from a project network so compose down can remove it. */
+export async function disconnectProxyFromProjectNetwork(projectId: string): Promise<void> {
+  const netName = projectNetworkName(projectId);
+  try {
+    const network = docker.getNetwork(netName);
+    await network.disconnect({ Container: EDGE_PROXY_CONTAINER, Force: true });
+  } catch {
+    /* not connected or network already gone */
+  }
+}
+
+/** Detach edge proxy and remove project network (best-effort on delete). */
+export async function teardownProjectNetwork(projectId: string): Promise<void> {
+  const netName = projectNetworkName(projectId);
+  await disconnectProxyFromProjectNetwork(projectId);
+  try {
+    await docker.getNetwork(netName).remove();
+  } catch {
+    /* network may already be gone after compose down */
   }
 }
 
