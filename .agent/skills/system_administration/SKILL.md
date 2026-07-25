@@ -30,18 +30,19 @@ The system page shows real-time server health metrics:
 ### Purge Resources
 **API**: `POST /api/system/purge`
 
-Single endpoint that performs a comprehensive cleanup sequence:
-1. **Docker cleanup**: `docker system prune -af` (removes unused images/networks, NOT volumes)
-2. **Container restart**: Restarts all user containers to free memory, skipping anything in
-   `CORE_CONTAINERS`. A core container missing from that list would be restarted here as if it were
-   a user workload.
-3. **Swap clear**: Clears swap if ≥30% free RAM available (safety check)
-4. **Host cache**: Clears page cache via `nsenter` (`echo 3 > /proc/sys/vm/drop_caches`)
-5. **Journal logs**: Vacuums systemd journals to 3 days
-6. **APT cache**: Clears package manager cache
-7. **Temp files**: Removes `/tmp` files older than 7 days
+**DockLift-scoped only.** Requires **password step-up** (`requireStepUpPassword` / body `password`).
 
-Returns before/after memory usage for comparison.
+What it does today:
+1. Password step-up audit + honest status messages (no host Docker mutation)
+
+What it must **never** do from the panel:
+- Automatic `docker image prune` / `docker system prune` (shared-host: may delete foreign dangling layers)
+- Restart foreign containers
+- Swap cycling, `drop_caches`, journal vacuum, apt clean, `/tmp` wipe
+
+UI copy must stay honest (not “isolated host wipe”). Post-deploy cleanup is also a no-op for images.
+
+Load averages on `/api/system/stats` come from real `os.loadavg()` — never fabricated load5/load15.
 
 ### Server Control
 
@@ -138,8 +139,22 @@ Frontend streams use `frontend/src/lib/streamProgress.ts`: require `res.ok` and 
 | `POST /api/backup/restore-from-upload/:filename` | Restore from a previously uploaded file |
 
 **Safety**:
--   `enterMaintenance()` blocks mutating APIs while the SQLite file is replaced (`prisma.$disconnect`
-    → copy → `reconnectPrisma()`).
+-   **`tryAcquireRestoreLock()` before Multer** (`lib/restoreLock.ts`) — concurrent restore → **409**.
+    Upload filenames are server-chosen (`restore-<ts>-<random>.zip`), never trusted client names.
+-   **Password step-up** for authenticated restores; **setup-token path** for fresh install (no users yet)
+    via `setupTokenAuth`.
+-   **All three restore routes** track `dbReplaced` and call `rollbackDatabaseFromPreRestore` on later failure.
+-   **Commit gate** (`finishRestoreCommit` / `decideRestoreCommit`): consume setup secrets only when
+    reconcile succeeds **and** restored DB has `role: 'admin'`. Setup-token + incomplete reconcile →
+    abort + roll DB back. If rollback itself fails → **critical seal**:
+    - Persist `data/.restore-critical`, hold restore lock, keep maintenance
+    - Reload seal on backend boot (`loadRestoreCriticalOnBoot`)
+    - Block all `/api/backup/restore*` until `POST /api/backup/clear-critical-restore` (password step-up)
+    - Clear must verify the marker is gone before exiting maintenance — deletion failure stays sealed
+
+-   `enterMaintenance()` blocks **all** API traffic except `/api/health` and the active restore stream
+    (not just mutating methods).
+-   Files/certs/proxy directory swaps are still not fully transactional with the DB.
 -   Directory restores use `lib/fsCopy.ts` (`fs.promises.cp` + atomic swap) — never shell `cp`.
 -   Restore does **not** wipe other backup ZIPs.
 
@@ -182,19 +197,22 @@ application data separately if it matters.
 |--------|---------|
 | `install.sh` | Production install of the latest release into `/opt/docklift` |
 | `install-dev.sh` | Same, but from `master` (unreleased code) |
-| `upgrade.sh` | Pull new images and recreate the stack, preserving `data/`, `deployments/`, certs |
+| `upgrade.sh` | Stop backend → SQLite snapshot (`.backup` / copy) → tag `*:pre-upgrade` images → rebuild; rollback uses tagged images + DB restore with backend stopped; health-checks `/api/health` |
+| `install.sh` | Prints `Dashboard: http://SERVER_IP:8080` + **Setup code** from `.bootstrap-secret` |
 | `uninstall.sh` | Remove DockLift containers, images, volumes, network, build cache and `/opt/docklift` |
 
-`uninstall.sh` targets **DockLift-owned resources only** (core container names + the
-`com.docklift.project` volume label). It must never run a host-wide `docker system prune` or remove
-Docker Engine/git — other workloads on the same server have to survive an uninstall.
+`uninstall.sh` targets **DockLift-owned resources only** (core names, `dl_*` / `dl-*`,
+`dl-net-*`, `com.docklift.*` labels). Never host-wide `docker system prune` / `builder prune`, and
+never remove Docker Engine/git.
 
 ## Server Access Requirements
 
 The backend container needs these host-level permissions (defined in `docker-compose.yml`):
-- `privileged: true` — required for `nsenter` into host PID 1 (system update, reboot, cache drop)
+- `privileged: true` — required for `nsenter` into host PID 1 (system update / reboot)
 - `pid: host` — For host process visibility (reboot, system info)
 - Docker socket mount: `/var/run/docker.sock`
 - Host file mounts: `/etc/hostname`, `/etc/os-release`, `/proc` (read-only)
 - `./nginx-proxy/certbot/conf:/etc/letsencrypt` — read-write, so restores can put certificates back
   (the proxy mounts the same path read-only)
+
+Panel purge must **not** use privileged host maintenance (drop_caches, journal, apt, swap, `/tmp`).
