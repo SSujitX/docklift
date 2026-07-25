@@ -65,7 +65,9 @@ services:
     image: nginx:stable-alpine
     container_name: docklift-nginx
     restart: unless-stopped
-    # Dashboard on :8080 (all interfaces, Coolify-style). Optional: DASHBOARD_BIND=127.0.0.1
+    # Dashboard on :8080 — public by default so install can open http://SERVER_IP:8080.
+    # First account still requires the server-printed bootstrap secret.
+    # Harden later: Settings → Domain (HTTPS), firewall, or DASHBOARD_BIND=127.0.0.1.
     ports:
       - "${DASHBOARD_BIND:-0.0.0.0}:8080:80"
     volumes:
