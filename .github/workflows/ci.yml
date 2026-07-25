@@ -1,0 +1,112 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.2.19"
+
+      - name: Backend install + generate
+        working-directory: backend
+        run: |
+          bun install --frozen-lockfile
+          bunx prisma generate
+
+      - name: Backend typecheck
+        working-directory: backend
+        run: bunx tsc --noEmit
+
+      - name: Backend tests (all *.test.ts)
+        working-directory: backend
+        run: bun run test
+
+      - name: Prisma schema + migrations validate
+        working-directory: backend
+        run: |
+          bunx prisma validate
+          test -f prisma/migrations/20260725120000_init/migration.sql
+          test -f prisma/migrations/migration_lock.toml
+          ! grep -q 'db push --accept-data-loss' Dockerfile
+          grep -q 'ensureDb' Dockerfile
+
+      - name: Frontend install + build
+        working-directory: frontend
+        run: |
+          bun install --frozen-lockfile
+          bun run build
+
+      - name: Upgrade backend_run_state shell behavior (set -e + stubs)
+        run: bash scripts/test-upgrade-backend-run-state.sh
+
+      - name: Compose config validate
+        run: docker compose -f docker-compose.yml config --quiet
+
+      - name: Dashboard bind regression (SERVER_IP:8080 default)
+        run: |
+          grep -q 'DASHBOARD_BIND:-0.0.0.0' docker-compose.yml
+          ! grep -q 'DASHBOARD_BIND:-127.0.0.1' docker-compose.yml
+
+      - name: Release-blocker regressions
+        run: |
+          grep -q 'disconnectProxyFromProjectNetwork' backend/src/services/docker.ts
+          grep -q 'finishRestoreCommit' backend/src/routes/backup.ts
+          grep -q "role: 'admin'" backend/src/routes/backup.ts
+          grep -q 'decideRestoreCommit' backend/src/lib/restoreCommitPolicy.ts
+          grep -q 'verifyComposeProjectGone' backend/src/lib/composeTeardown.ts
+          grep -q 'enterRestoreCritical' backend/src/lib/restoreCritical.ts
+          grep -q 'clear-critical-restore' backend/src/routes/backup.ts
+          grep -q 'backend_run_state' upgrade.sh
+          grep -qE 'if backend_run_state; then' upgrade.sh
+          grep -q 'probe-error' upgrade.sh || grep -q 'BACKEND_STATE' upgrade.sh
+          ! grep -qE '^[[:space:]]*backend_run_state[[:space:]]*$' upgrade.sh
+          grep -q 'actions/checkout@v6' .github/workflows/ci.yml
+          ! grep -q 'actions/checkout@v7' .github/workflows/*.yml
+          ! grep -q 'docker version' backend/src/routes/deployments.ts
+          grep -q 'setupTokenAuth' backend/src/index.ts
+          grep -q 'PREFLIGHT FAILED: secret build vars' backend/src/routes/deployments.ts
+          grep -q 'arm_rollback' upgrade.sh
+          grep -q 'isComposeTeardownOk' backend/src/routes/projects.ts
+          grep -q 'Teardown verified' backend/src/routes/deployments.ts
+          grep -q 'oven/bun:1.2.19-alpine' backend/Dockerfile
+          grep -q 'oven/bun:1.2.19-alpine' frontend/Dockerfile
+          ! grep -F 'docker image prune' backend/src/routes/deployments.ts
+          ! grep -F 'docker image prune' backend/src/routes/system.ts
+          ! grep -F "cap_drop: ['ALL']" backend/src/services/compose.ts
+          ! grep -F 'docker system prune -af' backend/src/routes/deployments.ts
+          ! grep -F 'docker system prune -af' backend/src/routes/system.ts
+
+      - name: Backend dependency audit (prod)
+        working-directory: backend
+        run: bun audit --prod
+
+      # Allowlist ONLY the known react-router RSC CSRF advisory until react-router-dom ships 8.x.
+      # Any other advisory (or a different GHSA) fails CI.
+      - name: Frontend dependency audit (allowlisted advisory only)
+        working-directory: frontend
+        run: |
+          set -euo pipefail
+          OUT="$(bun audit --prod 2>&1 || true)"
+          echo "$OUT"
+          if echo "$OUT" | grep -qi 'No vulnerabilities found'; then
+            exit 0
+          fi
+          # Must mention the known allowlisted advisory
+          echo "$OUT" | grep -q 'GHSA-qwww-vcr4-c8h2'
+          # Reject any other GHSA id
+          OTHER="$(echo "$OUT" | grep -oE 'GHSA-[a-z0-9-]+' | sort -u | grep -v 'GHSA-qwww-vcr4-c8h2' || true)"
+          if [ -n "$OTHER" ]; then
+            echo "Unexpected frontend advisories (not allowlisted):"
+            echo "$OTHER"
+            exit 1
+          fi
+          # Must be exactly one vulnerability line summary for the known issue
+          echo "$OUT" | grep -qE '1 vulnerabilities? \(1 high\)'
