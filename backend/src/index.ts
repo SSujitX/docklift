@@ -29,6 +29,7 @@ import systemRouter from './routes/system.js';
 import domainRouter from './routes/domains.js';
 import backupRouter from './routes/backup.js';
 import logsRouter from './routes/logs.js';
+import databasesRouter from './routes/databases.js';
 import authRouter from './routes/auth.js';
 import { authMiddleware, sseAuthMiddleware } from './lib/authMiddleware.js';
 import { setupTerminalWebSocket, cleanupAllSessions } from './services/terminal.js';
@@ -177,6 +178,7 @@ app.use('/api/auth', authLimiter, authRouter);
 // Protected routes - apply auth middleware
 app.use('/api/projects', authMiddleware, projectsRouter);
 app.use('/api/deployments', authMiddleware, deploymentsRouter);
+app.use('/api/databases', authMiddleware, databasesRouter);
 app.use('/api/files', authMiddleware, filesRouter);
 app.use('/api/ports', authMiddleware, portsRouter);
 app.use('/api/github', (req, res, next) => {
