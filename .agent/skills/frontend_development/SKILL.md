@@ -64,11 +64,21 @@ elements and `top-20` for spaced ones.
 ## API calls (required)
 
 -   Protected APIs: **`authFetch()`** from `lib/auth.ts` (401 → logout). Do not use raw `fetch` +
-    `getAuthHeaders()` for authenticated endpoints.
+    `getAuthHeaders()` for authenticated endpoints — check `res.ok` before treating data as success
+    (Ports, Databases, GitHub disconnect, etc.).
 -   Backup/restore/deploy streams: `lib/streamProgress.ts` (`consumeProgressStream`) — require
     `res.ok` and treat `[ERROR]` lines as failure before toasting success.
+-   Restore + system purge: collect **account password** in the confirm dialog and send it in the
+    body / FormData (`password`) for step-up auth.
 -   Overlays: `lib/focusTrap.ts` (`useFocusTrap`) for command palette + mobile drawer.
 -   Deploy history pagination: AbortController + generation counter (ignore stale pages).
+
+## Project UI notes
+
+-   Project status includes **`degraded`** (partial fleet) — `StatusBadge` / `ProjectCard` must show it;
+    treat like running for stop/restart actions.
+-   Build Settings: **`publish_host_port`** checkbox (default off) — host ports are opt-in.
+-   Env manager: optional **BuildKit secret** flag (`is_secret`) when `is_build_arg` is on.
 
 ## Dev server
 
