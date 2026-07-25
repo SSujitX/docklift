@@ -568,13 +568,22 @@ router.delete('/:id', async (req: Request, res: Response) => {
     const persistentVolumes = await prisma.persistentVolume.findMany({
       where: { project_id: projectId },
     });
-    
+
     // Stop and remove Docker containers first — abort delete if teardown fails
     if (project) {
       const { disconnectProxyFromProjectNetwork, connectProxyToProjectNetwork, teardownProjectNetwork } =
         await import('../services/docker.js');
       const { isComposeTeardownOk } = await import('../lib/composeTeardown.js');
       const { composeProjectAliases } = await import('../lib/naming.js');
+      const {
+        disconnectLinkedDatabasesFromApp,
+        reapplyDatabaseLinksForApp,
+      } = await import('../lib/databaseLinks.js');
+
+      // Linked DB containers hold the app network open — detach before compose down
+      if (project.project_type !== 'database') {
+        await disconnectLinkedDatabasesFromApp(projectId);
+      }
 
       // Must disconnect proxy before compose down can remove the project network
       await disconnectProxyFromProjectNetwork(projectId);
@@ -603,6 +612,13 @@ router.delete('/:id', async (req: Request, res: Response) => {
             await connectProxyToProjectNetwork(projectId);
           } catch {
             /* best-effort restore of domain routing */
+          }
+          if (project.project_type !== 'database') {
+            try {
+              await reapplyDatabaseLinksForApp(projectId);
+            } catch {
+              /* best-effort restore of linked DB DNS */
+            }
           }
           const detail = `${down.stderr || down.stdout || down.error?.message || 'compose down failed'}`.trim();
           return res.status(409).json({
@@ -639,6 +655,12 @@ router.delete('/:id', async (req: Request, res: Response) => {
       } catch (fileError) {
         console.warn(`File cleanup warned for project ${projectId}:`, fileError);
       }
+    }
+
+    // Only after Docker/volume teardown succeeded — strip peer app env/links for managed DBs
+    if (project?.project_type === 'database') {
+      const { cleanupLinksForDatabaseProject } = await import('../lib/databaseLinks.js');
+      await cleanupLinksForDatabaseProject(projectId);
     }
     
     // Cleanup Nginx configs for all services
@@ -691,6 +713,16 @@ router.post('/:id/env', async (req: Request, res: Response) => {
       return res.status(400).json({
         error: 'Invalid env key. Use letters, digits, underscore; must start with a letter or _.',
       });
+    }
+    const projectForEnv = await prisma.project.findUnique({ where: { id: req.params.id } });
+    if (projectForEnv?.project_type === 'database' && projectForEnv.db_engine) {
+      const { managedCredentialEnvKeys } = await import('../lib/databaseLinks.js');
+      if (managedCredentialEnvKeys(projectForEnv.db_engine).includes(String(key))) {
+        return res.status(400).json({
+          error:
+            'Managed database credentials are set at create time. Official images only apply them on first volume init — recreate the database to rotate.',
+        });
+      }
     }
     const scope = normalizeEnvServiceName(service_name);
     if (scope !== SHARED_ENV_SERVICE) {
@@ -767,6 +799,18 @@ router.post('/:id/env/bulk', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'No valid KEY=VALUE pairs found' });
     }
 
+    const projectForBulk = await prisma.project.findUnique({ where: { id: req.params.id } });
+    if (projectForBulk?.project_type === 'database' && projectForBulk.db_engine) {
+      const { managedCredentialEnvKeys } = await import('../lib/databaseLinks.js');
+      const locked = new Set(managedCredentialEnvKeys(projectForBulk.db_engine));
+      const hit = envVars.find((v) => locked.has(v.key));
+      if (hit) {
+        return res.status(400).json({
+          error: `Cannot import managed credential key ${hit.key}. Recreate the database to rotate credentials.`,
+        });
+      }
+    }
+
     let createdCount = 0;
     for (const { key, value } of envVars) {
       try {
@@ -799,12 +843,36 @@ router.post('/:id/env/bulk', async (req: Request, res: Response) => {
 router.delete('/:id/env/:envId', async (req: Request, res: Response) => {
   try {
     const { id, envId } = req.params;
-    const result = await prisma.envVariable.deleteMany({
+    const existing = await prisma.envVariable.findFirst({
       where: { id: envId, project_id: id },
     });
-    if (result.count === 0) {
+    if (!existing) {
       return res.status(404).json({ error: 'Environment variable not found' });
     }
+    const projectForEnv = await prisma.project.findUnique({ where: { id } });
+    if (projectForEnv?.project_type === 'database' && projectForEnv.db_engine) {
+      const { managedCredentialEnvKeys } = await import('../lib/databaseLinks.js');
+      if (managedCredentialEnvKeys(projectForEnv.db_engine).includes(existing.key)) {
+        return res.status(400).json({
+          error:
+            'Cannot delete managed database credentials. Recreate the database to rotate passwords.',
+        });
+      }
+    }
+    const ownedLink = await prisma.databaseLink.findFirst({
+      where: {
+        app_project_id: id,
+        service_name: existing.service_name || '',
+        env_key: existing.key,
+      },
+    });
+    if (ownedLink) {
+      return res.status(400).json({
+        error:
+          'This variable is owned by a managed database link. Unlink the database first.',
+      });
+    }
+    await prisma.envVariable.delete({ where: { id: envId } });
     res.json({ status: 'deleted' });
   } catch (error) {
     res.status(500).json({ error: 'Failed to delete environment variable' });
