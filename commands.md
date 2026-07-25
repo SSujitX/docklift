@@ -28,31 +28,51 @@ End-to-end reference for install, day-to-day ops, logs, nginx, password reset, a
 ## 1. Install / start / stop
 
 ```bash
-# Fresh install (server)
+# Fresh install — latest GitHub release
 curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh | sudo bash
+```
 
+```bash
+# Fresh install — pin a release (argv; see github.com/SSujitX/docklift/releases)
+curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh | sudo bash -s -- v=2.0.2
+```
+
+```bash
+# Same pin via env
+curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh | sudo DOCKLIFT_VERSION=2.0.2 bash
+```
+
+```bash
 # From a cloned repo
 cd /opt/docklift   # or your clone path
 docker compose up -d --build
+```
 
-# Dashboard on :8080 (default all interfaces → http://SERVER_IP:8080).
-# Optional lockdown: DASHBOARD_BIND=127.0.0.1 docker compose up -d
-
+```bash
 # First boot: installer prints Dashboard URL + Setup code.
-# Or: docker logs docklift-backend 2>&1 | grep -A8 'Fresh install'
-# Or: cat data/.bootstrap-secret
+docker logs docklift-backend 2>&1 | grep -A8 'Fresh install'
+```
 
+```bash
+sudo cat /opt/docklift/data/.bootstrap-secret
+```
+
+```bash
 # Start / stop / restart (all)
 docker compose start
 docker compose stop
 docker compose restart
+```
 
+```bash
 # Rebuild one service (Compose service keys, not container names)
 docker compose up -d --build backend
 docker compose up -d --build frontend
 docker compose up -d --build nginx
 docker compose up -d --build nginx-proxy
+```
 
+```bash
 # Status
 docker compose ps
 docker ps --filter name=docklift --filter name=dl_
@@ -65,7 +85,9 @@ docker ps --filter name=docklift --filter name=dl_
 ```bash
 # Safe upgrade (keeps data + user app containers)
 curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/upgrade.sh | sudo bash
+```
 
+```bash
 # Full uninstall (destructive — deletes Docklift data)
 curl -fsSL "https://raw.githubusercontent.com/SSujitX/docklift/master/uninstall.sh?nocache=5" | sudo bash -s -- -y
 ```
