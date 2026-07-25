@@ -17,7 +17,12 @@ import {
 import { composeProjectName, dockerSlug, shortPathHash, shortProjectId } from '../lib/naming.js';
 import { isProjectDeploying } from '../lib/deploymentState.js';
 import { syncProjectStatusFromContainers } from '../lib/projectStatusSync.js';
-import { isValidEnvKey, normalizeEnvValue } from '../lib/envVariables.js';
+import {
+  isValidEnvKey,
+  normalizeEnvValue,
+  normalizeEnvServiceName,
+  SHARED_ENV_SERVICE,
+} from '../lib/envVariables.js';
 import { spawnSync } from 'child_process';
 
 function isValidGithubRepoUrl(url: string): boolean {
@@ -659,10 +664,19 @@ router.delete('/:id', async (req: Request, res: Response) => {
 });
 
 // Environment variables endpoints
+// Optional ?service=name filters to that service's vars only; omit for all (shared + scoped).
 router.get('/:id/env', async (req: Request, res: Response) => {
   try {
+    const serviceFilter =
+      typeof req.query.service === 'string'
+        ? normalizeEnvServiceName(req.query.service)
+        : null;
     const envVars = await prisma.envVariable.findMany({
-      where: { project_id: req.params.id },
+      where: {
+        project_id: req.params.id,
+        ...(serviceFilter !== null ? { service_name: serviceFilter } : {}),
+      },
+      orderBy: [{ service_name: 'asc' }, { key: 'asc' }],
     });
     res.json(envVars);
   } catch (error) {
@@ -672,15 +686,25 @@ router.get('/:id/env', async (req: Request, res: Response) => {
 
 router.post('/:id/env', async (req: Request, res: Response) => {
   try {
-    const { key, value, is_build_arg, is_runtime, is_secret } = req.body;
+    const { key, value, is_build_arg, is_runtime, is_secret, service_name } = req.body;
     if (!isValidEnvKey(key)) {
       return res.status(400).json({
         error: 'Invalid env key. Use letters, digits, underscore; must start with a letter or _.',
       });
     }
+    const scope = normalizeEnvServiceName(service_name);
+    if (scope !== SHARED_ENV_SERVICE) {
+      const service = await prisma.service.findFirst({
+        where: { project_id: req.params.id, name: scope },
+      });
+      if (!service) {
+        return res.status(400).json({ error: `Unknown service: ${scope}` });
+      }
+    }
     const envVar = await prisma.envVariable.create({
       data: {
         project_id: req.params.id,
+        service_name: scope,
         key,
         value: normalizeEnvValue(value),
         is_build_arg: is_build_arg ?? false,
@@ -691,7 +715,9 @@ router.post('/:id/env', async (req: Request, res: Response) => {
     res.status(201).json(envVar);
   } catch (error: any) {
     if (error?.code === 'P2002') {
-      return res.status(409).json({ error: 'Environment variable key already exists for this project' });
+      return res.status(409).json({
+        error: 'Environment variable key already exists for this service scope',
+      });
     }
     res.status(500).json({ error: 'Failed to create environment variable' });
   }
@@ -699,10 +725,20 @@ router.post('/:id/env', async (req: Request, res: Response) => {
 
 router.post('/:id/env/bulk', async (req: Request, res: Response) => {
   try {
-    const { content, is_build_arg, is_runtime } = req.body;
+    const { content, is_build_arg, is_runtime, service_name } = req.body;
+    const scope = normalizeEnvServiceName(service_name);
     
     if (!content || typeof content !== 'string') {
       return res.status(400).json({ error: 'Content is required' });
+    }
+
+    if (scope !== SHARED_ENV_SERVICE) {
+      const service = await prisma.service.findFirst({
+        where: { project_id: req.params.id, name: scope },
+      });
+      if (!service) {
+        return res.status(400).json({ error: `Unknown service: ${scope}` });
+      }
     }
     
     const lines = content.split('\n').filter((line: string) => line.trim());
@@ -737,6 +773,7 @@ router.post('/:id/env/bulk', async (req: Request, res: Response) => {
         await prisma.envVariable.create({
           data: {
             project_id: req.params.id,
+            service_name: scope,
             key,
             value,
             is_build_arg: is_build_arg ?? true,
