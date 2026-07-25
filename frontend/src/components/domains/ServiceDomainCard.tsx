@@ -473,7 +473,7 @@ export function ServiceDomainCard({
               serverIP !== "..." &&
               serverIP !== "N/A"
                 ? `Also reachable at http://${serverIP}:${service.port} (host port published).`
-                : "Not public yet — add a domain (preferred), or enable Publish host ports in Build and redeploy."}
+                : "Private by default — add a domain for HTTPS (preferred). Avoid sharing IP:port: it reveals your origin server. Raw host ports are opt-in via Build → Publish host ports, then redeploy."}
             </p>
           </div>
         ) : (
