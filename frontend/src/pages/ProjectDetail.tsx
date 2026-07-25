@@ -1,7 +1,7 @@
 ﻿// Project detail page - overview, deployments, env vars, source files, and domain management
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useBreadcrumbLeaf } from "@/components/shell/ShellContext";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Terminal } from "@/components/Terminal";
@@ -11,6 +11,11 @@ import { FileTree } from "@/components/FileTree";
 import { EnvVarsManager } from "@/components/EnvVarsManager";
 import { DnsGuideCard } from "@/components/domains/DnsGuideCard";
 import { ServiceDomainCard } from "@/components/domains/ServiceDomainCard";
+import {
+  ServiceSwitcher,
+  type ProjectWorkspace,
+} from "@/components/project/ServiceSwitcher";
+import { ProjectActionBar } from "@/components/project/ProjectActionBar";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -78,6 +83,18 @@ import {
 } from "@/components/ui/dialog";
 
 const HISTORY_PAGE_SIZE = 6;
+
+/** Operate-mode project chrome — neutrals first; brand only for the primary deploy action. */
+const PROJECT_TAB_TRIGGER =
+  "gap-1.5 sm:gap-2 rounded-lg px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium transition-colors border border-transparent text-muted-foreground hover:bg-secondary/70 hover:text-foreground whitespace-nowrap data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:border-border data-[state=active]:shadow-sm";
+
+const PROJECT_ACTION_PRIMARY =
+  "bg-brand text-brand-foreground border-transparent hover:bg-brand hover:brightness-110 hover:text-brand-foreground shadow-none";
+
+/** Shared width for every project tab — matches shell content, no per-tab max-w. */
+const PROJECT_TAB_PANEL =
+  "w-full space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-400";
+
 const MAX_LOG_LINES = 10000;
 
 // Real-time container logs panel
@@ -85,10 +102,12 @@ function ContainerLogsPanel({
   projectId,
   services,
   activeTab,
+  preferredContainerName,
 }: {
   projectId: string;
   services: Service[];
   activeTab: string;
+  preferredContainerName?: string | null;
 }) {
   const [containerLogs, setContainerLogs] = useState<Record<string, string[]>>(
     {}
@@ -104,15 +123,19 @@ function ContainerLogsPanel({
     .sort()
     .join(",");
 
-  // Set default active container when services load
+  // Follow the project service picker when present; else first container
   useEffect(() => {
+    if (preferredContainerName) {
+      setActiveContainer(preferredContainerName);
+      return;
+    }
     if (services.length > 0 && !activeContainer) {
       const firstWithContainer = services.find((s) => s.container_name);
       if (firstWithContainer) {
         setActiveContainer(firstWithContainer.container_name!);
       }
     }
-  }, [services, activeContainer]);
+  }, [services, activeContainer, preferredContainerName]);
 
   // SSE connection management using native EventSource — clean close, no abort errors
   useEffect(() => {
@@ -335,6 +358,7 @@ function ContainerLogsPanel({
 export default function ProjectDetail() {
   const params = useParams();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const projectId = params.id as string;
 
   const [project, setProject] = useState<Project | null>(null);
@@ -342,6 +366,9 @@ export default function ProjectDetail() {
   const [files, setFiles] = useState<ProjectFile[]>([]);
   const [deployments, setDeployments] = useState<Deployment[]>([]);
   const [services, setServices] = useState<Service[]>([]);
+  const [selectedServiceId, setSelectedServiceId] = useState<string | null>(
+    null,
+  );
   const [logs, setLogs] = useState("");
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
@@ -368,6 +395,110 @@ export default function ProjectDetail() {
   const [storageName, setStorageName] = useState("");
   const [storagePath, setStoragePath] = useState("");
   const [storageToDelete, setStorageToDelete] = useState<StorageMount | null>(null);
+
+  const multiService = services.length > 1;
+  const serviceFromUrl = searchParams.get("service");
+  // Multi-service: URL alone owns the service workspace. Never fall back to stale id.
+  const selectedService = multiService
+    ? services.find((s) => s.name === serviceFromUrl) || null
+    : services[0] || null;
+
+  const workspace: ProjectWorkspace =
+    multiService && selectedService ? "service" : "project";
+  const showProjectTabs = !multiService || workspace === "project";
+  const showServiceTabs = !multiService || workspace === "service";
+
+  const PROJECT_ONLY_TABS = new Set([
+    "deployments",
+    "build",
+    "source",
+  ]);
+  const SERVICE_ONLY_TABS = new Set(["domains", "storage", "logs"]);
+
+  // Sync selection + keep URL clean; do not force a service onto multi projects
+  useEffect(() => {
+    if (services.length === 0) {
+      if (selectedServiceId !== null) setSelectedServiceId(null);
+      return;
+    }
+    if (!multiService) {
+      if (services[0] && services[0].id !== selectedServiceId) {
+        setSelectedServiceId(services[0].id);
+      }
+      if (serviceFromUrl) {
+        const nextParams = new URLSearchParams(searchParams);
+        nextParams.delete("service");
+        setSearchParams(nextParams, { replace: true });
+      }
+      return;
+    }
+    if (serviceFromUrl) {
+      const match = services.find((s) => s.name === serviceFromUrl);
+      if (match) {
+        if (match.id !== selectedServiceId) setSelectedServiceId(match.id);
+      } else {
+        setSelectedServiceId(null);
+        const nextParams = new URLSearchParams(searchParams);
+        nextParams.delete("service");
+        setSearchParams(nextParams, { replace: true });
+      }
+    } else if (selectedServiceId !== null) {
+      setSelectedServiceId(null);
+    }
+  }, [
+    services,
+    multiService,
+    serviceFromUrl,
+    selectedServiceId,
+    searchParams,
+    setSearchParams,
+  ]);
+
+  useEffect(() => {
+    if (selectedService?.name) {
+      setStorageService(selectedService.name);
+    }
+  }, [selectedService?.name]);
+
+  // When workspace changes, land on a valid tab for that workspace
+  useEffect(() => {
+    if (!multiService) return;
+    if (workspace === "project" && SERVICE_ONLY_TABS.has(activeTab)) {
+      setActiveTab("overview");
+    }
+    if (workspace === "service" && PROJECT_ONLY_TABS.has(activeTab)) {
+      setActiveTab("overview");
+    }
+  }, [workspace, multiService, activeTab]);
+
+  const selectProjectWorkspace = () => {
+    setSelectedServiceId(null);
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete("service");
+    setSearchParams(nextParams, { replace: true });
+    if (SERVICE_ONLY_TABS.has(activeTab)) setActiveTab("overview");
+  };
+
+  const selectService = (serviceId: string, tab = "overview") => {
+    const svc = services.find((s) => s.id === serviceId);
+    if (!svc) return;
+    setSelectedServiceId(svc.id);
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set("service", svc.name);
+    setSearchParams(nextParams, { replace: true });
+    setActiveTab(tab);
+  };
+
+  const goToProjectTab = useCallback(
+    (tab: string) => {
+      setSelectedServiceId(null);
+      const nextParams = new URLSearchParams(searchParams);
+      nextParams.delete("service");
+      setSearchParams(nextParams, { replace: true });
+      setActiveTab(tab);
+    },
+    [searchParams, setSearchParams],
+  );
 
   // Confirmation Dialog State
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
@@ -519,9 +650,13 @@ export default function ProjectDetail() {
             setHistoryPage(0);
           }
 
-          // Auto-switch to deployments tab when a new build starts
-          if (isLatestInProgress && activeTab !== "deployments") {
-            setActiveTab("deployments");
+          // Auto-open Deployments for all-services view only — never steal ?service=
+          if (
+            isLatestInProgress &&
+            activeTab !== "deployments" &&
+            !serviceFromUrl
+          ) {
+            goToProjectTab("deployments");
           }
         }
       }
@@ -540,6 +675,8 @@ export default function ProjectDetail() {
     historyPage,
     viewingDeploymentId,
     activeTab,
+    goToProjectTab,
+    serviceFromUrl,
   ]);
 
   useEffect(() => {
@@ -770,36 +907,43 @@ export default function ProjectDetail() {
           description:
             "Are you sure you want to delete this project? This action cannot be undone and will explicitly remove all associated data, containers, and configurations.",
           confirmText: "Yes, Delete Project",
-          confirmVariant: "bg-red-600 hover:bg-red-700 text-white border-0",
-          icon: <Trash2 className="h-6 w-6 text-red-600" />,
+          confirmClassName:
+            "bg-destructive text-destructive-foreground hover:bg-destructive/90 shadow-none",
+          icon: <Trash2 className="h-5 w-5 text-destructive" />,
         };
       case "stop":
         return {
-          title: "Stop Application",
+          title: "Stop project",
           description:
-            "Are you sure you want to stop the running container? The application will generate 503 errors until started again.",
-          confirmText: "Stop Application",
-          confirmVariant: "bg-red-500 hover:bg-red-600 text-white border-0",
-          icon: <Square className="h-6 w-6 text-red-500" />,
+            multiService
+              ? "Stops every service in this project. Public endpoints will return errors until you deploy or restart again."
+              : "Stop the running containers? The app will be unreachable until you deploy or restart again.",
+          confirmText: "Stop project",
+          confirmClassName:
+            "bg-foreground text-background hover:opacity-90 shadow-none",
+          icon: <Square className="h-5 w-5 text-foreground" />,
         };
       case "restart":
         return {
-          title: "Restart Application",
+          title: "Restart project",
           description:
-            "Are you sure you want to restart the application? This may cause a brief period of downtime for your users.",
-          confirmText: "Restart Now",
-          confirmVariant: "bg-amber-500 hover:bg-amber-600 text-white border-0",
-          icon: <RotateCw className="h-6 w-6 text-amber-500" />,
+            multiService
+              ? "Restarts every service in this project without rebuilding images. Expect brief downtime across all apps."
+              : "Restart without rebuilding? Expect a brief period of downtime.",
+          confirmText: "Restart project",
+          confirmClassName: PROJECT_ACTION_PRIMARY,
+          icon: <RotateCw className="h-5 w-5 text-brand" />,
         };
       case "redeploy":
         return {
-          title: "Redeploy Application",
+          title: "Redeploy project",
           description:
-            "This will rebuild your application from the source and deploy a new version. This process may take a few minutes.",
-          confirmText: "Start Redeploy",
-          confirmVariant:
-            "bg-emerald-600 hover:bg-emerald-700 text-white border-0",
-          icon: <Play className="h-6 w-6 text-emerald-600" />,
+            multiService
+              ? "Rebuilds from source and redeploys the whole project — every service, not only the one open in Workspace."
+              : "Rebuild from source and deploy a new version. This may take a few minutes.",
+          confirmText: "Start redeploy",
+          confirmClassName: PROJECT_ACTION_PRIMARY,
+          icon: <Play className="h-5 w-5 text-brand" />,
         };
       case "cancel":
         return {
@@ -807,8 +951,9 @@ export default function ProjectDetail() {
           description:
             "Are you sure you want to abort the current build process? Partial artifacts may be left behind.",
           confirmText: "Abort Build",
-          confirmVariant: "bg-red-600 hover:bg-red-700 text-white border-0",
-          icon: <XCircle className="h-6 w-6 text-red-600" />,
+          confirmClassName:
+            "bg-destructive text-destructive-foreground hover:bg-destructive/90 shadow-none",
+          icon: <XCircle className="h-5 w-5 text-destructive" />,
         };
       case "deploy":
         return {
@@ -816,16 +961,16 @@ export default function ProjectDetail() {
           description:
             "Ready to launch? This will start a new build and deployment process for your application.",
           confirmText: "Deploy Now",
-          confirmVariant: "bg-cyan-600 hover:bg-cyan-700 text-white border-0",
-          icon: <Play className="h-6 w-6 text-cyan-600" />,
+          confirmClassName: PROJECT_ACTION_PRIMARY,
+          icon: <Play className="h-5 w-5 text-brand" />,
         };
       default:
         return {
           title: "Confirm Action",
           description: "Are you sure you want to proceed?",
           confirmText: "Confirm",
-          confirmVariant: "default",
-          icon: <AlertTriangle className="h-6 w-6 text-amber-500" />,
+          confirmClassName: PROJECT_ACTION_PRIMARY,
+          icon: <AlertTriangle className="h-5 w-5 text-muted-foreground" />,
         };
     }
   };
@@ -839,7 +984,7 @@ export default function ProjectDetail() {
     setCurrentAction(action);
     if (action !== "delete") {
       setLogs(`$ Starting ${action}...\n`);
-      setActiveTab("deployments");
+      goToProjectTab("deployments");
     }
 
     try {
@@ -854,12 +999,14 @@ export default function ProjectDetail() {
       const res = await authFetch(url, {
         method,
         headers:
-          action === "deploy"
+          action === "deploy" || action === "redeploy"
             ? { "Content-Type": "application/json" }
             : undefined,
         body:
-          action === "deploy"
-            ? JSON.stringify({ trigger: "manual" })
+          action === "deploy" || action === "redeploy"
+            ? JSON.stringify({
+                trigger: action === "redeploy" ? "redeploy" : "manual",
+              })
             : undefined,
       });
 
@@ -950,232 +1097,175 @@ export default function ProjectDetail() {
           Back to Projects
         </Link>
 
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 sm:gap-6 mb-8 sm:mb-10">
-          <div className="flex items-start sm:items-center gap-3 sm:gap-5">
-            <div className="h-12 w-12 sm:h-14 sm:w-14 rounded-2xl bg-gradient-to-br from-cyan-500/10 to-blue-600/10 border border-cyan-500/20 flex items-center justify-center shrink-0">
-              {project.project_type === "database" ? (
-                <Database className="h-6 w-6 sm:h-7 sm:w-7 text-blue-500" />
-              ) : (
-                <Cloud className="h-6 w-6 sm:h-7 sm:w-7 text-cyan-500" />
-              )}
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-                <h1 className="text-2xl sm:text-3xl font-bold tracking-tight truncate">
-                  {project.name}
-                </h1>
-                <StatusBadge status={project.status} />
-              </div>
-              <p className="text-xs sm:text-sm text-muted-foreground mt-1 flex flex-wrap items-center gap-x-3 sm:gap-x-4 gap-y-1">
-                <span className="capitalize font-bold text-foreground/80">
-                  {project.project_type}
-                </span>
-                <span className="flex items-center gap-1.5 opacity-70">
-                  <Calendar className="h-3 sm:h-3.5 w-3 sm:w-3.5" />
-                  <span className="hidden sm:inline">Created </span>
-                  {new Date(project.created_at).toLocaleString([], {
-                    month: "short",
-                    day: "numeric",
-                    year: "numeric",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </span>
-                <span className="font-mono text-[9px] sm:text-[10px] bg-secondary px-1.5 py-0.5 rounded uppercase tracking-wider">
-                  {project.id.split("-")[0]}
-                </span>
-              </p>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2 bg-background/50 backdrop-blur-sm p-1.5 rounded-2xl border border-border/50 shadow-sm w-full lg:w-auto shrink-0">
-            {project.status === "running" ? (
-              <>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => confirmAction("redeploy")}
-                  disabled={actionLoading}
-                  className="gap-1 sm:gap-2 h-9 px-3 sm:px-4 text-xs sm:text-sm bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white shadow-lg shadow-emerald-500/20 border-0 rounded-xl transition-all font-bold flex-1 lg:flex-none"
-                >
-                  {currentAction === "redeploy" ? (
-                    <Loader2 className="h-4 w-4 animate-spin text-white" />
-                  ) : (
-                    <Play className="h-4 w-4 fill-current" />
-                  )}
-                  Redeploy
-                </Button>
-
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => confirmAction("restart")}
-                  disabled={actionLoading}
-                  className="gap-2 h-9 px-4 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white shadow-lg shadow-cyan-500/20 border-0 rounded-xl transition-all font-bold"
-                >
-                  {currentAction === "restart" ? (
-                    <Loader2 className="h-4 w-4 animate-spin text-white" />
-                  ) : (
-                    <RotateCw className="h-4 w-4" />
-                  )}
-                  Restart
-                </Button>
-
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => confirmAction("stop")}
-                  disabled={actionLoading}
-                  className="gap-2 h-9 px-4 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white shadow-lg shadow-amber-500/20 border-0 rounded-xl transition-all font-bold"
-                >
-                  {currentAction === "stop" ? (
-                    <Loader2 className="h-4 w-4 animate-spin text-white" />
-                  ) : (
-                    <Square className="h-4 w-4 fill-current" />
-                  )}
-                  Stop
-                </Button>
-              </>
-            ) : project.status === "building" ? (
-              <Button
-                variant="destructive"
-                onClick={() => confirmAction("cancel")}
-                disabled={currentAction === "cancel"}
-                className="gap-2 h-9 px-4 rounded-xl shadow-red-500/20 font-bold bg-red-600 hover:bg-red-700"
-              >
-                {currentAction === "cancel" ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <XCircle className="h-4 w-4" />
-                )}
-                Cancel Build
-              </Button>
+        <div className="mb-6 flex min-w-0 items-start gap-3 sm:mb-8 sm:items-center sm:gap-4">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-border bg-secondary/40 sm:h-12 sm:w-12">
+            {project.project_type === "database" ? (
+              <Database className="h-5 w-5 text-muted-foreground sm:h-6 sm:w-6" />
             ) : (
-              <Button
-                onClick={() => confirmAction("deploy")}
-                disabled={actionLoading}
-                className="gap-2 h-9 px-6 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white shadow-lg shadow-cyan-500/25 rounded-xl transition-all border-none font-bold"
-              >
-                {currentAction === "deploy" ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Play className="h-4 w-4 fill-current" />
-                )}
-                Deploy Now
-              </Button>
+              <Cloud className="h-5 w-5 text-muted-foreground sm:h-6 sm:w-6" />
             )}
-
-            <div className="w-px h-6 bg-border mx-1" />
-
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => confirmAction("delete")}
-              disabled={actionLoading}
-              className="gap-2 h-9 px-4 flex-1 lg:flex-none bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white shadow-lg shadow-red-500/25 rounded-xl transition-all border-none font-bold"
-              title="Delete Project"
-            >
-              {currentAction === "delete" ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Trash2 className="h-4 w-4" />
-              )}
-              Delete
-            </Button>
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+              <h1 className="truncate text-2xl font-semibold tracking-tight sm:text-3xl">
+                {project.name}
+              </h1>
+              <StatusBadge status={project.status} />
+            </div>
+            <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground sm:gap-x-4 sm:text-sm">
+              <span className="capitalize font-medium text-foreground/80">
+                {project.project_type}
+              </span>
+              <span className="flex items-center gap-1.5">
+                <Calendar className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
+                <span className="hidden sm:inline">Created </span>
+                {new Date(project.created_at).toLocaleString([], {
+                  month: "short",
+                  day: "numeric",
+                  year: "numeric",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </span>
+              <span className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-muted-foreground">
+                {project.id.split("-")[0]}
+              </span>
+            </p>
           </div>
         </div>
 
-        {/* Stats Grid and Services were removed here as they are now in Overview tab */}
-
-        {/* Stats Grid removed - moved to Overview */}
+        {/* Single-service: actions stay with the title (no workspace rail). */}
+        {!multiService && (
+          <ProjectActionBar
+            status={project.status}
+            actionLoading={actionLoading}
+            currentAction={currentAction}
+            onAction={confirmAction}
+            className="mb-8 sm:mb-10"
+          />
+        )}
 
         <Tabs
           value={activeTab}
           onValueChange={setActiveTab}
           className="space-y-6"
         >
+          {multiService && (
+            <div className="space-y-4 border-b border-border pb-4">
+              <ServiceSwitcher
+                services={services}
+                workspace={workspace}
+                selectedId={selectedService?.id ?? null}
+                onSelectProject={selectProjectWorkspace}
+                onSelectService={(id) => selectService(id, "overview")}
+              />
+              <ProjectActionBar
+                status={project.status}
+                actionLoading={actionLoading}
+                currentAction={currentAction}
+                onAction={confirmAction}
+                multiService
+              />
+            </div>
+          )}
+
           <div className="sticky top-14 z-10 -mx-4 px-4 md:mx-0 md:px-0 overflow-x-auto md:overflow-visible md:flex md:justify-center">
-            <TabsList className="w-max inline-flex justify-start md:justify-center bg-secondary/50 dark:bg-zinc-900 backdrop-blur-xl border border-border/40 dark:border-white/10 p-1 rounded-full shadow-sm items-center gap-1">
-              <TabsTrigger
-                value="overview"
-                className="gap-1.5 sm:gap-2 rounded-full px-3 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-bold transition-all duration-300 data-[state=active]:bg-white data-[state=active]:dark:bg-cyan-500/20 data-[state=active]:text-cyan-600 data-[state=active]:dark:text-cyan-400 data-[state=active]:shadow-sm data-[state=active]:border-cyan-200/50 data-[state=active]:dark:border-cyan-500/30 border border-transparent hover:bg-secondary/50 whitespace-nowrap"
-              >
+            <TabsList className="inline-flex w-max items-center justify-start gap-0.5 rounded-xl border border-border bg-secondary/40 p-1 md:justify-center">
+              <TabsTrigger value="overview" className={PROJECT_TAB_TRIGGER}>
                 <LayoutDashboard className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                <span className="hidden xs:inline">Overview</span>
+                <span className="hidden xs:inline">
+                  {workspace === "service" && multiService
+                    ? selectedService?.name || "Service"
+                    : "Overview"}
+                </span>
                 <span className="xs:hidden">View</span>
               </TabsTrigger>
-              <TabsTrigger
-                value="deployments"
-                className="gap-1.5 sm:gap-2 rounded-full px-3 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-bold transition-all duration-300 data-[state=active]:bg-white data-[state=active]:dark:bg-cyan-500/20 data-[state=active]:text-cyan-600 data-[state=active]:dark:text-cyan-400 data-[state=active]:shadow-sm data-[state=active]:border-cyan-200/50 data-[state=active]:dark:border-cyan-500/30 border border-transparent hover:bg-secondary/50 whitespace-nowrap"
-              >
-                <Activity className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                <span className="hidden xs:inline">Deployments</span>
-                <span className="xs:hidden">Deploy</span>
-              </TabsTrigger>
-              <TabsTrigger
-                value="env"
-                className="gap-1.5 sm:gap-2 rounded-full px-3 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-bold transition-all duration-300 data-[state=active]:bg-white data-[state=active]:dark:bg-cyan-500/20 data-[state=active]:text-cyan-600 data-[state=active]:dark:text-cyan-400 data-[state=active]:shadow-sm data-[state=active]:border-cyan-200/50 data-[state=active]:dark:border-cyan-500/30 border border-transparent hover:bg-secondary/50 whitespace-nowrap"
-              >
+
+              {(!multiService || workspace === "project") && (
+                <TabsTrigger value="deployments" className={PROJECT_TAB_TRIGGER}>
+                  <Activity className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                  <span className="hidden xs:inline">Deployments</span>
+                  <span className="xs:hidden">Deploy</span>
+                </TabsTrigger>
+              )}
+
+              <TabsTrigger value="env" className={PROJECT_TAB_TRIGGER}>
                 <Key className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                <span className="hidden xs:inline">Environment</span>
+                <span className="hidden xs:inline">
+                  {workspace === "service" && multiService ? "Env" : "Environment"}
+                </span>
                 <span className="xs:hidden">Env</span>
               </TabsTrigger>
-              <TabsTrigger
-                value="build"
-                className="gap-1.5 sm:gap-2 rounded-full px-3 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-bold transition-all duration-300 data-[state=active]:bg-white data-[state=active]:dark:bg-cyan-500/20 data-[state=active]:text-cyan-600 data-[state=active]:dark:text-cyan-400 data-[state=active]:shadow-sm data-[state=active]:border-cyan-200/50 data-[state=active]:dark:border-cyan-500/30 border border-transparent hover:bg-secondary/50 whitespace-nowrap"
-              >
-                <Box className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                Build
-              </TabsTrigger>
-              <TabsTrigger
-                value="storage"
-                className="gap-1.5 sm:gap-2 rounded-full px-3 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-bold transition-all duration-300 data-[state=active]:bg-white data-[state=active]:dark:bg-cyan-500/20 data-[state=active]:text-cyan-600 data-[state=active]:dark:text-cyan-400 data-[state=active]:shadow-sm data-[state=active]:border-cyan-200/50 data-[state=active]:dark:border-cyan-500/30 border border-transparent hover:bg-secondary/50 whitespace-nowrap"
-              >
-                <HardDrive className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                Storage
-              </TabsTrigger>
-              <TabsTrigger
-                value="source"
-                className="gap-1.5 sm:gap-2 rounded-full px-3 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-bold transition-all duration-300 data-[state=active]:bg-white data-[state=active]:dark:bg-cyan-500/20 data-[state=active]:text-cyan-600 data-[state=active]:dark:text-cyan-400 data-[state=active]:shadow-sm data-[state=active]:border-cyan-200/50 data-[state=active]:dark:border-cyan-500/30 border border-transparent hover:bg-secondary/50 whitespace-nowrap"
-              >
-                <FileCode className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                Source
-              </TabsTrigger>
-              <TabsTrigger
-                value="domains"
-                className="gap-1.5 sm:gap-2 rounded-full px-3 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-bold transition-all duration-300 data-[state=active]:bg-white data-[state=active]:dark:bg-cyan-500/20 data-[state=active]:text-cyan-600 data-[state=active]:dark:text-cyan-400 data-[state=active]:shadow-sm data-[state=active]:border-cyan-200/50 data-[state=active]:dark:border-cyan-500/30 border border-transparent hover:bg-secondary/50 whitespace-nowrap"
-              >
-                <Globe className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                Domains
-              </TabsTrigger>
-              <TabsTrigger
-                value="logs"
-                className="gap-1.5 sm:gap-2 rounded-full px-3 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-bold transition-all duration-300 data-[state=active]:bg-white data-[state=active]:dark:bg-cyan-500/20 data-[state=active]:text-cyan-600 data-[state=active]:dark:text-cyan-400 data-[state=active]:shadow-sm data-[state=active]:border-cyan-200/50 data-[state=active]:dark:border-cyan-500/30 border border-transparent hover:bg-secondary/50 whitespace-nowrap"
-              >
-                <ScrollText className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                Logs
-              </TabsTrigger>
+
+              {(!multiService || workspace === "project") && (
+                <TabsTrigger value="build" className={PROJECT_TAB_TRIGGER}>
+                  <Box className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                  Build
+                </TabsTrigger>
+              )}
+
+              {(!multiService || workspace === "service") && (
+                <TabsTrigger value="storage" className={PROJECT_TAB_TRIGGER}>
+                  <HardDrive className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                  Storage
+                </TabsTrigger>
+              )}
+
+              {(!multiService || workspace === "project") && (
+                <TabsTrigger value="source" className={PROJECT_TAB_TRIGGER}>
+                  <FileCode className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                  Source
+                </TabsTrigger>
+              )}
+
+              {(!multiService || workspace === "service") && (
+                <TabsTrigger value="domains" className={PROJECT_TAB_TRIGGER}>
+                  <Globe className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                  Domains
+                </TabsTrigger>
+              )}
+
+              {(!multiService || workspace === "service") && (
+                <TabsTrigger value="logs" className={PROJECT_TAB_TRIGGER}>
+                  <ScrollText className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                  Logs
+                </TabsTrigger>
+              )}
             </TabsList>
           </div>
 
-          <TabsContent
-            value="overview"
-            className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-400"
-          >
+          <TabsContent value="overview" className={PROJECT_TAB_PANEL}>
             {/* Real Services Card */}
             {services.length > 0 && (
               <div className="grid gap-6">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-xl font-bold flex items-center gap-2">
-                    <Cloud className="h-5 w-5 text-cyan-500" />
-                    Services & Endpoints
-                  </h3>
-                  <div className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-500 border border-cyan-500/20 uppercase tracking-widest">
-                    Live Status
+                <div className="flex items-baseline justify-between gap-3">
+                  <div>
+                    <h3 className="text-lg font-semibold tracking-tight">
+                      {workspace === "service" && selectedService
+                        ? selectedService.name
+                        : "Services & Endpoints"}
+                    </h3>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {workspace === "service" && selectedService
+                        ? `${selectedService.dockerfile_path} · runtime endpoints for this service`
+                        : multiService
+                          ? "Open a service for env, domains, storage, and logs."
+                          : "Live endpoints for this project."}
+                    </p>
                   </div>
+                  <span className="text-[11px] font-medium text-muted-foreground">
+                    {workspace === "service"
+                      ? "Service"
+                      : multiService
+                        ? `${services.length} services`
+                        : "Live"}
+                  </span>
                 </div>
                 <div className="grid gap-4">
-                  {services.map((svc) => {
+                  {(workspace === "service" && selectedService
+                    ? [selectedService]
+                    : services
+                  ).map((svc) => {
                     const domains = svc.domain
                       ? svc.domain
                           .split(",")
@@ -1211,21 +1301,65 @@ export default function ProjectDetail() {
                     return (
                       <Card
                         key={svc.id}
-                        className="group relative overflow-hidden p-0 border-border/40 hover:border-cyan-500/50 transition-all duration-300 shadow-sm hover:shadow-cyan-500/5"
+                        className={cn(
+                          "group border-border p-0 shadow-none transition-colors",
+                          multiService &&
+                            workspace === "project" &&
+                            "hover:bg-secondary/20",
+                          workspace === "service" &&
+                            selectedService?.id === svc.id &&
+                            "bg-secondary/25 ring-1 ring-border",
+                        )}
                       >
-                        <div className="absolute inset-y-0 left-0 w-1 bg-cyan-500 opacity-0 group-hover:opacity-100 transition-opacity" />
-                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-5 p-4 sm:p-5">
-                          {/* Left: Icon + Name + Status */}
-                          <div className="flex items-start sm:items-center gap-3 sm:gap-5 min-w-0">
-                            <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-xl sm:rounded-2xl bg-secondary/50 flex items-center justify-center group-hover:bg-cyan-500/10 transition-colors shrink-0">
-                              <Server className="h-5 w-5 sm:h-6 sm:w-6 text-muted-foreground group-hover:text-cyan-500 transition-colors" />
+                        <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:gap-5 sm:p-5">
+                          {/* Left: open service workspace (avoid nesting controls in a button) */}
+                          <div
+                            className={cn(
+                              "flex min-w-0 items-start gap-3 sm:items-center sm:gap-4",
+                              multiService &&
+                                workspace === "project" &&
+                                "cursor-pointer rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                            )}
+                            role={
+                              multiService && workspace === "project"
+                                ? "button"
+                                : undefined
+                            }
+                            tabIndex={
+                              multiService && workspace === "project"
+                                ? 0
+                                : undefined
+                            }
+                            onClick={() => {
+                              if (multiService && workspace === "project") {
+                                selectService(svc.id);
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              if (!(multiService && workspace === "project")) {
+                                return;
+                              }
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                selectService(svc.id);
+                              }
+                            }}
+                          >
+                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border bg-secondary/40 sm:h-11 sm:w-11">
+                              <Server className="h-4 w-4 text-muted-foreground sm:h-5 sm:w-5" />
                             </div>
                             <div className="min-w-0 flex-1">
                               <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-                                <span className="font-bold text-base sm:text-lg truncate">
+                                <span className="truncate text-base font-semibold sm:text-lg">
                                   {svc.name}
                                 </span>
                                 <StatusBadge status={svc.status} />
+                                {workspace === "service" &&
+                                  selectedService?.id === svc.id && (
+                                  <span className="text-[10px] font-medium text-muted-foreground">
+                                    Workspace
+                                  </span>
+                                )}
                               </div>
                               <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5 sm:mt-1 flex flex-wrap items-center gap-1.5 sm:gap-2">
                                 <span className="font-mono bg-secondary/80 px-1 sm:px-1.5 py-0.5 rounded text-[9px] sm:text-xs">
@@ -1251,7 +1385,8 @@ export default function ProjectDetail() {
                                 href={`http://${portHost}:${svc.port}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="h-7 sm:h-9 px-2.5 sm:px-4 flex items-center gap-1.5 sm:gap-2 rounded-lg sm:rounded-xl bg-secondary/50 hover:bg-cyan-500 text-muted-foreground hover:text-white font-mono text-[10px] sm:text-xs font-bold transition-all duration-300 border border-border/50"
+                                onClick={(e) => e.stopPropagation()}
+                                className="flex h-8 items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 font-mono text-[10px] font-medium text-foreground transition-colors hover:bg-secondary sm:h-9 sm:px-3 sm:text-xs"
                               >
                                 <span className="truncate max-w-[120px] sm:max-w-none">
                                   {portHost}:{svc.port}
@@ -1270,7 +1405,8 @@ export default function ProjectDetail() {
                                 href={link.url}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="h-7 sm:h-9 px-2.5 sm:px-4 flex items-center gap-1.5 sm:gap-2 rounded-lg sm:rounded-xl bg-cyan-500/10 hover:bg-cyan-500 text-cyan-600 hover:text-white font-mono text-[10px] sm:text-xs font-bold transition-all duration-300"
+                                onClick={(e) => e.stopPropagation()}
+                                className="flex h-8 items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 font-mono text-[10px] font-medium text-foreground transition-colors hover:bg-secondary sm:h-9 sm:px-3 sm:text-xs"
                               >
                                 <span className="truncate max-w-[120px] sm:max-w-none">
                                   {link.label}
@@ -1305,21 +1441,29 @@ export default function ProjectDetail() {
                                 <div className="mt-2 flex flex-wrap gap-1.5 sm:justify-end">
                                   <button
                                     type="button"
-                                    onClick={() => setActiveTab("domains")}
-                                    className="h-7 px-2.5 rounded-lg text-[10px] font-bold bg-cyan-500/10 text-cyan-600 hover:bg-cyan-500 hover:text-white transition-colors"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (multiService) {
+                                        selectService(svc.id, "domains");
+                                      } else {
+                                        setActiveTab("domains");
+                                      }
+                                    }}
+                                    className="h-7 rounded-lg border border-border bg-background px-2.5 text-[10px] font-medium text-foreground transition-colors hover:bg-secondary"
                                   >
                                     Add domain
                                   </button>
                                   <button
                                     type="button"
-                                    onClick={() =>
-                                      setActiveTab(
-                                        awaitingHostPortPublish
-                                          ? "deployments"
-                                          : "build",
-                                      )
-                                    }
-                                    className="h-7 px-2.5 rounded-lg text-[10px] font-bold bg-secondary text-muted-foreground hover:bg-secondary/80 border border-border/50 transition-colors"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (awaitingHostPortPublish) {
+                                        confirmAction("redeploy");
+                                      } else {
+                                        goToProjectTab("build");
+                                      }
+                                    }}
+                                    className="h-7 rounded-lg border border-border bg-background px-2.5 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
                                   >
                                     {awaitingHostPortPublish
                                       ? "Redeploy"
@@ -1498,10 +1642,8 @@ export default function ProjectDetail() {
             )}
           </TabsContent>
 
-          <TabsContent
-            value="deployments"
-            className="animate-in fade-in slide-in-from-bottom-2 duration-400"
-          >
+          {showProjectTabs && (
+          <TabsContent value="deployments" className={PROJECT_TAB_PANEL}>
             <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
               <div className="min-w-0 space-y-4 sm:space-y-6 xl:col-span-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1543,7 +1685,7 @@ export default function ProjectDetail() {
                 >
                   {project.status === "building" && (
                     <div className="absolute top-0 left-0 w-full h-1 bg-secondary overflow-hidden z-10">
-                      <div className="absolute top-0 h-full bg-gradient-to-r from-cyan-500 via-blue-500 to-cyan-500 animate-progress-scan" />
+                      <div className="absolute top-0 h-full w-1/3 bg-brand/70 animate-progress-scan" />
                     </div>
                   )}
                   {deployments.length === 0 ? (
@@ -1561,19 +1703,9 @@ export default function ProjectDetail() {
                         <div
                           key={deployment.id}
                           className={cn(
-                            "flex flex-col gap-2 px-3 py-3 sm:px-5 sm:py-4 cursor-pointer transition-all duration-200 border-l-4 min-w-0",
-                            deployment.status === "success"
-                              ? "border-l-emerald-500 lg:hover:bg-emerald-500/5"
-                              : deployment.status === "failed"
-                                ? "border-l-red-500 lg:hover:bg-red-500/5"
-                                : deployment.status === "cancelled"
-                                  ? "border-l-slate-500 lg:hover:bg-slate-500/5"
-                                : "border-l-amber-500",
-                            isViewing &&
-                              "bg-secondary/30 ring-1 ring-inset ring-border/50",
-                            isInProgress &&
-                              isViewing &&
-                              "animate-pulse bg-amber-500/5",
+                            "flex min-w-0 cursor-pointer flex-col gap-2 px-3 py-3 transition-colors sm:px-5 sm:py-4 lg:hover:bg-secondary/40",
+                            isViewing && "bg-secondary/30",
+                            isInProgress && isViewing && "animate-pulse",
                           )}
                           onClick={() => {
                             setLogs(
@@ -1702,33 +1834,44 @@ export default function ProjectDetail() {
               </div>
             </div>
           </TabsContent>
+          )}
 
-          <TabsContent
-            value="env"
-            className="animate-in fade-in slide-in-from-bottom-2 duration-400"
-          >
-            <div className="max-w-4xl mx-auto space-y-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-xl font-bold flex items-center gap-2">
-                    <Key className="h-5 w-5 text-cyan-500" />
-                    Environment Variables
-                  </h3>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    Manage secret values and configuration for your deployment
-                    environment.
-                  </p>
-                </div>
-              </div>
-              <EnvVarsManager projectId={projectId} />
+          <TabsContent value="env" className={PROJECT_TAB_PANEL}>
+            <div>
+              <h3 className="flex items-center gap-2 text-xl font-semibold tracking-tight">
+                <Key className="h-5 w-5 text-muted-foreground" />
+                {workspace === "service" && selectedService
+                  ? `Environment · ${selectedService.name}`
+                  : multiService
+                    ? "Shared environment"
+                    : "Environment"}
+              </h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {workspace === "service" && selectedService
+                  ? "Only this service’s build and runtime. Overrides shared keys with the same name."
+                  : multiService
+                    ? "Injected into every service. Open a service for app-specific secrets."
+                    : "Secrets and configuration for this project’s build and runtime."}
+              </p>
             </div>
+            <EnvVarsManager
+              key={`${projectId}:${
+                workspace === "service" && selectedService
+                  ? selectedService.name
+                  : "__shared__"
+              }`}
+              projectId={projectId}
+              multiService={multiService}
+              serviceName={
+                workspace === "service" && selectedService
+                  ? selectedService.name
+                  : ""
+              }
+            />
           </TabsContent>
 
-          <TabsContent
-            value="build"
-            className="animate-in fade-in slide-in-from-bottom-2 duration-400"
-          >
-            <div className="max-w-4xl mx-auto space-y-6">
+          {showProjectTabs && (
+          <TabsContent value="build" className={PROJECT_TAB_PANEL}>
               <div>
                 <h3 className="text-xl font-bold flex items-center gap-2">
                   <Box className="h-5 w-5 text-orange-500" />
@@ -1886,21 +2029,24 @@ export default function ProjectDetail() {
                   </div>
                 )}
               </Card>
-            </div>
           </TabsContent>
+          )}
 
-          <TabsContent
-            value="storage"
-            className="animate-in fade-in slide-in-from-bottom-2 duration-400"
-          >
-            <div className="max-w-4xl mx-auto space-y-6">
+          {showServiceTabs && (
+          <TabsContent value="storage" className={PROJECT_TAB_PANEL}>
               <div>
-                <h3 className="text-xl font-bold flex items-center gap-2">
-                  <HardDrive className="h-5 w-5 text-blue-500" />
-                  Persistent Storage
+                <h3 className="flex items-center gap-2 text-xl font-semibold tracking-tight">
+                  <HardDrive className="h-5 w-5 text-muted-foreground" />
+                  {workspace === "service" && selectedService
+                    ? `Storage · ${selectedService.name}`
+                    : "Persistent Storage"}
                 </h3>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Attach Docker volumes to keep application data across redeployments. Deploy after changing mounts.
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Attach Docker volumes to keep application data across redeployments.
+                  Deploy after changing mounts.
+                  {workspace === "service" && selectedService
+                    ? ` Mounts below belong to ${selectedService.name} only.`
+                    : ""}
                 </p>
               </div>
 
@@ -1922,7 +2068,11 @@ export default function ProjectDetail() {
                     <select
                       value={storageService}
                       onChange={(e) => setStorageService(e.target.value)}
-                      disabled={services.length === 0}
+                      disabled={
+                        services.length === 0 ||
+                        workspace === "service" ||
+                        !multiService
+                      }
                       className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
                     >
                       {services.length === 0 && <option value="">No services available</option>}
@@ -1961,23 +2111,37 @@ export default function ProjectDetail() {
               </Card>
 
               <div className="space-y-3">
-                <h4 className="font-bold">Attached Mounts</h4>
+                <h4 className="font-semibold">Attached Mounts</h4>
                 {storageLoading ? (
-                  <div className="py-10 flex justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
-                ) : storageMounts.length === 0 ? (
-                  <Card className="p-10 text-center text-sm text-muted-foreground border-dashed">
-                    No persistent storage attached.
-                  </Card>
-                ) : storageMounts.map((mount) => (
-                  <Card key={mount.id} className="p-4 border-border/40">
+                  <div className="flex justify-center py-10"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+                ) : (() => {
+                  const visibleMounts =
+                    workspace === "service" && selectedService
+                      ? storageMounts.filter(
+                          (m) => m.service_name === selectedService.name,
+                        )
+                      : storageMounts;
+                  if (visibleMounts.length === 0) {
+                    return (
+                      <Card className="border-dashed p-10 text-center text-sm text-muted-foreground">
+                        No persistent storage attached
+                        {workspace === "service" && selectedService
+                          ? ` for ${selectedService.name}`
+                          : ""}
+                        .
+                      </Card>
+                    );
+                  }
+                  return visibleMounts.map((mount) => (
+                  <Card key={mount.id} className="border-border p-4 shadow-none">
                     <div className="flex items-center justify-between gap-4">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="p-2.5 rounded-xl bg-blue-500/10">
-                          <HardDrive className="h-5 w-5 text-blue-500" />
+                      <div className="flex min-w-0 items-center gap-3">
+                        <div className="rounded-lg border border-border bg-secondary/40 p-2.5">
+                          <HardDrive className="h-5 w-5 text-muted-foreground" />
                         </div>
                         <div className="min-w-0">
-                          <p className="font-bold truncate">{mount.display_name || mount.name}</p>
-                          <p className="text-xs text-muted-foreground truncate">
+                          <p className="truncate font-semibold">{mount.display_name || mount.name}</p>
+                          <p className="truncate text-xs text-muted-foreground">
                             {mount.service_name} · <code>{mount.mount_path}</code>
                           </p>
                         </div>
@@ -1986,85 +2150,105 @@ export default function ProjectDetail() {
                         variant="ghost"
                         size="icon"
                         onClick={() => setStorageToDelete(mount)}
-                        className="text-muted-foreground hover:text-red-500 hover:bg-red-500/10 shrink-0"
+                        className="shrink-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                         title="Delete storage"
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
                   </Card>
-                ))}
+                  ));
+                })()}
               </div>
-            </div>
           </TabsContent>
+          )}
 
-          <TabsContent
-            value="source"
-            className="animate-in fade-in slide-in-from-bottom-2 duration-400"
-          >
-            <div className="space-y-6">
-              <div className="flex items-center justify-between">
-                <h3 className="text-xl font-bold flex items-center gap-2">
-                  <FileCode className="h-5 w-5 text-muted-foreground" />
-                  Project Files & Source
+          {showProjectTabs && (
+          <TabsContent value="source" className={PROJECT_TAB_PANEL}>
+            <div className="flex items-center justify-between">
+              <h3 className="text-xl font-bold flex items-center gap-2">
+                <FileCode className="h-5 w-5 text-muted-foreground" />
+                Project Files & Source
+              </h3>
+            </div>
+            <Card className="border-border/40 overflow-hidden">
+              <FileTree files={files} onFileEdit={openFileEditor} />
+            </Card>
+          </TabsContent>
+          )}
+
+          {showServiceTabs && (
+          <TabsContent value="domains" className={PROJECT_TAB_PANEL}>
+            <DnsGuideCard serverIP={serverIP} />
+
+            <div className="space-y-3">
+              <div>
+                <h3 className="flex items-center gap-2 text-lg font-semibold tracking-tight sm:text-xl">
+                  <Globe className="h-5 w-5 text-muted-foreground" />
+                  {workspace === "service" && selectedService
+                    ? `Domains · ${selectedService.name}`
+                    : "Service domains"}
                 </h3>
+                <p className="mt-1 text-xs text-muted-foreground sm:text-sm">
+                  Domains belong to this service only. Adding a domain saves it,
+                  wires the reverse proxy, and requests a certificate.
+                </p>
               </div>
-              <Card className="border-border/40 overflow-hidden">
-                <FileTree files={files} onFileEdit={openFileEditor} />
-              </Card>
-            </div>
-          </TabsContent>
 
-          <TabsContent
-            value="domains"
-            className="animate-in fade-in slide-in-from-bottom-2 duration-400"
-          >
-            <div className="mx-auto max-w-4xl space-y-6">
-              <DnsGuideCard serverIP={serverIP} />
+              <div className="grid gap-4">
+                {(workspace === "service" && selectedService
+                  ? [selectedService]
+                  : services
+                ).map((svc) => (
+                  <ServiceDomainCard
+                    key={svc.id}
+                    service={svc}
+                    projectId={projectId}
+                    serverIP={serverIP}
+                    onUpdate={fetchProject}
+                  />
+                ))}
 
-              <div className="space-y-3">
-                <div>
-                  <h3 className="flex items-center gap-2 text-lg font-bold sm:text-xl">
-                    <Globe className="h-5 w-5 text-brand" />
-                    Service domains
-                  </h3>
-                  <p className="mt-1 text-xs text-muted-foreground sm:text-sm">
-                    Adding a domain saves it immediately, wires up the reverse proxy and
-                    requests a certificate. Progress and failures show up per domain.
-                  </p>
-                </div>
-
-                <div className="grid gap-4">
-                  {services.map((svc) => (
-                    <ServiceDomainCard
-                      key={svc.id}
-                      service={svc}
-                      projectId={projectId}
-                      serverIP={serverIP}
-                      onUpdate={fetchProject}
-                    />
-                  ))}
-
-                  {services.length === 0 && (
-                    <div className="rounded-xl border border-dashed border-border bg-secondary/20 py-12 text-center text-muted-foreground">
-                      No services found for this project.
-                    </div>
-                  )}
-                </div>
+                {services.length === 0 && (
+                  <div className="rounded-xl border border-dashed border-border bg-secondary/20 py-12 text-center text-muted-foreground">
+                    No services found for this project.
+                  </div>
+                )}
               </div>
             </div>
           </TabsContent>
+          )}
 
-          <TabsContent
-            value="logs"
-            className="animate-in fade-in slide-in-from-bottom-2 duration-400"
-          >
+          {showServiceTabs && (
+          <TabsContent value="logs" className={PROJECT_TAB_PANEL}>
+            <div>
+              <h3 className="text-lg font-semibold tracking-tight">
+                {workspace === "service" && selectedService
+                  ? `Runtime logs · ${selectedService.name}`
+                  : "Runtime logs"}
+              </h3>
+              <p className="mt-0.5 text-sm text-muted-foreground">
+                {workspace === "service"
+                  ? "Live container output for this service only — not the whole project."
+                  : "Live container output for this project’s service."}
+              </p>
+            </div>
             <ContainerLogsPanel
               projectId={projectId}
-              services={services}
+              services={
+                workspace === "service" && selectedService
+                  ? [selectedService]
+                  : services
+              }
               activeTab={activeTab}
+              preferredContainerName={
+                workspace === "service"
+                  ? selectedService?.container_name
+                  : undefined
+              }
             />
           </TabsContent>
+          )}
         </Tabs>
       </div>
 
@@ -2097,7 +2281,11 @@ export default function ProjectDetail() {
               Cancel
             </Button>
             <Button
-              className={actionDetails.confirmVariant}
+              variant="bare"
+              className={cn(
+                "h-10 px-4 text-sm font-medium",
+                actionDetails.confirmClassName,
+              )}
               onClick={executeAction}
               disabled={actionLoading}
             >
