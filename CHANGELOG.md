@@ -1,3 +1,10 @@
+## [2.0.10](https://github.com/SSujitX/docklift/compare/v2.0.9...v2.0.10) (2026-07-25)
+
+
+### Features
+
+* **LogViewer:** add copy functionality for logs with user feedback and handling for large log buffers ([966a2ea](https://github.com/SSujitX/docklift/commit/966a2ea4118416ad7c587dd2e88c8b424de82cf4))
+
 ## [2.0.9](https://github.com/SSujitX/docklift/compare/v2.0.8...v2.0.9) (2026-07-25)
 
 
