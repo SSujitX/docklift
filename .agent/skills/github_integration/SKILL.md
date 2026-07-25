@@ -31,11 +31,16 @@ Docklift integrates with GitHub using a GitHub App. This allows for accessing pr
 The manifest and install callbacks are **public** endpoints (GitHub calls them unauthenticated), so
 they are guarded by a one-time nonce instead:
 
--   Each setup attempt writes a **per-state file** under `data/github-setup/<state>.json` (TTL cleanup).
-    Concurrent install flows no longer overwrite a single Settings key.
+-   Each setup attempt writes a **per-state file** under `data/github-setup/<state>.json`
+    (`{ createdAt, returnUrl? }` — return URL lives **per state**, not a global `github_return_url`).
 -   Also sets an `HttpOnly`, `SameSite=Lax` cookie (`docklift_github_state`, `Secure` over HTTPS).
 -   Verification uses `timingSafeEqual`, enforces TTL, and clears the used state — single-use.
 -   Legacy Settings-key fallback may still be read for older in-flight flows.
+
+### Legacy `/api/github/callback`
+
+Unsafe OAuth code→token exchange is **removed**. The route may still redirect `installation_id` to
+`/api/github/setup`; otherwise it sends the user to Settings with `github_error=legacy_oauth_disabled`.
 
 ## Key Components
 
