@@ -35,12 +35,12 @@ curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh 
 cd /opt/docklift   # or your clone path
 docker compose up -d --build
 
-# Dashboard on :8080 (all interfaces). Optional lockdown:
-#   DASHBOARD_BIND=127.0.0.1 docker compose up -d
+# Dashboard on :8080 (default all interfaces → http://SERVER_IP:8080).
+# Optional lockdown: DASHBOARD_BIND=127.0.0.1 docker compose up -d
 
-# First boot (no admin yet): grab bootstrap secret from logs, then open Setup
-docker logs docklift-backend 2>&1 | grep -A2 'bootstrap secret'
-# or:  cat data/.bootstrap-secret
+# First boot: installer prints Dashboard URL + Setup code.
+# Or: docker logs docklift-backend 2>&1 | grep -A8 'Fresh install'
+# Or: cat data/.bootstrap-secret
 
 # Start / stop / restart (all)
 docker compose start
@@ -172,8 +172,9 @@ bun run reset-password
 grep '"version"' backend/package.json frontend/package.json
 
 # Running API
-curl -s http://127.0.0.1:8080/api/health
-curl -s http://127.0.0.1:8080/api/system/version   # needs auth in UI; compares to GitHub latest
+curl -s http://SERVER_IP:8080/api/health
+# or from the server: curl -s http://127.0.0.1:8080/api/health
+# Version compare is in the UI (authenticated)
 ```
 
 UI also shows the version in the header / footer.
