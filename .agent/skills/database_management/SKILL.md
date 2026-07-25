@@ -21,10 +21,12 @@ the SQLite file. Backups use `VACUUM INTO` snapshots — see `system_administrat
 
 Production boot runs `node dist/scripts/ensureDb.js` (see `backend/Dockerfile` CMD):
 
-1. Dedupe `env_variables` duplicates (so unique `(project_id, key)` can apply)
+1. Dedupe `env_variables` duplicates (so unique `(project_id, service_name, key)` can apply)
 2. `prisma migrate deploy` against `backend/prisma/migrations/`
 3. Legacy installs that used `db push` (no `_prisma_migrations` history) are **baselined** then
-   repaired idempotently (`publish_host_port`, `is_secret`, unique index)
+   repaired idempotently (`publish_host_port`, `is_secret`, scoped env unique). After
+   `service_name` exists, repair **drops** legacy `env_variables_project_id_key_key` and
+   ensures `env_variables_project_id_service_name_key_key` — never recreates `(project_id, key)`.
 
 **Never** ship `prisma db push --accept-data-loss` on container startup. Local `db:push` is for
 dev experiments only.
@@ -56,7 +58,7 @@ bun run db:push        # local-only; do not use as the container boot path
 | `Project` | `projects` | An application: source, build settings, status |
 | `Service` | `services` | One deployable unit within a project (Dockerfile, domain, ports) |
 | `Deployment` | `deployments` | Build/deploy history, trigger, captured logs |
-| `EnvVariable` | `env_variables` | Per-project vars: `is_build_arg` / `is_runtime` / **`is_secret`**; **`@@unique([project_id, key])`** |
+| `EnvVariable` | `env_variables` | Shared or per-service vars: `service_name` (`""` = all services), `is_build_arg` / `is_runtime` / **`is_secret`**; **`@@unique([project_id, service_name, key])`** |
 | `PersistentVolume` | `persistent_volumes` | Configured named-volume mounts per service |
 | `Port` | `ports` | Host port pool (`is_locked`); used only when project `publish_host_port` is true |
 | `Settings` | `settings` | Key/value system settings (GitHub App creds, ACME email, panel domain) |
