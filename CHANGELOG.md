@@ -1,3 +1,10 @@
+## [2.0.4](https://github.com/SSujitX/docklift/compare/v2.0.3...v2.0.4) (2026-07-25)
+
+
+### Features
+
+* **install:** pin release via v= or env ([47fdac6](https://github.com/SSujitX/docklift/commit/47fdac619bfe9e1372e5ff4f1e7ee99343658655))
+
 ## [2.0.3](https://github.com/SSujitX/docklift/compare/v2.0.2...v2.0.3) (2026-07-25)
 
 
