@@ -13,20 +13,23 @@ export function dockerStatusToServiceStatus(cs: {
   return 'stopped';
 }
 
+export type ProjectAggregateStatus = 'running' | 'stopped' | 'error' | 'degraded';
+
 export function aggregateProjectStatus(
   serviceStatuses: ServiceRuntimeStatus[],
-): 'running' | 'stopped' | 'error' {
+): ProjectAggregateStatus {
   if (serviceStatuses.length === 0) return 'stopped';
   if (serviceStatuses.every((s) => s === 'running')) return 'running';
   if (serviceStatuses.some((s) => s === 'error')) return 'error';
-  if (serviceStatuses.some((s) => s === 'running')) return 'running';
+  // Partial: some running, some stopped — never report full "running"
+  if (serviceStatuses.some((s) => s === 'running')) return 'degraded';
   return 'stopped';
 }
 
 /** Inspect every service container and sync DB project + service rows. */
 export async function syncProjectStatusFromContainers(
   projectId: string,
-): Promise<'running' | 'stopped' | 'error'> {
+): Promise<ProjectAggregateStatus> {
   const services = await prisma.service.findMany({ where: { project_id: projectId } });
   const statuses: ServiceRuntimeStatus[] = [];
 
