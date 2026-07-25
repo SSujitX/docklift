@@ -1,5 +1,5 @@
 # Base stage - Use Bun for faster installs
-FROM oven/bun:1-alpine AS base
+FROM oven/bun:1.2.19-alpine AS base
 
 # Dependencies stage
 FROM base AS deps
@@ -71,5 +71,5 @@ EXPOSE 8000
 ENV HOSTNAME="0.0.0.0"
 ENV DATABASE_URL="file:/app/data/docklift.db"
 
-# Database auto-creation: prisma db push creates the SQLite file if it doesn't exist
-CMD ["sh", "-c", "npx prisma db push --skip-generate && node dist/index.js"]
+# Dedupe → checked-in migrate deploy (never db push --accept-data-loss) → API
+CMD ["sh", "-c", "node dist/scripts/ensureDb.js && node dist/index.js"]
