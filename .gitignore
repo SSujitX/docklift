@@ -91,5 +91,4 @@ backend/nginx-proxy/
 backend/data/
 
 .claude/
-AGENTS.md
-CODEBASE_SUMMARY.md
+.cursor/
