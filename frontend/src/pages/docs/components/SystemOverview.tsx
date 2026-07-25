@@ -1,4 +1,4 @@
-import { Activity, Cpu, Database, HardDrive, Network, Server } from "lucide-react";
+import { Activity, Cpu, Database, HardDrive, Network, Server, RefreshCw, Trash2 } from "lucide-react";
 
 export const SystemOverview = () => (
   <section id="system" className="scroll-mt-20 mb-12 text-left">
@@ -17,7 +17,7 @@ export const SystemOverview = () => (
           <Cpu className="h-5 w-5 text-cyan-500" />
           <div>
             <p className="font-medium">CPU Usage</p>
-            <p className="text-xs text-muted-foreground">Load average, usage per core</p>
+            <p className="text-xs text-muted-foreground">Real load averages (1 / 5 / 15), usage per core</p>
           </div>
         </div>
         <div className="flex items-center gap-3 p-3 bg-background/50 rounded-lg">
@@ -44,6 +44,17 @@ export const SystemOverview = () => (
       </div>
     </div>
 
+    <div className="bg-secondary/50 rounded-xl p-6 mb-6">
+      <h4 className="font-semibold mb-4 flex items-center gap-2">
+        <Trash2 className="h-4 w-4 text-rose-500" />
+        Purge
+      </h4>
+      <p className="text-sm text-muted-foreground mb-2">
+        Removes <strong>dangling (untagged) Docker images</strong> only. Requires your account password.
+        It does not run host-wide prune, restart foreign containers, or wipe OS caches.
+      </p>
+    </div>
+
     <div className="bg-secondary/50 rounded-xl p-6">
       <h4 className="font-semibold mb-4">Control Plane</h4>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -65,5 +76,3 @@ export const SystemOverview = () => (
     </div>
   </section>
 );
-
-import { RefreshCw } from "lucide-react";
