@@ -211,7 +211,7 @@ repository is **never modified** — a `docker-compose.yml` you committed yourse
 2. Choose a source: GitHub URL, private repo, or ZIP upload
 3. Add environment variables (optional) and pick a build mode (default: **Auto**)
 4. **Deploy** → watch live build logs (cancel any time)
-5. Add a domain (or enable **Publish host ports** + redeploy) — Overview shows **Not public yet** until then
+5. Add a domain (preferred) or enable **Publish host ports** + redeploy — Overview shows **Private by default** until then. Prefer domains: raw `IP:port` exposes your origin server.
 
 ---
 
