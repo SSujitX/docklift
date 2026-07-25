@@ -13,13 +13,17 @@ This guide details the lifecycle of a deployment in Docklift, from source code t
 -   **`routes/deployments.ts`**: Deployment history plus the streaming `deploy` / `stop` / `restart` / `redeploy` / `cancel` handlers.
 -   **`lib/runCompose.ts`**: Shared `docker` spawn with mandatory `error` + `close` handlers (never leave unhandled spawn errors).
 -   **`lib/deploymentState.ts`**: In-memory “deploying” lock per project (`isProjectDeploying` / `setProjectDeploying`).
--   **`lib/projectStatusSync.ts`**: Inspect **all** service containers; aggregate project status.
+-   **`lib/projectStatusSync.ts`**: Inspect **all** service containers; aggregate project status
+    (`running` / `stopped` / `error` / **`degraded`** when some running + some stopped).
 -   **`lib/deploymentRecovery.ts`**: On boot, mark stale `in_progress` failed and stuck `building` projects corrected.
--   **`lib/portAllocation.ts`**: Transactional host-port claim (no upsert steal).
--   **`services/docker.ts`**: `dockerode` wrapper for inspect/logs.
+-   **`lib/portAllocation.ts`**: Transactional host-port claim (only when `publish_host_port` is true).
+-   **`services/docker.ts`**: inspect/logs + **`connectProxyToProjectNetwork`** (throws on failure) /
+    **`disconnectProxyFromProjectNetwork`** (before stop/cancel/delete) / **`teardownProjectNetwork`**.
 -   **`services/buildResolver.ts`**: Decides *what* to build (Dockerfile vs Railpack, base directory, service list).
--   **`services/buildRunner.ts`**: Actually builds the image and summarizes failures.
--   **`services/compose.ts`**: Scans Dockerfiles (**dedupes colliding service names** with path hash) and writes runtime Compose.
+-   **`services/buildRunner.ts`**: Builds image; public build args vs **`is_secret` → BuildKit `--secret`**.
+-   **`services/compose.ts`**: Scans Dockerfiles (**dedupes colliding service names** with path hash) and writes
+    runtime Compose on a **per-project network** (labels, `no-new-privileges`, opt-in host ports;
+    no default `cap_drop: ALL` / hard mem-cpu caps — optional via compose options).
 -   **`services/git.ts`**: Clone / pull + `scrubOriginRemote`.
 -   **`lib/naming.ts`**: Compose project, container, image, and `storageVolumeComposeKey` names.
 
@@ -54,11 +58,11 @@ This guide details the lifecycle of a deployment in Docklift, from source code t
 
 4.  **Image Build** (`buildServiceImage`)
     -   Every deployment builds an explicitly tagged image, prefixed by the compose project name.
-    -   **Dockerfile**: `docker build` with validated build args — `validateDockerBuildArgs()` only
-        passes args the Dockerfile actually declares via `ARG`, so unrelated env vars are not leaked
-        into build layers.
-    -   **Railpack**: `docker buildx build` driven by a generated Railpack plan JSON. `PORT` is passed
-        both as `--build-arg` and as `--secret id=PORT,env=PORT`, because Railpack reads it as a secret.
+    -   **Dockerfile public build args**: `--build-arg` only for vars with `is_build_arg` and not `is_secret`;
+        `validateDockerBuildArgs()` warns when `ARG` is missing.
+    -   **Dockerfile secrets**: `is_secret` → `docker buildx build --secret id=KEY,env=KEY` (never `--build-arg`).
+        Missing `RUN --mount=type=secret,id=KEY` is a **preflight failure** (deploy aborts).
+    -   **Railpack**: `docker buildx build` with plan JSON; build vars as BuildKit secrets + `secrets-hash`.
     -   Cancellation kills the detached process group, so compose/buildkit children die too.
     -   Failures go through `summarizeBuildFailure()`, which turns common toolchain noise into one
         actionable line (e.g. an out-of-sync `package-lock.json` on `npm ci`).
@@ -67,23 +71,35 @@ This guide details the lifecycle of a deployment in Docklift, from source code t
     -   Runtime Compose is generated at `deployments/.docklift/<projectId>/compose.yml`.
         **Source files are never patched** — no repository `Dockerfile` or `docker-compose.yml` is
         rewritten, which means user-committed compose files stay intact.
+    -   Network: **`dl-net-<shortId>`** (not the control-plane `docklift_network`).
+    -   Host ports: only if `publish_host_port === true`; otherwise omit `ports:`.
+    -   Hardening defaults: `security_opt: no-new-privileges`, labels `com.docklift.*`.
+        Optional `memLimit` / `cpus` via compose options (not applied by default — DB images need room).
     -   Command: `docker compose -f <runtime-compose> -p <composeProject> up -d --remove-orphans`
-    -   `--remove-orphans` plus per-alias `down` cleans up containers left behind by renamed or
-        removed services (and by the legacy UUID-based compose project name).
-    -   Runtime env vars and configured named volumes are attached to each service.
+    -   After compose up: **`connectProxyToProjectNetwork(projectId)`** — on failure mark deploy
+        **failed** and **do not** activate domains (never log false “proxy attached”).
+    -   Stop / cancel / delete: **`disconnectProxyFromProjectNetwork`** *before* `compose down`
+        (proxy endpoint otherwise blocks network removal). If teardown ultimately fails, **reconnect**
+        the proxy so running apps keep domain routing.
+    -   Project delete / stop: after `compose down`, verify with exact labels
+        `com.docker.compose.project=<alias>` (containers + networks). Never trust stderr “not found”.
+        Abort delete with **409** if owned resources remain.
+    -   Post-deploy cleanup: **no** automatic Docker image prune (shared-host safe).
     -   Output streams to the UI console over SSE.
 
 6.  **Verification**
-    -   `syncProjectStatusFromContainers()` updates each service from Docker, then aggregates project status
-        (`running` only if all running; `error` if any error; else mixed rules).
+    -   `syncProjectStatusFromContainers()` updates each service from Docker, then aggregates:
+        all running → `running`; any error → `error`; some running + some stopped → **`degraded`**;
+        else `stopped`. Never report full `running` for a mixed fleet.
     -   Deploy lock (`setProjectDeploying`) is held through status write **and** nginx/SSL activation.
     -   Final status write uses `updateMany` with `status ≠ cancelled` so cancel cannot be overwritten as success.
     -   `failDeploymentState` likewise never overwrites `cancelled`.
 
 7.  **Cancel (anytime)**
-    -   Product rule: cancel tears everything down so the user can start fresh.
-    -   Marks in-progress (and latest success/failed) deployments `cancelled`, `compose down`, project/services `stopped`.
-    -   Stop/cancel only mark `stopped` when compose exit code is **0**.
+    -   Product rule: cancel tears containers down so the user can start fresh (`compose down` OK).
+    -   History: mark **only** `in_progress` rows `cancelled`. Idle cancel must **not** rewrite past
+        `success` / `failed` history.
+    -   Project/services become `stopped` when teardown succeeds.
 
 ## Build Types at a Glance
 
@@ -146,20 +162,28 @@ Always use `lib/naming.ts` — never hand-build these strings.
 |-------|--------|---------|
 | Compose project (`-p`) | `dl-<slug>-<shortId>` | `dl-python-smoke-53b01966` |
 | Container | `dl_<slug>_<shortId>_<svc>` | `dl_python-smoke_53b01966_app` |
+| Project network | `dl-net-<shortId>` | `dl-net-53b01966` |
 | Volume | `dl-<shortId>-<slug>` | `dl-53b01966-data` |
 
 `shortId` is the first 8 hex chars of the project UUID (dashes stripped). `composeProjectAliases()`
 also returns the bare project UUID, the legacy compose project name, so older deployments can still
 be torn down.
 
-Every container (and Docklift itself) joins `docklift_network`.
+**Control plane** (`docklift-*`) → `docklift_network`. **User apps** → per-project `dl-net-*` only
+(proxy attached after up).
+
+## Project create guards
+
+-   Name required; source must be valid GitHub URL **or** ZIP upload — no empty shell projects.
+-   Env keys: `isValidEnvKey`; unique `(project_id, key)` after startup/`prepareDb` dedupe.
 
 ## Troubleshooting Deployments
 
 -   **Build fails**: read the summarized error at the end of the UI log; the raw output is above it.
 -   **Container exited**: the app crashed — `docker logs <container>`.
--   **Port conflicts**: host ports come from the `5500`–`5600` pool (`PORT_RANGE_START/END`). The app
-    must listen on the port Docklift injects as `PORT` / the service's `internal_port`.
+-   **No host port / can't open SERVER_IP:55xx**: host publish is off by default — enable **Publish host ports**
+    or use a domain via nginx-proxy.
+-   **502 via domain**: check proxy is on the project network; container listening on `internal_port`.
 -   **409 on deploy/delete**: a deployment is already in flight. `POST /:projectId/cancel` first.
 -   **Stuck `in_progress` / `building` after backend restart**: `recoverDeploymentStateOnBoot()` marks
     interrupted deployments failed and reconciles project status from containers.
