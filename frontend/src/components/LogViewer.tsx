@@ -1,5 +1,12 @@
 
-import { useEffect, useState, useRef, useMemo, useCallback } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useState,
+  useRef,
+  useMemo,
+  useCallback,
+} from "react";
 import {
   Search,
   X,
@@ -163,19 +170,33 @@ export function LogViewer({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const programmaticScrollRef = useRef(false);
+  const logCount = logs.length;
 
-  // Follow the tail by scrolling this container only. `scrollIntoView` would also
-  // scroll the page, and a smooth animation never reaches the end while lines are
-  // still streaming in — it restarts on every append and stalls part-way down.
-  useEffect(() => {
+  // Follow the tail on this container only. Flag wraps sync scrollTop writes so
+  // rapid SSE cannot leave programmaticScroll stuck true (which blocked pause).
+  useLayoutEffect(() => {
     if (!autoScroll) return;
     const el = scrollRef.current;
     if (!el) return;
-    const frame = requestAnimationFrame(() => {
+
+    const stick = () => {
+      programmaticScrollRef.current = true;
       el.scrollTop = el.scrollHeight;
+      programmaticScrollRef.current = false;
+    };
+    stick();
+    let inner = 0;
+    const outer = requestAnimationFrame(() => {
+      stick();
+      inner = requestAnimationFrame(stick);
     });
-    return () => cancelAnimationFrame(frame);
-  }, [logs, autoScroll, isFullscreen]);
+    return () => {
+      cancelAnimationFrame(outer);
+      cancelAnimationFrame(inner);
+      programmaticScrollRef.current = false;
+    };
+  }, [logCount, logs[logs.length - 1], autoScroll, isFullscreen]);
 
   // Focus search
   useEffect(() => {
@@ -184,16 +205,28 @@ export function LogViewer({
     }
   }, [showSearch]);
 
-  // Detect manual scroll-up to pause auto-scroll
+  // Detect manual scroll-up / wheel to pause auto-scroll
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const onScroll = () => {
-      const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+    const pauseIfNotAtBottom = () => {
+      if (programmaticScrollRef.current) return;
+      const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
       setAutoScroll(atBottom);
     };
-    el.addEventListener("scroll", onScroll, { passive: true });
-    return () => el.removeEventListener("scroll", onScroll);
+    const onWheel = () => {
+      // User intent — do not wait for scroll event after programmatic stick
+      programmaticScrollRef.current = false;
+      requestAnimationFrame(pauseIfNotAtBottom);
+    };
+    el.addEventListener("scroll", pauseIfNotAtBottom, { passive: true });
+    el.addEventListener("wheel", onWheel, { passive: true });
+    el.addEventListener("touchmove", onWheel, { passive: true });
+    return () => {
+      el.removeEventListener("scroll", pauseIfNotAtBottom);
+      el.removeEventListener("wheel", onWheel);
+      el.removeEventListener("touchmove", onWheel);
+    };
   }, []);
 
   // Keyboard shortcuts
@@ -240,8 +273,10 @@ export function LogViewer({
   return (
     <div
       className={cn(
-        "flex flex-col rounded-xl overflow-hidden border border-[#232323] bg-[#0c0c0c] relative",
-        isFullscreen ? "fixed inset-0 z-50 rounded-none h-screen" : height,
+        "flex flex-col overflow-hidden rounded-xl border border-[#232323] bg-[#0c0c0c] relative",
+        isFullscreen
+          ? "fixed inset-0 z-50 h-screen rounded-none"
+          : cn("min-h-[280px]", height),
       )}
     >
       {/* ─── Header ─── */}
@@ -388,18 +423,25 @@ export function LogViewer({
       {/* ─── Scroll-to-bottom FAB ─── */}
       {!autoScroll && logs.length > 0 && (
         <button
+          type="button"
           onClick={() => {
+            const el = scrollRef.current;
             setAutoScroll(true);
-            scrollRef.current?.scrollTo({
-              top: scrollRef.current.scrollHeight,
-              behavior: "smooth",
+            if (!el) return;
+            programmaticScrollRef.current = true;
+            el.scrollTop = el.scrollHeight;
+            programmaticScrollRef.current = false;
+            requestAnimationFrame(() => {
+              programmaticScrollRef.current = true;
+              el.scrollTop = el.scrollHeight;
+              programmaticScrollRef.current = false;
             });
           }}
           className="absolute bottom-4 right-4 flex h-8 items-center gap-1.5 rounded-full border border-zinc-700 bg-zinc-800 px-3 text-zinc-300 shadow-lg transition-all hover:bg-zinc-700 hover:text-white"
           title="Resume following the newest logs"
         >
           <ArrowDown className="h-3.5 w-3.5" />
-          <span className="text-[11px] font-semibold">Follow</span>
+          <span className="text-[11px] font-semibold">Latest</span>
         </button>
       )}
     </div>
