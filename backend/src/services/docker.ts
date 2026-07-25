@@ -70,6 +70,39 @@ export async function teardownProjectNetwork(projectId: string): Promise<void> {
   }
 }
 
+/** Attach any container to a project bridge network (managed DB ↔ app linking). */
+export async function connectContainerToProjectNetwork(
+  projectId: string,
+  containerName: string,
+): Promise<void> {
+  if (!containerName?.trim()) {
+    throw new Error('containerName is required');
+  }
+  const netName = projectNetworkName(projectId);
+  const network = docker.getNetwork(netName);
+  await network.inspect();
+  try {
+    await network.connect({ Container: containerName });
+  } catch (err: unknown) {
+    if (isProxyAlreadyConnectedError(err)) return;
+    throw err instanceof Error ? err : new Error(String(err));
+  }
+}
+
+/** Detach a container from a project network (best-effort on unlink). */
+export async function disconnectContainerFromProjectNetwork(
+  projectId: string,
+  containerName: string,
+): Promise<void> {
+  if (!containerName?.trim()) return;
+  const netName = projectNetworkName(projectId);
+  try {
+    await docker.getNetwork(netName).disconnect({ Container: containerName, Force: true });
+  } catch {
+    /* not connected or network gone */
+  }
+}
+
 // Get container status
 export async function getContainerStatus(containerName: string): Promise<{ status: string; running: boolean }> {
   try {
