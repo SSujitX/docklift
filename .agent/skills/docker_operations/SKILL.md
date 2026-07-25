@@ -15,7 +15,7 @@ The Docklift platform consists of exactly **5 containers** (defined in `docker-c
 |-----------|-----------|---------|
 | `docklift-backend` | — (8000 internal) | Express API server |
 | `docklift-frontend` | — (3000 internal) | Vite SPA (static nginx) |
-| `docklift-nginx` | `8080:80` | Dashboard gateway (routes to frontend + backend) |
+| `docklift-nginx` | `${DASHBOARD_BIND:-0.0.0.0}:8080:80` | Dashboard gateway |
 | `docklift-nginx-proxy` | `80:80`, `443:443` | Public domains for user apps + panel domain |
 | `docklift-certbot` | — | Let's Encrypt issuance + 12-hourly renewal loop |
 
@@ -24,8 +24,7 @@ The Docklift platform consists of exactly **5 containers** (defined in `docker-c
 
 When you add or rename a core container, update the `CORE_CONTAINERS` and
 `LOG_SERVICE_CONTAINERS` lists in `backend/src/routes/system.ts`, the Logs page service list in
-`frontend/src/pages/Logs.tsx`, and `uninstall.sh`. Missing it from `CORE_CONTAINERS` makes
-`/api/system/purge` treat the container as a *user* workload and restart it.
+`frontend/src/pages/Logs.tsx`, and `uninstall.sh`.
 
 ## Viewing Logs
 
@@ -49,12 +48,17 @@ User containers are named `dl_<slug>_<shortId>_<service>` (see `backend/src/lib/
 ```bash
 # List all user containers
 docker ps --filter "name=dl_"
+# Or by ownership label
+docker ps --filter "label=com.docklift.managed=true"
 
 # View logs for a specific user container
 docker logs dl_python-smoke_53b01966_app -f
 
 # Everything Compose knows about one project
 docker compose -p dl-python-smoke-53b01966 ps
+
+# Project network
+docker network inspect dl-net-53b01966
 ```
 
 ## Debugging Deployments
@@ -65,15 +69,22 @@ docker compose -p dl-python-smoke-53b01966 ps
 4. **Enter shell**: `docker exec -it <container> /bin/sh`
 5. **Read generated runtime state**: `deployments/.docklift/<projectId>/compose.yml` — this, not any
    repository compose file, is what actually ran.
+6. **Confirm proxy attachment**: `docklift-nginx-proxy` should appear on `dl-net-<shortId>` after deploy.
 
-## Network
+## Networks
 
-All Docklift containers and user deployments share the `docklift_network` bridge
-(IPv4 `172.28.0.0/16`, IPv6 `fd12:3456:789a::/64`).
+| Network | Who | Purpose |
+|---------|-----|---------|
+| `docklift_network` | Core DockLift services only | Control plane |
+| `dl-net-<shortId>` | One project's containers + edge proxy | App isolation |
 
 ```bash
 docker network inspect docklift_network
+docker network ls --filter label=com.docklift.managed=true
 ```
+
+Do **not** put user apps back on `docklift_network` by default. Do **not** bind apps to `127.0.0.1`
+as a substitute for isolation without redesigning proxy routing.
 
 ## Volume Management
 
@@ -91,10 +102,7 @@ Named volumes for project data are created per configured mount as `dl-<shortId>
 labelled `com.docklift.project=<projectId>`:
 
 ```bash
-# All DockLift-managed app volumes
 docker volume ls --filter label=com.docklift.project
-
-# Volumes for one project
 docker volume ls --filter label=com.docklift.project=<projectId>
 ```
 
@@ -104,10 +112,13 @@ delete them. They are removed when the project is deleted.
 ## Pruning
 
 ```bash
-# Host-wide and indiscriminate — avoid on shared servers
+# Host-wide and indiscriminate — NEVER from DockLift product paths
 docker system prune -a
 ```
 
-Prefer the built-in `POST /api/system/purge`, which prunes images/networks, restarts only
-*non-core* containers, and leaves volumes alone. For full removal use `uninstall.sh`, which targets
-DockLift-labelled resources instead of pruning the whole host.
+Product paths must **not** auto-prune Docker images (shared-host safe).
+`POST /api/system/purge` and post-deploy cleanup are no-ops for image deletion.
+
+For full removal use `uninstall.sh`, which targets DockLift-owned resources
+(`com.docklift.*` labels / `dl-net-*` / core names). Prefer labeled cleanup over host-wide
+`system prune` / `builder prune`.
