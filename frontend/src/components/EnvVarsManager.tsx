@@ -1,6 +1,6 @@
 // EnvVarsManager component - CRUD for project environment variables (build args and runtime)
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
@@ -14,9 +14,17 @@ import { Check } from "lucide-react";
 
 interface EnvVarsManagerProps {
   projectId: string;
+  /** Empty string = shared across all services. Service name = scoped to that app. */
+  serviceName?: string;
+  /** When true, show shared vs service framing copy. */
+  multiService?: boolean;
 }
 
-export function EnvVarsManager({ projectId }: EnvVarsManagerProps) {
+export function EnvVarsManager({
+  projectId,
+  serviceName = "",
+  multiService = false,
+}: EnvVarsManagerProps) {
   const [envVars, setEnvVars] = useState<EnvVariable[]>([]);
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
@@ -30,22 +38,54 @@ export function EnvVarsManager({ projectId }: EnvVarsManagerProps) {
   const [bulkContent, setBulkContent] = useState("");
   const [bulkAdding, setBulkAdding] = useState(false);
 
-  const fetchEnvVars = async () => {
+  const scopeLabel = serviceName
+    ? `Service · ${serviceName}`
+    : multiService
+      ? "Shared · all services"
+      : "Project";
+
+  const scopeRef = useRef(serviceName);
+  const projectIdRef = useRef(projectId);
+  const envFetchGen = useRef(0);
+  scopeRef.current = serviceName;
+  projectIdRef.current = projectId;
+
+  const fetchEnvVars = useCallback(async (forScope?: string) => {
+    const scope = forScope ?? scopeRef.current;
+    const pid = projectIdRef.current;
+    const gen = ++envFetchGen.current;
+    setLoading(true);
+    setEnvVars([]);
     try {
-      const res = await authFetch(`${API_URL}/api/projects/${projectId}/env`);
-      if (res.ok) {
-        setEnvVars(await res.json());
+      const q = new URLSearchParams({ service: scope });
+      const res = await authFetch(
+        `${API_URL}/api/projects/${pid}/env?${q.toString()}`,
+      );
+      if (gen !== envFetchGen.current) return;
+      if (scope !== scopeRef.current || pid !== projectIdRef.current) return;
+      if (!res.ok) {
+        toast.error("Failed to load environment variables");
+        return;
       }
+      const data = await res.json();
+      if (gen !== envFetchGen.current) return;
+      if (scope !== scopeRef.current || pid !== projectIdRef.current) return;
+      setEnvVars(data);
     } catch (error) {
+      if (gen !== envFetchGen.current) return;
       console.error(error);
+      toast.error("Failed to load environment variables");
     } finally {
-      setLoading(false);
+      if (gen === envFetchGen.current) setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    fetchEnvVars();
-  }, [projectId]);
+    fetchEnvVars(serviceName);
+    return () => {
+      envFetchGen.current += 1;
+    };
+  }, [projectId, serviceName, fetchEnvVars]);
 
   const handleAdd = async () => {
     if (!newKey.trim() || !newValue.trim()) {
@@ -53,6 +93,7 @@ export function EnvVarsManager({ projectId }: EnvVarsManagerProps) {
       return;
     }
 
+    const scopeAtStart = serviceName;
     setAdding(true);
     try {
       const res = await authFetch(`${API_URL}/api/projects/${projectId}/env`, {
@@ -64,6 +105,7 @@ export function EnvVarsManager({ projectId }: EnvVarsManagerProps) {
           is_build_arg: isBuildArg,
           is_runtime: isRuntime,
           is_secret: isSecret,
+          service_name: scopeAtStart,
         }),
       });
 
@@ -71,7 +113,9 @@ export function EnvVarsManager({ projectId }: EnvVarsManagerProps) {
         setNewKey("");
         setNewValue("");
         setIsSecret(false);
-        fetchEnvVars();
+        if (scopeRef.current === scopeAtStart) {
+          await fetchEnvVars(scopeAtStart);
+        }
         toast.success("Environment variable added");
       } else {
         const err = await res.json().catch(() => ({}));
@@ -90,6 +134,7 @@ export function EnvVarsManager({ projectId }: EnvVarsManagerProps) {
       return;
     }
 
+    const scopeAtStart = serviceName;
     setBulkAdding(true);
     try {
       const res = await authFetch(`${API_URL}/api/projects/${projectId}/env/bulk`, {
@@ -99,6 +144,7 @@ export function EnvVarsManager({ projectId }: EnvVarsManagerProps) {
           content: bulkContent,
           is_build_arg: isBuildArg,
           is_runtime: isRuntime,
+          service_name: scopeAtStart,
         }),
       });
 
@@ -106,7 +152,9 @@ export function EnvVarsManager({ projectId }: EnvVarsManagerProps) {
         const data = await res.json();
         setBulkContent("");
         setShowBulkImport(false);
-        fetchEnvVars();
+        if (scopeRef.current === scopeAtStart) {
+          await fetchEnvVars(scopeAtStart);
+        }
         toast.success(data.message);
       } else {
         const err = await res.json();
@@ -120,12 +168,15 @@ export function EnvVarsManager({ projectId }: EnvVarsManagerProps) {
   };
 
   const handleDelete = async (envId: string, key: string) => {
+    const scopeAtStart = serviceName;
     try {
       const res = await authFetch(`${API_URL}/api/projects/${projectId}/env/${envId}`, {
         method: "DELETE",
       });
       if (res.ok) {
-        fetchEnvVars();
+        if (scopeRef.current === scopeAtStart) {
+          await fetchEnvVars(scopeAtStart);
+        }
         toast.success(`Removed ${key}`);
       }
     } catch (error) {
@@ -156,13 +207,25 @@ export function EnvVarsManager({ projectId }: EnvVarsManagerProps) {
 
   return (
     <div className="space-y-6">
+      {multiService && (
+        <div className="rounded-lg border border-border bg-secondary/30 px-3 py-2.5 text-sm">
+          <span className="font-medium text-foreground">{scopeLabel}</span>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {serviceName
+              ? "Only injected into this service’s build and runtime. Same key in Shared is overridden here."
+              : "Injected into every service. Use a service-scoped key when values must differ."}
+          </p>
+        </div>
+      )}
+
       {/* New Professional Input Section */}
-      <Card className="p-0 border-border/40 overflow-hidden bg-gradient-to-br from-background to-secondary/20 shadow-lg shadow-cyan-500/5">
-        <div className="bg-secondary/40 px-5 py-3 border-b border-border/50 flex items-center justify-between">
+      <Card className="overflow-hidden border-border p-0 shadow-none">
+        <div className="flex items-center justify-between border-b border-border bg-secondary/30 px-5 py-3">
           <div className="flex items-center gap-2">
-            <Plus className="h-4 w-4 text-cyan-500" />
-            <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-              {showBulkImport ? "Bulk Import" : "Add New Secret"}
+            <Plus className="h-4 w-4 text-muted-foreground" />
+            <span className="text-xs font-medium text-muted-foreground">
+              {showBulkImport ? "Bulk import" : "Add variable"}
+              {multiService ? ` · ${scopeLabel}` : ""}
             </span>
           </div>
           <div className="flex items-center gap-3">
