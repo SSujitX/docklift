@@ -2,11 +2,13 @@
 set -e
 
 # Colors & Vars
-RED='\033[0;31m'; GREEN='\033[0;32m'; CYAN='\033[0;36m'; BOLD='\033[1m'; DIM='\033[2m'; NC='\033[0m'
+RED='\033[0;31m'; GREEN='\033[0;32m'; CYAN='\033[0;36m'; YELLOW='\033[0;33m'; BOLD='\033[1m'; DIM='\033[2m'; NC='\033[0m'
 START_TIME=$(date +%s); INSTALL_DIR="/opt/docklift"
 
 format_time() {
-    local s=$1; ((h=s/3600, m=(s%3600)/60, s=s%60))
+    local s=$1 h=0 m=0
+    # `((…))` returns exit 1 when the value is 0 — must not trip `set -e`
+    ((h = s / 3600, m = (s % 3600) / 60, s = s % 60)) || true
     [ $h -gt 0 ] && printf "%dh %dm %ds" $h $m $s || ([ $m -gt 0 ] && printf "%dm %ds" $m $s || printf "%ds" $s)
 }
 
@@ -14,17 +16,34 @@ print_access_info() {
     PUB4=$(curl -4 -s --connect-timeout 2 https://api.ipify.org 2>/dev/null || echo "")
     PUB6=$(curl -6 -s --connect-timeout 2 https://api64.ipify.org 2>/dev/null || echo "")
     PRV=$(hostname -I 2>/dev/null | tr ' ' '\n' | grep -v "${PUB4:-NOT_SET}" | grep -E '^(10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|192\.168\.)' | head -1 || echo "")
-    echo -e "  ${BOLD}Access Docklift:${NC}\n"
-    if [ -n "$PUB4" ] || [ -n "$PRV" ]; then
-        [ -n "$PUB4" ] && printf "  ${CYAN}Public:  ${NC} http://${PUB4}:8080\n"
-        [ -n "$PUB6" ] && printf "  ${CYAN}IPv6:    ${NC} http://[${PUB6}]:8080\n"
-        [ -n "$PRV" ] && printf "  ${DIM}Private: ${NC} http://${PRV}:8080\n"
+    # Wait briefly for backend to write the bootstrap secret on first boot
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+        [ -s "$INSTALL_DIR/data/.bootstrap-secret" ] && break
+        sleep 1
+    done
+    SETUP_CODE=$(tr -d '\n\r' < "$INSTALL_DIR/data/.bootstrap-secret" 2>/dev/null || echo "")
+
+    echo -e "  ${GREEN}${BOLD}Docklift is ready${NC}\n"
+    if [ -n "$PUB4" ]; then
+        echo -e "  ${BOLD}Dashboard:${NC} http://${PUB4}:8080"
+    elif [ -n "$PRV" ]; then
+        echo -e "  ${BOLD}Dashboard:${NC} http://${PRV}:8080"
     else
-        echo -e "  ${CYAN}Dashboard:${NC} http://SERVER_IP:8080"
+        echo -e "  ${BOLD}Dashboard:${NC} http://SERVER_IP:8080"
     fi
-    echo -e "\n  ${DIM}Optional HTTPS panel domain: Settings → Domain${NC}"
-    echo -e "  ${DIM}First boot — bootstrap secret:${NC}"
-    echo -e "  ${DIM}  docker logs docklift-backend  |  or  cat $INSTALL_DIR/data/.bootstrap-secret${NC}\n"
+    [ -n "$PUB6" ] && echo -e "  ${DIM}IPv6:${NC}      http://[${PUB6}]:8080"
+    [ -n "$PUB4" ] && [ -n "$PRV" ] && echo -e "  ${DIM}Private:${NC}   http://${PRV}:8080"
+
+    if [ -n "$SETUP_CODE" ]; then
+        echo -e "\n  ${BOLD}Setup code:${NC} ${CYAN}${SETUP_CODE}${NC}"
+        echo -e "  ${DIM}Open the dashboard, paste this code, and create your admin account.${NC}"
+    else
+        echo -e "\n  ${YELLOW}Setup code:${NC} not ready yet — run:"
+        echo -e "  ${DIM}  docker logs docklift-backend | grep -A8 \"Fresh install\"${NC}"
+        echo -e "  ${DIM}  # or: cat $INSTALL_DIR/data/.bootstrap-secret${NC}"
+    fi
+    echo -e "\n  ${DIM}HTTP on a public IP is convenient for first setup — not encrypted.${NC}"
+    echo -e "  ${DIM}After login: Settings → Domain for HTTPS, or firewall / DASHBOARD_BIND=127.0.0.1.${NC}\n"
 }
 
 # Header
@@ -92,6 +111,7 @@ printf "  ${CYAN}[4/5]${NC} Cleaning network... " && (docker network rm docklift
 
 BUILD_ST=$(date +%s); echo -e "\n  ${CYAN}[5/5]${NC} Building containers...\n        ${DIM}This may take a few minutes...${NC}"
 
+cd "$INSTALL_DIR"
 LOG=$(mktemp)
 if ! docker compose up -d --build --remove-orphans > "$LOG" 2>&1; then
     echo -e "\n  ${RED}Build failed!${NC}"; cat "$LOG"; rm "$LOG"; exit 1
@@ -100,7 +120,8 @@ rm "$LOG"; sleep 5
 
 # Results
 TOTAL_TIME=$(($(date +%s) - START_TIME)); BUILD_TIME=$(($(date +%s) - BUILD_ST))
-RUNNING=$(docker compose ps --format "{{.Name}}" | grep -c "docklift" || echo "0")
+RUNNING=$(docker compose ps --format "{{.Name}}" 2>/dev/null | grep -c "docklift" || true)
+RUNNING=${RUNNING:-0}
 
 if [ "$RUNNING" -gt 0 ]; then
     echo -e "\n  ${GREEN}${BOLD}Installation Complete!${NC}\n  ${DIM}Build: $(format_time $BUILD_TIME) | Total: $(format_time $TOTAL_TIME)${NC}\n"
