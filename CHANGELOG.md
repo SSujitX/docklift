@@ -1,3 +1,28 @@
+## [2.0.11](https://github.com/SSujitX/docklift/compare/v2.0.10...v2.0.11) (2026-07-25)
+
+
+### Features
+
+* **compose:** support command and skip PORT env ([a4598eb](https://github.com/SSujitX/docklift/commit/a4598ebdc1fb0da7846397937e67da40f2f21b6c))
+* **db:** add engine field and database links ([88418aa](https://github.com/SSujitX/docklift/commit/88418aac58974b54078d88a49130dc63e6fe4cff))
+* **db:** catalog official database engines ([48e9802](https://github.com/SSujitX/docklift/commit/48e980257bad4ff51d33d3b7d23fc9a420a089ac))
+* **db:** link cleanup and credential env guards ([fd4e20e](https://github.com/SSujitX/docklift/commit/fd4e20e56cebc36a4e8168850251ccc461cbe9bd))
+* **db:** link inject and network attach helpers ([d9df90f](https://github.com/SSujitX/docklift/commit/d9df90fc5f5a9bdcca25cd6f985b18ceff82f502))
+* **db:** managed database create and link API ([08bdfce](https://github.com/SSujitX/docklift/commit/08bdfced8cec4cf10a264a57c5173e40a47a4d2c))
+* **db:** migrate managed databases schema ([de3e5fc](https://github.com/SSujitX/docklift/commit/de3e5fcac642040481affb805ff1d3e502e2df7a))
+* **db:** mount databases router ([4385532](https://github.com/SSujitX/docklift/commit/4385532efc9161497a12ab98715685f13aad3795))
+* **db:** repair db_engine and link indexes ([e8f876a](https://github.com/SSujitX/docklift/commit/e8f876a624ca8e34338dc138de3acaf292dbb814))
+* **db:** unique app env key per database link ([885dfe7](https://github.com/SSujitX/docklift/commit/885dfe7ab9277a4233914f6e63805918ad3f9a16))
+* **deploy:** pull and run managed database images ([f8c8b10](https://github.com/SSujitX/docklift/commit/f8c8b10c4c7e47df39c6d24327fce0c00f5708a0))
+* **docker:** attach containers to project networks ([7137abe](https://github.com/SSujitX/docklift/commit/7137abe106f9af55ffee1724a3e9c15cce7b2193))
+* **frontend:** add databases new route ([dec97de](https://github.com/SSujitX/docklift/commit/dec97debcc61b05fa7635ea6a1f9fa06d8bb9c29))
+* **frontend:** add managed database project fields ([f9a17ae](https://github.com/SSujitX/docklift/commit/f9a17aee0f3c0029178ba243f2542a4588c55147))
+* **frontend:** add new database page ([4434505](https://github.com/SSujitX/docklift/commit/4434505f6a8989451abb2009b3664587581271b4))
+* **frontend:** attach database to app panel ([17dd4ff](https://github.com/SSujitX/docklift/commit/17dd4ff530e0da6a9f5fe13c86a11d948a2cc5c4))
+* **frontend:** database connection and link panel ([cb7857a](https://github.com/SSujitX/docklift/commit/cb7857ab4f3a19d0572156537ef0260ed8bed336))
+* **frontend:** route databases list to create flow ([168707b](https://github.com/SSujitX/docklift/commit/168707b122d0ba466d821191ac48ea97a9332da2))
+* **frontend:** wire managed database panels ([2307840](https://github.com/SSujitX/docklift/commit/2307840361dc1808cd63d4edc440703fdeeb8dab))
+
 ## [2.0.10](https://github.com/SSujitX/docklift/compare/v2.0.9...v2.0.10) (2026-07-25)
 
 
