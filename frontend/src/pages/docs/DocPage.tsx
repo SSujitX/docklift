@@ -8,6 +8,7 @@ import { Deployment } from "./components/Deployment";
 import { DockerfileSection } from "./components/DockerfileSection";
 import { CustomDomains } from "./components/CustomDomains";
 import { EnvironmentVariables } from "./components/EnvironmentVariables";
+import { ManagedDatabases } from "./components/ManagedDatabases";
 import { SystemOverview } from "./components/SystemOverview";
 import { WebTerminal } from "./components/WebTerminal";
 import { ApiReference } from "./components/ApiReference";
@@ -28,6 +29,7 @@ const componentMap: Record<string, React.ComponentType> = {
   dockerfile: DockerfileSection,
   domains: CustomDomains,
   environment: EnvironmentVariables,
+  databases: ManagedDatabases,
   system: SystemOverview,
   terminal: WebTerminal,
   api: ApiReference,
