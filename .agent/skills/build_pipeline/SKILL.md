@@ -22,14 +22,15 @@ Compose project name: `docklift`.
 |-----------------|-------|----------------|-----------|---------|
 | `backend` | `docklift-backend` | `docklift-backend` | — (expose 8000) | Express API |
 | `frontend` | `docklift-frontend` | `docklift-frontend` | — (expose 3000) | Vite SPA (nginx) |
-| `nginx` | `nginx:stable-alpine` | `docklift-nginx` | `8080:80` | Dashboard gateway |
+| `nginx` | `nginx:stable-alpine` | `docklift-nginx` | `${DASHBOARD_BIND:-0.0.0.0}:8080:80` | Dashboard gateway |
 | `nginx-proxy` | `nginx:stable-alpine` | `docklift-nginx-proxy` | `80:80`, `443:443` | Project & panel domains |
 | `certbot` | `certbot/certbot` | `docklift-certbot` | — | Let's Encrypt issue/renew loop |
 
-`DASHBOARD_BIND` (default `0.0.0.0`) controls the dashboard bind address — set it to `127.0.0.1`
-to expose the panel only over an SSH tunnel or the public proxy.
+`DASHBOARD_BIND` defaults to **`0.0.0.0`** so install can open `http://SERVER_IP:8080`. Operators may
+set `127.0.0.1` for localhost-only. First account still requires the bootstrap setup code.
 
-Network `docklift_network` is a bridge with IPv6 enabled (`172.28.0.0/16`, `fd12:3456:789a::/64`).
+Control-plane network: `docklift_network` (bridge, IPv6 enabled). User apps use **per-project**
+`dl-net-*` networks — see `networking_proxy` / `deployment_system`.
 
 ### Volume Mounts (Backend)
 
@@ -56,7 +57,8 @@ only the backend and certbot write there.
 | `JWT_SECRET` | Auth token signing (auto-generated + persisted on first run if empty) |
 | `INTERNAL_API_SECRET` | Backend-to-backend auth (webhook → deploy) |
 | `DATABASE_URL` | `file:/app/data/docklift.db` |
-| `PORT_RANGE_START` / `_END` | Host port pool for apps (default `5500`–`5600`) |
+| `PORT_RANGE_START` / `_END` | Host port pool when `publish_host_port` is enabled (default `5500`–`5600`) |
+| `DASHBOARD_BIND` | Panel listen address (default `0.0.0.0`) |
 | `CORS_ORIGIN` | Extra browser origins (comma-separated) when the panel is not same-origin |
 | `DOCKLIFT_FRONTEND_URL` | Public dashboard URL used for GitHub App callbacks |
 | `CERTBOT_EMAIL` / `CERTBOT_STAGING` | Let's Encrypt registration + staging toggle |
@@ -78,7 +80,7 @@ FROM base AS builder       # bun run build (tsc → dist/)
 FROM node:24-alpine AS runner
 RUN apk add --no-cache docker-cli docker-cli-buildx docker-cli-compose git procps bash util-linux
 # + pinned Railpack binary (RAILPACK_VERSION, musl build, amd64/arm64)
-CMD ["sh", "-c", "npx prisma db push --skip-generate && node dist/index.js"]
+CMD ["sh", "-c", "node dist/scripts/ensureDb.js && node dist/index.js"]
 ```
 
 > **Key details**:
@@ -88,9 +90,20 @@ CMD ["sh", "-c", "npx prisma db push --skip-generate && node dist/index.js"]
 > - Railpack is version-pinned in the Dockerfile (`ARG RAILPACK_VERSION`) and verified with
 >   `railpack --version` at build time — bump it deliberately, never float it.
 > - `util-linux` provides `nsenter`; `procps` gives accurate `ps`/`top` for host process listing.
-> - `prisma db push` runs on every startup to auto-apply schema changes (no migration files).
+> - **`ensureDb.js`**: dedupe env rows → `prisma migrate deploy` (checked-in migrations) → legacy repair.
+>   Never boot with `db push --accept-data-loss`.
 > - Runtime is Node.js, not Bun (Bun segfaults on CPUs without AVX).
 > - Runs as **root** — the Docker socket requires it (the `docklift` user exists but is not used).
+
+## CI (`.github/workflows/ci.yml`)
+
+- Backend: frozen lockfile, pinned Bun, `tsc`, `bun test src`, `prisma validate` + migrations present
+- Frontend: production build
+- Compose config validate
+- Regressions: `DASHBOARD_BIND` default `0.0.0.0`; proxy disconnect/setup-restore/secret preflight;
+  no host image prune / `system prune -af` / default `cap_drop ALL` in product paths
+- Backend `bun audit --prod` must be clean (CI-enforced via overrides for transitive deps)
+- Frontend audit may still warn until `react-router-dom` ships a fixed 8.x (SPA does not use RSC mode)
 
 ## Build Commands
 
@@ -114,7 +127,7 @@ docker compose logs -f frontend           # follow build/run logs
 ```bash
 cd frontend && bun run build          # tsc -b + vite build
 cd backend  && bun run build          # tsc
-cd backend  && bun run test           # tsx --test (buildResolver)
+cd backend  && bun run test           # bun test src (all *.test.ts)
 ```
 
 On Windows, `cd` does not persist between agent shell calls and `npx tsc` may not resolve.
@@ -137,6 +150,6 @@ Development:
   Browser → Vite (:3600) → direct API calls → Backend (:8000)
 
 Production:
-  Browser → :8080 → docklift-nginx → Frontend (:3000) + Backend (:8000)
-  Public domains → :80/:443 → docklift-nginx-proxy → user containers (or the panel gateway)
+  Browser → SERVER_IP:8080 → docklift-nginx → Frontend (:3000) + Backend (:8000)
+  Public domains → :80/:443 → docklift-nginx-proxy → (project network) → container_name:internal_port
 ```
