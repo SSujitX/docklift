@@ -28,8 +28,13 @@ This skill documents all security patterns implemented in Docklift. Follow these
 -   An SSE token in `?token=` cannot authorize DELETE/reboot or other protected APIs.
 
 ### Rate Limiting
--   All `/api/auth` routes are rate-limited via `express-rate-limit`.
--   Applied at the mount level in `index.ts`: `app.use('/api/auth', authLimiter, authRouter)`.
+-   All `/api/auth` routes: general limiter (**100 / 15 min**).
+-   Setup surface: `/api/auth/register` and `/api/auth/setup-token` also get **setupLimiter (10 / 15 min)**.
+-   Mounted in `index.ts` before the auth router.
+
+### Dangerous ops (password step-up)
+-   `lib/stepUpAuth.ts` — re-verify account password for purge / restore (JWT alone is not enough).
+-   Terminal already requires password; keep the same pattern for other host-impacting actions.
 
 ### Password Hashing
 -   Uses `bcrypt` with **12 salt rounds**.
@@ -41,7 +46,7 @@ This skill documents all security patterns implemented in Docklift. Follow these
 | Route | Access |
 |-------|--------|
 | `/api/auth/register`, `/login`, `/status` | Public (rate limited) |
-| `/api/github/webhook`, `/callback`, `/manifest/callback`, `/setup` | Public (GitHub flow) |
+| `/api/github/webhook`, `/manifest/callback`, `/setup` | Public (GitHub App flow; legacy OAuth `/callback` disabled) |
 | `/api/backup/restore-upload` with valid setup token | Public (one-time restore) |
 | All other `/api/*` routes | Requires JWT via `authMiddleware` |
 
@@ -259,8 +264,17 @@ try {
 
 ### Setup Token (Backup Restore)
 -   One-time token stored under `config.dataPath` (`.setup-token`) — never a hardcoded `./data` path.
--   Consumed (deleted) after single use.
--   Only used for unauthenticated `/restore-upload` on fresh installs.
+-   Middleware **validates** the token and sets `req.setupTokenAuth` but does **not** delete it yet.
+-   Fresh-install restore skips password step-up (no admin user); authenticated restores still require it.
+-   Commit gate (`decideRestoreCommit`): consume secrets only when reconcile OK **and** restored DB has
+    an admin. Incomplete setup restore rolls DB back and retains the token for retry.
+-   All restore routes roll back from `.pre-restore` when a later stage throws.
+-   Failed rollback → `.restore-critical` seal (persisted); further restores blocked until
+    `POST /api/backup/clear-critical-restore` with password step-up. Clear verifies deletion
+    (fail closed — do not exit maintenance if the marker remains).
+-   Failed rollback → `enterRestoreCritical` (`.restore-critical` marker). Restores stay blocked across
+    restarts until `POST /api/backup/clear-critical-restore` with password step-up.
+
 -   Frontend Setup page fetches token via `GET /api/auth/setup-token` (bootstrap secret required) and sends `x-setup-token`.
 
 ### Graceful Shutdown
@@ -295,3 +309,7 @@ When adding new endpoints or features, verify:
 - [ ] Archives are extracted via `safeUnzip.ts`, never raw `unzipper`
 - [ ] New build inputs are allowlisted, not forwarded wholesale into `docker build`
 - [ ] New nginx templates set `X-Forwarded-Host` from `$http_host`
+- [ ] User apps stay on per-project networks; do not put them on `docklift_network` by default
+- [ ] Do not add host-wide prune / OS maintenance to normal product APIs
+- [ ] Dangerous ops use password step-up where JWT alone is insufficient
+- [ ] Major behavior changes update `.agent/skills` + README/commands in the same PR
