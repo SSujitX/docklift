@@ -104,6 +104,8 @@ export interface DomainDnsCheck {
 export interface EnvVariable {
   id: string;
   project_id: string;
+  /** Empty string = shared to every service; otherwise Docker service name. */
+  service_name?: string;
   key: string;
   value: string;
   is_build_arg: boolean;
