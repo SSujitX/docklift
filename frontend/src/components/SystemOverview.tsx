@@ -34,6 +34,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/shell/PageHeader";
 
 interface SystemStats {
@@ -288,6 +289,7 @@ export function SystemOverview() {
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [purging, setPurging] = useState(false);
   const [showPurgeDialog, setShowPurgeDialog] = useState(false);
+  const [purgePassword, setPurgePassword] = useState("");
   const [processSortBy, setProcessSortBy] = useState<'cpu' | 'mem'>('cpu');
 
   const fetchStats = useCallback(async () => {
@@ -305,13 +307,20 @@ export function SystemOverview() {
   }, []);
 
   const handlePurge = async () => {
+    if (!purgePassword.trim()) {
+      toast.error("Enter your account password to confirm purge");
+      return;
+    }
     setShowPurgeDialog(false);
     setPurging(true);
     try {
       const res = await authFetch(`${API_URL}/api/system/purge`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: purgePassword }),
       });
       const data = await res.json();
+      setPurgePassword("");
 
       if (!res.ok) throw new Error(data.error || "Purge failed");
 
@@ -794,10 +803,10 @@ export function SystemOverview() {
               <Trash2 className="h-6 w-6 text-rose-500" />
             </div>
             <DialogTitle className="text-center text-xl font-bold tracking-tight">
-              Purge Server Resources
+              Purge dangling images
             </DialogTitle>
             <DialogDescription className="text-center text-muted-foreground text-sm">
-              Complete cleanup: Docker + HOST system. Safe operations only.
+              Removes only untagged Docker images. Does not modify the host OS or other containers.
             </DialogDescription>
           </DialogHeader>
 
@@ -805,33 +814,49 @@ export function SystemOverview() {
             <div className="p-3 rounded-xl bg-secondary/30 border border-border flex items-center gap-3">
               <CheckCircle2 className="h-4 w-4 text-emerald-500" />
               <p className="text-xs font-semibold">
-                Docker cleanup + Restart user containers
+                Dangling (untagged) images only
               </p>
             </div>
             <div className="p-3 rounded-xl bg-secondary/30 border border-border flex items-center gap-3">
-              <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-              <p className="text-xs font-semibold">
-                HOST cleanup (page cache, journal logs, apt cache, temp files)
+              <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
+              <p className="text-xs font-semibold text-muted-foreground">
+                No host prune, journal, apt, or /tmp wipe
               </p>
             </div>
             <div className="p-3 rounded-xl bg-secondary/30 border border-border flex items-center gap-3">
-              <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-              <p className="text-xs font-semibold">
-                Clear swap if safe (30%+ RAM free)
+              <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
+              <p className="text-xs font-semibold text-muted-foreground">
+                Other Docker workloads are never restarted
               </p>
             </div>
+          </div>
+
+          <div className="space-y-2 mb-2">
+            <label className="text-xs font-semibold text-muted-foreground">Confirm with account password</label>
+            <Input
+              type="password"
+              value={purgePassword}
+              onChange={(e) => setPurgePassword(e.target.value)}
+              placeholder="Your DockLift password"
+              autoComplete="current-password"
+              className="rounded-xl"
+            />
           </div>
 
           <DialogFooter className="flex flex-col sm:flex-row gap-2 pt-2">
             <Button
               variant="ghost"
-              onClick={() => setShowPurgeDialog(false)}
+              onClick={() => {
+                setShowPurgeDialog(false);
+                setPurgePassword("");
+              }}
               className="flex-1 rounded-xl font-bold"
             >
               Cancel
             </Button>
             <Button
               onClick={handlePurge}
+              disabled={!purgePassword.trim()}
               className="flex-1 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-bold shadow-lg shadow-rose-500/20"
             >
               Start Purge
