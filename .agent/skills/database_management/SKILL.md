@@ -17,16 +17,24 @@ Database file: `data/docklift.db` on the host → `/app/data/docklift.db` in the
 Prisma client is a Proxy singleton (`lib/prisma.ts`) with `reconnectPrisma()` after restore replaces
 the SQLite file. Backups use `VACUUM INTO` snapshots — see `system_administration` skill.
 
-## Migration Model: `db push`, not migrations
+## Migration Model: checked-in Prisma migrations
 
-There is **no** `prisma/migrations` directory. The backend container runs
-`npx prisma db push --skip-generate` on every startup, so schema changes apply automatically on
-upgrade. Consequences to keep in mind:
+Production boot runs `node dist/scripts/ensureDb.js` (see `backend/Dockerfile` CMD):
 
-- Always give new columns a default or make them nullable — `db push` cannot backfill.
-- Renaming a column is a drop + add, i.e. **data loss**. Add the new column and migrate values in
-  code instead.
-- Destructive changes make `db push` refuse (or prompt) — verify against a copy of a real DB before shipping.
+1. Dedupe `env_variables` duplicates (so unique `(project_id, key)` can apply)
+2. `prisma migrate deploy` against `backend/prisma/migrations/`
+3. Legacy installs that used `db push` (no `_prisma_migrations` history) are **baselined** then
+   repaired idempotently (`publish_host_port`, `is_secret`, unique index)
+
+**Never** ship `prisma db push --accept-data-loss` on container startup. Local `db:push` is for
+dev experiments only.
+
+### Schema change workflow
+1. Edit `backend/prisma/schema.prisma`.
+2. `bunx prisma migrate dev --name <desc>` (creates SQL under `prisma/migrations/`).
+3. `bun run db:generate` — typed client.
+4. Type-check: `cd backend; bunx tsc --noEmit`.
+5. Verify on a **copy** of a real DB with `bun run db:ensure` / container boot — not only `db push`.
 
 ## Core Commands
 
@@ -35,18 +43,9 @@ Run from the `backend/` directory:
 ```bash
 bun run db:studio      # web GUI to browse/edit data
 bun run db:generate    # regenerate the typed client after editing the schema
-bun run db:push        # apply schema to the SQLite file
-```
-
-### Schema change workflow
-1. Edit `backend/prisma/schema.prisma`.
-2. `bun run db:generate` — updates the client so TypeScript sees the new fields.
-3. `bun run db:push` — applies to the local DB.
-4. Type-check: `cd backend; .\node_modules\.bin\tsc --noEmit`.
-
-### Reset (destroys all data)
-```bash
-bun run db:push --force-reset
+bun run db:migrate     # prisma migrate deploy
+bun run db:ensure      # production-equivalent bootstrap (dedupe + migrate + repair)
+bun run db:push        # local-only; do not use as the container boot path
 ```
 
 ## Models
@@ -57,9 +56,9 @@ bun run db:push --force-reset
 | `Project` | `projects` | An application: source, build settings, status |
 | `Service` | `services` | One deployable unit within a project (Dockerfile, domain, ports) |
 | `Deployment` | `deployments` | Build/deploy history, trigger, captured logs |
-| `EnvVariable` | `env_variables` | Per-project vars, flagged `is_build_arg` / `is_runtime` |
+| `EnvVariable` | `env_variables` | Per-project vars: `is_build_arg` / `is_runtime` / **`is_secret`**; **`@@unique([project_id, key])`** |
 | `PersistentVolume` | `persistent_volumes` | Configured named-volume mounts per service |
-| `Port` | `ports` | Host port pool allocation (`is_locked` reserves a port) |
+| `Port` | `ports` | Host port pool (`is_locked`); used only when project `publish_host_port` is true |
 | `Settings` | `settings` | Key/value system settings (GitHub App creds, ACME email, panel domain) |
 
 ### Build & storage fields on `Project`
@@ -70,6 +69,10 @@ bun run db:push --force-reset
 | `base_directory` | `"."` | Subdirectory to build from (monorepos) |
 | `dockerfile_path` | `null` | Explicit Dockerfile when not auto-detecting |
 | `internal_port` | `3000` | Port the app listens on inside the container |
+| `publish_host_port` | `false` | When true, publish host ports from the pool |
+
+`EnvVariable`: dedupe via `lib/envVariables.dedupeEnvVariables()` inside `scripts/ensureDb.ts`
+**before** migrate deploy. Invalid keys → 400; duplicates → 409.
 
 `PersistentVolume` has unique constraints on `(project_id, name)` and
 `(project_id, service_name, mount_path)`, so one service cannot mount two volumes at the same path.
@@ -80,7 +83,8 @@ services, deployments, env vars, volume records and frees its ports.
 ## Troubleshooting
 
 - Client out of sync with schema → `bun run db:generate`.
-- `db push` refuses a change → it is destructive; add-then-migrate instead of renaming.
-- Fresh install has no tables → the backend's startup `db push` failed; check `docker logs docklift-backend`.
+- Startup fails on migrate → check `docker logs docklift-backend` for `[ensureDb]`; never “fix” with
+  `--accept-data-loss` in the Dockerfile.
+- Fresh install has no tables → `ensureDb` / migrate deploy failed.
 - Restored backup looks stale → restore also reconciles projects and reloads nginx; see the
   `system_administration` skill.
