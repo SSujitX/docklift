@@ -66,16 +66,30 @@ function pruneExpiredGithubSetupStates(): void {
   }
 }
 
-async function createGithubSetupState(): Promise<string> {
+async function createGithubSetupState(opts?: { returnUrl?: string }): Promise<string> {
   pruneExpiredGithubSetupStates();
   const state = crypto.randomBytes(24).toString('hex');
   ensureGithubSetupDir();
+  const payload: { createdAt: number; returnUrl?: string } = { createdAt: Date.now() };
+  if (opts?.returnUrl) payload.returnUrl = opts.returnUrl;
   fs.writeFileSync(
     githubSetupStatePath(state),
-    JSON.stringify({ createdAt: Date.now() }),
+    JSON.stringify(payload),
     { mode: 0o600 }
   );
   return state;
+}
+
+function readGithubSetupStateReturnUrl(state: string | undefined): string | null {
+  if (!state) return null;
+  try {
+    const filePath = githubSetupStatePath(state);
+    if (!fs.existsSync(filePath)) return null;
+    const data = JSON.parse(fs.readFileSync(filePath, 'utf8')) as { returnUrl?: string };
+    return typeof data.returnUrl === 'string' && data.returnUrl ? data.returnUrl : null;
+  } catch {
+    return null;
+  }
 }
 
 async function verifyGithubSetupState(state: string | undefined): Promise<boolean> {
@@ -264,15 +278,16 @@ router.post('/manifest', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'appName is required' });
     }
 
-    if (returnUrl) {
-      await saveSetting('github_return_url', sanitizeGithubReturnUrl(returnUrl, req));
-    }
-    
     // Sanitize app name
     const sanitizedName = appName.toLowerCase().replace(/[^a-z0-9-]/g, '-').slice(0, 34);
 
     const serverUrl = resolveGithubPublicBaseUrl(req);
-    const state = await createGithubSetupState();
+    const safeReturn = returnUrl
+      ? sanitizeGithubReturnUrl(returnUrl, req)
+      : undefined;
+    const state = await createGithubSetupState(
+      safeReturn ? { returnUrl: safeReturn } : undefined
+    );
     setGithubStateCookie(res, state, req);
 
     // GitHub rejects redirect_url values that include a query string
@@ -370,12 +385,19 @@ router.get('/manifest/callback', async (req: Request, res: Response) => {
     await saveSetting('github_username', data.owner?.login || '');
     await saveSetting('github_avatar_url', data.owner?.avatar_url || '');
 
+    const preservedReturn =
+      readGithubSetupStateReturnUrl(manifestStateQuery) ||
+      readGithubSetupStateReturnUrl(manifestStateCookie) ||
+      undefined;
+
     await clearGithubSetupState(
       [manifestStateQuery, manifestStateCookie].filter(Boolean) as string[]
     );
 
     // Fresh one-time nonce for the install → /setup return (HttpOnly cookie)
-    const installState = await createGithubSetupState();
+    const installState = await createGithubSetupState(
+      preservedReturn ? { returnUrl: preservedReturn } : undefined
+    );
     setGithubStateCookie(res, installState, req);
     
     console.log(`GitHub App created successfully: ${data.name} (ID: ${data.id})`);
@@ -620,8 +642,8 @@ async function beginGithubInstallSession(
     return { error: 'GitHub App not configured. Please create one first.', status: 400 };
   }
 
-  await saveSetting('github_return_url', sanitizeGithubReturnUrl(returnUrlRaw, req));
-  const installState = await createGithubSetupState();
+  const safeReturn = sanitizeGithubReturnUrl(returnUrlRaw, req);
+  const installState = await createGithubSetupState({ returnUrl: safeReturn });
   setGithubStateCookie(res, installState, req);
 
   const appSlug = await getSetting('github_app_slug') || 'docklift-app';
@@ -696,10 +718,15 @@ router.get('/setup', async (req: Request, res: Response) => {
     await saveSetting('github_avatar_url', account.avatar_url || '');
     const fromQuery = typeof req.query.state === 'string' ? req.query.state : undefined;
     const fromCookie = readCookie(req, GITHUB_STATE_COOKIE);
+    const returnUrl =
+      readGithubSetupStateReturnUrl(fromQuery) ||
+      readGithubSetupStateReturnUrl(fromCookie) ||
+      returnBase;
     await clearGithubSetupState([fromQuery, fromCookie].filter(Boolean) as string[]);
     clearGithubStateCookie(res);
+    // Drop legacy global return URL if present
+    await deleteSetting('github_return_url').catch(() => {});
 
-    const returnUrl = await getSetting('github_return_url') || returnBase;
     const separator = returnUrl.includes('?') ? '&' : '?';
     res.redirect(`${returnUrl}${separator}github=connected`);
   } catch (error) {
@@ -708,65 +735,18 @@ router.get('/setup', async (req: Request, res: Response) => {
   }
 });
 
-// GET /callback - Handle OAuth callback (alternative flow)
+// GET /callback — legacy OAuth mutation removed (unsafe). Installation-only redirect kept.
 router.get('/callback', async (req: Request, res: Response) => {
-  try {
-    const installationId = req.query.installation_id as string;
-    const code = req.query.code as string;
-    
-    if (installationId) {
-      const state = req.query.state as string | undefined;
-      const qs = new URLSearchParams({ installation_id: installationId });
-      if (state) qs.set('state', state);
-      return res.redirect(`/api/github/setup?${qs.toString()}`);
-    }
-    
-    if (!code) {
-      return res.status(400).json({ error: 'No code provided' });
-    }
-    
-    // OAuth flow for user authentication
-    const response = await fetch('https://github.com/login/oauth/access_token', {
-      method: 'POST',
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: new URLSearchParams({
-        client_id: config.githubClientId,
-        client_secret: config.githubClientSecret,
-        code,
-      }),
-    });
-    
-    if (!response.ok) {
-      return res.status(400).json({ error: 'Failed to get access token' });
-    }
-    
-    const data = await response.json() as { access_token?: string };
-    const accessToken = data.access_token;
-    
-    if (accessToken) {
-      // Get user info
-      const userResponse = await fetch(`${GITHUB_API_URL}/user`, {
-        headers: {
-          Authorization: `token ${accessToken}`,
-          Accept: 'application/json',
-        },
-      });
-      
-      if (userResponse.ok) {
-        const userData = await userResponse.json() as { login?: string; avatar_url?: string };
-        await saveSetting('github_username', userData.login || 'unknown');
-        await saveSetting('github_avatar_url', userData.avatar_url || '');
-      }
-    }
-    
-    res.redirect(`${config.frontendUrl}/settings?github=connected`);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Failed to complete GitHub callback' });
+  const installationId = req.query.installation_id as string | undefined;
+  if (installationId && /^\d+$/.test(installationId)) {
+    const state = typeof req.query.state === 'string' ? req.query.state : undefined;
+    const qs = new URLSearchParams({ installation_id: installationId });
+    if (state) qs.set('state', state);
+    return res.redirect(`/api/github/setup?${qs.toString()}`);
   }
+  return res.redirect(
+    `${config.frontendUrl}/settings?github_error=legacy_oauth_disabled`
+  );
 });
 
 // GET /status - Check GitHub App installation status
