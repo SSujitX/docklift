@@ -113,6 +113,11 @@ export function TerminalView() {
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
   const [passwordInput, setPasswordInput] = useState("");
   const [passwordError, setPasswordError] = useState("");
+  const [passwordPrompt, setPasswordPrompt] = useState({
+    title: "Confirm with password",
+    description: "Enter your account password to continue.",
+    submitLabel: "Confirm",
+  });
   const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -286,14 +291,28 @@ export function TerminalView() {
     }
   }, []);
 
-  const promptPassword = useCallback((): Promise<string | typeof PASSWORD_CANCEL> => {
-    return new Promise((resolve) => {
-      passwordResolveRef.current = resolve;
-      setPasswordError("");
-      setPasswordInput("");
-      setShowPasswordDialog(true);
-    });
-  }, []);
+  const promptPassword = useCallback(
+    (opts?: {
+      title?: string;
+      description?: string;
+      submitLabel?: string;
+    }): Promise<string | typeof PASSWORD_CANCEL> => {
+      return new Promise((resolve) => {
+        passwordResolveRef.current = resolve;
+        setPasswordPrompt({
+          title: opts?.title || "Confirm with password",
+          description:
+            opts?.description ||
+            "Enter your account password to continue.",
+          submitLabel: opts?.submitLabel || "Confirm",
+        });
+        setPasswordError("");
+        setPasswordInput("");
+        setShowPasswordDialog(true);
+      });
+    },
+    [],
+  );
 
   const handlePasswordSubmit = useCallback(() => {
     if (!passwordInput.trim()) return;
@@ -356,7 +375,12 @@ export function TerminalView() {
           const msg = JSON.parse(event.data);
 
           if (msg.type === "auth_required") {
-            const password = await promptPassword();
+            const password = await promptPassword({
+              title: "Confirm terminal access",
+              description:
+                "Enter your account password to open a root shell on this host.",
+              submitLabel: "Open shell",
+            });
             if (password === PASSWORD_CANCEL) {
               setConnecting(false);
               ws.close();
@@ -395,7 +419,12 @@ export function TerminalView() {
           if (msg.type === "auth_error") {
             term.writeln(`  \x1b[1;31m✗ ${msg.message || "Authentication failed"}\x1b[0m`);
             setConnecting(false);
-            const password = await promptPassword();
+            const password = await promptPassword({
+              title: "Confirm terminal access",
+              description:
+                "Password rejected. Enter your account password to open a root shell.",
+              submitLabel: "Open shell",
+            });
             if (password === PASSWORD_CANCEL) {
               setConnecting(false);
               ws.close();
@@ -506,7 +535,6 @@ export function TerminalView() {
   const handleSystemAction = async (
     action: "reboot" | "reset" | "purge" | "update-system" | "upgrade",
   ) => {
-    setIsProcessing(true);
     setShowRebootDialog(false);
     setShowResetDialog(false);
     setShowPurgeDialog(false);
@@ -514,13 +542,63 @@ export function TerminalView() {
     setShowUpdateConfirm(false);
     if (action === "upgrade") pendingUpgradeConfirm = false;
 
+    const labels: Record<typeof action, { title: string; description: string; submit: string }> = {
+      upgrade: {
+        title: "Confirm Docklift upgrade",
+        description:
+          "Enter your account password. Cancel stops the upgrade — JWT alone is not enough.",
+        submit: "Start upgrade",
+      },
+      "update-system": {
+        title: "Confirm package update",
+        description:
+          "Enter your account password to run apt update/upgrade on this host.",
+        submit: "Start update",
+      },
+      reboot: {
+        title: "Confirm server reboot",
+        description: "Enter your account password to reboot this host.",
+        submit: "Reboot",
+      },
+      reset: {
+        title: "Confirm stack reset",
+        description:
+          "Enter your account password to restart Docklift core containers.",
+        submit: "Reset stack",
+      },
+      purge: {
+        title: "Confirm image purge",
+        description:
+          "Enter your account password to remove dangling Docker images.",
+        submit: "Purge images",
+      },
+    };
+
+    const password = await promptPassword({
+      title: labels[action].title,
+      description: labels[action].description,
+      submitLabel: labels[action].submit,
+    });
+    if (password === PASSWORD_CANCEL) {
+      toast.message("Cancelled — password required");
+      return;
+    }
+
+    setIsProcessing(true);
     try {
       const res = await authFetch(`${API_URL}/api/system/${action}`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
 
-      if (!res.ok) throw new Error(data.error || "Action failed");
+      if (!res.ok) {
+        if (data?.requirePassword) {
+          toast.error(data.error || "Password required");
+        }
+        throw new Error(data.error || "Action failed");
+      }
 
       if (action === "upgrade" || action === "update-system") {
         const simulated = Boolean(data.message?.includes("Simulated"));
@@ -947,10 +1025,8 @@ export function TerminalView() {
       >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Confirm terminal access</DialogTitle>
-            <DialogDescription>
-              Enter your account password to open a root shell on this host.
-            </DialogDescription>
+            <DialogTitle>{passwordPrompt.title}</DialogTitle>
+            <DialogDescription>{passwordPrompt.description}</DialogDescription>
           </DialogHeader>
           <form
             onSubmit={(e) => {
@@ -967,6 +1043,7 @@ export function TerminalView() {
                 value={passwordInput}
                 onChange={(e) => setPasswordInput(e.target.value)}
                 className="h-10 font-mono"
+                autoComplete="current-password"
                 autoFocus
               />
               {passwordError && (
@@ -982,7 +1059,7 @@ export function TerminalView() {
                 Cancel
               </Button>
               <Button type="submit" disabled={!passwordInput.trim()}>
-                Open shell
+                {passwordPrompt.submitLabel}
               </Button>
             </DialogFooter>
           </form>
