@@ -28,7 +28,7 @@ function parseTimestamp(line: string): { timestamp: string | null; content: stri
     const raw = match[1];
     try {
       const d = new Date(raw);
-      // Format like Coolify: 2026-Feb-05 12:06:06.047
+      // Timestamp format: 2026-Feb-05 12:06:06.047
       const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
       const year = d.getFullYear();
       const month = months[d.getMonth()];
