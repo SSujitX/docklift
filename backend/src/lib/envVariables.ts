@@ -2,6 +2,9 @@ import prisma from './prisma.js';
 
 const ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
+/** Empty string = shared across every service in the project. */
+export const SHARED_ENV_SERVICE = '';
+
 export function isValidEnvKey(key: unknown): key is string {
   return typeof key === 'string' && ENV_KEY_RE.test(key) && key.length <= 128;
 }
@@ -21,15 +24,56 @@ export function normalizeEnvValue(value: unknown): string {
   return v;
 }
 
-/** Keep newest row per (project_id, key); delete older duplicates before unique constraint. */
+export function normalizeEnvServiceName(name: unknown): string {
+  if (name == null) return SHARED_ENV_SERVICE;
+  const trimmed = String(name).trim();
+  return trimmed;
+}
+
+export type ScopedEnvVar = {
+  key: string;
+  value: string;
+  service_name?: string | null;
+  is_build_arg?: boolean | null;
+  is_runtime?: boolean | null;
+  is_secret?: boolean | null;
+};
+
+/**
+ * Merge shared (service_name "") with service-specific vars.
+ * Service keys override shared keys of the same name.
+ */
+export function envForService<T extends ScopedEnvVar>(
+  all: T[],
+  serviceName: string,
+): T[] {
+  const map = new Map<string, T>();
+  for (const row of all) {
+    const scope = row.service_name ?? SHARED_ENV_SERVICE;
+    if (scope === SHARED_ENV_SERVICE) map.set(row.key, row);
+  }
+  for (const row of all) {
+    const scope = row.service_name ?? SHARED_ENV_SERVICE;
+    if (scope === serviceName) map.set(row.key, row);
+  }
+  return [...map.values()];
+}
+
+/** Keep newest row per (project_id, service_name, key). */
 export async function dedupeEnvVariables(): Promise<number> {
   const all = await prisma.envVariable.findMany({
-    orderBy: [{ project_id: 'asc' }, { key: 'asc' }, { created_at: 'desc' }],
+    orderBy: [
+      { project_id: 'asc' },
+      { service_name: 'asc' },
+      { key: 'asc' },
+      { created_at: 'desc' },
+    ],
   });
   const seen = new Set<string>();
   const toDelete: string[] = [];
   for (const row of all) {
-    const k = `${row.project_id}\0${row.key}`;
+    const scope = row.service_name ?? SHARED_ENV_SERVICE;
+    const k = `${row.project_id}\0${scope}\0${row.key}`;
     if (seen.has(k)) {
       toDelete.push(row.id);
     } else {
