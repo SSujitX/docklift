@@ -1097,53 +1097,56 @@ export default function ProjectDetail() {
           Back to Projects
         </Link>
 
-        <div className="mb-6 flex min-w-0 items-start gap-3 sm:mb-8 sm:items-center sm:gap-4">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-border bg-secondary/40 sm:h-12 sm:w-12">
-            {project.project_type === "database" ? (
-              <Database className="h-5 w-5 text-muted-foreground sm:h-6 sm:w-6" />
-            ) : (
-              <Cloud className="h-5 w-5 text-muted-foreground sm:h-6 sm:w-6" />
-            )}
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-              <h1 className="truncate text-2xl font-semibold tracking-tight sm:text-3xl">
-                {project.name}
-              </h1>
-              <StatusBadge status={project.status} />
+        <div className="mb-8 flex flex-col gap-4 sm:mb-10 md:flex-row md:items-start md:justify-between md:gap-6">
+          <div className="flex min-w-0 flex-1 items-start gap-3 sm:items-center sm:gap-4">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-border bg-secondary/40 sm:h-12 sm:w-12">
+              {project.project_type === "database" ? (
+                <Database className="h-5 w-5 text-muted-foreground sm:h-6 sm:w-6" />
+              ) : (
+                <Cloud className="h-5 w-5 text-muted-foreground sm:h-6 sm:w-6" />
+              )}
             </div>
-            <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground sm:gap-x-4 sm:text-sm">
-              <span className="capitalize font-medium text-foreground/80">
-                {project.project_type}
-              </span>
-              <span className="flex items-center gap-1.5">
-                <Calendar className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
-                <span className="hidden sm:inline">Created </span>
-                {new Date(project.created_at).toLocaleString([], {
-                  month: "short",
-                  day: "numeric",
-                  year: "numeric",
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
-              </span>
-              <span className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-muted-foreground">
-                {project.id.split("-")[0]}
-              </span>
-            </p>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                <h1 className="truncate text-2xl font-semibold tracking-tight sm:text-3xl">
+                  {project.name}
+                </h1>
+                <StatusBadge status={project.status} />
+              </div>
+              <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground sm:gap-x-4 sm:text-sm">
+                <span className="capitalize font-medium text-foreground/80">
+                  {project.project_type}
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <Calendar className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
+                  <span className="hidden sm:inline">Created </span>
+                  {new Date(project.created_at).toLocaleString([], {
+                    month: "short",
+                    day: "numeric",
+                    year: "numeric",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </span>
+                <span className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-muted-foreground">
+                  {project.id.split("-")[0]}
+                </span>
+              </p>
+            </div>
           </div>
-        </div>
 
-        {/* Single-service: actions stay with the title (no workspace rail). */}
-        {!multiService && (
-          <ProjectActionBar
-            status={project.status}
-            actionLoading={actionLoading}
-            currentAction={currentAction}
-            onAction={confirmAction}
-            className="mb-8 sm:mb-10"
-          />
-        )}
+          {/* Single-service only: actions top-right. Multi-service keeps the Workspace strip below. */}
+          {!multiService && (
+            <ProjectActionBar
+              status={project.status}
+              actionLoading={actionLoading}
+              currentAction={currentAction}
+              onAction={confirmAction}
+              placement="header"
+              className="w-full shrink-0 self-end md:w-auto md:self-start"
+            />
+          )}
+        </div>
 
         <Tabs
           value={activeTab}
