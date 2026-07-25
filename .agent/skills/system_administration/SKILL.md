@@ -102,9 +102,13 @@ Mapping lives in `LOG_SERVICE_CONTAINERS` (`backend/src/routes/system.ts`):
 ## Version Check
 
 **API**: `GET /api/system/version`
-- Compares local `package.json` version against latest GitHub release
-- 1-hour cache
-- Returns `{ current, latest, updateAvailable }`
+- Compares local `package.json` version against GitHub `releases/latest`
+- Returns `{ current, latest, updateAvailable, githubOk, checkedAt }`
+- TTL: ~15m when update available, ~2m when current, ~30s when GitHub fails —
+  never cache a failed probe as “no update” for an hour (that hid new releases)
+- Concurrent callers share one GitHub fetch (single-flight). `?refresh=1` revalidates
+  only if the cache is older than 30s (not an unconditional bypass).
+- UI: sidebar footer only; one shared poller (desktop+mobile rails); no routine `refresh=1`
 
 ## Backup & Restore System
 
