@@ -170,8 +170,8 @@ flowchart LR
 
 1. You create a project from a GitHub repo or a ZIP. Source lands in `deployments/<project-id>/`.
 2. Docklift uses your `Dockerfile` when there is one, otherwise Railpack detects the stack and builds an image.
-3. A host port from the pool (`5500`–`5600` by default) is published, so you can reach the app by `IP:port`.
-4. Set a **custom domain** and the backend writes an nginx vhost, then asks certbot for a certificate.
+3. By default the app runs on a private project network (no public host port). Add a **custom domain** (preferred) so nginx-proxy serves it on `:80`/`:443`, or opt in to **Publish host ports** (`5500`–`5600` pool) for raw `IP:port`.
+4. When you set a domain, the backend writes an nginx vhost, then asks certbot for a certificate.
 5. With GitHub connected, a push webhook rebuilds and redeploys automatically.
 
 Docklift writes its own runtime Compose file under `deployments/.docklift/<project-id>/`. Your
@@ -191,7 +191,7 @@ repository is **never modified** — a `docker-compose.yml` you committed yourse
 2. Choose a source: GitHub URL, private repo, or ZIP upload
 3. Add environment variables (optional) and pick a build mode (default: **Auto**)
 4. **Deploy** → watch live build logs (cancel any time)
-5. Visit `http://your-ip:<assigned-port>`, then add a domain when you're ready
+5. Add a domain (or enable **Publish host ports** + redeploy) — Overview shows **Not public yet** until then
 
 ---
 
@@ -267,7 +267,7 @@ re-run `docker compose up -d` from that directory to apply changes:
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `DASHBOARD_BIND` | `0.0.0.0` | Panel listen address. Default allows `http://SERVER_IP:8080`. Set `127.0.0.1` for localhost-only, or use an HTTPS panel domain. |
-| `PORT_RANGE_START` / `PORT_RANGE_END` | `5500` / `5600` | Host port pool for deployed apps |
+| `PORT_RANGE_START` / `PORT_RANGE_END` | `5500` / `5600` | Host port pool when Publish host ports is enabled |
 | `CERTBOT_EMAIL` | — | Let's Encrypt account email (expiry notices) |
 | `CERTBOT_STAGING` | `false` | Use the staging CA while testing, to avoid rate limits |
 | `CORS_ORIGIN` | — | Extra allowed browser origins, if the panel isn't same-origin |
