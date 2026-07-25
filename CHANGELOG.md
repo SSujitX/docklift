@@ -1,3 +1,15 @@
+## [2.0.8](https://github.com/SSujitX/docklift/compare/v2.0.7...v2.0.8) (2026-07-25)
+
+
+### Bug Fixes
+
+* **ui:** update LogViewer height for better responsiveness ([f28ef18](https://github.com/SSujitX/docklift/commit/f28ef184af70fb1664478b47f30c87a91f94d195))
+
+
+### Features
+
+* **ui:** enhance ServiceSwitcher with scroll functionality and improved service selection ([6636a63](https://github.com/SSujitX/docklift/commit/6636a635c956c4b78b0ff8a3583de2a56350e0ea))
+
 ## [2.0.7](https://github.com/SSujitX/docklift/compare/v2.0.6...v2.0.7) (2026-07-25)
 
 
