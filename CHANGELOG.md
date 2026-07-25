@@ -1,3 +1,17 @@
+## [2.0.2](https://github.com/SSujitX/docklift/compare/v2.0.1...v2.0.2) (2026-07-25)
+
+
+### Bug Fixes
+
+* **github:** list repos across all installs ([1a8c27c](https://github.com/SSujitX/docklift/commit/1a8c27cdd629b43252154f48eec28f468a225968))
+* **ui:** drop fake IP:null public endpoints ([d4d2ea1](https://github.com/SSujitX/docklift/commit/d4d2ea1d2ce8f5ad5fba4ffcb1924c007b70c218))
+* **ui:** fix domains empty-state port copy ([ea7c85d](https://github.com/SSujitX/docklift/commit/ea7c85da32e0abead736dd79ce5777abfe16146d))
+
+
+### Features
+
+* **ui:** show all github accounts on new project ([17a513b](https://github.com/SSujitX/docklift/commit/17a513b0975f895a73ac6815904fe7b79c21a684))
+
 ## [2.0.1](https://github.com/SSujitX/docklift/compare/v2.0.0...v2.0.1) (2026-07-25)
 
 
