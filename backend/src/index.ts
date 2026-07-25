@@ -13,6 +13,12 @@ import { ensureNetwork } from './services/docker.js';
 import { logBootstrapIfNeeded } from './lib/bootstrap.js';
 import { isTrustedOrigin } from './lib/originCheck.js';
 import { isMaintenanceMode, maintenanceReason } from './lib/maintenance.js';
+import {
+  isRestoreCritical,
+  loadRestoreCriticalOnBoot,
+  restoreCriticalMarkerPath,
+} from './lib/restoreCritical.js';
+import { dedupeEnvVariables } from './lib/envVariables.js';
 
 import projectsRouter from './routes/projects.js';
 import deploymentsRouter from './routes/deployments.js';
@@ -36,17 +42,23 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 
-// Rate limiting for auth endpoints (light protection for self-hosted)
+// General auth limiter (login, password change, etc.)
 const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // 100 attempts per window (flexible for self-hosted, still prevents automated attacks)
+  windowMs: 15 * 60 * 1000,
+  max: 100,
   message: { error: 'Too many attempts, please try again later' },
   standardHeaders: true,
   legacyHeaders: false,
-  skip: (req) => {
-    // Skip rate limiting for status check (doesn't need protection)
-    return req.path === '/status';
-  },
+  skip: (req) => req.path === '/status',
+});
+
+// Stricter limiter for first-account / bootstrap claim surface (public panel by design)
+const setupLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: { error: 'Too many setup attempts, please try again later' },
+  standardHeaders: true,
+  legacyHeaders: false,
 });
 
 // Security headers middleware
@@ -109,15 +121,28 @@ if (!fs.existsSync(config.backupPath)) {
 // Generate a unique ID for this server instance at startup
 const INSTANCE_ID = crypto.randomUUID();
 
-// Block mutating API traffic while a restore is replacing the SQLite file
+// During restore / critical recovery: gate API traffic
 app.use((req, res, next) => {
+  if (isRestoreCritical()) {
+    if (req.path === '/api/health') return next();
+    // Explicit operator recovery only — never another normal restore
+    if (
+      req.path === '/api/backup/clear-critical-restore' ||
+      req.path === '/api/backup/critical-status'
+    ) {
+      return next();
+    }
+    return res.status(503).json({
+      error: maintenanceReason(),
+      maintenance: true,
+      critical: true,
+      sealPath: restoreCriticalMarkerPath(),
+    });
+  }
   if (!isMaintenanceMode()) return next();
-  if (req.path === '/api/health' || req.path.startsWith('/api/backup/restore')) {
-    return next();
-  }
-  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
-    return next();
-  }
+  if (req.path === '/api/health') return next();
+  // Active restore stream only (blocked when critical above)
+  if (req.path.startsWith('/api/backup/restore')) return next();
   return res.status(503).json({ error: maintenanceReason(), maintenance: true });
 });
 
@@ -145,6 +170,8 @@ app.get('/api/health', (req, res) => {
 });
 
 // Auth routes (public, rate limited)
+app.use('/api/auth/register', setupLimiter);
+app.use('/api/auth/setup-token', setupLimiter);
 app.use('/api/auth', authLimiter, authRouter);
 
 // Protected routes - apply auth middleware
@@ -176,30 +203,19 @@ app.use('/api/logs', (req, res, next) => {
   return authMiddleware(req, res, next);
 }, logsRouter);
 app.use('/api/backup', async (req, res, next) => {
-  // Allow restore-upload without auth ONLY with valid setup token (for fresh install/restore)
+  // Fresh-install restore: validate setup token but do NOT consume yet.
+  // Token + bootstrap secret are consumed only after a successful restore
+  // (see backup.ts → consumeSetupRestoreSecrets).
   if (req.path === '/restore-upload' && req.method === 'POST') {
-    // Check for setup token in header
     const setupToken = req.headers['x-setup-token'] as string | undefined;
-    if (setupToken) {
-      const tokenPath = path.join(dataDir, '.setup-token');
-      try {
-        if (fs.existsSync(tokenPath)) {
-          const storedToken = fs.readFileSync(tokenPath, 'utf8').trim();
-          if (setupToken === storedToken && storedToken.length > 0) {
-            // Valid setup token - delete after use (one-time only)
-            try { fs.unlinkSync(tokenPath); } catch {}
-            console.log('[SECURITY] Restore-upload authorized via setup token (token consumed)');
-            return next();
-          }
-        }
-      } catch {
-        // Token file read error - fall through to normal auth
-      }
+    const { validateSetupToken } = await import('./lib/setupRestoreAuth.js');
+    if (validateSetupToken(setupToken)) {
+      (req as import('./lib/setupRestoreAuth.js').SetupRestoreRequest).setupTokenAuth = true;
+      console.log('[SECURITY] Restore-upload authorized via setup token (deferred consume)');
+      return next();
     }
-    // No valid setup token = require normal JWT auth
     return authMiddleware(req, res, next);
   }
-  // All other backup endpoints require auth
   return authMiddleware(req, res, next);
 }, backupRouter);
 
@@ -212,6 +228,9 @@ app.use((err: Error, req: express.Request, res: express.Response, next: express.
 // Start server
 async function main() {
   try {
+    // Re-seal critical restore state from disk before accepting traffic
+    loadRestoreCriticalOnBoot();
+
     // Ensure Docker network exists (non-fatal so auth/API can run without Docker for local smoke)
     try {
       await ensureNetwork();
@@ -243,6 +262,15 @@ async function main() {
     await logBootstrapIfNeeded();
 
     await recoverDeploymentStateOnBoot();
+
+    try {
+      const removed = await dedupeEnvVariables();
+      if (removed > 0) {
+        console.log(`[startup] Removed ${removed} duplicate env_variables row(s)`);
+      }
+    } catch (envErr) {
+      console.warn('[startup] Env dedupe skipped:', envErr);
+    }
 
     // After certbot renew updates PEMs, reload nginx-proxy
     startCertRenewWatcher(() => reloadNginx());
