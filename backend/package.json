@@ -7,10 +7,12 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
-    "test": "tsx --test src/services/buildResolver.test.ts",
+    "test": "bun test src",
     "start": "node dist/index.js",
     "db:generate": "bunx prisma generate",
+    "db:migrate": "bunx prisma migrate deploy",
     "db:push": "bunx prisma db push",
+    "db:ensure": "tsx src/scripts/ensureDb.ts",
     "db:studio": "bunx prisma studio",
     "reset-password": "tsx src/scripts/reset-password.ts"
   },
@@ -31,6 +33,17 @@
     "systeminformation": "^5.33.1",
     "unzipper": "^0.12.5",
     "ws": "^8.21.1"
+  },
+  "overrides": {
+    "protobufjs": "8.7.1",
+    "uuid": "14.0.1",
+    "path-to-regexp": "8.4.2",
+    "minimatch": "10.2.5",
+    "lodash": "4.18.1",
+    "defu": "6.1.7",
+    "@grpc/grpc-js": "1.14.4",
+    "body-parser": "2.3.0",
+    "qs": "6.15.3"
   },
   "devDependencies": {
     "@types/archiver": "^7.0.0",
