@@ -264,6 +264,46 @@ export async function getInstallationToken(installationId: string): Promise<stri
   return data.token;
 }
 
+type GithubAppInstallation = {
+  id: number;
+  account?: {
+    login?: string;
+    avatar_url?: string;
+    type?: string;
+  };
+};
+
+/** Paginate GET /app/installations — do not assume a single page. */
+async function listAllAppInstallations(jwtToken: string): Promise<GithubAppInstallation[]> {
+  const all: GithubAppInstallation[] = [];
+  let page = 1;
+  while (true) {
+    const response = await fetch(
+      `${GITHUB_API_URL}/app/installations?per_page=100&page=${page}`,
+      {
+        headers: {
+          Authorization: `Bearer ${jwtToken}`,
+          Accept: 'application/vnd.github+json',
+          'X-GitHub-Api-Version': '2022-11-28',
+        },
+      },
+    );
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw Object.assign(new Error(`Failed to list installations: ${response.status}`), {
+        status: response.status,
+        body: errorText,
+      });
+    }
+    const batch = (await response.json()) as GithubAppInstallation[];
+    if (!Array.isArray(batch) || batch.length === 0) break;
+    all.push(...batch);
+    if (batch.length < 100) break;
+    page++;
+  }
+  return all;
+}
+
 // ========================================
 // GitHub App Manifest Flow
 // Allows one-click GitHub App creation
@@ -454,50 +494,47 @@ router.post('/check-installation', async (req: Request, res: Response) => {
       return res.json({ found: false, message: 'GitHub App credentials not ready. Please complete app creation.' });
     }
     
-    // Fetch all installations for this app
-    const response = await fetch(`${GITHUB_API_URL}/app/installations`, {
-      headers: {
-        Authorization: `Bearer ${jwtToken}`,
-        Accept: 'application/vnd.github+json',
-        'X-GitHub-Api-Version': '2022-11-28',
-      },
-    });
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      // 404 means app not found or not installed - handle gracefully
-      if (response.status === 404) {
+    let installations: GithubAppInstallation[];
+    try {
+      installations = await listAllAppInstallations(jwtToken);
+    } catch (err: any) {
+      const status = err?.status as number | undefined;
+      if (status === 404) {
         return res.json({ found: false, message: 'App not installed yet. Click "Install GitHub App" to continue.' });
       }
-      // 401 means auth issue
-      if (response.status === 401) {
+      if (status === 401) {
         return res.json({ found: false, message: 'Authentication failed. Please recreate the GitHub App.' });
       }
-      console.error('GitHub API error:', response.status, errorText);
+      console.error('GitHub API error listing installations:', err?.body || err);
       return res.json({ found: false, message: 'Could not verify installation status.' });
     }
-    
-    const installations = await response.json() as Array<{
-      id: number;
-      account?: { login?: string; avatar_url?: string };
-    }>;
-    
+
     if (installations.length === 0) {
       return res.json({ found: false, message: 'No installations found. Please install the app on GitHub first.' });
     }
-    
-    // Use the first installation (user's account)
-    const installation = installations[0];
+
+    // Keep the saved installation when still present — never wipe multi-account
+    // setup by blindly writing installations[0] (often an org).
+    const existingId = await getSetting('github_installation_id');
+    const installation =
+      installations.find((i) => String(i.id) === existingId) || installations[0];
     await saveSetting('github_installation_id', installation.id.toString());
     await saveSetting('github_username', installation.account?.login || 'unknown');
     await saveSetting('github_avatar_url', installation.account?.avatar_url || '');
-    
-    console.log(`Found GitHub App installation: ${installation.id} for ${installation.account?.login}`);
-    
-    res.json({ 
-      found: true, 
+
+    console.log(
+      `Found GitHub App installation: ${installation.id} for ${installation.account?.login} (${installations.length} total)`,
+    );
+
+    res.json({
+      found: true,
       installationId: installation.id,
-      username: installation.account?.login 
+      username: installation.account?.login,
+      installations: installations.map((inst) => ({
+        id: inst.id,
+        login: inst.account?.login || 'Unknown',
+        type: inst.account?.type || 'User',
+      })),
     });
   } catch (error) {
     // Don't spam console for expected errors
@@ -790,38 +827,17 @@ router.get('/status', async (req: Request, res: Response) => {
 router.get('/installations', async (req: Request, res: Response) => {
   try {
     const jwtToken = await createJwtToken();
-    
-    const response = await fetch(`${GITHUB_API_URL}/app/installations`, {
-      headers: {
-        Authorization: `Bearer ${jwtToken}`,
-        Accept: 'application/vnd.github+json',
-        'X-GitHub-Api-Version': '2022-11-28',
-      },
-    });
-
-    if (!response.ok) {
-      return res.status(response.status).json({ error: 'Failed to fetch installations' });
-    }
-
-    const installations = await response.json() as Array<{
-      id: number;
-      account?: { 
-        login: string; 
-        avatar_url: string; 
-        type: string; // "User" or "Organization"
-      };
-    }>;
-
+    const installations = await listAllAppInstallations(jwtToken);
     const appSlug = await getSetting('github_app_slug');
 
     res.json({
-      installations: installations.map(inst => ({
+      installations: installations.map((inst) => ({
         id: inst.id,
         login: inst.account?.login || 'Unknown',
         avatar_url: inst.account?.avatar_url || '',
-        type: inst.account?.type || 'User' // "User" or "Organization"
+        type: inst.account?.type || 'User', // "User" or "Organization"
       })),
-      installUrl: appSlug ? `https://github.com/apps/${appSlug}/installations/new` : null
+      installUrl: appSlug ? `https://github.com/apps/${appSlug}/installations/new` : null,
     });
   } catch (error) {
     console.error('Failed to fetch installations:', error);
@@ -830,99 +846,130 @@ router.get('/installations', async (req: Request, res: Response) => {
 });
 
 // GET /repos - List repositories from ALL installations (User + Orgs)
+// Optional ?owner=login filters client-side convenience (still fetched from all installs).
 router.get('/repos', async (req: Request, res: Response) => {
   try {
     const jwtToken = await createJwtToken();
-    
-    // 1. Get all installations for this App
-    const installationsResponse = await fetch(`${GITHUB_API_URL}/app/installations`, {
-      headers: {
-        Authorization: `Bearer ${jwtToken}`,
-        Accept: 'application/vnd.github+json',
-        'X-GitHub-Api-Version': '2022-11-28',
-      },
-    });
+    const ownerFilter =
+      typeof req.query.owner === 'string' && req.query.owner.trim()
+        ? req.query.owner.trim().toLowerCase()
+        : null;
 
-    if (!installationsResponse.ok) {
-        // Fallback to single saved installation if list fails
-        const installationId = await getSetting('github_installation_id');
-        if (!installationId) return res.status(401).json({ error: 'GitHub not connected' });
-
-        // Helper to fetch all pages for a token
-        const fetchAllPages = async (token: string) => {
-          let page = 1;
-          let allRepos: any[] = [];
-          while (true) {
-            const response = await fetch(`${GITHUB_API_URL}/installation/repositories?page=${page}&per_page=100`, {
-                headers: { Authorization: `token ${token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' }
-            });
-            if (!response.ok) break;
-            const data = await response.json() as any;
-            const repos = data.repositories || [];
-            if (repos.length === 0) break;
-            allRepos = [...allRepos, ...repos];
-            if (repos.length < 100) break; // Reached last page
-            page++;
-          }
-          return allRepos;
-        };
-        
-        const token = await getInstallationToken(installationId);
-        const repos = await fetchAllPages(token);
-        return res.json(repos.map(mapRepo));
-    }
-
-    const installations = await installationsResponse.json() as Array<{ id: number; account?: { login: string } }>;
-    
-    if (installations.length === 0) {
-      return res.json([]);
-    }
-
-    // 2. Fetch repos for EACH installation in parallel (fetching ALL pages)
-    const allReposPromise = installations.map(async (inst) => {
-      try {
-        const token = await getInstallationToken(inst.id.toString());
-        
-        let page = 1;
-        let instRepos: any[] = [];
-        
-        // Fetch all pages for this installation
-        while (true) {
-           const repoRes = await fetch(
-             `${GITHUB_API_URL}/installation/repositories?page=${page}&per_page=100`, 
-             {
-               headers: {
-                 Authorization: `token ${token}`,
-                 Accept: 'application/vnd.github+json',
-                 'X-GitHub-Api-Version': '2022-11-28',
-               }
-             }
-           );
-           
-           if (!repoRes.ok) break;
-           const data = await repoRes.json() as { repositories?: any[] };
-           const pageRepos = data.repositories || [];
-           
-           if (pageRepos.length === 0) break;
-           instRepos = [...instRepos, ...pageRepos];
-           
-           if (pageRepos.length < 100) break; // Less than limit means last page
-           page++;
+    const fetchAllPages = async (token: string) => {
+      let page = 1;
+      let allRepos: any[] = [];
+      while (true) {
+        const response = await fetch(
+          `${GITHUB_API_URL}/installation/repositories?page=${page}&per_page=100`,
+          {
+            headers: {
+              Authorization: `token ${token}`,
+              Accept: 'application/vnd.github+json',
+              'X-GitHub-Api-Version': '2022-11-28',
+            },
+          },
+        );
+        if (!response.ok) {
+          throw new Error(`GitHub repositories page ${page} failed: ${response.status}`);
         }
-        
-        return instRepos;
-      } catch (err) {
-        console.error(`Failed to fetch repos for installation ${inst.id}:`, err);
-        return [];
+        const data = (await response.json()) as { repositories?: any[] };
+        const repos = data.repositories || [];
+        if (repos.length === 0) break;
+        allRepos = [...allRepos, ...repos];
+        if (repos.length < 100) break;
+        page++;
       }
+      return allRepos;
+    };
+
+    type FailedInstall = { id: number; login: string; error: string };
+
+    let installations: GithubAppInstallation[];
+    try {
+      installations = await listAllAppInstallations(jwtToken);
+    } catch (err) {
+      // Fallback to single saved installation — must be flagged so UI does not look multi-account
+      console.error('Failed to list all installations for /repos, falling back:', err);
+      const installationId = await getSetting('github_installation_id');
+      if (!installationId) return res.status(401).json({ error: 'GitHub not connected' });
+      try {
+        const token = await getInstallationToken(installationId);
+        let repos = (await fetchAllPages(token)).map(mapRepo);
+        if (ownerFilter) {
+          repos = repos.filter((r) => r.owner.toLowerCase() === ownerFilter);
+        }
+        return res.json({
+          repositories: repos,
+          failedInstallations: [] as FailedInstall[],
+          fallbackSingle: true,
+        });
+      } catch (fallbackErr: any) {
+        return res.status(502).json({
+          error: 'Failed to fetch repositories (installations list and saved install both failed)',
+          details: fallbackErr?.message || String(fallbackErr),
+        });
+      }
+    }
+
+    if (installations.length === 0) {
+      return res.json({
+        repositories: [],
+        failedInstallations: [] as FailedInstall[],
+        fallbackSingle: false,
+      });
+    }
+
+    const settled = await Promise.allSettled(
+      installations.map(async (inst) => {
+        const token = await getInstallationToken(inst.id.toString());
+        const raw = await fetchAllPages(token);
+        return { inst, raw };
+      }),
+    );
+
+    const failedInstallations: FailedInstall[] = [];
+    const byId = new Map<number, ReturnType<typeof mapRepo>>();
+    for (let i = 0; i < settled.length; i++) {
+      const result = settled[i];
+      const inst = installations[i];
+      const login = inst.account?.login || 'Unknown';
+      if (result.status === 'rejected') {
+        const message =
+          result.reason instanceof Error ? result.reason.message : String(result.reason);
+        console.error(`Failed to fetch repos for installation ${inst.id} (${login}):`, message);
+        failedInstallations.push({ id: inst.id, login, error: message });
+        continue;
+      }
+      for (const repo of result.value.raw) {
+        const mapped = mapRepo(repo);
+        if (!byId.has(mapped.id)) byId.set(mapped.id, mapped);
+      }
+    }
+
+    if (byId.size === 0 && failedInstallations.length > 0) {
+      return res.status(502).json({
+        error: 'Failed to fetch repositories from all GitHub installations',
+        failedInstallations,
+      });
+    }
+
+    let repos = Array.from(byId.values());
+    if (ownerFilter) {
+      repos = repos.filter((r) => r.owner.toLowerCase() === ownerFilter);
+    }
+
+    // Newest activity first so mixed personal+org lists feel current
+    repos.sort((a, b) => {
+      const ta = a.updated_at ? Date.parse(a.updated_at) : 0;
+      const tb = b.updated_at ? Date.parse(b.updated_at) : 0;
+      return tb - ta;
     });
 
-    const results = await Promise.all(allReposPromise);
-    const flatRepos = results.flat();
-
-    // 3. Map and return
-    res.json(flatRepos.map(mapRepo));
-
+    res.json({
+      repositories: repos,
+      failedInstallations,
+      fallbackSingle: false,
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Failed to fetch repositories' });
@@ -930,17 +977,22 @@ router.get('/repos', async (req: Request, res: Response) => {
 });
 
 function mapRepo(repo: any) {
+  const ownerLogin =
+    repo.owner?.login ||
+    (typeof repo.full_name === 'string' ? repo.full_name.split('/')[0] : '') ||
+    '';
   return {
     id: repo.id,
     name: repo.name,
     full_name: repo.full_name,
+    owner: ownerLogin,
     private: repo.private,
     clone_url: repo.clone_url,
     html_url: repo.html_url,
     description: repo.description,
     default_branch: repo.default_branch,
     updated_at: repo.updated_at,
-    permissions: repo.permissions // useful to filter push access
+    permissions: repo.permissions, // useful to filter push access
   };
 }
 
