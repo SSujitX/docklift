@@ -46,7 +46,13 @@ export const EnvironmentVariables = () => (
     <div className="bg-secondary/50 rounded-xl p-6">
       <h4 className="font-semibold mb-3">Usage Guidelines</h4>
       <ul className="list-disc list-inside text-sm text-muted-foreground space-y-2">
-        <li>Keys must be unique per project; invalid names are rejected</li>
+        <li>
+          Multi-service projects: open <strong>All services</strong> for{" "}
+          <strong>shared</strong> env, or one <strong>service</strong> workspace for
+          that app&apos;s keys — service values override shared on the same key
+        </li>
+        <li>Single-service projects keep one simple env list (no Workspace rail)</li>
+        <li>Invalid key names are rejected</li>
         <li>Mark as <strong>runtime</strong> and/or <strong>build</strong> as needed</li>
         <li>
           <strong>BuildKit secret</strong> (with build): passed as a Docker secret, not{" "}
