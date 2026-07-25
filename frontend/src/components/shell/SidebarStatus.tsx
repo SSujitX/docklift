@@ -3,17 +3,30 @@
 
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowUp, Loader2, Star } from "lucide-react";
+import { ArrowUp, Star } from "lucide-react";
 import { GithubIcon } from "@/components/icons/GithubIcon";
 import { getAuthHeaders } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 
-interface VersionInfo {
+export interface VersionInfo {
   current: string;
   latest: string;
   updateAvailable: boolean;
   githubOk?: boolean;
   checkedAt?: string;
+}
+
+export function getCachedVersion(): VersionInfo | null {
+  return cachedVersion;
+}
+
+/** Soft-cached version check shared with Terminal upgrade dialogs. */
+export function fetchVersionInfo(forceRefresh = false): Promise<VersionInfo | null> {
+  if (forceRefresh) {
+    lastVersionFetchAt = 0;
+    cachedVersion = null;
+  }
+  return loadVersion(forceRefresh);
 }
 
 // Soft cache shared by desktop + mobile rails. One poller only — both Sidebars
@@ -23,6 +36,8 @@ let cachedVersion: VersionInfo | null = null;
 let versionRequest: Promise<VersionInfo | null> | null = null;
 let starsRequest: Promise<number | null> | null = null;
 let lastVersionFetchAt = 0;
+/** Bumped on each network fetch so stale responses never overwrite newer ones. */
+let versionFetchGen = 0;
 let pollerSubscribers = 0;
 let pollerIntervalId: number | null = null;
 let focusBound = false;
@@ -40,7 +55,7 @@ function notifyVersionListeners(data: VersionInfo | null) {
   }
 }
 
-function loadVersion(): Promise<VersionInfo | null> {
+function loadVersion(forceRefresh = false): Promise<VersionInfo | null> {
   const now = Date.now();
   const ttl = cachedVersion?.updateAvailable
     ? CLIENT_REFRESH_WHEN_UPDATE_MS
@@ -49,6 +64,7 @@ function loadVersion(): Promise<VersionInfo | null> {
       : CLIENT_REFRESH_WHEN_CURRENT_MS;
 
   if (
+    !forceRefresh &&
     cachedVersion &&
     lastVersionFetchAt > 0 &&
     now - lastVersionFetchAt < ttl
@@ -56,15 +72,23 @@ function loadVersion(): Promise<VersionInfo | null> {
     return Promise.resolve(cachedVersion);
   }
 
-  // Always coalesce — never start a second in-flight /version call
-  if (versionRequest) {
+  // Coalesce routine polls; force refresh always starts a fresh check
+  if (versionRequest && !forceRefresh) {
     return versionRequest;
   }
 
-  // No ?refresh=1 on routine polls — server 2m TTL is enough; avoids GitHub stampede
-  versionRequest = fetch("/api/system/version", { headers: getAuthHeaders() })
+  // Routine polls skip ?refresh=1 — server TTL is enough; force only for upgrade UI
+  const url = forceRefresh
+    ? "/api/system/version?refresh=1"
+    : "/api/system/version";
+  const gen = ++versionFetchGen;
+  const req = fetch(url, { headers: getAuthHeaders() })
     .then((res) => (res.ok ? res.json() : null))
     .then((data: VersionInfo | null) => {
+      // Superseded by a newer fetch (e.g. force refresh during a poll)
+      if (gen !== versionFetchGen) {
+        return cachedVersion;
+      }
       if (data) {
         cachedVersion = data;
         lastVersionFetchAt = Date.now();
@@ -74,10 +98,11 @@ function loadVersion(): Promise<VersionInfo | null> {
     })
     .catch(() => null)
     .finally(() => {
-      versionRequest = null;
+      if (versionRequest === req) versionRequest = null;
     });
+  versionRequest = req;
 
-  return versionRequest;
+  return req;
 }
 
 function ensureVersionPoller() {
@@ -126,7 +151,6 @@ function formatStars(count: number | null): string {
 export function SidebarStatus({ collapsed }: { collapsed: boolean }) {
   const [version, setVersion] = useState<VersionInfo | null>(cachedVersion);
   const [stars, setStars] = useState<number | null>(cachedStars);
-  const [upgrading, setUpgrading] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -151,21 +175,9 @@ export function SidebarStatus({ collapsed }: { collapsed: boolean }) {
     };
   }, []);
 
-  const handleUpgrade = async () => {
-    setUpgrading(true);
-    try {
-      const res = await fetch("/api/system/upgrade", {
-        method: "POST",
-        headers: getAuthHeaders(),
-      });
-      const data = await res.json();
-      const action = data.message?.includes("Simulated")
-        ? "upgrade_simulated"
-        : "upgrade";
-      navigate(`/terminal?action=${action}`);
-    } catch {
-      setUpgrading(false);
-    }
+  const handleUpgrade = () => {
+    // Confirm + offline wait UI lives on Terminal — never fire upgrade from the rail
+    navigate("/terminal?confirm=upgrade");
   };
 
   const currentVersion = version?.current || __APP_VERSION__;
@@ -177,15 +189,10 @@ export function SidebarStatus({ collapsed }: { collapsed: boolean }) {
           <button
             type="button"
             onClick={handleUpgrade}
-            disabled={upgrading}
             title={`Upgrade to v${version.latest}`}
             className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand/15 text-brand transition-colors hover:bg-brand/25"
           >
-            {upgrading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <ArrowUp className="h-4 w-4" />
-            )}
+            <ArrowUp className="h-4 w-4" />
           </button>
         )}
         <a
@@ -215,20 +222,12 @@ export function SidebarStatus({ collapsed }: { collapsed: boolean }) {
           <button
             type="button"
             onClick={handleUpgrade}
-            disabled={upgrading}
             className={cn(
               "mt-2.5 flex h-8 w-full items-center justify-center gap-1.5 rounded-lg text-xs font-semibold transition-colors",
-              "bg-brand text-brand-foreground hover:brightness-110 disabled:opacity-60",
+              "bg-brand text-brand-foreground hover:brightness-110",
             )}
           >
-            {upgrading ? (
-              <>
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                Upgrading
-              </>
-            ) : (
-              "Upgrade now"
-            )}
+            Upgrade now
           </button>
         </div>
       )}
