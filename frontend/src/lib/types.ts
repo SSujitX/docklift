@@ -9,11 +9,13 @@ export interface Project {
   base_directory: string;
   dockerfile_path: string | null;
   internal_port: number;
+  /** When true, publish host ports from the pool. Default false — use domains. */
+  publish_host_port?: boolean;
   github_url: string | null;
   github_branch: string;
   domain: string | null;
   port: number | null;
-  status: "pending" | "building" | "running" | "stopped" | "error";
+  status: "pending" | "building" | "running" | "stopped" | "error" | "degraded";
   container_name: string | null;
   created_at: string;
   updated_at: string;
@@ -80,7 +82,7 @@ export interface Service {
   port: number | null;
   internal_port: number;
   domain: string | null;
-  status: "pending" | "building" | "running" | "stopped" | "error";
+  status: "pending" | "building" | "running" | "stopped" | "error" | "degraded";
   created_at: string;
 }
 
@@ -106,5 +108,6 @@ export interface EnvVariable {
   value: string;
   is_build_arg: boolean;
   is_runtime: boolean;
+  is_secret?: boolean;
   created_at: string;
 }
