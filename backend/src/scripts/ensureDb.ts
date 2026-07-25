@@ -56,6 +56,51 @@ export async function repairLegacySchema(): Promise<void> {
     console.log('[ensureDb] Added projects.publish_host_port');
   }
 
+  if (!(await columnExists('projects', 'db_engine'))) {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "projects" ADD COLUMN "db_engine" TEXT`);
+    console.log('[ensureDb] Added projects.db_engine');
+  }
+
+  if (!(await tableExists('database_links'))) {
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE "database_links" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "database_project_id" TEXT NOT NULL,
+        "app_project_id" TEXT NOT NULL,
+        "service_name" TEXT NOT NULL DEFAULT '',
+        "env_key" TEXT NOT NULL,
+        "created_at" DATETIME DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "database_links_database_project_id_fkey" FOREIGN KEY ("database_project_id") REFERENCES "projects" ("id") ON DELETE CASCADE ON UPDATE NO ACTION,
+        CONSTRAINT "database_links_app_project_id_fkey" FOREIGN KEY ("app_project_id") REFERENCES "projects" ("id") ON DELETE CASCADE ON UPDATE NO ACTION
+      )
+    `);
+    await prisma.$executeRawUnsafe(
+      `CREATE UNIQUE INDEX IF NOT EXISTS "database_links_database_project_id_app_project_id_service_name_env_key_key" ON "database_links"("database_project_id", "app_project_id", "service_name", "env_key")`
+    );
+    console.log('[ensureDb] Created database_links');
+  }
+
+  if (await tableExists('database_links')) {
+    // Keep newest link per (app, service, env_key) before unique index can apply
+    await prisma.$executeRawUnsafe(`
+      DELETE FROM "database_links"
+      WHERE "id" IN (
+        SELECT a."id" FROM "database_links" a
+        INNER JOIN "database_links" b
+          ON a."app_project_id" = b."app_project_id"
+         AND a."service_name" = b."service_name"
+         AND a."env_key" = b."env_key"
+         AND (
+           COALESCE(a."created_at", '') < COALESCE(b."created_at", '')
+           OR (COALESCE(a."created_at", '') = COALESCE(b."created_at", '') AND a."id" < b."id")
+         )
+      )
+    `);
+    await prisma.$executeRawUnsafe(
+      `CREATE UNIQUE INDEX IF NOT EXISTS "database_links_app_project_id_service_name_env_key_key" ON "database_links"("app_project_id", "service_name", "env_key")`
+    );
+  }
+
   if (await tableExists('env_variables')) {
     if (!(await columnExists('env_variables', 'is_secret'))) {
       await prisma.$executeRawUnsafe(
@@ -116,8 +161,9 @@ async function main() {
   } catch (firstErr) {
     console.warn('[ensureDb] migrate deploy failed — attempting legacy baseline:', firstErr);
     try {
+      // Baseline only — do NOT repair columns before migrate, or ADD COLUMN
+      // migrations (e.g. db_engine) fail with "duplicate column name".
       await baselineLegacyIfNeeded();
-      await repairLegacySchema();
       runPrisma(['migrate', 'deploy']);
     } catch (secondErr) {
       console.error('[ensureDb] migrate deploy failed after baseline:', secondErr);
