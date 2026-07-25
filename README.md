@@ -65,6 +65,7 @@ Kubernetes, Swarm, or a managed cloud account.
 - [How it Works](#-how-it-works)
 - [Deploy Your First App](#-deploy-your-first-app)
 - [Builds: Dockerfile or Railpack](#-builds-dockerfile-or-railpack)
+- [Managed Databases](#-managed-databases)
 - [Persistent Storage](#-persistent-storage)
 - [Domains & HTTPS](#-domains--https)
 - [Configuration](#-configuration)
@@ -239,6 +240,22 @@ runtime secrets don't get baked into image layers.
 
 ---
 
+## 🗄️ Managed Databases
+
+**Databases → New Database** creates Postgres, MySQL, MariaDB, Redis, or MongoDB from official
+images (no Git/ZIP). Host ports stay **off** by default.
+
+1. Create & deploy the database.
+2. Open it → **Link** to a project (or one service), or from an app → **Attach database**.
+3. DockLift joins the DB container to the app’s Docker network and injects `DATABASE_URL` /
+   `REDIS_URL` / `MONGODB_URI` as a runtime secret.
+4. **Redeploy the app** so containers pick up the new env.
+
+Prefer linking over publishing host ports. Credentials are set at create time — **recreate** the
+database to rotate passwords (env edits are blocked so Connection URLs cannot lie about the server).
+
+---
+
 ## 💾 Persistent Storage
 
 Redeploying replaces containers, so anything written inside a container's filesystem is lost unless
@@ -249,6 +266,7 @@ container, add a mount in the project's **Storage** tab.
   redeploys never delete them.
 - They are removed only when you delete the project.
 - External databases reached over `DATABASE_URL` (Postgres, MySQL, managed services) need nothing here.
+  For DockLift-managed databases, use **Databases** + link/attach instead of hand-pasting URLs.
 
 ```bash
 # Inspect what Docklift manages
