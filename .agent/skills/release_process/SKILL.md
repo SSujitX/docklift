@@ -94,7 +94,9 @@ When documenting or changing upgrades:
 - `format_time` must tolerate `((0))` under `set -e` (`|| true`).
 
 Install scripts (`install.sh` / `install-dev.sh`): print Dashboard URL + Setup code; `cd /opt/docklift`
-before `docker compose`; same `format_time` rule.
+before `docker compose`; same `format_time` rule. `install.sh` accepts optional release pin
+(`bash -s -- v=2.0.2` / `DOCKLIFT_VERSION`); default is GitHub `releases/latest`. Validates the
+tag (ls-remote) before `compose down`; fails closed if latest cannot be resolved (no master fallback).
 
 Uninstall: DockLift-named/labelled resources only (incl. `dl-net-*`); **no** host-wide
 `docker system prune` / `builder prune`.
