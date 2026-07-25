@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
 import { projectNetworkName, shortPathHash } from '../lib/naming.js';
+import { envForService } from '../lib/envVariables.js';
 
 interface ServiceConfig {
   name: string;
@@ -16,6 +17,8 @@ interface EnvVar {
   value: string;
   is_build_arg: boolean;
   is_runtime: boolean;
+  /** Empty/undefined = shared; otherwise Docker service name */
+  service_name?: string;
 }
 
 export interface RuntimeServiceConfig {
@@ -150,13 +153,6 @@ export function generateRuntimeCompose(
   envVars: EnvVar[] = [],
   options?: RuntimeComposeOptions
 ): void {
-  const runtimeEnv = envVars
-    .filter((item) => item.is_runtime)
-    .reduce<Record<string, string>>((acc, item) => {
-      acc[item.key] = item.value;
-      return acc;
-    }, {});
-
   const projectId = options?.projectId || 'unknown';
   const netName = projectNetworkName(projectId);
   const publishHost = options?.publishHostPort === true;
@@ -180,6 +176,12 @@ export function generateRuntimeCompose(
   const topLevelVolumes: Record<string, { name: string; external: true }> = {};
 
   for (const service of services) {
+    const runtimeEnv = envForService(envVars, service.name)
+      .filter((item) => item.is_runtime)
+      .reduce<Record<string, string>>((acc, item) => {
+        acc[item.key] = item.value;
+        return acc;
+      }, {});
     const labels: Record<string, string> = {
       'com.docklift.managed': 'true',
       'com.docklift.project': projectId,
