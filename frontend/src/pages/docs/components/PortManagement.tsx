@@ -7,7 +7,9 @@ export const PortManagement = () => (
       Port Management
     </h2>
     <p className="text-muted-foreground mb-4">
-      Host ports are <strong>opt-in</strong>. By default apps are reached via your domain on nginx-proxy
+      Host ports are <strong>opt-in</strong>. By default an app can be <strong>Running</strong> but not
+      public — Project → Overview shows <strong>Not public yet</strong> until you add a domain/subdomain
+      or enable Publish host ports and redeploy. Preferred path: domain on nginx-proxy
       (project network → <code className="bg-primary/10 px-1.5 py-0.5 rounded text-primary">container_name:internal_port</code>).
     </p>
 
