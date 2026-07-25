@@ -3,7 +3,7 @@ export interface Project {
   id: string;
   name: string;
   description: string | null;
-  source_type: "upload" | "github";
+  source_type: "upload" | "github" | "managed";
   project_type: "app" | "database";
   build_type: BuildType;
   base_directory: string;
@@ -11,6 +11,8 @@ export interface Project {
   internal_port: number;
   /** When true, publish host ports from the pool. Default false — use domains. */
   publish_host_port?: boolean;
+  /** Managed DB engine when project_type=database */
+  db_engine?: string | null;
   github_url: string | null;
   github_branch: string;
   domain: string | null;
