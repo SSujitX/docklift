@@ -38,7 +38,7 @@ redeploys on every push — all from a web UI, with no vendor lock-in.
 <details>
 <summary><b>More screenshots</b></summary>
 
-**Project detail** — services, deployments, env vars, storage, logs
+**Project detail** — All-services workspace (deploy / build / shared env) and per-service workspace (env, domains, storage, runtime logs); single-service projects stay flat
 ![Project detail](screenshots/inside%20projects.png)
 
 **Live logs** — every platform container, streamed over SSE
