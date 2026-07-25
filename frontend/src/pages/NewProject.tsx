@@ -49,6 +49,7 @@ interface GitHubRepo {
   id: number;
   name: string;
   full_name: string;
+  owner?: string;
   private: boolean;
   clone_url: string;
   html_url: string;
@@ -61,6 +62,13 @@ interface GitHubStatus {
   connected: boolean;
   username?: string;
   avatar_url?: string;
+}
+
+interface GitHubInstallation {
+  id: number;
+  login: string;
+  avatar_url: string;
+  type: "User" | "Organization" | string;
 }
 
 function NewProjectContent() {
@@ -108,6 +116,9 @@ function NewProjectContent() {
   // GitHub state
   const [githubStatus, setGithubStatus] = useState<GitHubStatus | null>(null);
   const [githubLoading, setGithubLoading] = useState(false);
+  const [githubInstallations, setGithubInstallations] = useState<GitHubInstallation[]>([]);
+  /** null = all connected accounts; otherwise filter by login */
+  const [accountFilter, setAccountFilter] = useState<string | null>(null);
   const [repos, setRepos] = useState<GitHubRepo[]>([]);
   const [reposLoading, setReposLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -116,6 +127,8 @@ function NewProjectContent() {
   const [branches, setBranches] = useState<string[]>([]);
   const [branchesLoading, setBranchesLoading] = useState(false);
   const [repoAccessError, setRepoAccessError] = useState<string | null>(null);
+  /** Sticky warning when /repos is partial or single-install fallback */
+  const [reposWarning, setReposWarning] = useState<string | null>(null);
 
   useEffect(() => {
     fetchGitHubStatus();
@@ -181,6 +194,26 @@ function NewProjectContent() {
     }
   };
 
+  const fetchInstallations = async () => {
+    try {
+      const res = await authFetch(`${API_URL}/api/github/installations`);
+      const data = await res.json();
+      if (!res.ok) {
+        setGithubInstallations([]);
+        setAccountFilter(null);
+        return;
+      }
+      const list: GitHubInstallation[] = data.installations || [];
+      setGithubInstallations(list);
+      setAccountFilter((prev) =>
+        prev && !list.some((i) => i.login === prev) ? null : prev,
+      );
+    } catch {
+      setGithubInstallations([]);
+      setAccountFilter(null);
+    }
+  };
+
   const fetchGitHubStatus = async () => {
     setGithubLoading(true);
     try {
@@ -188,10 +221,14 @@ function NewProjectContent() {
       const data = await res.json();
       setGithubStatus(data);
       if (data.connected) {
-        fetchRepos();
+        await Promise.all([fetchInstallations(), fetchRepos()]);
+      } else {
+        setGithubInstallations([]);
+        setRepos([]);
       }
     } catch {
       setGithubStatus({ connected: false });
+      setGithubInstallations([]);
     } finally {
       setGithubLoading(false);
     }
@@ -200,19 +237,51 @@ function NewProjectContent() {
   const fetchRepos = async () => {
     setReposLoading(true);
     try {
-      const res = await authFetch(`${API_URL}/api/github/repos?per_page=50`);
+      // Always load the union of every installation — account chips filter client-side
+      const res = await authFetch(`${API_URL}/api/github/repos`);
       const data = await res.json();
-      if (!res.ok || !Array.isArray(data)) {
+      if (!res.ok) {
         setRepos([]);
-        toast.error("Failed to fetch repositories");
+        setReposWarning(null);
+        toast.error(data?.error || "Failed to fetch repositories");
         return;
       }
-      setRepos(data);
+      // Prefer envelope { repositories, failedInstallations }; accept legacy bare array
+      const list: GitHubRepo[] = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.repositories)
+          ? data.repositories
+          : [];
+      setRepos(list);
+
+      const failed: { login?: string }[] = Array.isArray(data?.failedInstallations)
+        ? data.failedInstallations
+        : [];
+      if (data?.fallbackSingle) {
+        setReposWarning(
+          "Showing only the saved GitHub install — could not list all accounts. Retry or reconnect in Settings.",
+        );
+      } else if (failed.length > 0) {
+        const names = failed.map((f) => `@${f.login || "?"}`).join(", ");
+        setReposWarning(`Could not load repos for: ${names}`);
+        toast.warning(`Could not load repos for: ${names}`);
+      } else {
+        setReposWarning(null);
+      }
     } catch {
       setRepos([]);
+      setReposWarning(null);
       toast.error("Failed to fetch repositories");
     } finally {
       setReposLoading(false);
+    }
+  };
+
+  const handleAddGithubAccount = async () => {
+    try {
+      await startGithubInstallAndNavigate(window.location.href, { sameTab: true });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to start GitHub install");
     }
   };
 
@@ -243,11 +312,21 @@ function NewProjectContent() {
     setStep(2); // Auto-advance to config (previously 3)
   };
 
-  const filteredRepos = repos.filter(
-    (repo) =>
-      repo.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      repo.full_name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const repoOwner = (repo: GitHubRepo) =>
+    (repo.owner || repo.full_name.split("/")[0] || "").toLowerCase();
+
+  const filteredRepos = repos.filter((repo) => {
+    if (accountFilter && repoOwner(repo) !== accountFilter.toLowerCase()) {
+      return false;
+    }
+    const q = searchQuery.toLowerCase().trim();
+    if (!q) return true;
+    return (
+      repo.name.toLowerCase().includes(q) ||
+      repo.full_name.toLowerCase().includes(q) ||
+      repoOwner(repo).includes(q)
+    );
+  });
 
   const handleSubmit = async () => {
     if (!name) {
@@ -529,32 +608,104 @@ function NewProjectContent() {
                     </Card>
                   ) : (
                     <Card className="border-border/30 rounded-2xl overflow-hidden">
-                      {/* Header */}
-                      <div className="bg-secondary/30 px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/30">
-                        <div className="flex items-center gap-2">
-                          <div className="h-2 w-2 rounded-full bg-green-500" />
-                          <span className="text-xs font-medium text-muted-foreground">@{githubStatus.username}</span>
+                      {/* Header: all connected accounts + search */}
+                      <div className="bg-secondary/30 px-4 py-3 space-y-3 border-b border-border/30">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <div className="h-2 w-2 rounded-full bg-green-500 shrink-0" />
+                            <span className="text-xs font-medium text-muted-foreground truncate">
+                              {githubInstallations.length > 0
+                                ? `${githubInstallations.length} GitHub account${githubInstallations.length === 1 ? "" : "s"} connected`
+                                : `@${githubStatus.username || "connected"}`}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 w-full sm:w-auto">
+                            <div className="relative flex-1 sm:w-56">
+                              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                              <Input
+                                placeholder="Search all repos..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                className="pl-9 h-9 text-sm bg-background/50 border-border/40"
+                              />
+                            </div>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-9 shrink-0 rounded-lg"
+                              title="Add another personal account or organization"
+                              onClick={handleAddGithubAccount}
+                            >
+                              <PlusIcon className="h-3.5 w-3.5 sm:mr-1" />
+                              <span className="hidden sm:inline">Add</span>
+                            </Button>
+                          </div>
                         </div>
-                        <div className="relative w-full sm:w-56">
-                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                          <Input 
-                            placeholder="Search repos..." 
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            className="pl-9 h-9 text-sm bg-background/50 border-border/40" 
-                          />
-                        </div>
+                        {githubInstallations.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setAccountFilter(null)}
+                              className={cn(
+                                "h-7 px-2.5 rounded-lg text-[11px] font-semibold border transition-colors",
+                                accountFilter === null
+                                  ? "bg-foreground text-background border-foreground"
+                                  : "bg-background/50 text-muted-foreground border-border/40 hover:text-foreground",
+                              )}
+                            >
+                              All
+                            </button>
+                            {githubInstallations.map((inst) => (
+                              <button
+                                key={inst.id}
+                                type="button"
+                                onClick={() => setAccountFilter(inst.login)}
+                                className={cn(
+                                  "h-7 px-2.5 rounded-lg text-[11px] font-semibold border transition-colors inline-flex items-center gap-1.5 max-w-full",
+                                  accountFilter === inst.login
+                                    ? "bg-foreground text-background border-foreground"
+                                    : "bg-background/50 text-muted-foreground border-border/40 hover:text-foreground",
+                                )}
+                                title={
+                                  inst.type === "Organization"
+                                    ? "Organization"
+                                    : "Personal"
+                                }
+                              >
+                                {inst.avatar_url ? (
+                                  <img
+                                    src={inst.avatar_url}
+                                    alt=""
+                                    className="h-4 w-4 rounded"
+                                  />
+                                ) : null}
+                                <span className="truncate">@{inst.login}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                        {reposWarning && (
+                          <p className="text-[11px] text-amber-600 dark:text-amber-400 leading-snug">
+                            {reposWarning}
+                          </p>
+                        )}
                       </div>
                       {/* Repo List */}
                       <div className="max-h-80 overflow-y-auto divide-y divide-border/20">
-                        {reposLoading ? (
+                        {reposLoading || githubLoading ? (
                           <div className="p-12 flex flex-col items-center gap-3 text-muted-foreground">
                             <Loader2 className="h-6 w-6 animate-spin" />
                             <span className="text-sm">Loading repos...</span>
                           </div>
                         ) : filteredRepos.length === 0 ? (
-                          <div className="p-12 text-center text-sm text-muted-foreground">
-                            No repositories found
+                          <div className="p-12 text-center text-sm text-muted-foreground space-y-2">
+                            <p>No repositories found</p>
+                            <p className="text-xs">
+                              {accountFilter
+                                ? `Nothing matched under @${accountFilter}. Try All, or grant the GitHub App access to more repos.`
+                                : "Install the app on your personal account and orgs (Add), and grant repo access in GitHub."}
+                            </p>
                           </div>
                         ) : filteredRepos.map(repo => (
                           <div 
@@ -567,7 +718,7 @@ function NewProjectContent() {
                                 {repo.private ? <Lock className="h-4 w-4 text-muted-foreground" /> : <Globe className="h-4 w-4 text-muted-foreground" />}
                               </div>
                               <div className="min-w-0">
-                                <h4 className="font-medium text-sm truncate">{repo.name}</h4>
+                                <h4 className="font-medium text-sm truncate">{repo.full_name}</h4>
                                 <p className="text-xs text-muted-foreground truncate">{repo.description || "No description"}</p>
                               </div>
                             </div>
