@@ -13,17 +13,24 @@ import { Plus, RefreshCw, Database, Sparkles } from "lucide-react";
 export default function DatabasesPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
 
   const fetchProjects = useCallback(async () => {
     try {
       const res = await authFetch(`${API_URL}/api/projects`);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error((data as { error?: string }).error || `Failed to load databases (${res.status})`);
+      }
       const data = await res.json();
       // Filter only database projects
       const databaseProjects = Array.isArray(data) ? data.filter((p: Project) => p.project_type === "database") : [];
       setProjects(databaseProjects);
-    } catch (error) {
-      console.error("Failed to fetch database services:", error);
+      setError(null);
+    } catch (err) {
+      console.error("Failed to fetch database services:", err);
+      setError(err instanceof Error ? err.message : "Failed to load databases");
     } finally {
       setLoading(false);
     }
@@ -73,6 +80,12 @@ export default function DatabasesPage() {
           </>
         }
       />
+
+      {error && (
+        <div className="mb-4 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-600 dark:text-red-400">
+          {error}
+        </div>
+      )}
 
       {loading ? (
         <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
