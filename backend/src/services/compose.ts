@@ -29,6 +29,10 @@ export interface RuntimeServiceConfig {
   port?: number | null;
   container_name: string;
   volumes?: Array<{ key: string; name: string; mountPath: string }>;
+  /** Optional container command (e.g. redis-server --requirepass) */
+  command?: string[];
+  /** When false, do not inject PORT= (managed DBs). Default true. */
+  injectPortEnv?: boolean;
 }
 
 export interface RuntimeComposeOptions {
@@ -187,20 +191,24 @@ export function generateRuntimeCompose(
       'com.docklift.project': projectId,
       'com.docklift.service': service.name,
     };
+    const environment: Record<string, string> = { ...runtimeEnv };
+    if (service.injectPortEnv !== false) {
+      environment.PORT = String(service.internal_port);
+    }
     const definition: Record<string, unknown> = {
       image: service.image,
       container_name: service.container_name,
       restart: 'unless-stopped',
       networks: ['project'],
       labels,
-      environment: {
-        ...runtimeEnv,
-        PORT: String(service.internal_port),
-      },
+      environment,
       security_opt: ['no-new-privileges:true'],
     };
     if (memLimit) definition.mem_limit = memLimit;
     if (cpus != null) definition.cpus = String(cpus);
+    if (service.command?.length) {
+      definition.command = service.command;
+    }
 
     if (publishHost && service.port != null) {
       definition.ports = [`${service.port}:${service.internal_port}`];
