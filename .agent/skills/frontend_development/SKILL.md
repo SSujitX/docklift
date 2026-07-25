@@ -78,6 +78,10 @@ elements and `top-20` for spaced ones.
 -   Project status includes **`degraded`** (partial fleet) — `StatusBadge` / `ProjectCard` must show it;
     treat like running for stop/restart actions.
 -   Build Settings: **`publish_host_port`** checkbox (default off) — host ports are opt-in.
+-   Overview → Services & Endpoints: never show `IP:null` or link until `serverIP` is real.
+    If no host port and no domain, show **Not public yet**. If Publish is already on but
+    `svc.port` is still null, say redeploy is required (don’t claim ports are “off”).
+-   Domains empty-state: same truth — not “deploy to get a port” under default off.
 -   Env manager: optional **BuildKit secret** flag (`is_secret`) when `is_build_arg` is on.
 
 ## Dev server
