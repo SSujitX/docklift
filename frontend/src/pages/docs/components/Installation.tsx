@@ -14,10 +14,36 @@ export const Installation = () => (
     <div className="bg-secondary/50 rounded-xl p-6 mb-4">
       <h4 className="font-semibold mb-4 text-emerald-500">📥 Install</h4>
       <CommandBlock 
-        label="One-liner install (recommended)" 
+        label="Install latest release" 
         command="curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh | sudo bash" 
         color="emerald"
       />
+      <CommandBlock
+        label="Install a specific release (bash -s -- v=)"
+        command="curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh | sudo bash -s -- v=2.0.2"
+        color="emerald"
+      />
+      <CommandBlock
+        label="Install a specific release (env)"
+        command="curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh | sudo DOCKLIFT_VERSION=2.0.2 bash"
+        color="emerald"
+      />
+      <p className="text-xs text-muted-foreground mb-4">
+        Tags come from{" "}
+        <a
+          href="https://github.com/SSujitX/docklift/releases"
+          className="text-cyan-500 hover:underline"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          GitHub Releases
+        </a>
+        . Pass <code className="bg-primary/10 px-1 rounded">v=2.0.2</code> to bash or{" "}
+        <code className="bg-primary/10 px-1 rounded">DOCKLIFT_VERSION=2.0.2</code> (with or without
+        a leading <code className="bg-primary/10 px-1 rounded">v</code>). Default is latest when
+        omitted. Pinning/downgrading rebuilds that tag and does not run{" "}
+        <code className="bg-primary/10 px-1 rounded">upgrade.sh</code> DB snapshot — backup first.
+      </p>
       <TerminalWindow 
         title="Manual Installation"
         color="emerald"
