@@ -55,12 +55,17 @@ docklift_images() {
 }
 
 docklift_volumes() {
+    # Names dl-* / docklift*, compose project labels, or ownership labels from runtime compose
     docker volume ls --format '{{.Name}}|{{.Labels}}' 2>/dev/null |
-        awk -F'|' -v n="$NAME_RE" '$1 ~ n || $2 ~ /com\.docker\.compose\.project=dl-/ {print $1}'
+        awk -F'|' -v n="$NAME_RE" \
+          '$1 ~ n || $2 ~ /com\.docker\.compose\.project=dl-/ || $2 ~ /com\.docklift\.(project|managed)=/ {print $1}'
 }
 
 docklift_networks() {
-    docker network ls --format '{{.Name}}' 2>/dev/null | awk -v n="$NAME_RE" '$0 ~ n'
+    # Control-plane docklift_network + per-project dl-net-* (+ label ownership)
+    docker network ls --format '{{.Name}}|{{.Labels}}' 2>/dev/null |
+        awk -F'|' -v n="$NAME_RE" \
+          '$1 ~ n || $1 ~ /^dl-net-/ || $2 ~ /com\.docklift\.(project|managed)=/ {print $1}'
 }
 
 count() {
@@ -109,11 +114,10 @@ NETWORKS=$(docklift_networks)
 [ -n "$NETWORKS" ] && docker network rm $NETWORKS >/dev/null 2>&1 || true
 echo -e "${GREEN}$(count "$VOLUMES") volume(s), $(count "$NETWORKS") network(s)${NC}"
 
-# Step 5: build cache. Docker keeps one shared cache with no per-project scoping, and
-# install-dev.sh builds --no-cache, so this is where the bulk of the disk usage sits.
-printf "${CYAN}[5/6]${NC} Pruning Docker build cache... "
-RECLAIMED=$(docker builder prune -f 2>/dev/null | awk '/Total reclaimed space/ {print $4, $5}')
-echo -e "${GREEN}done${NC} ${DIM}${RECLAIMED:-0B}${NC}"
+# Step 5: skip host image cleanup — step 3 already removed DockLift-owned images.
+# Never run host-wide prune (shared Docker hosts).
+printf "${CYAN}[5/6]${NC} Skipping host image cleanup... "
+echo -e "${GREEN}ok${NC}"
 
 # Step 6: installation directory (database, deployments, backups, certificates)
 printf "${CYAN}[6/6]${NC} Removing $INSTALL_DIR... "
