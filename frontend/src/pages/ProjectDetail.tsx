@@ -16,6 +16,8 @@ import {
   type ProjectWorkspace,
 } from "@/components/project/ServiceSwitcher";
 import { ProjectActionBar } from "@/components/project/ProjectActionBar";
+import { ManagedDatabasePanel } from "@/components/databases/ManagedDatabasePanel";
+import { AttachDatabasePanel } from "@/components/databases/AttachDatabasePanel";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -1090,11 +1092,11 @@ export default function ProjectDetail() {
     <>
       <div>
         <Link
-          to="/"
+          to={project.project_type === "database" ? "/databases" : "/"}
           className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground mb-6 transition-colors"
         >
           <ArrowLeft className="h-4 w-4" />
-          Back to Projects
+          {project.project_type === "database" ? "Back to Databases" : "Back to Projects"}
         </Link>
 
         <div className="mb-8 flex flex-col gap-4 sm:mb-10 md:flex-row md:items-start md:justify-between md:gap-6">
@@ -1494,6 +1496,32 @@ export default function ProjectDetail() {
                 </div>
               </div>
             )}
+
+            {project.project_type === "database" && project.db_engine ? (
+              <div className="mt-6">
+                <ManagedDatabasePanel
+                  databaseId={project.id}
+                  engineLabel={
+                    (
+                      {
+                        postgres: "PostgreSQL",
+                        mysql: "MySQL",
+                        mariadb: "MariaDB",
+                        redis: "Redis",
+                        mongodb: "MongoDB",
+                      } as Record<string, string>
+                    )[project.db_engine] || project.db_engine
+                  }
+                />
+              </div>
+            ) : project.project_type !== "database" ? (
+              <div className="mt-6">
+                <AttachDatabasePanel
+                  appProjectId={project.id}
+                  services={services.map((s) => ({ id: s.id, name: s.name }))}
+                />
+              </div>
+            ) : null}
 
             {/* Quick Stats Grid */}
             <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-5">
