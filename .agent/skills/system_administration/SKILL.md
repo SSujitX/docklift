@@ -69,6 +69,8 @@ A full-featured xterm.js-based interactive terminal providing direct root access
 ### Features
 - **Real-time PTY**: Supports tab completion, history, colors, ncurses (htop/nano).
 - **Root Access**: Session starts in `/root` with full host privileges.
+- **Host strip UI** (`TerminalView`): quiet text actions above the shell — update packages, upgrade Docklift, purge dangling images, reset stack, reboot. No rainbow action cards; shell chrome follows light/dark theme.
+- **Upgrade / package dialogs**: Confirm first (panel goes offline; Docklift upgrade shows Now → Installing version). After start, a wait dialog (Esc/overlay blocked; Dismiss only after countdown or in simulated dev) tells the operator to refresh in ~1–2 minutes. Sidebar “Upgrade now” routes to `/terminal?confirm=upgrade` (does not POST from the rail). Legacy `?action=upgrade` opens the same confirm, not a fake in-progress state.
 - **Resizing**: Bi-directional resize sync between frontend/backend. Resize inputs are validated (cols: 1–500, rows: 1–200) to prevent injection.
 - **Persistence**: Auto-reconnect on network drops.
 - **Security**:
