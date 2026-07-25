@@ -50,7 +50,7 @@ export default function DatabasesPage() {
       <PageHeader
         eyebrow="Deploy"
         title="Databases"
-        description="Dedicated data services running alongside your applications."
+        description="Managed Postgres, MySQL, Redis, and more — private by default, linkable into any app or service."
         icon={Database}
         meta={
           <>
@@ -71,7 +71,7 @@ export default function DatabasesPage() {
               <RefreshCw className="h-4 w-4 text-muted-foreground" />
             </Button>
             <Button
-              onClick={() => navigate("/projects/new")}
+              onClick={() => navigate("/databases/new")}
               className="h-10 bg-brand px-5 font-semibold text-brand-foreground shadow-lg shadow-brand/20 hover:brightness-110"
             >
               <Plus className="h-4 w-4" />
@@ -100,16 +100,16 @@ export default function DatabasesPage() {
           </div>
           <h2 className="mb-3 text-2xl font-bold">No databases yet</h2>
           <p className="mb-8 max-w-md leading-relaxed text-muted-foreground">
-            Create a dedicated database service. PostgreSQL, MySQL, Redis and more run
-            from standard Docker images.
+            One-click official images with volumes and generated credentials. Link into
+            a project or a single service — no public IP:port required.
           </p>
           <Button
-            onClick={() => navigate("/projects/new")}
+            onClick={() => navigate("/databases/new")}
             size="lg"
-            className="h-12 bg-gradient-to-r from-blue-500 to-indigo-600 px-8 font-semibold text-white shadow-xl shadow-blue-500/20 hover:brightness-110"
+            className="h-12 bg-brand px-8 font-semibold text-brand-foreground shadow-xl shadow-brand/20 hover:brightness-110"
           >
             <Sparkles className="h-4 w-4" />
-            Launch Database Service
+            Launch Database
           </Button>
         </div>
       ) : (
