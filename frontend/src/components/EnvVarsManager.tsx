@@ -24,6 +24,7 @@ export function EnvVarsManager({ projectId }: EnvVarsManagerProps) {
   const [newValue, setNewValue] = useState("");
   const [isBuildArg, setIsBuildArg] = useState(true);
   const [isRuntime, setIsRuntime] = useState(true);
+  const [isSecret, setIsSecret] = useState(false);
   const [visibleValues, setVisibleValues] = useState<Set<string>>(new Set());
   const [showBulkImport, setShowBulkImport] = useState(false);
   const [bulkContent, setBulkContent] = useState("");
@@ -62,16 +63,19 @@ export function EnvVarsManager({ projectId }: EnvVarsManagerProps) {
           value: newValue.trim(),
           is_build_arg: isBuildArg,
           is_runtime: isRuntime,
+          is_secret: isSecret,
         }),
       });
 
       if (res.ok) {
         setNewKey("");
         setNewValue("");
+        setIsSecret(false);
         fetchEnvVars();
         toast.success("Environment variable added");
       } else {
-        toast.error("Failed to add variable");
+        const err = await res.json().catch(() => ({}));
+        toast.error((err as { error?: string }).error || "Failed to add variable");
       }
     } catch (error) {
       toast.error("Failed to add variable");
@@ -288,6 +292,21 @@ SESSION_SECRET=your-secret-here
                   <span className="text-[10px] text-muted-foreground">Available to your app</span>
                 </div>
               </div>
+
+              {isBuildArg && (
+                <div className="flex items-center gap-2 group cursor-pointer" onClick={() => setIsSecret(!isSecret)}>
+                  <div className={cn(
+                    "h-4 w-4 rounded border transition-colors flex items-center justify-center",
+                    isSecret ? "bg-rose-500 border-rose-500" : "bg-transparent border-muted-foreground/40"
+                  )}>
+                    {isSecret && <Check className="h-3 w-3 text-white" strokeWidth={4} />}
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-xs font-semibold">BuildKit secret</span>
+                    <span className="text-[10px] text-muted-foreground">Not --build-arg; needs secret mount in Dockerfile</span>
+                  </div>
+                </div>
+              )}
             </div>
 
             <Button 
