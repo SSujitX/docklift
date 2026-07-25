@@ -30,6 +30,11 @@ export function composeProjectName(projectName: string, projectId: string): stri
   return `dl-${dockerSlug(projectName)}-${shortProjectId(projectId)}`;
 }
 
+/** Isolated bridge network for one project's services (+ edge proxy attachment). */
+export function projectNetworkName(projectId: string): string {
+  return `dl-net-${shortProjectId(projectId)}`;
+}
+
 /** Explicit container_name in generated compose files */
 export function serviceContainerName(
   projectName: string,
