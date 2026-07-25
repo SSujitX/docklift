@@ -12,6 +12,7 @@ import { fileURLToPath } from 'url';
 import bcrypt from 'bcrypt';
 import prisma from '../lib/prisma.js';
 import type { AuthenticatedRequest } from '../lib/authMiddleware.js';
+import { requireStepUpPassword } from '../lib/stepUpAuth.js';
 
 const __filenameSystem = fileURLToPath(import.meta.url);
 const __dirnameSystem = dirname(__filenameSystem);
@@ -590,7 +591,6 @@ router.get('/ip', async (req: Request, res: Response) => {
  */
 router.post('/purge', async (req: Request, res: Response) => {
   try {
-    const { requireStepUpPassword } = await import('../lib/stepUpAuth.js');
     if (!(await requireStepUpPassword(req, res))) return;
 
     console.log(`[AUDIT] System purge (DockLift-scoped) from IP: ${req.ip}`);
@@ -638,6 +638,8 @@ router.post('/purge', async (req: Request, res: Response) => {
 // POST /api/system/reboot - Reboot the server
 router.post('/reboot', async (req: Request, res: Response) => {
   try {
+    if (!(await requireStepUpPassword(req, res))) return;
+
     console.log(`[AUDIT] System reboot initiated from IP: ${req.ip}`);
     const isWindows = os.platform() === "win32";
     const isMac = os.platform() === "darwin";
@@ -679,6 +681,8 @@ router.post('/reboot', async (req: Request, res: Response) => {
 // POST /api/system/reset - Reset Docklift services (OS aware)
 router.post('/reset', async (req: Request, res: Response) => {
   try {
+    if (!(await requireStepUpPassword(req, res))) return;
+
     console.log(`[AUDIT] System reset initiated from IP: ${req.ip}`);
     const isWindows = os.platform() === "win32";
     
@@ -894,6 +898,8 @@ router.get('/version', async (req: Request, res: Response) => {
 // POST /api/system/update-system - Run apt update and upgrade on HOST
 router.post('/update-system', async (req: Request, res: Response) => {
   try {
+    if (!(await requireStepUpPassword(req, res))) return;
+
     console.log(`[AUDIT] System update initiated from IP: ${req.ip}`);
     const isWindows = os.platform() === "win32";
     const isMac = os.platform() === "darwin";
@@ -933,6 +939,8 @@ router.post('/update-system', async (req: Request, res: Response) => {
 // POST /api/system/upgrade - Run upgrade script on HOST
 router.post('/upgrade', async (req: Request, res: Response) => {
   try {
+    if (!(await requireStepUpPassword(req, res))) return;
+
     console.log(`[AUDIT] Docklift upgrade initiated from IP: ${req.ip}`);
     const isWindows = os.platform() === "win32";
     const isMac = os.platform() === "darwin";
