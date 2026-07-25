@@ -356,6 +356,7 @@ export default function ProjectDetail() {
   const [baseDirectory, setBaseDirectory] = useState(".");
   const [dockerfilePath, setDockerfilePath] = useState("Dockerfile");
   const [internalPort, setInternalPort] = useState(3000);
+  const [publishHostPort, setPublishHostPort] = useState(false);
   const [buildInitialized, setBuildInitialized] = useState(false);
   const [buildSaving, setBuildSaving] = useState(false);
   const [buildDetecting, setBuildDetecting] = useState(false);
@@ -580,6 +581,7 @@ export default function ProjectDetail() {
     setBaseDirectory(project.base_directory || ".");
     setDockerfilePath(project.dockerfile_path || "Dockerfile");
     setInternalPort(project.internal_port || 3000);
+    setPublishHostPort(Boolean(project.publish_host_port));
     setBuildInitialized(true);
   }, [project, buildInitialized]);
 
@@ -641,12 +643,13 @@ export default function ProjectDetail() {
           base_directory: baseDirectory.trim(),
           dockerfile_path: buildType === "dockerfile" ? dockerfilePath.trim() : null,
           internal_port: internalPort,
+          publish_host_port: publishHostPort,
         }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Failed to save build settings");
       setProject((current) => current ? { ...current, ...data } : current);
-      toast.success("Build settings saved — Deploy to build with them");
+      toast.success("Build settings saved — Deploy to apply networking changes");
       await fetchBuildDetection();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to save build settings");
@@ -1339,15 +1342,15 @@ export default function ProjectDetail() {
                     <Shield className="h-4 w-4 sm:h-5 sm:w-5 text-cyan-500" />
                   </div>
                   <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
-                    Privacy
+                    Network
                   </span>
                 </div>
                 <div className="space-y-0.5 sm:space-y-1">
                   <p className="text-lg sm:text-2xl font-bold tracking-tight">
-                    Isolated
+                    Shared host
                   </p>
                   <p className="text-[10px] sm:text-xs text-muted-foreground">
-                    Network namespace
+                    Same Docker host &amp; bridge (not multi-tenant isolation)
                   </p>
                 </div>
               </Card>
@@ -1745,6 +1748,22 @@ export default function ProjectDetail() {
                     </p>
                   </div>
                 )}
+
+                <label className="flex items-start gap-3 rounded-xl border border-border/40 p-4 cursor-pointer hover:bg-secondary/20">
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    checked={publishHostPort}
+                    onChange={(e) => setPublishHostPort(e.target.checked)}
+                  />
+                  <span>
+                    <span className="block text-sm font-medium">Publish host ports</span>
+                    <span className="block text-[11px] text-muted-foreground mt-1">
+                      Off by default. Traffic should use your domain via nginx-proxy on an
+                      isolated project network. Enable only if you need a raw host port from the pool.
+                    </span>
+                  </span>
+                </label>
 
                 <div className="flex justify-end">
                   <Button onClick={handleSaveBuild} disabled={buildSaving}>
