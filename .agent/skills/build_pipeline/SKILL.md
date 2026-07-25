@@ -63,6 +63,10 @@ only the backend and certbot write there.
 | `DOCKLIFT_FRONTEND_URL` | Public dashboard URL used for GitHub App callbacks |
 | `CERTBOT_EMAIL` / `CERTBOT_STAGING` | Let's Encrypt registration + staging toggle |
 
+### Project app env (multi-service)
+
+`EnvVariable.service_name`: `""` = shared to every service; otherwise the Docker service name (folder). Deploy merges shared + service-scoped (service keys win). UI: multi-service projects use a **Workspace** rail — **All services** owns Deploy / Build / Source / shared Env; a **service** workspace owns that service’s Overview, Env, Domains, Storage, and runtime Logs. Single-service projects keep flat tabs (no rail) with lifecycle actions under the title. **All-services actions** (Redeploy / Restart / Stop / Delete) always affect the whole compose stack — not inside Env/Domains/Storage/Logs tabs.
+
 ## Frontend Dockerfile (`frontend/Dockerfile`)
 
 3-stage: Bun install → Vite build → `nginx:stable-alpine` serving `dist/` on port **3000** (SPA `try_files`).
