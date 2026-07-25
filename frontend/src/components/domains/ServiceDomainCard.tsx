@@ -467,9 +467,13 @@ export function ServiceDomainCard({
             <Globe className="mx-auto h-6 w-6 text-muted-foreground/40" />
             <p className="mt-2 text-sm font-medium">No domain mapped yet</p>
             <p className="mt-1 text-xs text-muted-foreground">
-              {service.port
-                ? `The service stays reachable at http://${serverIP}:${service.port}.`
-                : "Deploy the service to get a port, or add a domain now."}
+              {typeof service.port === "number" &&
+              service.port > 0 &&
+              serverIP &&
+              serverIP !== "..." &&
+              serverIP !== "N/A"
+                ? `Also reachable at http://${serverIP}:${service.port} (host port published).`
+                : "Not public yet — add a domain (preferred), or enable Publish host ports in Build and redeploy."}
             </p>
           </div>
         ) : (
