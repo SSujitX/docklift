@@ -32,6 +32,11 @@ const statusConfig: Record<string, { label: string; colors: string; dot: string 
     colors: "bg-red-500/10 text-red-600 dark:text-red-400 ring-red-500/20",
     dot: "bg-red-500",
   },
+  degraded: {
+    label: "Degraded",
+    colors: "bg-orange-500/10 text-orange-600 dark:text-orange-400 ring-orange-500/20",
+    dot: "bg-orange-500",
+  },
 };
 
 export function StatusBadge({ status, size = "default" }: StatusBadgeProps) {
