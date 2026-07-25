@@ -41,6 +41,16 @@ import { isProjectDeploying, setProjectDeploying } from '../lib/deploymentState.
 import { envForService } from '../lib/envVariables.js';
 import { runCompose } from '../lib/runCompose.js';
 import { syncProjectStatusFromContainers } from '../lib/projectStatusSync.js';
+import {
+  credentialsFromEnvMap,
+  engineCommand,
+  getDatabaseEngine,
+} from '../lib/databaseEngines.js';
+import {
+  disconnectLinkedDatabasesFromApp,
+  reapplyDatabaseLinksForApp,
+  reapplyDatabaseLinksForDatabase,
+} from '../lib/databaseLinks.js';
 
 const router = Router();
 
@@ -565,268 +575,398 @@ async function deployProject(req: Request, res: Response) {
     }
 
     if (cancelledDeployments.has(deployment.id)) throw new Error('Deployment cancelled');
-    const resolvedBuild = resolveProjectBuild(projectPath, {
-      buildType: project.build_type,
-      baseDirectory: project.base_directory,
-      dockerfilePath: project.dockerfile_path,
-      internalPort: project.internal_port,
-    });
-    const buildServices = resolvedBuild.services.map((service) => ({
-      ...service,
-      dockerfile_path: service.dockerfilePath || '[railpack]',
-      context_path: service.contextPath,
-      internal_port: service.internalPort,
-    }));
-    
-    writeLog(`\n${'━'.repeat(50)}\n`);
-    writeLog(`📦 BUILD: ${resolvedBuild.detected}\n`);
-    writeLog(`${'━'.repeat(50)}\n\n`);
 
-    const activeServiceNames = new Set(buildServices.map((service) => service.name));
-    const staleServices = await prisma.service.findMany({
-      where: { project_id: projectId, name: { notIn: [...activeServiceNames] } },
-    });
-    for (const stale of staleServices) {
-      writeLog(`  🧹 Removing stale service: ${stale.name}\n`);
-      await cleanupServiceDomain(stale.id);
-      if (stale.container_name) {
-        spawnSync('docker', ['rm', '-f', stale.container_name], { stdio: 'ignore', shell: false });
-      }
-      if (stale.port != null) {
-        await prisma.port.updateMany({
-          where: { project_id: projectId, port: stale.port },
-          data: { project_id: null, is_locked: false },
-        });
-      }
-      await prisma.service.delete({ where: { id: stale.id } });
+    const isManagedDb =
+      project.project_type === 'database' && Boolean(project.db_engine);
+    const managedEngine = isManagedDb
+      ? getDatabaseEngine(String(project.db_engine))
+      : null;
+    if (isManagedDb && !managedEngine) {
+      throw new Error(`Unknown managed database engine: ${project.db_engine}`);
     }
-    
+
     const publishHostPort = (project as { publish_host_port?: boolean }).publish_host_port === true;
-    if (publishHostPort) {
-      writeLog(`  🔓 Host port publish enabled for this project\n`);
-    } else {
-      writeLog(`  🔒 Host ports off — reach services via domain / nginx-proxy (opt-in publish_host_port)\n`);
-    }
-
-    for (const df of buildServices) {
-      writeLog(`  ${df.builder === 'railpack' ? '🛤️' : '🐳'} ${df.name}: ${df.dockerfile_path}\n`);
-      writeLog(`     Internal port: ${df.internal_port}\n`);
-      
-      let service = await prisma.service.findFirst({
-        where: { project_id: projectId, name: df.name },
-      });
-      
-      if (!service) {
-        const port = publishHostPort ? await allocatePort(projectId) : null;
-        const containerName = serviceContainerName(project.name, projectId, df.name);
-        
-        // If project has a domain and this is the first service being created, assign it
-        const shouldAssignProjectDomain = project.domain && !service && buildServices.indexOf(df) === 0;
-
-        service = await prisma.service.create({
-          data: {
-            project_id: projectId,
-            name: df.name,
-            dockerfile_path: df.dockerfile_path,
-            container_name: containerName,
-            internal_port: df.internal_port,
-            port: port,
-            domain: shouldAssignProjectDomain ? project.domain : null,
-            status: 'building',
-          },
-        });
-        writeLog(
-          `     Assigned new service: ${df.name}${port != null ? ` (Host port: ${port})` : ' (no host port)'}${shouldAssignProjectDomain ? ` with domain: ${project.domain}` : ''}\n`
-        );
-        writeLog(`     Container: ${containerName}\n`);
-      } else {
-        // Migration: rename to slug-based container if needed
-        const targetName = serviceContainerName(project.name, projectId, df.name);
-        
-        if (service.container_name !== targetName) {
-           writeLog(`     🛠️ Migrating container name → ${targetName}\n`);
-           
-           // Force remove the old container name to free up ports
-           // SECURITY: Use spawnSync with argument array to prevent command injection
-           try {
-              writeLog(`     🛑 Removing old container: ${service.container_name}\n`);
-              if (service.container_name) spawnSync('docker', ['rm', '-f', service.container_name], { stdio: 'ignore' });
-           } catch (e) {
-              // Ignore if container doesn't exist
-           }
-
-           service = await prisma.service.update({
-             where: { id: service.id },
-             data: { container_name: targetName }
-           });
-        }
-
-        if (publishHostPort) {
-          if (!service.port) {
-            const port = await allocatePort(projectId);
-            service = await prisma.service.update({
-              where: { id: service.id },
-              data: {
-                port,
-                status: 'building',
-                dockerfile_path: df.dockerfile_path,
-                internal_port: df.internal_port,
-              },
-            });
-            writeLog(`     Assigned host port to service: ${df.name} (Port: ${port})\n`);
-          } else {
-            await prisma.service.update({
-              where: { id: service.id },
-              data: {
-                status: 'building',
-                dockerfile_path: df.dockerfile_path,
-                internal_port: df.internal_port,
-              },
-            });
-            writeLog(`     Updating existing service: ${df.name} (Host port: ${service.port})\n`);
-          }
-        } else {
-          // Release any previously allocated host ports when publish is off
-          if (service.port != null) {
-            await prisma.port.updateMany({
-              where: { project_id: projectId, port: service.port },
-              data: { project_id: null, is_locked: false },
-            });
-            service = await prisma.service.update({
-              where: { id: service.id },
-              data: {
-                port: null,
-                status: 'building',
-                dockerfile_path: df.dockerfile_path,
-                internal_port: df.internal_port,
-              },
-            });
-            writeLog(`     Updating existing service: ${df.name} (host port released)\n`);
-          } else {
-            await prisma.service.update({
-              where: { id: service.id },
-              data: {
-                status: 'building',
-                dockerfile_path: df.dockerfile_path,
-                internal_port: df.internal_port,
-              },
-            });
-            writeLog(`     Updating existing service: ${df.name}\n`);
-          }
-        }
-      }
-      
-      servicesData.push({
-        ...df,
-        port: service.port,
-        container_name: service.container_name,
-      });
-    }
-    
-    writeLog(`\n${'─'.repeat(40)}\n`);
-    writeLog(`📝 Generating docker-compose.yml...\n`);
-    
     const envVars = await prisma.envVariable.findMany({
       where: { project_id: projectId },
     });
-    
-    if (envVars.length > 0) {
-      const sharedCount = envVars.filter((v) => !v.service_name).length;
-      const scopedCount = envVars.length - sharedCount;
-      writeLog(
-        `   🔐 Including ${envVars.length} environment variable(s)` +
-          (scopedCount > 0
-            ? ` (${sharedCount} shared, ${scopedCount} service-scoped)\n`
-            : `\n`),
-      );
-    }
-
-    // Validate public build args / secrets per service (shared + that service only)
-    for (const df of buildServices.filter((item) => item.builder === 'dockerfile')) {
-      const scoped = envForService(envVars, df.name);
-      const publicBuildArgKeys = scoped
-        .filter((v) => v.is_build_arg && !(v as { is_secret?: boolean }).is_secret)
-        .map((v) => v.key);
-      const secretBuildKeys = scoped
-        .filter((v) => v.is_build_arg && (v as { is_secret?: boolean }).is_secret)
-        .map((v) => v.key);
-      if (publicBuildArgKeys.length > 0) {
-        const missingArgs = validateDockerBuildArgs(
-          path.join(projectPath, df.dockerfile_path),
-          publicBuildArgKeys,
-        );
-        if (missingArgs.length > 0) {
-          writeLog(`\n⚠️  WARNING: The following build arguments are configured but missing 'ARG' instructions in ${df.dockerfile_path}:\n`);
-          missingArgs.forEach((arg) => writeLog(`    - ${arg}\n`));
-          writeLog(`    These variables will NOT be available during the build process! Please add "ARG ${missingArgs[0]}" to your Dockerfile.\n\n`);
-        }
-      }
-      if (secretBuildKeys.length > 0) {
-        const missingSecrets: string[] = [];
-        const dfPath = path.join(projectPath, df.dockerfile_path);
-        for (const key of secretBuildKeys) {
-          if (!dockerfileMountsSecret(dfPath, key)) {
-            missingSecrets.push(`${key} (in ${df.dockerfile_path})`);
-          }
-        }
-        if (missingSecrets.length > 0) {
-          writeLog(`\n❌ PREFLIGHT FAILED: secret build vars need Dockerfile mounts:\n`);
-          for (const item of missingSecrets) {
-            writeLog(`    - ${item}\n`);
-          }
-          writeLog(`    Add: RUN --mount=type=secret,id=<KEY> …\n`);
-          throw new Error(
-            `Secret build vars missing Dockerfile mounts: ${missingSecrets.join(', ')}`,
-          );
-        }
-      }
-    }
-    
-    const statePath = path.join(config.deploymentsPath, '.docklift', projectId);
-    const composePath = path.join(statePath, 'compose.yml');
     const persistentVolumes = await prisma.persistentVolume.findMany({
       where: { project_id: projectId },
       orderBy: { created_at: 'asc' },
     });
+    const statePath = path.join(config.deploymentsPath, '.docklift', projectId);
+    const composePath = path.join(statePath, 'compose.yml');
     const runtimeServices: Array<{
       name: string;
       image: string;
       internal_port: number;
-      port: number;
+      port: number | null;
       container_name: string;
       volumes?: Array<{ key: string; name: string; mountPath: string }>;
+      command?: string[];
+      injectPortEnv?: boolean;
     }> = [];
-    for (const serviceData of servicesData) {
-      if (cancelledDeployments.has(deployment.id)) throw new Error('Deployment cancelled');
-      const buildService = resolvedBuild.services.find((item) => item.name === serviceData.name);
-      if (!buildService) throw new Error(`Build plan missing service ${serviceData.name}`);
-      const imageTag = `docklift-${projectId.slice(0, 8)}-${dockerSlug(serviceData.name)}:${deployment.id.slice(0, 8)}`;
-      writeLog(`\n${'─'.repeat(40)}\n`);
-      const serviceEnv = envForService(envVars, serviceData.name);
-      await buildServiceImage({
-        projectPath,
-        statePath,
-        service: buildService,
-        imageTag,
-        envVars: serviceEnv,
-        writeLog,
-        onProcess: (child) => registerBuild(projectId, child, deployment.id),
+
+    if (isManagedDb && managedEngine) {
+      writeLog(`\n${'━'.repeat(50)}\n`);
+      writeLog(`🗄️  MANAGED DATABASE: ${managedEngine.label}\n`);
+      writeLog(`   Image: ${managedEngine.image}\n`);
+      writeLog(`${'━'.repeat(50)}\n\n`);
+      if (publishHostPort) {
+        writeLog(`  🔓 Host port publish enabled (exposes the DB on the host — prefer linking)\n`);
+      } else {
+        writeLog(`  🔒 Host ports off — link this database to apps (Docker DNS), or opt-in publish\n`);
+      }
+
+      let service = await prisma.service.findFirst({
+        where: { project_id: projectId, name: managedEngine.serviceName },
       });
-      clearBuild(projectId, deployment.id);
+      const containerName = serviceContainerName(
+        project.name,
+        projectId,
+        managedEngine.serviceName,
+      );
+      if (!service) {
+        const port = publishHostPort ? await allocatePort(projectId) : null;
+        service = await prisma.service.create({
+          data: {
+            project_id: projectId,
+            name: managedEngine.serviceName,
+            dockerfile_path: `[managed:${managedEngine.id}]`,
+            container_name: containerName,
+            internal_port: managedEngine.port,
+            port,
+            status: 'building',
+          },
+        });
+      } else {
+        const data: {
+          status: string;
+          dockerfile_path: string;
+          internal_port: number;
+          container_name: string;
+          port?: number | null;
+        } = {
+          status: 'building',
+          dockerfile_path: `[managed:${managedEngine.id}]`,
+          internal_port: managedEngine.port,
+          container_name: containerName,
+        };
+        if (service.container_name !== containerName && service.container_name) {
+          writeLog(`     🛠️ Migrating container name → ${containerName}\n`);
+          spawnSync('docker', ['rm', '-f', service.container_name], {
+            stdio: 'ignore',
+            shell: false,
+          });
+        }
+        if (publishHostPort) {
+          if (service.port == null) {
+            data.port = await allocatePort(projectId);
+          }
+        } else if (service.port != null) {
+          await prisma.port.updateMany({
+            where: { project_id: projectId, port: service.port },
+            data: { project_id: null, is_locked: false },
+          });
+          data.port = null;
+        }
+        service = await prisma.service.update({ where: { id: service.id }, data });
+      }
+
+      writeLog(`  🐳 ${service.name}: ${managedEngine.image}\n`);
+      writeLog(`     Internal port: ${managedEngine.port}\n`);
+      writeLog(`     Container: ${service.container_name}\n`);
+
+      writeLog(`\n${'─'.repeat(40)}\n`);
+      writeLog(`📥 Pulling ${managedEngine.image}...\n`);
+      const pull = spawnSync('docker', ['pull', managedEngine.image], {
+        encoding: 'utf8',
+        shell: false,
+        timeout: 600_000,
+      });
+      if (pull.stdout) writeLog(pull.stdout);
+      if (pull.stderr) writeLog(pull.stderr);
+      if (pull.status !== 0) {
+        throw new Error(`Failed to pull ${managedEngine.image}`);
+      }
+      writeLog(`✅ Image ready\n`);
+
+      const envMap = Object.fromEntries(envVars.map((v) => [v.key, v.value]));
+      const creds = credentialsFromEnvMap(managedEngine, envMap);
+      if (!creds) {
+        throw new Error('Managed database credentials missing from project env');
+      }
+      const cmd = engineCommand(managedEngine, creds);
+
+      servicesData.push({
+        name: service.name,
+        dockerfile_path: service.dockerfile_path,
+        internal_port: managedEngine.port,
+        port: service.port,
+        container_name: service.container_name,
+      });
       runtimeServices.push({
-        name: serviceData.name,
-        image: imageTag,
-        internal_port: serviceData.internal_port,
-        port: serviceData.port,
-        container_name: serviceData.container_name,
+        name: service.name,
+        image: managedEngine.image,
+        internal_port: managedEngine.port,
+        port: service.port,
+        container_name: service.container_name!,
+        command: cmd || undefined,
+        injectPortEnv: false,
         volumes: persistentVolumes
-          .filter((volume) => volume.service_name === serviceData.name)
+          .filter((volume) => volume.service_name === service!.name)
           .map((volume, index) => ({
-            key: storageVolumeComposeKey(serviceData.name, index, volume.name),
+            key: storageVolumeComposeKey(service!.name, index, volume.name),
             name: volume.name,
             mountPath: volume.mount_path,
           })),
       });
+    } else {
+      const resolvedBuild = resolveProjectBuild(projectPath, {
+        buildType: project.build_type,
+        baseDirectory: project.base_directory,
+        dockerfilePath: project.dockerfile_path,
+        internalPort: project.internal_port,
+      });
+      const buildServices = resolvedBuild.services.map((service) => ({
+        ...service,
+        dockerfile_path: service.dockerfilePath || '[railpack]',
+        context_path: service.contextPath,
+        internal_port: service.internalPort,
+      }));
+
+      writeLog(`\n${'━'.repeat(50)}\n`);
+      writeLog(`📦 BUILD: ${resolvedBuild.detected}\n`);
+      writeLog(`${'━'.repeat(50)}\n\n`);
+
+      const activeServiceNames = new Set(buildServices.map((service) => service.name));
+      const staleServices = await prisma.service.findMany({
+        where: { project_id: projectId, name: { notIn: [...activeServiceNames] } },
+      });
+      for (const stale of staleServices) {
+        writeLog(`  🧹 Removing stale service: ${stale.name}\n`);
+        await cleanupServiceDomain(stale.id);
+        if (stale.container_name) {
+          spawnSync('docker', ['rm', '-f', stale.container_name], { stdio: 'ignore', shell: false });
+        }
+        if (stale.port != null) {
+          await prisma.port.updateMany({
+            where: { project_id: projectId, port: stale.port },
+            data: { project_id: null, is_locked: false },
+          });
+        }
+        await prisma.service.delete({ where: { id: stale.id } });
+      }
+
+      if (publishHostPort) {
+        writeLog(`  🔓 Host port publish enabled for this project\n`);
+      } else {
+        writeLog(`  🔒 Host ports off — reach services via domain / nginx-proxy (opt-in publish_host_port)\n`);
+      }
+
+      for (const df of buildServices) {
+        writeLog(`  ${df.builder === 'railpack' ? '🛤️' : '🐳'} ${df.name}: ${df.dockerfile_path}\n`);
+        writeLog(`     Internal port: ${df.internal_port}\n`);
+
+        let service = await prisma.service.findFirst({
+          where: { project_id: projectId, name: df.name },
+        });
+
+        if (!service) {
+          const port = publishHostPort ? await allocatePort(projectId) : null;
+          const containerName = serviceContainerName(project.name, projectId, df.name);
+
+          const shouldAssignProjectDomain = project.domain && buildServices.indexOf(df) === 0;
+
+          service = await prisma.service.create({
+            data: {
+              project_id: projectId,
+              name: df.name,
+              dockerfile_path: df.dockerfile_path,
+              container_name: containerName,
+              internal_port: df.internal_port,
+              port: port,
+              domain: shouldAssignProjectDomain ? project.domain : null,
+              status: 'building',
+            },
+          });
+          writeLog(
+            `     Assigned new service: ${df.name}${port != null ? ` (Host port: ${port})` : ' (no host port)'}${shouldAssignProjectDomain ? ` with domain: ${project.domain}` : ''}\n`
+          );
+          writeLog(`     Container: ${containerName}\n`);
+        } else {
+          const targetName = serviceContainerName(project.name, projectId, df.name);
+
+          if (service.container_name !== targetName) {
+            writeLog(`     🛠️ Migrating container name → ${targetName}\n`);
+
+            try {
+              writeLog(`     🛑 Removing old container: ${service.container_name}\n`);
+              if (service.container_name) spawnSync('docker', ['rm', '-f', service.container_name], { stdio: 'ignore' });
+            } catch {
+              // Ignore if container doesn't exist
+            }
+
+            service = await prisma.service.update({
+              where: { id: service.id },
+              data: { container_name: targetName },
+            });
+          }
+
+          if (publishHostPort) {
+            if (!service.port) {
+              const port = await allocatePort(projectId);
+              service = await prisma.service.update({
+                where: { id: service.id },
+                data: {
+                  port,
+                  status: 'building',
+                  dockerfile_path: df.dockerfile_path,
+                  internal_port: df.internal_port,
+                },
+              });
+              writeLog(`     Assigned host port to service: ${df.name} (Port: ${port})\n`);
+            } else {
+              await prisma.service.update({
+                where: { id: service.id },
+                data: {
+                  status: 'building',
+                  dockerfile_path: df.dockerfile_path,
+                  internal_port: df.internal_port,
+                },
+              });
+              writeLog(`     Updating existing service: ${df.name} (Host port: ${service.port})\n`);
+            }
+          } else {
+            if (service.port != null) {
+              await prisma.port.updateMany({
+                where: { project_id: projectId, port: service.port },
+                data: { project_id: null, is_locked: false },
+              });
+              service = await prisma.service.update({
+                where: { id: service.id },
+                data: {
+                  port: null,
+                  status: 'building',
+                  dockerfile_path: df.dockerfile_path,
+                  internal_port: df.internal_port,
+                },
+              });
+              writeLog(`     Updating existing service: ${df.name} (host port released)\n`);
+            } else {
+              await prisma.service.update({
+                where: { id: service.id },
+                data: {
+                  status: 'building',
+                  dockerfile_path: df.dockerfile_path,
+                  internal_port: df.internal_port,
+                },
+              });
+              writeLog(`     Updating existing service: ${df.name}\n`);
+            }
+          }
+        }
+
+        servicesData.push({
+          ...df,
+          port: service.port,
+          container_name: service.container_name,
+        });
+      }
+
+      writeLog(`\n${'─'.repeat(40)}\n`);
+      writeLog(`📝 Generating docker-compose.yml...\n`);
+
+      if (envVars.length > 0) {
+        const sharedCount = envVars.filter((v) => !v.service_name).length;
+        const scopedCount = envVars.length - sharedCount;
+        writeLog(
+          `   🔐 Including ${envVars.length} environment variable(s)` +
+            (scopedCount > 0
+              ? ` (${sharedCount} shared, ${scopedCount} service-scoped)\n`
+              : `\n`),
+        );
+      }
+
+      for (const df of buildServices.filter((item) => item.builder === 'dockerfile')) {
+        const scoped = envForService(envVars, df.name);
+        const publicBuildArgKeys = scoped
+          .filter((v) => v.is_build_arg && !(v as { is_secret?: boolean }).is_secret)
+          .map((v) => v.key);
+        const secretBuildKeys = scoped
+          .filter((v) => v.is_build_arg && (v as { is_secret?: boolean }).is_secret)
+          .map((v) => v.key);
+        if (publicBuildArgKeys.length > 0) {
+          const missingArgs = validateDockerBuildArgs(
+            path.join(projectPath, df.dockerfile_path),
+            publicBuildArgKeys,
+          );
+          if (missingArgs.length > 0) {
+            writeLog(`\n⚠️  WARNING: The following build arguments are configured but missing 'ARG' instructions in ${df.dockerfile_path}:\n`);
+            missingArgs.forEach((arg) => writeLog(`    - ${arg}\n`));
+            writeLog(`    These variables will NOT be available during the build process! Please add "ARG ${missingArgs[0]}" to your Dockerfile.\n\n`);
+          }
+        }
+        if (secretBuildKeys.length > 0) {
+          const missingSecrets: string[] = [];
+          const dfPath = path.join(projectPath, df.dockerfile_path);
+          for (const key of secretBuildKeys) {
+            if (!dockerfileMountsSecret(dfPath, key)) {
+              missingSecrets.push(`${key} (in ${df.dockerfile_path})`);
+            }
+          }
+          if (missingSecrets.length > 0) {
+            writeLog(`\n❌ PREFLIGHT FAILED: secret build vars need Dockerfile mounts:\n`);
+            for (const item of missingSecrets) {
+              writeLog(`    - ${item}\n`);
+            }
+            writeLog(`    Add: RUN --mount=type=secret,id=<KEY> …\n`);
+            throw new Error(
+              `Secret build vars missing Dockerfile mounts: ${missingSecrets.join(', ')}`,
+            );
+          }
+        }
+      }
+
+      for (const serviceData of servicesData) {
+        if (cancelledDeployments.has(deployment.id)) throw new Error('Deployment cancelled');
+        const buildService = resolvedBuild.services.find((item) => item.name === serviceData.name);
+        if (!buildService) throw new Error(`Build plan missing service ${serviceData.name}`);
+        const imageTag = `docklift-${projectId.slice(0, 8)}-${dockerSlug(serviceData.name)}:${deployment.id.slice(0, 8)}`;
+        writeLog(`\n${'─'.repeat(40)}\n`);
+        const serviceEnv = envForService(envVars, serviceData.name);
+        await buildServiceImage({
+          projectPath,
+          statePath,
+          service: buildService,
+          imageTag,
+          envVars: serviceEnv,
+          writeLog,
+          onProcess: (child) => registerBuild(projectId, child, deployment.id),
+        });
+        clearBuild(projectId, deployment.id);
+        runtimeServices.push({
+          name: serviceData.name,
+          image: imageTag,
+          internal_port: serviceData.internal_port,
+          port: serviceData.port,
+          container_name: serviceData.container_name,
+          volumes: persistentVolumes
+            .filter((volume) => volume.service_name === serviceData.name)
+            .map((volume, index) => ({
+              key: storageVolumeComposeKey(serviceData.name, index, volume.name),
+              name: volume.name,
+              mountPath: volume.mount_path,
+            })),
+        });
+      }
+    }
+
+    if (isManagedDb) {
+      writeLog(`\n${'─'.repeat(40)}\n`);
+      writeLog(`📝 Generating docker-compose.yml...\n`);
+      if (envVars.length > 0) {
+        writeLog(`   🔐 Including ${envVars.length} database credential env var(s)\n`);
+      }
     }
     if (cancelledDeployments.has(deployment.id)) throw new Error('Deployment cancelled');
     generateRuntimeCompose(
@@ -922,15 +1062,22 @@ async function deployProject(req: Request, res: Response) {
       success = code === 0;
       
       if (success) {
+        // Managed DBs are linked over Docker DNS — proxy attach is best-effort only.
         try {
           await dockerService.connectProxyToProjectNetwork(projectId);
           writeLog(`🔗 Edge proxy attached to project network\n`);
         } catch (netErr: any) {
-          success = false;
-          writeLog(
-            `\n❌ Edge proxy attach FAILED: ${netErr?.message || 'failed'}\n` +
-              `   Domains will NOT be activated (containers may still be running).\n`
-          );
+          if (isManagedDb) {
+            writeLog(
+              `⚠️ Edge proxy attach skipped/failed (OK for internal databases): ${netErr?.message || 'failed'}\n`,
+            );
+          } else {
+            success = false;
+            writeLog(
+              `\n❌ Edge proxy attach FAILED: ${netErr?.message || 'failed'}\n` +
+                `   Domains will NOT be activated (containers may still be running).\n`
+            );
+          }
         }
       }
 
@@ -941,16 +1088,35 @@ async function deployProject(req: Request, res: Response) {
         writeLog(`\n${'━'.repeat(50)}\n`);
         writeLog(`✅ DEPLOY SUCCESSFUL!\n`);
         writeLog(`${'━'.repeat(50)}\n\n`);
-        writeLog(`🌐 ENDPOINTS:\n`);
-        let anyHost = false;
-        for (const svc of servicesData) {
-          if (svc.port) {
-            anyHost = true;
-            writeLog(`  📍 ${svc.name}: http://${host}:${svc.port}\n`);
+        if (isManagedDb && managedEngine) {
+          writeLog(`🗄️  ${managedEngine.label} is running privately on the project network.\n`);
+          writeLog(`   Link it from /databases or a project’s Attach database panel.\n`);
+          writeLog(`   Prefer linking over publishing host ports.\n`);
+        } else {
+          writeLog(`🌐 ENDPOINTS:\n`);
+          let anyHost = false;
+          for (const svc of servicesData) {
+            if (svc.port) {
+              anyHost = true;
+              writeLog(`  📍 ${svc.name}: http://${host}:${svc.port}\n`);
+            }
+          }
+          if (!anyHost) {
+            writeLog(`  📍 Host ports disabled — use your custom domain (nginx-proxy → container DNS)\n`);
           }
         }
-        if (!anyHost) {
-          writeLog(`  📍 Host ports disabled — use your custom domain (nginx-proxy → container DNS)\n`);
+
+        try {
+          if (isManagedDb) {
+            await reapplyDatabaseLinksForDatabase(projectId);
+            writeLog(`🔗 Re-applied database network links\n`);
+          } else {
+            await reapplyDatabaseLinksForApp(projectId);
+          }
+        } catch (linkErr: unknown) {
+          writeLog(
+            `⚠️ Link re-apply warning: ${linkErr instanceof Error ? linkErr.message : String(linkErr)}\n`,
+          );
         }
 
         writeLog(`\n🧹 Post-deploy cleanup...\n`);
@@ -1120,6 +1286,17 @@ router.post('/:projectId/stop', async (req: Request, res: Response) => {
 
     writeLog(`\n${'━'.repeat(50)}\n🛑 STOPPING PROJECT\n📅 ${timestamp}\n${'━'.repeat(50)}\n\n`);
 
+    if (project.project_type !== 'database') {
+      writeLog(`🔌 Detaching linked databases from project network...\n`);
+      try {
+        await disconnectLinkedDatabasesFromApp(projectId);
+      } catch (err) {
+        writeLog(
+          `⚠️ Link detach warning: ${err instanceof Error ? err.message : String(err)}\n`,
+        );
+      }
+    }
+
     // Proxy stays attached across deploys; disconnect so compose can remove the network
     writeLog(`🔌 Disconnecting edge proxy from project network...\n`);
     await dockerService.disconnectProxyFromProjectNetwork(projectId);
@@ -1164,13 +1341,29 @@ router.post('/:projectId/stop', async (req: Request, res: Response) => {
       }
     }
 
-    // Containers may still be running — reattach proxy so domains keep working
+    // Containers may still be running — restore proxy + linked DB DNS
     if (!success) {
       try {
         await dockerService.connectProxyToProjectNetwork(projectId);
         writeLog(`🔗 Reconnected edge proxy after failed stop (app may still be running)\n`);
       } catch (reErr: any) {
         writeLog(`⚠️ Could not reconnect edge proxy: ${reErr?.message || reErr}\n`);
+      }
+      if (project.project_type !== 'database') {
+        try {
+          const relink = await reapplyDatabaseLinksForApp(projectId);
+          if (relink.failed === 0) {
+            writeLog(`🔗 Re-attached ${relink.ok} linked database(s) after failed stop\n`);
+          } else {
+            writeLog(
+              `⚠️ Re-attached ${relink.ok} linked database(s); ${relink.failed} failed after stop\n`,
+            );
+          }
+        } catch (linkErr: unknown) {
+          writeLog(
+            `⚠️ Could not re-attach linked databases: ${linkErr instanceof Error ? linkErr.message : String(linkErr)}\n`,
+          );
+        }
       }
     }
 
@@ -1384,6 +1577,17 @@ router.post('/:projectId/cancel', async (req: Request, res: Response) => {
       res.write(`ℹ️ No active deploy row — tearing down containers; history left unchanged.\n`);
     }
 
+    if (project.project_type !== 'database') {
+      res.write(`🔌 Detaching linked databases from project network...\n`);
+      try {
+        await disconnectLinkedDatabasesFromApp(projectId);
+      } catch (err) {
+        res.write(
+          `⚠️ Link detach warning: ${err instanceof Error ? err.message : String(err)}\n`,
+        );
+      }
+    }
+
     // Disconnect proxy before down — otherwise Docker cannot remove the project network
     await dockerService.disconnectProxyFromProjectNetwork(projectId);
 
@@ -1444,6 +1648,22 @@ router.post('/:projectId/cancel', async (req: Request, res: Response) => {
         res.write(`🔗 Reconnected edge proxy after failed cancel teardown\n`);
       } catch (reErr: any) {
         res.write(`⚠️ Could not reconnect edge proxy: ${reErr?.message || reErr}\n`);
+      }
+      if (project.project_type !== 'database') {
+        try {
+          const relink = await reapplyDatabaseLinksForApp(projectId);
+          if (relink.failed === 0) {
+            res.write(`🔗 Re-attached ${relink.ok} linked database(s) after failed cancel\n`);
+          } else {
+            res.write(
+              `⚠️ Re-attached ${relink.ok} linked database(s); ${relink.failed} failed after cancel\n`,
+            );
+          }
+        } catch (linkErr: unknown) {
+          res.write(
+            `⚠️ Could not re-attach linked databases: ${linkErr instanceof Error ? linkErr.message : String(linkErr)}\n`,
+          );
+        }
       }
     }
 
