@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 
 const ACTION =
-  "h-9 gap-1.5 rounded-lg px-3 text-xs sm:text-sm font-medium shadow-none border transition-colors";
+  "h-9 gap-1.5 rounded-lg px-3.5 text-xs sm:text-sm font-semibold shadow-none border transition-colors";
 
 const ACTION_PRIMARY =
   `${ACTION} bg-brand text-brand-foreground border-transparent hover:bg-brand hover:brightness-110 hover:text-brand-foreground`;
@@ -21,8 +21,13 @@ const ACTION_PRIMARY =
 const ACTION_SECONDARY =
   `${ACTION} bg-background text-foreground border-border hover:bg-secondary hover:text-foreground`;
 
+/** Quiet danger (Delete) — visible border + tint, not ghost-grey. */
 const ACTION_DANGER =
-  `${ACTION} bg-background text-destructive border-border hover:bg-destructive/10 hover:text-destructive hover:border-destructive/35`;
+  `${ACTION} border-destructive/45 bg-destructive/10 text-destructive hover:bg-destructive/18 hover:border-destructive/60 hover:text-destructive`;
+
+/** Solid danger (Cancel Build) — must read clearly while a build is running. */
+const ACTION_DANGER_SOLID =
+  `${ACTION} border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/90 hover:text-destructive-foreground`;
 
 export type ProjectLifecycleStatus =
   | "running"
@@ -39,6 +44,8 @@ interface ProjectActionBarProps {
   onAction: (action: string) => void;
   /** Multi-service: make “all services” explicit so service workspace isn’t confused. */
   multiService?: boolean;
+  /** Header: right-aligned cluster next to the title (single-service). */
+  placement?: "header" | "panel";
   className?: string;
 }
 
@@ -48,18 +55,22 @@ export function ProjectActionBar({
   currentAction,
   onAction,
   multiService = false,
+  placement = "panel",
   className,
 }: ProjectActionBarProps) {
   const isLive = status === "running" || status === "degraded";
+  const isHeader = placement === "header";
 
   return (
     <div
       className={cn(
-        "flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4",
+        multiService && !isHeader
+          ? "flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
+          : "flex items-center justify-end",
         className,
       )}
     >
-      {multiService && (
+      {multiService && !isHeader && (
         <div className="min-w-0">
           <p className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
             <Layers className="h-3 w-3" />
@@ -79,7 +90,12 @@ export function ProjectActionBar({
             ? "Actions for all services in this project"
             : "Project actions"
         }
-        className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center sm:justify-end"
+        className={cn(
+          "flex flex-wrap items-center gap-2",
+          isHeader
+            ? "w-full justify-stretch sm:w-auto sm:justify-end"
+            : "w-full justify-end sm:w-auto",
+        )}
       >
         {isLive ? (
           <>
@@ -89,7 +105,10 @@ export function ProjectActionBar({
               size="sm"
               onClick={() => onAction("redeploy")}
               disabled={actionLoading}
-              className={cn(ACTION_PRIMARY, "w-full sm:w-auto")}
+              className={cn(
+                ACTION_PRIMARY,
+                isHeader && "min-w-0 flex-1 sm:flex-none",
+              )}
             >
               {currentAction === "redeploy" ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -104,7 +123,10 @@ export function ProjectActionBar({
               size="sm"
               onClick={() => onAction("restart")}
               disabled={actionLoading}
-              className={cn(ACTION_SECONDARY, "w-full sm:w-auto")}
+              className={cn(
+                ACTION_SECONDARY,
+                isHeader && "min-w-0 flex-1 sm:flex-none",
+              )}
             >
               {currentAction === "restart" ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -119,7 +141,10 @@ export function ProjectActionBar({
               size="sm"
               onClick={() => onAction("stop")}
               disabled={actionLoading}
-              className={cn(ACTION_SECONDARY, "w-full sm:w-auto")}
+              className={cn(
+                ACTION_SECONDARY,
+                isHeader && "min-w-0 flex-1 sm:flex-none",
+              )}
             >
               {currentAction === "stop" ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -137,8 +162,8 @@ export function ProjectActionBar({
             onClick={() => onAction("cancel")}
             disabled={currentAction === "cancel"}
             className={cn(
-              ACTION_DANGER,
-              "col-span-2 w-full sm:col-span-1 sm:w-auto",
+              ACTION_DANGER_SOLID,
+              isHeader && "min-w-0 flex-1 sm:flex-none",
             )}
           >
             {currentAction === "cancel" ? (
@@ -157,7 +182,7 @@ export function ProjectActionBar({
             disabled={actionLoading}
             className={cn(
               ACTION_PRIMARY,
-              "col-span-2 w-full sm:col-span-1 sm:w-auto",
+              isHeader && "min-w-0 flex-1 sm:flex-none",
             )}
           >
             {currentAction === "deploy" ? (
@@ -177,9 +202,7 @@ export function ProjectActionBar({
           disabled={actionLoading}
           className={cn(
             ACTION_DANGER,
-            isLive
-              ? "w-full sm:w-auto"
-              : "col-span-2 w-full sm:col-span-1 sm:w-auto",
+            isHeader && "min-w-0 flex-1 sm:flex-none",
           )}
           title="Delete project"
         >
