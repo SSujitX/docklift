@@ -54,7 +54,7 @@ elements and `top-20` for spaced ones.
 
 | Component | Location | Purpose |
 |-----------|----------|---------|
-| `LogViewer.tsx` | `components/` | Shared log viewer |
+| `LogViewer.tsx` | `components/` | Shared log viewer (search, copy, download, clear, fullscreen) — used for project/service runtime logs and System Logs |
 | `SystemLogsPanel.tsx` | `components/` | SSE system logs |
 | `TerminalView.tsx` | `components/` | xterm.js + WS terminal |
 | `FileEditor.tsx` | `components/` | Monaco editor |
