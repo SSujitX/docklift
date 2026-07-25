@@ -13,7 +13,61 @@ Docklift runs **two** nginx containers. Keep their roles straight:
 | `docklift-nginx-proxy` | `:80`, `:443` (host) | **Public edge** — user app domains, the panel domain, TLS termination |
 | `docklift-certbot` | — | ACME HTTP-01 issuance + renewal every 12h |
 
-Both sit on the `docklift_network` bridge (IPv4 `172.28.0.0/16`, IPv6 `fd12:3456:789a::/64`).
+## Dashboard bind (`DASHBOARD_BIND`)
+
+Default in `docker-compose.yml`: **`0.0.0.0:8080`** so a fresh install is reachable at
+`http://SERVER_IP:8080`. The installer prints that URL plus the one-time **setup code**
+(`data/.bootstrap-secret`). First account creation still requires that secret — finding the IP alone
+must not claim the panel.
+
+Optional hardening (operator choice):
+- Add an HTTPS panel domain under **Settings → Domain**
+- Firewall / VPN in front of `:8080`
+- Set `DASHBOARD_BIND=127.0.0.1` for localhost-only access
+
+Do **not** market raw HTTP as private or encrypted. Do **not** force localhost by default — that
+breaks intended server install UX.
+
+## Network isolation (user projects)
+
+Control-plane services stay on **`docklift_network`**.
+
+Each deployed project gets its **own bridge network** named `dl-net-<shortProjectId>`
+(`projectNetworkName()` in `lib/naming.ts`). Generated runtime compose attaches app containers only
+to that network, with labels:
+
+- `com.docklift.managed=true`
+- `com.docklift.project=<projectId>`
+- `com.docklift.service=<serviceName>`
+
+After `compose up`, the backend calls `connectProxyToProjectNetwork(projectId)` so
+`docklift-nginx-proxy` can resolve `container_name` via Docker DNS. That call **throws** on failure —
+deploy must not report success or activate domains if attach failed. Control-plane containers are
+**not** joined to project networks.
+
+Before stop / cancel / delete `compose down`, call `disconnectProxyFromProjectNetwork()` so Docker
+can remove the project network. On delete, `teardownProjectNetwork()` also removes the network.
+
+### Upstream routing (apps)
+
+Proxy location templates in `nginxSsl.ts` → `buildServiceProxyLocation()` use:
+
+```nginx
+set $target_<id> <container_name>;
+proxy_pass http://$target_<id>:<internal_port>;
+```
+
+with `resolver 127.0.0.11` (Docker embedded DNS). **Do not** route user apps through
+`host.docker.internal:<published-port>` for normal domain traffic.
+
+### Host ports (opt-in)
+
+`Project.publish_host_port` defaults to **`false`**. When false, runtime compose publishes **no**
+host ports — traffic reaches apps via domain → nginx-proxy → project network.
+
+When true, ports are allocated from `PORT_RANGE_*` and published as `host:internal`. Toggle lives in
+project Build Settings. Never bind user apps to `127.0.0.1` as a substitute for isolation — that
+breaks gateway routing unless the proxy model is redesigned.
 
 ## Key Files
 
@@ -27,6 +81,8 @@ Both sit on the `docklift_network` bridge (IPv4 `172.28.0.0/16`, IPv6 `fd12:3456
 | `nginx-proxy/certbot/conf` | `/etc/letsencrypt` — certificates (RO in proxy, RW in backend) |
 | `backend/src/services/nginx.ts` | Writes vhosts, reloads nginx, reconciles orphans |
 | `backend/src/services/nginxSsl.ts` | Server-block templates (`buildHttpHttpsServers`) |
+| `backend/src/services/compose.ts` | Runtime compose: project network, labels, limits, opt-in ports |
+| `backend/src/services/docker.ts` | `connectProxyToProjectNetwork` (throws) / `disconnectProxyFromProjectNetwork` / `teardownProjectNetwork` |
 | `backend/src/services/certs.ts` | Issuance, status, renewal watcher, error summarizing |
 
 ## How Routing Works
@@ -51,6 +107,7 @@ Both sit on the `docklift_network` bridge (IPv4 `172.28.0.0/16`, IPv6 `fd12:3456
 - Issuance runs `certbot certonly --webroot` inside `docklift-certbot` (shared webroot volume).
 - `CERTBOT_EMAIL` / the `ssl_acme_email` setting is the ACME account email; `CERTBOT_STAGING=true`
   switches to the staging CA for testing without burning rate limits.
+- Public IP discovery for DNS checks uses **HTTPS** (`api.ipify.org`), never plaintext IP APIs.
 - `startCertRenewWatcher()` reloads the proxy after the certbot sidecar renews something.
 - Certificates live at `/etc/letsencrypt/live/<primaryDomain>/{fullchain,privkey}.pem`
   (`nginxCertPaths()`); `resolveCertName()` maps an arbitrary hostname back to its cert directory.
@@ -114,8 +171,11 @@ server {
     ssl_certificate     /etc/letsencrypt/live/app.example.com/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/app.example.com/privkey.pem;
 
+    resolver 127.0.0.11 valid=30s ipv6=off;
+
     location / {
-        proxy_pass http://dl_myapp_53b01966_app:3000;
+        set $target_svc dl_myapp_53b01966_app;
+        proxy_pass http://$target_svc:3000;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-Host $http_host;      # never trust the client's value
         proxy_set_header X-Forwarded-Proto $scheme;
@@ -136,9 +196,11 @@ server {
 
 ## Troubleshooting
 
-- **502 Bad Gateway**: container not running, app not listening on `internal_port`, or the container
-  is not on `docklift_network`.
+- **502 Bad Gateway**: container not running, app not listening on `internal_port`, proxy not
+  attached to the project network (`connectProxyToProjectNetwork`), or wrong `container_name`.
 - **404 / connection refused**: no vhost matches that `server_name`, or DNS does not point at the server.
+- **App only reachable on `:5500`**: host ports are opt-in — enable **Publish host ports** on the
+  project and redeploy, or use a domain.
 - **`DNS_PROBE_FINISHED_NXDOMAIN`**: DNS record missing — or, if you just created it, a stale local
   resolver cache (`ipconfig /flushdns`). Not a Docklift issue.
 - **Certificate order fails on a multi-domain request**: one SAN's DNS is missing; ACME fails the
