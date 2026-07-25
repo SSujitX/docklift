@@ -1,3 +1,12 @@
+## [2.0.5](https://github.com/SSujitX/docklift/compare/v2.0.4...v2.0.5) (2026-07-25)
+
+
+### Features
+
+* **sidebar:** route upgrade through terminal confirm ([107f971](https://github.com/SSujitX/docklift/commit/107f971f900c040321d3a6f6e7a4049d6f70a28b))
+* **terminal:** quiet host strip and upgrade wait dialogs ([b9c8c69](https://github.com/SSujitX/docklift/commit/b9c8c69effba7fe914944c968c522f5196a4e0c4))
+* **ui:** allow hiding dialog close button ([ef38ddb](https://github.com/SSujitX/docklift/commit/ef38ddbc91b995335d72e810cdb7648babbbd7a4))
+
 ## [2.0.4](https://github.com/SSujitX/docklift/compare/v2.0.3...v2.0.4) (2026-07-25)
 
 
