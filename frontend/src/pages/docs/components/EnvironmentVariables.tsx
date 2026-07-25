@@ -46,10 +46,16 @@ export const EnvironmentVariables = () => (
     <div className="bg-secondary/50 rounded-xl p-6">
       <h4 className="font-semibold mb-3">Usage Guidelines</h4>
       <ul className="list-disc list-inside text-sm text-muted-foreground space-y-2">
-        <li>Variables are project-specific</li>
-        <li>Accessible via <code className="bg-primary/10 px-1.5 py-0.5 rounded text-primary">process.env</code> (Node.js) or equivalent</li>
-        <li>Update variables and <strong>Redeploy</strong> for changes to take effect</li>
-        <li>Support for multi-line values (like SSH keys)</li>
+        <li>Keys must be unique per project; invalid names are rejected</li>
+        <li>Mark as <strong>runtime</strong> and/or <strong>build</strong> as needed</li>
+        <li>
+          <strong>BuildKit secret</strong> (with build): passed as a Docker secret, not{" "}
+          <code className="bg-primary/10 px-1.5 py-0.5 rounded text-primary">--build-arg</code>
+          — your Dockerfile should use{" "}
+          <code className="bg-primary/10 px-1.5 py-0.5 rounded text-primary">RUN --mount=type=secret,id=KEY</code>
+        </li>
+        <li>Accessible via <code className="bg-primary/10 px-1.5 py-0.5 rounded text-primary">process.env</code> (Node.js) or equivalent at runtime</li>
+        <li>Update variables and <strong>Deploy</strong> for changes to take effect</li>
       </ul>
     </div>
   </section>
