@@ -17,9 +17,11 @@ import {
   ScrollText,
   Maximize2,
   Minimize2,
+  Copy,
+  Check,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { cn, copyToClipboard } from "@/lib/utils";
 import { toast } from "sonner";
 
 // ──────────────────────────────────────────────
@@ -168,10 +170,18 @@ export function LogViewer({
   const [searchQuery, setSearchQuery] = useState("");
   const [showSearch, setShowSearch] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [copied, setCopied] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const programmaticScrollRef = useRef(false);
+  const copiedResetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const logCount = logs.length;
+
+  useEffect(() => {
+    return () => {
+      if (copiedResetRef.current) clearTimeout(copiedResetRef.current);
+    };
+  }, []);
 
   // Follow the tail on this container only. Flag wraps sync scrollTop writes so
   // rapid SSE cannot leave programmaticScroll stuck true (which blocked pause).
@@ -270,6 +280,47 @@ export function LogViewer({
     toast.success("Logs downloaded");
   }, [logs, onDownload, downloadFilename]);
 
+  const copyAriaLabel =
+    logs.length === 0
+      ? "No logs to copy"
+      : copied
+        ? "Copied"
+        : "Copy all logs";
+
+  const handleCopy = useCallback(async () => {
+    if (logs.length === 0) return;
+    // Cheap length gate before allocating a giant joined string.
+    if (logs.length > 3000) {
+      toast.message("Log buffer is large — use Download for a reliable copy", {
+        action: {
+          label: "Download",
+          onClick: () => handleDownload(),
+        },
+      });
+      return;
+    }
+    const text = logs.join("\n");
+    // Very large buffers often fail or hitch in the clipboard path (esp. HTTP fallback).
+    if (text.length > 500_000) {
+      toast.message("Log buffer is large — use Download for a reliable copy", {
+        action: {
+          label: "Download",
+          onClick: () => handleDownload(),
+        },
+      });
+      return;
+    }
+    const ok = await copyToClipboard(text);
+    if (!ok) {
+      toast.error("Could not copy logs — try Download instead");
+      return;
+    }
+    setCopied(true);
+    toast.success("Logs copied");
+    if (copiedResetRef.current) clearTimeout(copiedResetRef.current);
+    copiedResetRef.current = setTimeout(() => setCopied(false), 2000);
+  }, [logs, handleDownload]);
+
   return (
     <div
       className={cn(
@@ -345,6 +396,19 @@ export function LogViewer({
             title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
           >
             {isFullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+          </Button>
+          <Button
+            variant="ghost" size="icon"
+            className={cn(
+              "h-7 w-7 text-zinc-500 hover:text-zinc-200 hover:bg-white/5",
+              copied && "text-emerald-400 hover:text-emerald-400",
+            )}
+            onClick={handleCopy}
+            title={copyAriaLabel}
+            aria-label={copyAriaLabel}
+            disabled={logs.length === 0}
+          >
+            {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
           </Button>
           <Button
             variant="ghost" size="icon"
