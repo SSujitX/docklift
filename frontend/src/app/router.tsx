@@ -91,6 +91,13 @@ export const router = createBrowserRouter([
             },
           },
           {
+            path: "databases/new",
+            lazy: async () => {
+              const m = await import("@/pages/NewDatabase");
+              return { Component: m.default };
+            },
+          },
+          {
             path: "settings",
             lazy: async () => {
               const m = await import("@/pages/Settings");
