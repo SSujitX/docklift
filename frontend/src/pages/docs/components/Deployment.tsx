@@ -11,6 +11,14 @@ export const Deployment = () => (
       Docklift prefers your Dockerfile and automatically falls back to Railpack when one is not present.
     </p>
     
+    <p className="text-sm text-muted-foreground mb-4">
+      Redeploy, Restart, Stop, and Delete live on the dashboard list and under
+      Workspace as <strong>All-services actions</strong>. They always affect every
+      service in that one project — not a single app tab. Single-service projects
+      skip the Workspace rail and show the same actions under the project title.
+      Do not expect per-service redeploy from Env, Domains, Storage, or Logs.
+    </p>
+
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-6">
       <div className="bg-secondary/50 rounded-xl p-4">
         <h4 className="font-semibold text-cyan-500">Deploy</h4>
@@ -18,7 +26,7 @@ export const Deployment = () => (
       </div>
       <div className="bg-secondary/50 rounded-xl p-4">
         <h4 className="font-semibold text-red-500">Stop</h4>
-        <p className="text-sm text-muted-foreground">Stop running container gracefully</p>
+        <p className="text-sm text-muted-foreground">Stop running containers gracefully</p>
       </div>
       <div className="bg-secondary/50 rounded-xl p-4">
         <h4 className="font-semibold text-amber-500">Restart</h4>
@@ -26,7 +34,7 @@ export const Deployment = () => (
       </div>
       <div className="bg-secondary/50 rounded-xl p-4">
         <h4 className="font-semibold text-emerald-500">Redeploy</h4>
-        <p className="text-sm text-muted-foreground">Recreate from the last successfully built image</p>
+        <p className="text-sm text-muted-foreground">Rebuild from source and deploy a new version</p>
       </div>
     </div>
 
@@ -50,8 +58,11 @@ export const Deployment = () => (
     <div className="bg-secondary/50 rounded-xl p-6">
       <h4 className="font-semibold mb-3">Multi-Service Projects</h4>
       <p className="text-sm text-muted-foreground mb-4">
-        Dockerfile projects can contain multiple services. Railpack projects currently resolve to one application service.
-        Prefer custom domains; host ports are optional.
+        Dockerfile projects can contain multiple services. Use <strong>All services</strong> for
+        deploy, build, source, and shared env; open one service for that app’s endpoints, env,
+        domains, storage, and runtime logs. Deploy still rebuilds the whole project.
+        Single-service projects keep flat tabs (no Workspace rail).
+        Railpack projects currently resolve to one application service. Prefer custom domains; host ports are optional.
       </p>
       <StaticCodeBlock 
         title="Project Structure"
