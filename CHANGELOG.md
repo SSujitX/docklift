@@ -1,3 +1,12 @@
+## [2.0.9](https://github.com/SSujitX/docklift/compare/v2.0.8...v2.0.9) (2026-07-25)
+
+
+### Features
+
+* **auth:** enhance password prompt for terminal actions with customizable options ([4aba31a](https://github.com/SSujitX/docklift/commit/4aba31a77aae5ecc7fe818f10d5443fcb8d43595))
+* **auth:** implement step-up password requirement for system actions ([52d57a4](https://github.com/SSujitX/docklift/commit/52d57a4c27a2526cfa69e637d50477a5641f8d88))
+* **auth:** update WebTerminal component to include step-up password requirement for host actions and enhance upgrade dialog with password confirmation ([14eac7c](https://github.com/SSujitX/docklift/commit/14eac7c67ba7b17029f14c1e20a9cc772848ef2a))
+
 ## [2.0.8](https://github.com/SSujitX/docklift/compare/v2.0.7...v2.0.8) (2026-07-25)
 
 
