@@ -54,7 +54,67 @@ echo -e "  ${CYAN}| |_| | (_) | (__|   <| | |  _| |_ ${NC}\n  ${CYAN}|____/ \\__
 echo -e "  ${DIM}Self-Hosted Docker Deployment Platform${NC}\n"
 
 [ "$EUID" -ne 0 ] && echo -e "  ${RED}Error: Run with sudo${NC}" && exit 1
+
+# Pin a release: DOCKLIFT_VERSION=2.0.2 or bash -s -- v=2.0.2 (default: latest)
+# Examples:
+#   curl -fsSL .../install.sh | sudo bash
+#   curl -fsSL .../install.sh | sudo bash -s -- v=2.0.2
+#   curl -fsSL .../install.sh | sudo DOCKLIFT_VERSION=2.0.2 bash
+REPO_URL="https://github.com/SSujitX/docklift.git"
+REQUESTED_VERSION="${DOCKLIFT_VERSION:-}"
+while [ $# -gt 0 ]; do
+    case "$1" in
+        v=*|version=*|--version=*)
+            REQUESTED_VERSION="${1#*=}"
+            ;;
+        --version|-v)
+            shift
+            REQUESTED_VERSION="${1:-}"
+            ;;
+        latest|LATEST)
+            REQUESTED_VERSION=""
+            ;;
+        v[0-9]*|[0-9]*.[0-9]*)
+            REQUESTED_VERSION="$1"
+            ;;
+        *)
+            echo -e "  ${RED}Error: unknown install arg: $1${NC}"
+            echo -e "  ${DIM}Use: bash -s -- v=2.0.2   or   DOCKLIFT_VERSION=2.0.2${NC}"
+            exit 1
+            ;;
+    esac
+    shift || true
+done
+
+# Normalize to GitHub tag form (vX.Y.Z). Empty means resolve latest release.
+normalize_release_tag() {
+    local raw="$1"
+    raw=$(printf '%s' "$raw" | tr -d '[:space:]')
+    [ -z "$raw" ] && { printf ''; return 0; }
+    case "$raw" in
+        latest|LATEST) printf ''; return 0 ;;
+        v*) printf '%s' "$raw" ;;
+        *) printf 'v%s' "$raw" ;;
+    esac
+}
+
+fail_fetch() {
+    echo -e " ${RED}failed${NC}"
+    echo -e "  ${RED}$1${NC}"
+    [ -n "${2:-}" ] && echo -e "  ${DIM}$2${NC}"
+    exit 1
+}
+
+TARGET_TAG=$(normalize_release_tag "$REQUESTED_VERSION")
+WANT_LATEST=0
+[ -z "$TARGET_TAG" ] && WANT_LATEST=1
+
 echo -e "  ${BOLD}Starting Installation${NC}\n"
+if [ "$WANT_LATEST" -eq 1 ]; then
+    echo -e "  ${DIM}Requested release: ${CYAN}latest${NC}\n"
+else
+    echo -e "  ${DIM}Requested release: ${CYAN}${TARGET_TAG}${NC}\n"
+fi
 
 # Step 1: Requirements
 printf "  ${CYAN}[1/5]${NC} Checking requirements..."
@@ -67,33 +127,79 @@ for cmd in docker git; do
 done
 echo -e " ${GREEN}done${NC}"
 
-# Step 2: Fetch latest release
+# Step 2: Resolve tag BEFORE stopping any running stack, then fetch/checkout
 FETCH_ST=$(date +%s)
 printf "  ${CYAN}[2/5]${NC} Fetching code..."
-{
-    # Get latest release tag from GitHub API
-    LATEST_TAG=$(curl -s https://api.github.com/repos/SSujitX/docklift/releases/latest | grep '"tag_name"' | cut -d'"' -f4 || echo "")
 
-    if [ "$DOCKLIFT_CI_LOCAL" = "true" ]; then
-        mkdir -p "$INSTALL_DIR" && cp -r . "$INSTALL_DIR/" && cd "$INSTALL_DIR"
-    elif [ -d "$INSTALL_DIR/.git" ]; then
-        cd "$INSTALL_DIR" && docker compose down 2>/dev/null || true
-        git fetch origin --tags -q
-        if [ -n "$LATEST_TAG" ]; then
-            git checkout "$LATEST_TAG" -q 2>/dev/null || git checkout "tags/$LATEST_TAG" -q
-        else
-            git fetch origin master -q && git reset --hard origin/master -q
-        fi
-    else
-        git clone -q https://github.com/SSujitX/docklift.git "$INSTALL_DIR" && cd "$INSTALL_DIR"
-        if [ -n "$LATEST_TAG" ]; then
-            git checkout "$LATEST_TAG" -q 2>/dev/null || git checkout "tags/$LATEST_TAG" -q
+CREATED_INSTALL_DIR=0
+# CI copies the local workspace — skip GitHub resolve/checkout (offline-safe).
+if [ "$DOCKLIFT_CI_LOCAL" = "true" ]; then
+    mkdir -p "$INSTALL_DIR" && cp -r . "$INSTALL_DIR/" && cd "$INSTALL_DIR"
+    TARGET_TAG="local"
+else
+    if [ "$WANT_LATEST" -eq 1 ]; then
+        TARGET_TAG=$(curl -fsS https://api.github.com/repos/SSujitX/docklift/releases/latest \
+            | grep '"tag_name"' | head -1 | cut -d'"' -f4 || true)
+        TARGET_TAG=$(printf '%s' "$TARGET_TAG" | tr -d '[:space:]')
+        if [ -z "$TARGET_TAG" ]; then
+            fail_fetch \
+                "Could not resolve latest GitHub release tag" \
+                "Check network / GitHub API, then retry. (Will not fall back to master.)"
         fi
     fi
-} >/dev/null 2>&1
+
+    # Confirm the tag exists on the remote before touching a live install
+    if ! git ls-remote --exit-code --tags "$REPO_URL" "refs/tags/${TARGET_TAG}" >/dev/null 2>&1; then
+        fail_fetch \
+            "Release tag not found: ${TARGET_TAG}" \
+            "See https://github.com/SSujitX/docklift/releases (e.g. bash -s -- v=2.0.2)."
+    fi
+
+    if [ -d "$INSTALL_DIR/.git" ]; then
+        cd "$INSTALL_DIR"
+        # Fetch tags first; only stop compose after the pin is known-good remotely
+        if ! git fetch origin --tags -q 2>/tmp/docklift-install-git.err; then
+            fail_fetch "git fetch failed" "$(head -c 400 /tmp/docklift-install-git.err 2>/dev/null || true)"
+        fi
+        if ! git rev-parse -q --verify "refs/tags/${TARGET_TAG}" >/dev/null 2>&1 \
+            && ! git rev-parse -q --verify "refs/tags/${TARGET_TAG}^{}" >/dev/null 2>&1; then
+            fail_fetch \
+                "Release tag not available locally after fetch: ${TARGET_TAG}" \
+                "Running stack left untouched."
+        fi
+        docker compose down 2>/dev/null || true
+        if ! git checkout -q "$TARGET_TAG" 2>/tmp/docklift-install-git.err \
+            && ! git checkout -q "tags/${TARGET_TAG}" 2>/tmp/docklift-install-git.err; then
+            echo -e " ${RED}failed${NC}"
+            echo -e "  ${RED}Checkout failed for ${TARGET_TAG}${NC}"
+            echo -e "  ${DIM}Try: cd $INSTALL_DIR && docker compose up -d${NC}"
+            exit 1
+        fi
+    else
+        if [ -e "$INSTALL_DIR" ] && [ ! -d "$INSTALL_DIR/.git" ]; then
+            fail_fetch \
+                "$INSTALL_DIR exists but is not a DockLift git checkout" \
+                "Move/remove it, or use a clean host."
+        fi
+        if ! git clone -q "$REPO_URL" "$INSTALL_DIR" 2>/tmp/docklift-install-git.err; then
+            fail_fetch "git clone failed" "$(head -c 400 /tmp/docklift-install-git.err 2>/dev/null || true)"
+        fi
+        CREATED_INSTALL_DIR=1
+        cd "$INSTALL_DIR"
+        git fetch origin --tags -q 2>/dev/null || true
+        if ! git checkout -q "$TARGET_TAG" 2>/tmp/docklift-install-git.err \
+            && ! git checkout -q "tags/${TARGET_TAG}" 2>/tmp/docklift-install-git.err; then
+            [ "$CREATED_INSTALL_DIR" -eq 1 ] && rm -rf "$INSTALL_DIR"
+            fail_fetch \
+                "Checkout failed for ${TARGET_TAG}" \
+                "See https://github.com/SSujitX/docklift/releases."
+        fi
+    fi
+fi
+
 echo -e " ${GREEN}done${NC} ${DIM}($(format_time $(($(date +%s) - FETCH_ST))))$NC"
 VERSION=$(grep -o '"version": *"[^"]*"' "$INSTALL_DIR/backend/package.json" 2>/dev/null | head -1 | cut -d'"' -f4 || echo "1.0.0")
-echo -e "        ${DIM}➞ Version: $VERSION${NC}"
+echo -e "        ${DIM}➞ Version: $VERSION ${CYAN}($TARGET_TAG)${NC}"
 
 # Step 3-5: Setup & Build (keep repo default.conf — do not overwrite secure catch-all)
 printf "  ${CYAN}[3/5]${NC} Creating directories... "
