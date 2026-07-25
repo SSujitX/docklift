@@ -33,8 +33,10 @@ This skill documents all security patterns implemented in Docklift. Follow these
 -   Mounted in `index.ts` before the auth router.
 
 ### Dangerous ops (password step-up)
--   `lib/stepUpAuth.ts` — re-verify account password for purge / restore (JWT alone is not enough).
--   Terminal already requires password; keep the same pattern for other host-impacting actions.
+-   `lib/stepUpAuth.ts` — re-verify account password (JWT alone is not enough).
+-   Required on: backup restore paths, `POST /api/system/purge`, **`/upgrade`**, **`/update-system`**, **`/reboot`**, **`/reset`**.
+-   Terminal WebSocket still requires a separate password after the short-lived `purpose: terminal` token.
+-   Frontend must send `{ password }` and abort when the operator cancels the prompt — never fire host actions on cancel.
 
 ### Password Hashing
 -   Uses `bcrypt` with **12 salt rounds**.
