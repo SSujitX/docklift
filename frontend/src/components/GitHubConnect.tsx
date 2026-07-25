@@ -129,7 +129,14 @@ export function GitHubConnect({ open, onOpenChange, onConnected }: GitHubConnect
     setLoading(true);
     setIsPolling(false);
     try {
-      await fetch(`${API_URL}/api/github/disconnect`, { method: "POST", headers: getAuthHeaders() });
+      const res = await fetch(`${API_URL}/api/github/disconnect`, {
+        method: "POST",
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error((data as { error?: string }).error || "Disconnect failed");
+      }
       setStatus(null);
       setAppName("");
     } catch (error) {
