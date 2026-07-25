@@ -79,13 +79,25 @@ One-command install on Ubuntu/Debian:
 curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh | sudo bash
 ```
 
-Then open the dashboard at **`http://YOUR_SERVER_IP:8080`**.
+The installer prints your public URL, for example:
+
+```text
+Dashboard: http://YOUR_SERVER_IP:8080
+Setup code: <bootstrap-secret>
+```
+
+Open that URL, paste the setup code, and create the first admin account. You can keep using the
+IP:port panel, or later add an HTTPS panel domain under **Settings → Domain**.
+
+> Raw HTTP on a public IP is intentional for first-run convenience — it is **not** private or
+> encrypted. Put DockLift behind a firewall, use HTTPS, or set `DASHBOARD_BIND=127.0.0.1` if you
+> want localhost-only access.
 
 ### First login needs the bootstrap secret
 
-A fresh install prints a one-time **bootstrap secret** to the backend logs. The Setup page asks for
-it before you can create the first admin account, so nobody who merely finds your IP can claim the
-panel first. It is never exposed through any API.
+A fresh install prints a one-time **bootstrap secret** (setup code) to the install output and
+backend logs. The Setup page requires it before the first admin account can be created, so finding
+the IP alone is not enough to claim the panel. It is never exposed through any public API.
 
 ```bash
 # Grab it from the logs…
@@ -167,9 +179,9 @@ repository is **never modified** — a `docker-compose.yml` you committed yourse
 
 ### Access model
 
-- **Admin UI:** `http://SERVER_IP:8080`, or a domain configured in **Settings → Domain**.
-- **Your apps:** public hostnames on `:80`/`:443` via nginx-proxy.
-- **Secrets:** `JWT_SECRET` and internal keys auto-generate and persist under `data/.secrets`.
+- **Admin UI:** `http://SERVER_IP:8080` by default. Prefer an HTTPS panel domain in **Settings → Domain** when you can. Optional: `DASHBOARD_BIND=127.0.0.1` + SSH tunnel.
+- **Your apps:** public hostnames on `:80`/`:443` via nginx-proxy (project networks; host ports opt-in).
+- **Secrets:** `JWT_SECRET` and internal keys auto-generate and persist under `data/.secrets`. First account requires the bootstrap secret.
 
 ---
 
@@ -254,7 +266,7 @@ re-run `docker compose up -d` from that directory to apply changes:
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `DASHBOARD_BIND` | `0.0.0.0` | Set to `127.0.0.1` to expose the panel only via SSH tunnel or the public proxy |
+| `DASHBOARD_BIND` | `0.0.0.0` | Panel listen address. Default allows `http://SERVER_IP:8080`. Set `127.0.0.1` for localhost-only, or use an HTTPS panel domain. |
 | `PORT_RANGE_START` / `PORT_RANGE_END` | `5500` / `5600` | Host port pool for deployed apps |
 | `CERTBOT_EMAIL` | — | Let's Encrypt account email (expiry notices) |
 | `CERTBOT_STAGING` | `false` | Use the staging CA while testing, to avoid rate limits |
@@ -355,8 +367,10 @@ Run from `backend/`:
 | Command | Description |
 |---------|-------------|
 | `bun run db:studio` | Open Prisma Studio GUI |
-| `bun run db:push` | Apply schema changes |
+| `bun run db:migrate` | Apply checked-in Prisma migrations |
+| `bun run db:ensure` | Production DB bootstrap (dedupe + migrate + repair) |
 | `bun run db:generate` | Regenerate the Prisma client |
+| `bun run db:push` | Local-only schema sync (not used on container boot) |
 
 ### 🧹 Maintenance
 
