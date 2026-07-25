@@ -21,16 +21,21 @@ Docklift uses a token-based authentication system (JWT) to secure the API and fr
 1.  **Registration**:
     -   `POST /api/auth/register`
     -   Only allows registration if **zero** users exist (first user becomes admin).
+    -   **Bootstrap secret required** (header `x-bootstrap-secret` or body) — printed by install /
+        backend logs / `data/.bootstrap-secret`. Never returned by a public API.
     -   **Bootstrap claim**: exclusive `fs.rename` of `data/.bootstrap-secret` → `.claimed-<random>`
         (`lib/bootstrap.ts`). Only the winner may create the admin; losers get 403.
+    -   Secret is consumed **only after** successful user create; failed validation restores the claim.
     -   Crash recovery: on boot with no users, `recoverStaleBootstrapClaims()` restores a leftover
         `.claimed-*` back to `.bootstrap-secret` so setup is not bricked.
+    -   **Setup rate limit**: `/register` and `/setup-token` use a stricter limiter (**10 / 15 min**)
+        in addition to the general auth limiter.
 
 2.  **Login**:
     -   `POST /api/auth/login`
     -   Validates email/password (bcrypt, 12 salt rounds).
     -   Returns a JWT `token` (7-day expiry) that includes a **`pwdv`** claim.
-    -   Rate limited via `express-rate-limit` on all `/api/auth` routes.
+    -   Rate limited via `express-rate-limit` on all `/api/auth` routes (100 / 15 min general).
 
 3.  **Session Management**:
     -   Frontend stores the token in `localStorage` key `docklift_token`.
@@ -45,8 +50,10 @@ Docklift uses a token-based authentication system (JWT) to secure the API and fr
 
 All routes except the following require JWT via `authMiddleware`:
 -   `/api/auth/register`, `/api/auth/login`, `/api/auth/status` (public, rate limited)
--   `/api/github/webhook`, `/callback`, `/manifest/callback`, `/setup` (GitHub flow)
--   `/api/backup/restore-upload` with valid one-time setup token (fresh install restore)
+-   `/api/github/webhook`, `/manifest/callback`, `/setup` (GitHub App flow)
+    -   Legacy `/api/github/callback` OAuth token exchange is **disabled** (install-id redirect only)
+-   `/api/backup/restore-upload` with valid setup token (fresh install restore; token consumed only
+    after successful restore — see `lib/setupRestoreAuth.ts`)
 
 Routes `/me`, `/profile`, `/change-password` all use `authMiddleware` (not manual JWT decoding).
 
