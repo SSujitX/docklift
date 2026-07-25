@@ -19,6 +19,7 @@ import {
   Download,
   Code,
   Archive,
+  Database,
 } from "lucide-react";
 
 const sections = [
@@ -30,6 +31,7 @@ const sections = [
   { id: "dockerfile", title: "Dockerfile", icon: FileCode, path: "/docs/dockerfile" },
   { id: "domains", title: "Custom Domains", icon: Globe, path: "/docs/domains" },
   { id: "environment", title: "Environment Variables", icon: Key, path: "/docs/environment" },
+  { id: "databases", title: "Managed Databases", icon: Database, path: "/docs/databases" },
   { id: "system", title: "System Overview", icon: Cpu, path: "/docs/system" },
   { id: "terminal", title: "Web Terminal", icon: Terminal, path: "/docs/terminal" },
   { id: "api", title: "API Reference", icon: Code, path: "/docs/api" },
