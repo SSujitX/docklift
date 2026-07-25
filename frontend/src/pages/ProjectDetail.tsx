@@ -1183,25 +1183,30 @@ export default function ProjectDetail() {
                           .filter(Boolean)
                       : [];
 
-                    // Use localhost when in development (browser is on localhost), server IP otherwise
+                    // Host publish is opt-in — only link when a real host port exists
                     const isLocal =
                       typeof window !== "undefined" &&
                       (window.location.hostname === "localhost" ||
                         window.location.hostname === "127.0.0.1");
                     const portHost = isLocal ? "localhost" : serverIP;
+                    const hasHostPort =
+                      typeof svc.port === "number" &&
+                      Number.isFinite(svc.port) &&
+                      svc.port > 0;
+                    const hostPortReady =
+                      hasHostPort &&
+                      Boolean(portHost) &&
+                      portHost !== "..." &&
+                      portHost !== "N/A";
 
-                    const portEndpoint = {
-                      url: `http://${portHost}:${svc.port}`,
-                      label: `${portHost}:${svc.port}`,
-                      isPort: true,
-                    };
-
-                    // Always show port endpoint + any configured domains
                     const domainLinks = domains.map((d) => ({
                       url: `https://${d}`,
                       label: d,
-                      isPort: false,
                     }));
+                    const notPublicYet =
+                      !hasHostPort && domainLinks.length === 0;
+                    const awaitingHostPortPublish =
+                      notPublicYet && publishHostPort;
 
                     return (
                       <Card
@@ -1239,21 +1244,26 @@ export default function ProjectDetail() {
                             </div>
                           </div>
 
-                          {/* Right: Endpoint links */}
-                          <div className="flex flex-wrap gap-2 sm:flex-col sm:gap-2 sm:items-end ml-0 sm:ml-auto shrink-0">
-                            {/* Always show IP:Port access */}
-                            <a
-                              href={portEndpoint.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="h-7 sm:h-9 px-2.5 sm:px-4 flex items-center gap-1.5 sm:gap-2 rounded-lg sm:rounded-xl bg-secondary/50 hover:bg-cyan-500 text-muted-foreground hover:text-white font-mono text-[10px] sm:text-xs font-bold transition-all duration-300 border border-border/50"
-                            >
-                              <span className="truncate max-w-[120px] sm:max-w-none">
-                                {portEndpoint.label}
+                          {/* Right: public endpoints or "not public yet" hint */}
+                          <div className="flex flex-wrap gap-2 sm:flex-col sm:gap-2 sm:items-end ml-0 sm:ml-auto shrink-0 max-w-full sm:max-w-[280px]">
+                            {hostPortReady && (
+                              <a
+                                href={`http://${portHost}:${svc.port}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="h-7 sm:h-9 px-2.5 sm:px-4 flex items-center gap-1.5 sm:gap-2 rounded-lg sm:rounded-xl bg-secondary/50 hover:bg-cyan-500 text-muted-foreground hover:text-white font-mono text-[10px] sm:text-xs font-bold transition-all duration-300 border border-border/50"
+                              >
+                                <span className="truncate max-w-[120px] sm:max-w-none">
+                                  {portHost}:{svc.port}
+                                </span>
+                                <ExternalLink className="h-2.5 w-2.5 sm:h-3 sm:w-3 shrink-0" />
+                              </a>
+                            )}
+                            {hasHostPort && !hostPortReady && (
+                              <span className="h-7 sm:h-9 px-2.5 sm:px-4 inline-flex items-center rounded-lg sm:rounded-xl bg-secondary/50 text-muted-foreground font-mono text-[10px] sm:text-xs font-bold border border-border/50">
+                                Host port {svc.port}
                               </span>
-                              <ExternalLink className="h-2.5 w-2.5 sm:h-3 sm:w-3 shrink-0" />
-                            </a>
-                            {/* Show domain links if configured */}
+                            )}
                             {domainLinks.map((link, idx) => (
                               <a
                                 key={idx}
@@ -1268,6 +1278,56 @@ export default function ProjectDetail() {
                                 <ExternalLink className="h-2.5 w-2.5 sm:h-3 sm:w-3 shrink-0" />
                               </a>
                             ))}
+                            {notPublicYet && (
+                              <div className="rounded-xl border border-border/50 bg-secondary/40 px-3 py-2 text-left sm:text-right">
+                                <p className="text-[11px] sm:text-xs font-semibold text-foreground/90">
+                                  Not public yet
+                                </p>
+                                <p className="mt-0.5 text-[10px] sm:text-[11px] text-muted-foreground leading-snug">
+                                  {awaitingHostPortPublish ? (
+                                    <>
+                                      Publish host ports is on — redeploy to
+                                      allocate a host{" "}
+                                      <span className="font-mono">IP:port</span>
+                                      . Or add a domain to go public on{" "}
+                                      <span className="font-mono">:80/:443</span>
+                                      .
+                                    </>
+                                  ) : (
+                                    <>
+                                      Host ports are off by default, so{" "}
+                                      <span className="font-mono">IP:port</span>{" "}
+                                      is not open. Add a domain, or enable
+                                      Publish host ports in Build and redeploy.
+                                    </>
+                                  )}
+                                </p>
+                                <div className="mt-2 flex flex-wrap gap-1.5 sm:justify-end">
+                                  <button
+                                    type="button"
+                                    onClick={() => setActiveTab("domains")}
+                                    className="h-7 px-2.5 rounded-lg text-[10px] font-bold bg-cyan-500/10 text-cyan-600 hover:bg-cyan-500 hover:text-white transition-colors"
+                                  >
+                                    Add domain
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setActiveTab(
+                                        awaitingHostPortPublish
+                                          ? "deployments"
+                                          : "build",
+                                      )
+                                    }
+                                    className="h-7 px-2.5 rounded-lg text-[10px] font-bold bg-secondary text-muted-foreground hover:bg-secondary/80 border border-border/50 transition-colors"
+                                  >
+                                    {awaitingHostPortPublish
+                                      ? "Redeploy"
+                                      : "Build settings"}
+                                  </button>
+                                </div>
+                              </div>
+                            )}
                           </div>
                         </div>
                       </Card>
