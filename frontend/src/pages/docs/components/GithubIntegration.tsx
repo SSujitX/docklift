@@ -43,7 +43,8 @@ export const GithubIntegration = () => (
       <div className="bg-secondary/50 rounded-xl p-4">
         <h4 className="font-semibold text-cyan-500">Features</h4>
         <ul className="list-disc list-inside text-sm text-muted-foreground mt-2 space-y-1">
-          <li>List all accessible repositories</li>
+          <li>List repos from every connected personal account and organization</li>
+          <li>Filter/search across All accounts on New Project → Private</li>
           <li>Select branch to deploy</li>
           <li>Auto-pull on redeploy</li>
           <li>Private repository support</li>
@@ -57,7 +58,7 @@ export const GithubIntegration = () => (
           <li><code>POST /api/github/manifest</code></li>
           <li><code>POST /api/github/install-session</code></li>
           <li><code>POST /api/github/check-installation</code></li>
-          <li><code>GET /api/github/repos</code></li>
+          <li><code>GET /api/github/repos</code> → <code>{'{ repositories, failedInstallations, fallbackSingle }'}</code></li>
           <li><code>GET /api/github/repos/:owner/:repo/branches</code></li>
         </ul>
       </div>
