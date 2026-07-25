@@ -87,6 +87,7 @@ Located in `backend/src/lib/authMiddleware.ts`.
     matching is unsafe here.
 -   **Rate Limiting**: Applied to all `/api/auth` routes.
 -   **Terminal**: WebSocket JWT + password re-verification (double auth). Session JWT only — SSE-purpose tokens are rejected on terminal upgrade.
+-   **Host control-plane actions** (`/api/system/upgrade`, `update-system`, `reboot`, `reset`, `purge`): session JWT **plus** `requireStepUpPassword` body password. Canceling the password dialog must not call these APIs.
 -   **Backup Downloads**: Use `fetch` + `Authorization: Bearer` header + blob download pattern — **never** put JWTs in URL query parameters (prevents token leakage in browser history, server logs, and referrer headers).
 
 ## Passwords
