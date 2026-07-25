@@ -1,8 +1,9 @@
 <h1 align="center">🐳 Docklift</h1>
 
 <p align="center">
-  <strong>Self-hosted Docker deployment platform</strong><br>
-  Open-source alternative to Coolify, Dokploy, Dokku, CapRover, Vercel, Netlify & Heroku.
+  <strong>Self-hosted PaaS for Docker on your VPS</strong><br>
+  Open-source Coolify alternative — and a practical Dokku, CapRover, Dokploy,<br>
+  Heroku, Vercel &amp; Netlify alternative when you want git-to-deploy without the cloud bill.
 </p>
 
 <p align="center">
@@ -27,9 +28,15 @@
 
 ## 📖 What is Docklift?
 
-Docklift turns a plain VPS into your own deployment platform. Point it at a GitHub repo or upload a
-ZIP, and it builds a Docker image, runs it, assigns a port, wires up a custom domain with HTTPS, and
-redeploys on every push — all from a web UI, with no vendor lock-in.
+Docklift is a **self-hosted PaaS** (platform-as-a-service) that turns a plain Linux VPS into your
+own Docker deployment platform. Point it at a GitHub repo or upload a ZIP, and it builds a Docker
+image, runs the containers, wires custom domains with automatic Let's Encrypt HTTPS, and redeploys
+on every push — all from a web UI, with no vendor lock-in.
+
+If you are searching for a **Coolify alternative**, a lighter **Dokku** / **CapRover** style
+workflow with a real dashboard, or a **self-hosted Heroku / Vercel alternative** that stays on
+hardware you control, Docklift is built for that job: deploy Docker apps on a VPS without
+Kubernetes, Swarm, or a managed cloud account.
 
 **Your server. Your rules. Your apps.**
 
@@ -65,7 +72,8 @@ redeploys on every push — all from a web UI, with no vendor lock-in.
 - [Development Setup](#-development-setup)
 - [Commands Reference](#-commands-reference)
 - [Troubleshooting](#-troubleshooting)
-- [Why Docklift](#-why-docklift)
+- [Why Docklift (vs Coolify, Dokku, CapRover…)](#-why-docklift-vs-coolify-dokku-caprover)
+- [FAQ](#-faq)
 - [Contributing](#-contributing)
 - [License](#-license)
 
@@ -129,18 +137,19 @@ Paste it into the Setup page, register (or restore a backup), and the secret is 
 
 | Feature | Description |
 |---------|-------------|
-| 📦 **One-Click Deploy** | Push code → Docklift builds and runs it |
-| 🧱 **Automatic Builds** | Uses your `Dockerfile`, or [Railpack](https://railpack.com/) detects the framework when there isn't one |
-| 🐙 **GitHub Integration** | Connect private repos through a GitHub App you own |
+| 📦 **One-Click Deploy** | GitHub or ZIP → build → run on your VPS (Dockerfile or Railpack) |
+| 🧱 **Automatic Builds** | Prefer your `Dockerfile`; otherwise [Railpack](https://railpack.com/) detects Node, Python, Go, and more |
+| 🐙 **GitHub Integration** | Private repos via a GitHub App you own — push-to-deploy webhooks |
 | 🔄 **Auto-Deploy** | Webhook-triggered redeploys on push, with a 10s debounce |
-| 🌐 **Custom Domains** | Nginx vhosts + automatic Let's Encrypt HTTPS (Cloudflare Full-strict ready) |
-| 💾 **Persistent Storage** | Named volumes per service, so SQLite files and uploads survive rebuilds |
+| 🌐 **Custom Domains + HTTPS** | Nginx reverse proxy and automatic Let's Encrypt (Cloudflare Full-strict ready) |
+| 💾 **Persistent Storage** | Named volumes per service so SQLite and uploads survive rebuilds |
+| 🧩 **Multi-Service Projects** | Multi-Dockerfile apps with all-services vs per-service env, domains, and logs |
 | 📜 **Live Build Logs** | Real-time streaming output, with cancel mid-build |
-| 🔐 **Env Variables** | Separate build-time and runtime values; only declared `ARG`s reach the image |
-| 📊 **System Monitoring** | CPU, RAM, GPU, disk, network and top processes for the host |
-| 💻 **Web Terminal** | Full xterm.js root shell in your browser, behind double auth |
-| 🗄️ **Backup & Restore** | Database, sources, vhosts and certificates in one archive |
-| 🧭 **Sidebar Workspace** | Everything in one collapsible left rail, with `Ctrl+K` command palette |
+| 🔐 **Env Variables** | Shared or per-service secrets; build-time and runtime scopes |
+| 📊 **Host Monitoring** | CPU, RAM, GPU, disk, network, and top processes — not just container stats |
+| 💻 **Web Terminal** | Root shell in the browser (xterm.js), behind double auth |
+| 🗄️ **Backup & Restore** | Database, sources, vhosts, and certificates in one archive |
+| 🧭 **Sidebar Workspace** | Collapsible rail plus `Ctrl+K` command palette |
 
 ---
 
@@ -468,16 +477,64 @@ like your SSH session.
 
 ---
 
-## 🆚 Why Docklift?
+## 🆚 Why Docklift (vs Coolify, Dokku, CapRover…)?
 
-Coolify, Dokploy, Dokku and CapRover are all good tools — but they tend to come with a learning
-curve, a lot of configuration, or more machinery than a small server needs.
+People comparing **self-hosted PaaS** options usually land on Coolify, Dokku, CapRover, or Dokploy.
+Those are solid projects. Docklift aims at a narrower brief: a readable Docker deployment panel for
+a single VPS (or a small fleet of apps on one host), without Swarm/Kubernetes ceremony.
 
-Docklift stays **lightweight, minimal and readable**. It does Docker deployments without the bloat,
-and adds things the others don't ship out of the box: full **host monitoring** (CPU, RAM, GPU, disk,
-network) and a real **web terminal**, right in the dashboard.
+| You want… | Typical pick | Why Docklift may fit instead |
+|-----------|--------------|------------------------------|
+| Polished UI + huge one-click catalog | Coolify / Dokploy | Smaller surface: GitHub/ZIP → Docker → domain → HTTPS |
+| CLI `git push` Heroku clone | Dokku | Full web UI, live logs, host metrics, in-browser terminal |
+| Swarm / one-click app store | CapRover | Plain Docker Compose under the hood — no Swarm required |
+| Managed DX (Vercel / Netlify / Heroku) | Cloud PaaS | Same “push and get a URL” feel on **your** VPS and Docker host |
 
-If you want to deploy containers quickly without wrestling with configuration, Docklift is for you.
+**What Docklift optimizes for**
+
+- **Self-hosted Docker deploys** with a real dashboard (not CLI-only)
+- **Dockerfile-first** builds, with Railpack when you do not have one
+- **Automatic HTTPS** and custom domains via nginx + Let's Encrypt
+- **Multi-service** projects (shared vs service env, domains, storage, runtime logs)
+- **Ops visibility** built in: host monitoring and a gated web terminal
+
+**Honest trade-offs:** Docklift is not trying to be the largest template marketplace or a multi-node
+orchestrator. If you need 200+ one-click apps or Docker Swarm clustering on day one, Coolify,
+Dokploy, or CapRover may match better. If you want a focused open-source **Coolify alternative**
+(or a Dokku-like deploy model with a UI) to run containers on a VPS you control, start here.
+
+---
+
+## ❓ FAQ
+
+### Is Docklift a Coolify alternative?
+
+Yes — in the sense that both are open-source, self-hosted platforms for deploying apps with Docker,
+domains, and HTTPS on your own server. Coolify is broader (templates, multi-server stories).
+Docklift stays lighter and pairs deploys with host monitoring and a web terminal.
+
+### Is Docklift a Dokku or CapRover alternative?
+
+Dokku is CLI-first and buildpack-oriented; CapRover leans on Docker Swarm and one-click apps.
+Docklift gives you a web UI, Dockerfile/Railpack builds, nginx HTTPS, and Compose-backed projects
+without requiring Swarm.
+
+### Can I use Docklift as a self-hosted Heroku or Vercel alternative?
+
+For many apps, yes: connect GitHub (or upload a ZIP), build, attach a domain, get TLS, and
+auto-redeploy on push. You keep the VPS, Docker socket, and data — no Heroku/Vercel account
+required.
+
+### Do I need Kubernetes?
+
+No. Docklift talks to the Docker engine on the host and runs a small Compose stack for the panel
+plus your app containers.
+
+### What server do I need?
+
+A typical Ubuntu/Debian VPS with Docker installed is enough to [install](#-quick-start) and deploy
+your first app. Size the box for your workloads; the panel itself is a few containers, not a
+full cluster control plane.
 
 ---
 
