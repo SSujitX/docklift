@@ -27,6 +27,8 @@ model Project {
   internal_port  Int           @default(3000)
   /// When true, publish host ports (PORT_RANGE). Default false — reach apps via domain/proxy.
   publish_host_port Boolean     @default(false)
+  /// Managed DB engine id when project_type=database (postgres|mysql|mariadb|redis|mongodb).
+  db_engine      String?
   created_at     DateTime?     @default(now())
   updated_at     DateTime?     @default(now()) @updatedAt
   deployments    Deployment[]
@@ -34,8 +36,29 @@ model Project {
   services       Service[]
   ports          Port[]
   persistent_volumes PersistentVolume[]
+  databaseLinksAsDb  DatabaseLink[] @relation("DatabaseLinksAsDb")
+  databaseLinksAsApp DatabaseLink[] @relation("DatabaseLinksAsApp")
 
   @@map("projects")
+}
+
+/// Links a managed database project to an app project (optional per-service scope).
+model DatabaseLink {
+  id                  String    @id @default(uuid())
+  database_project_id String
+  app_project_id      String
+  /// Empty string = shared env for every service on the app project.
+  service_name        String    @default("")
+  /// Env key written on the app (DATABASE_URL, REDIS_URL, MONGODB_URI).
+  env_key             String
+  created_at          DateTime? @default(now())
+  database_project    Project   @relation("DatabaseLinksAsDb", fields: [database_project_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  app_project         Project   @relation("DatabaseLinksAsApp", fields: [app_project_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([database_project_id, app_project_id, service_name, env_key])
+  /// One env key owner per app/service scope (prevents multi-DB DATABASE_URL collisions).
+  @@unique([app_project_id, service_name, env_key])
+  @@map("database_links")
 }
 
 model Deployment {
