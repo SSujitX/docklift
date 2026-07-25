@@ -13,6 +13,24 @@ import { composeProjectName } from '../lib/naming.js';
 import { safeExtractZip } from '../lib/safeUnzip.js';
 import { replaceDirContents } from '../lib/fsCopy.js';
 import { enterMaintenance, exitMaintenance } from '../lib/maintenance.js';
+import {
+  tryAcquireRestoreLock,
+  releaseRestoreLock,
+  restoreLockReason,
+} from '../lib/restoreLock.js';
+import { requireStepUpPassword } from '../lib/stepUpAuth.js';
+import {
+  consumeSetupRestoreSecrets,
+  type SetupRestoreRequest,
+} from '../lib/setupRestoreAuth.js';
+import { decideRestoreCommit } from '../lib/restoreCommitPolicy.js';
+import {
+  clearRestoreCritical,
+  enterRestoreCritical,
+  isRestoreCritical,
+  readRestoreCritical,
+} from '../lib/restoreCritical.js';
+import crypto from 'crypto';
 
 const execAsync = promisify(exec);
 const router = Router();
@@ -45,15 +63,116 @@ async function snapshotDatabase(liveDbPath: string): Promise<{ snapshotPath: str
 async function restoreDatabaseFile(tempDbPath: string, currentDbPath: string, writeLog: (t: string) => void) {
   // Must drop open handles before replacing the SQLite file on disk.
   await prisma.$disconnect();
-  if (fs.existsSync(currentDbPath)) {
-    const backupDbPath = `${currentDbPath}.pre-restore`;
-    await fsp.copyFile(currentDbPath, backupDbPath);
-    writeLog(`      + Created backup of current database\n`);
+  const backupDbPath = `${currentDbPath}.pre-restore`;
+  try {
+    if (fs.existsSync(currentDbPath)) {
+      await fsp.copyFile(currentDbPath, backupDbPath);
+      writeLog(`      + Created backup of current database\n`);
+    }
+    await fsp.mkdir(path.dirname(currentDbPath), { recursive: true });
+    await fsp.copyFile(tempDbPath, currentDbPath);
+    writeLog(`      + Database restored\n`);
+  } catch (err) {
+    // Roll back DB file if the replace itself failed mid-way
+    if (fs.existsSync(backupDbPath)) {
+      try {
+        await fsp.copyFile(backupDbPath, currentDbPath);
+        writeLog(`      ! Database replace failed — rolled back to pre-restore copy\n`);
+      } catch {
+        writeLog(`      ! CRITICAL: database replace failed and rollback also failed\n`);
+      }
+    }
+    await reconnectPrisma().catch(() => {});
+    throw err;
   }
-  await fsp.mkdir(path.dirname(currentDbPath), { recursive: true });
-  await fsp.copyFile(tempDbPath, currentDbPath);
-  writeLog(`      + Database restored\n`);
   await reconnectPrisma();
+}
+
+/**
+ * Restore DB from `.pre-restore`. Returns true on success.
+ * On failure: does NOT claim success — caller must enter critical recovery.
+ */
+async function rollbackDatabaseFromPreRestore(
+  currentDbPath: string,
+  writeLog: (t: string) => void
+): Promise<boolean> {
+  const backupDbPath = `${currentDbPath}.pre-restore`;
+  if (!fs.existsSync(backupDbPath)) {
+    writeLog(`      ! No pre-restore database at ${backupDbPath}\n`);
+    return false;
+  }
+  try {
+    await prisma.$disconnect();
+    await fsp.copyFile(backupDbPath, currentDbPath);
+    await reconnectPrisma();
+    writeLog(`      + Rolled database back from .pre-restore\n`);
+    writeLog(`      + Live DB: ${currentDbPath}\n`);
+    writeLog(`      + Pre-restore copy retained: ${backupDbPath}\n`);
+    return true;
+  } catch (err: any) {
+    writeLog(`      ! DB rollback FAILED: ${err?.message || err}\n`);
+    writeLog(`      ! CRITICAL: preserve both files for manual recovery:\n`);
+    writeLog(`          live: ${currentDbPath}\n`);
+    writeLog(`          pre-restore: ${backupDbPath}\n`);
+    await reconnectPrisma().catch(() => {});
+    return false;
+  }
+}
+
+export type RestoreCommitOutcome = 'committed' | 'aborted' | 'critical';
+
+/**
+ * After files + reconcile: commit (optionally consume setup secrets) or abort.
+ * Setup-token restores roll the DB back when not fully committed so retry stays possible.
+ * If rollback itself fails → `critical` (maintenance stays on; not retryable via setup UI).
+ */
+async function finishRestoreCommit(opts: {
+  writeLog: (t: string) => void;
+  reconcileOk: boolean;
+  dbReplaced: boolean;
+  currentDbPath: string;
+  setupAuth: boolean;
+}): Promise<RestoreCommitOutcome> {
+  await reconnectPrisma().catch(() => {});
+  const adminCount = await prisma.user
+    .count({ where: { role: 'admin' } })
+    .catch(() => 0);
+  const decision = decideRestoreCommit({
+    reconcileOk: opts.reconcileOk,
+    adminCount,
+    dbReplaced: opts.dbReplaced,
+    setupAuth: opts.setupAuth,
+  });
+
+  if (decision.action === 'abort') {
+    opts.writeLog(`\n[ROLLBACK] Restore not committed: ${decision.reason}\n`);
+    if (decision.rollbackDb) {
+      const rolled = await rollbackDatabaseFromPreRestore(opts.currentDbPath, opts.writeLog);
+      if (!rolled) {
+        opts.writeLog(
+          `\n[CRITICAL] Database rollback failed — sealed; do not retry until files are repaired.\n`
+        );
+        opts.writeLog(
+          `  Manual recovery paths:\n    ${opts.currentDbPath}\n    ${opts.currentDbPath}.pre-restore\n`
+        );
+        enterRestoreCritical({
+          detail: decision.reason,
+          liveDbPath: opts.currentDbPath,
+        });
+        return 'critical';
+      }
+    }
+    if (opts.setupAuth) {
+      opts.writeLog(`  [security] Setup credentials retained for retry\n`);
+    }
+    return 'aborted';
+  }
+
+  if (decision.consumeSetup) {
+    consumeSetupRestoreSecrets();
+    opts.writeLog(`\n  [security] Setup token + bootstrap secret consumed\n`);
+  }
+  return 'committed';
 }
 
 // Helper: Reconcile system state after restore
@@ -159,11 +278,21 @@ const uploadStorage = multer.diskStorage({
     cb(null, uploadDir);
   },
   filename: (req, file, cb) => {
-    // Keep original filename but sanitize it
-    const sanitized = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
-    cb(null, sanitized);
+    // Server-chosen name — never trust client filename for storage path
+    const ext = path.extname(file.originalname).toLowerCase() === '.zip' ? '.zip' : '.zip';
+    cb(null, `restore-${Date.now()}-${crypto.randomBytes(8).toString('hex')}${ext}`);
   }
 });
+
+/** Acquire restore lock before Multer writes any bytes. */
+function requireRestoreLock(why: string) {
+  return (req: Request, res: Response, next: () => void) => {
+    if (!tryAcquireRestoreLock(why)) {
+      return res.status(409).json({ error: restoreLockReason(), locked: true });
+    }
+    next();
+  };
+}
 
 const uploadBackup = multer({
   storage: uploadStorage,
@@ -489,17 +618,24 @@ router.post('/create', async (req: Request, res: Response) => {
 });
 
 // POST /api/backup/restore/:filename - Restore from backup with streaming progress
-router.post('/restore/:filename', async (req: Request, res: Response) => {
+router.post('/restore/:filename', requireRestoreLock('restore-from-backup'), async (req: Request, res: Response) => {
+  if (!(await requireStepUpPassword(req, res))) {
+    releaseRestoreLock();
+    return;
+  }
+
   const { filename } = req.params;
 
   // Security validation
   if (!isValidBackupFilename(filename)) {
+    releaseRestoreLock();
     return res.status(400).json({ error: 'Invalid backup filename' });
   }
 
   const backupPath = path.join(BACKUP_DIR, filename);
 
   if (!fs.existsSync(backupPath)) {
+    releaseRestoreLock();
     return res.status(404).json({ error: 'Backup file not found' });
   }
 
@@ -519,6 +655,9 @@ router.post('/restore/:filename', async (req: Request, res: Response) => {
       // Ignore write errors if client disconnected
     }
   };
+
+  let dbReplaced = false;
+  const currentDbPath = getDatabasePath();
 
   try {
     const now = new Date();
@@ -557,9 +696,9 @@ router.post('/restore/:filename', async (req: Request, res: Response) => {
     // 3. Restore database
     writeLog(`\n[3/7] Restoring database...\n`);
     const tempDbPath = path.join(tempDir, 'database', 'docklift.db');
-    const currentDbPath = getDatabasePath();
     if (fs.existsSync(tempDbPath)) {
       await restoreDatabaseFile(tempDbPath, currentDbPath, writeLog);
+      dbReplaced = true;
     } else {
       writeLog(`      ! No database in backup\n`);
     }
@@ -629,8 +768,31 @@ router.post('/restore/:filename', async (req: Request, res: Response) => {
 
     // Reconcile system state (auto-redeploy)
     const reconcileOk = await reconcileSystem(writeLog);
+    const outcome = await finishRestoreCommit({
+      writeLog,
+      reconcileOk,
+      dbReplaced,
+      currentDbPath,
+      setupAuth: false,
+    });
 
     writeLog(`\n${'='.repeat(50)}\n`);
+    if (outcome === 'critical') {
+      writeLog(`  [CRITICAL] RESTORE FAILED — MANUAL RECOVERY REQUIRED\n`);
+      writeLog(`  Seal: data/.restore-critical (lock held; restores blocked across restarts)\n`);
+      writeLog(`${'='.repeat(50)}\n`);
+      // Do NOT releaseRestoreLock — critical seal holds it
+      res.end();
+      return;
+    }
+    if (outcome === 'aborted') {
+      writeLog(`  [ERROR] RESTORE ABORTED\n`);
+      writeLog(`${'='.repeat(50)}\n`);
+      exitMaintenance();
+      releaseRestoreLock();
+      res.end();
+      return;
+    }
     if (reconcileOk) {
       writeLog(`  RESTORE COMPLETE\n`);
     } else {
@@ -647,7 +809,22 @@ router.post('/restore/:filename', async (req: Request, res: Response) => {
       process.exit(0);
     }, 1000);
   } catch (error: any) {
+    if (dbReplaced) {
+      writeLog(`\n[ROLLBACK] Attempting database rollback after failed restore...\n`);
+      const rolled = await rollbackDatabaseFromPreRestore(currentDbPath, writeLog);
+      if (!rolled) {
+        writeLog(`\n[CRITICAL] Rollback failed — sealed; do not retry\n`);
+        writeLog(`  Paths: ${currentDbPath} | ${currentDbPath}.pre-restore\n`);
+        enterRestoreCritical({
+          detail: error?.message || 'restore failed after DB replace',
+          liveDbPath: currentDbPath,
+        });
+        res.end();
+        return;
+      }
+    }
     exitMaintenance();
+    releaseRestoreLock();
     writeLog(`\n[ERROR] Restore failed: ${error.message}\n`);
     console.error('Restore error:', error);
     res.end();
@@ -734,9 +911,41 @@ router.post('/upload', uploadBackup.single('backup'), async (req: Request, res: 
 });
 
 // POST /api/backup/restore-upload - Upload and immediately restore from backup
-router.post('/restore-upload', uploadBackup.single('backup'), async (req: Request, res: Response) => {
+router.post(
+  '/restore-upload',
+  requireRestoreLock('restore-upload'),
+  (req: Request, res: Response, next) => {
+    uploadBackup.single('backup')(req, res, (err: unknown) => {
+      if (err) {
+        releaseRestoreLock();
+        const message = err instanceof Error ? err.message : 'Upload failed';
+        return res.status(400).json({ error: message });
+      }
+      next();
+    });
+  },
+  async (req: Request, res: Response) => {
   try {
+    const setupAuth = (req as SetupRestoreRequest).setupTokenAuth === true;
+    if (setupAuth) {
+      // Fresh install: setup token already validated; no admin user / password yet.
+      const adminCount = await prisma.user
+        .count({ where: { role: 'admin' } })
+        .catch(() => 0);
+      if (adminCount > 0) {
+        releaseRestoreLock();
+        if (req.file?.path) await fsp.unlink(req.file.path).catch(() => {});
+        return res.status(403).json({
+          error: 'Setup-token restore is only allowed before the first admin exists',
+        });
+      }
+    } else if (!(await requireStepUpPassword(req, res))) {
+      releaseRestoreLock();
+      if (req.file?.path) await fsp.unlink(req.file.path).catch(() => {});
+      return;
+    }
     if (!req.file) {
+      releaseRestoreLock();
       return res.status(400).json({ error: 'No backup file uploaded' });
     }
 
@@ -759,6 +968,10 @@ router.post('/restore-upload', uploadBackup.single('backup'), async (req: Reques
       }
     };
 
+    let dbReplaced = false;
+    const currentDbPath = getDatabasePath();
+
+    try {
     const now = new Date();
     writeLog(`\n${'='.repeat(50)}\n`);
     writeLog(`  RESTORING FROM UPLOADED BACKUP\n`);
@@ -795,9 +1008,9 @@ router.post('/restore-upload', uploadBackup.single('backup'), async (req: Reques
     // 3. Restore database
     writeLog(`\n[3/7] Restoring database...\n`);
     const tempDbPath = path.join(tempDir, 'database', 'docklift.db');
-    const currentDbPath = getDatabasePath();
     if (fs.existsSync(tempDbPath)) {
       await restoreDatabaseFile(tempDbPath, currentDbPath, writeLog);
+      dbReplaced = true;
     } else {
       writeLog(`      ! No database in backup\n`);
     }
@@ -881,8 +1094,30 @@ router.post('/restore-upload', uploadBackup.single('backup'), async (req: Reques
 
     // Reconcile system state (auto-redeploy)
     const reconcileOk = await reconcileSystem(writeLog);
+    const outcome = await finishRestoreCommit({
+      writeLog,
+      reconcileOk,
+      dbReplaced,
+      currentDbPath,
+      setupAuth,
+    });
 
     writeLog(`\n${'='.repeat(50)}\n`);
+    if (outcome === 'critical') {
+      writeLog(`  [CRITICAL] RESTORE FAILED — MANUAL RECOVERY REQUIRED\n`);
+      writeLog(`  Seal: data/.restore-critical (lock held; restores blocked across restarts)\n`);
+      writeLog(`${'='.repeat(50)}\n`);
+      res.end();
+      return;
+    }
+    if (outcome === 'aborted') {
+      writeLog(`  [ERROR] RESTORE ABORTED\n`);
+      writeLog(`${'='.repeat(50)}\n`);
+      exitMaintenance();
+      releaseRestoreLock();
+      res.end();
+      return;
+    }
     if (reconcileOk) {
       writeLog(`  RESTORE COMPLETE\n`);
     } else {
@@ -899,12 +1134,37 @@ router.post('/restore-upload', uploadBackup.single('backup'), async (req: Reques
       console.log('Restarting backend service after restore...');
       process.exit(0);
     }, 1000);
+    } catch (innerError: any) {
+      if (dbReplaced) {
+        writeLog(`\n[ROLLBACK] Attempting database rollback after failed restore...\n`);
+        const rolled = await rollbackDatabaseFromPreRestore(currentDbPath, writeLog);
+        if (!rolled) {
+          writeLog(`\n[CRITICAL] Rollback failed — sealed; do not retry\n`);
+          writeLog(`  Paths: ${currentDbPath} | ${currentDbPath}.pre-restore\n`);
+          enterRestoreCritical({
+            detail: innerError?.message || 'upload restore failed after DB replace',
+            liveDbPath: currentDbPath,
+          });
+          res.end();
+          return;
+        }
+      }
+      throw innerError;
+    }
   } catch (error: any) {
-    exitMaintenance();
+    if (isRestoreCritical()) {
+      if (!res.writableEnded) res.end();
+      return;
+    }
+    if (!res.writableEnded) {
+      exitMaintenance();
+      releaseRestoreLock();
+    }
+    // Keep setup token on failure so the operator can retry (when DB rolled back)
     console.error('Upload restore error:', error);
     if (!res.headersSent) {
       res.status(500).json({ error: error.message || 'Failed to restore from uploaded backup' });
-    } else {
+    } else if (!res.writableEnded) {
       res.write(`\n[ERROR] Restore failed: ${error.message}\n`);
       res.end();
     }
@@ -912,16 +1172,23 @@ router.post('/restore-upload', uploadBackup.single('backup'), async (req: Reques
 });
 
 // POST /api/backup/restore-from-upload/:filename - Restore from an already uploaded file
-router.post('/restore-from-upload/:filename', async (req: Request, res: Response) => {
+router.post('/restore-from-upload/:filename', requireRestoreLock('restore-from-upload'), async (req: Request, res: Response) => {
+  if (!(await requireStepUpPassword(req, res))) {
+    releaseRestoreLock();
+    return;
+  }
+
   const { filename } = req.params;
 
   if (!isValidBackupFilename(filename)) {
+    releaseRestoreLock();
     return res.status(400).json({ error: 'Invalid backup filename' });
   }
 
   const backupPath = path.join(UPLOADS_DIR, filename);
 
   if (!fs.existsSync(backupPath)) {
+    releaseRestoreLock();
     return res.status(404).json({ error: 'Uploaded file not found' });
   }
 
@@ -941,6 +1208,9 @@ router.post('/restore-from-upload/:filename', async (req: Request, res: Response
       // Ignore write errors if client disconnected
     }
   };
+
+  let dbReplaced = false;
+  const currentDbPath = getDatabasePath();
 
   try {
     const stats = await fsp.stat(backupPath);
@@ -980,9 +1250,9 @@ router.post('/restore-from-upload/:filename', async (req: Request, res: Response
     // 3. Restore database
     writeLog(`\n[3/7] Restoring database...\n`);
     const tempDbPath = path.join(tempDir, 'database', 'docklift.db');
-    const currentDbPath = getDatabasePath();
     if (fs.existsSync(tempDbPath)) {
       await restoreDatabaseFile(tempDbPath, currentDbPath, writeLog);
+      dbReplaced = true;
     } else {
       writeLog(`      ! No database in backup\n`);
     }
@@ -1066,8 +1336,30 @@ router.post('/restore-from-upload/:filename', async (req: Request, res: Response
 
     // Reconcile system state (auto-redeploy)
     const reconcileOk = await reconcileSystem(writeLog);
+    const outcome = await finishRestoreCommit({
+      writeLog,
+      reconcileOk,
+      dbReplaced,
+      currentDbPath,
+      setupAuth: false,
+    });
 
     writeLog(`\n${'='.repeat(50)}\n`);
+    if (outcome === 'critical') {
+      writeLog(`  [CRITICAL] RESTORE FAILED — MANUAL RECOVERY REQUIRED\n`);
+      writeLog(`  Seal: data/.restore-critical (lock held; restores blocked across restarts)\n`);
+      writeLog(`${'='.repeat(50)}\n`);
+      res.end();
+      return;
+    }
+    if (outcome === 'aborted') {
+      writeLog(`  [ERROR] RESTORE ABORTED\n`);
+      writeLog(`${'='.repeat(50)}\n`);
+      exitMaintenance();
+      releaseRestoreLock();
+      res.end();
+      return;
+    }
     if (reconcileOk) {
       writeLog(`  RESTORE COMPLETE\n`);
     } else {
@@ -1085,7 +1377,22 @@ router.post('/restore-from-upload/:filename', async (req: Request, res: Response
       process.exit(0);
     }, 1000);
   } catch (error: any) {
+    if (dbReplaced) {
+      writeLog(`\n[ROLLBACK] Attempting database rollback after failed restore...\n`);
+      const rolled = await rollbackDatabaseFromPreRestore(currentDbPath, writeLog);
+      if (!rolled) {
+        writeLog(`\n[CRITICAL] Rollback failed — sealed; do not retry\n`);
+        writeLog(`  Paths: ${currentDbPath} | ${currentDbPath}.pre-restore\n`);
+        enterRestoreCritical({
+          detail: error?.message || 'restore-from-upload failed after DB replace',
+          liveDbPath: currentDbPath,
+        });
+        res.end();
+        return;
+      }
+    }
     exitMaintenance();
+    releaseRestoreLock();
     console.error('Restore from upload error:', error);
     if (!res.headersSent) {
       res.status(500).json({ error: error.message || 'Failed to restore from uploaded file' });
@@ -1094,6 +1401,32 @@ router.post('/restore-from-upload/:filename', async (req: Request, res: Response
       res.end();
     }
   }
+});
+
+/** POST /api/backup/clear-critical-restore — operator ack after manual DB repair */
+router.post('/clear-critical-restore', async (req: Request, res: Response) => {
+  try {
+    if (!isRestoreCritical()) {
+      return res.status(400).json({ error: 'No critical restore seal is active' });
+    }
+    if (!(await requireStepUpPassword(req, res))) return;
+    const prev = clearRestoreCritical();
+    res.json({
+      success: true,
+      message: 'Critical restore seal cleared',
+      previous: prev,
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to clear critical seal' });
+  }
+});
+
+router.get('/critical-status', async (_req: Request, res: Response) => {
+  const payload = readRestoreCritical();
+  res.json({
+    critical: isRestoreCritical(),
+    seal: payload,
+  });
 });
 
 export default router;
