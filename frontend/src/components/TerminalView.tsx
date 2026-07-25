@@ -1,39 +1,114 @@
 // TerminalView component - interactive xterm.js shell with system controls
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { 
-  Terminal as TerminalIcon, 
-  RefreshCw, 
-  Power, 
-  AlertTriangle,
-  CheckCircle2,
-  XCircle,
-  Trash2,
-  Maximize2,
-  Minimize2,
-} from "lucide-react";
-import { Card } from "@/components/ui/card";
+import { useSearchParams } from "react-router-dom";
+import { Maximize2, Minimize2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { 
-  Dialog, 
-  DialogContent, 
-  DialogHeader, 
-  DialogTitle, 
-  DialogDescription, 
-  DialogFooter 
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { API_URL } from "@/lib/utils";
+import { API_URL, cn } from "@/lib/utils";
 import { authFetch } from "@/lib/auth";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
+import { useTheme } from "@/lib/theme";
+import {
+  fetchVersionInfo,
+  getCachedVersion,
+  type VersionInfo,
+} from "@/components/shell/SidebarStatus";
+
+type WaitKind = "upgrade" | "update-system";
+
+type WaitState = {
+  kind: WaitKind;
+  current?: string;
+  latest?: string;
+  simulated?: boolean;
+};
+
+/** Survives React StrictMode remounts when URL query is cleared before dialog state commits. */
+let pendingUpgradeConfirm = false;
 
 const PASSWORD_CANCEL = Symbol("terminal_password_cancel");
 
+function xtermTheme(mode: "dark" | "light") {
+  if (mode === "light") {
+    return {
+      background: "#fafafa",
+      foreground: "#171717",
+      cursor: "#171717",
+      cursorAccent: "#fafafa",
+      selectionBackground: "#17171722",
+      selectionForeground: "#171717",
+      black: "#171717",
+      red: "#b91c1c",
+      green: "#15803d",
+      yellow: "#a16207",
+      blue: "#1d4ed8",
+      magenta: "#6b21a8",
+      cyan: "#0e7490",
+      white: "#525252",
+      brightBlack: "#737373",
+      brightRed: "#dc2626",
+      brightGreen: "#16a34a",
+      brightYellow: "#ca8a04",
+      brightBlue: "#2563eb",
+      brightMagenta: "#7c3aed",
+      brightCyan: "#0891b2",
+      brightWhite: "#0a0a0a",
+    };
+  }
+  return {
+    background: "#0a0a0a",
+    foreground: "#e5e5e5",
+    cursor: "#e5e5e5",
+    cursorAccent: "#0a0a0a",
+    selectionBackground: "#e5e5e533",
+    selectionForeground: "#fafafa",
+    black: "#0a0a0a",
+    red: "#f87171",
+    green: "#4ade80",
+    yellow: "#facc15",
+    blue: "#93c5fd",
+    magenta: "#d8b4fe",
+    cyan: "#67e8f9",
+    white: "#e5e5e5",
+    brightBlack: "#737373",
+    brightRed: "#fca5a5",
+    brightGreen: "#86efac",
+    brightYellow: "#fde047",
+    brightBlue: "#bfdbfe",
+    brightMagenta: "#e9d5ff",
+    brightCyan: "#a5f3fc",
+    brightWhite: "#fafafa",
+  };
+}
+
+function formatVersion(v?: string) {
+  if (!v) return "—";
+  return v.startsWith("v") ? v : `v${v}`;
+}
+
 export function TerminalView() {
+  const { resolvedTheme } = useTheme();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [showRebootDialog, setShowRebootDialog] = useState(false);
   const [showResetDialog, setShowResetDialog] = useState(false);
   const [showPurgeDialog, setShowPurgeDialog] = useState(false);
+  const [showUpgradeConfirm, setShowUpgradeConfirm] = useState(false);
+  const [showUpdateConfirm, setShowUpdateConfirm] = useState(false);
+  const [waitState, setWaitState] = useState<WaitState | null>(null);
+  const [versionInfo, setVersionInfo] = useState<VersionInfo | null>(
+    () => getCachedVersion(),
+  );
+  const [versionLoading, setVersionLoading] = useState(false);
+  const [refreshInSec, setRefreshInSec] = useState(90);
   const [isProcessing, setIsProcessing] = useState(false);
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
   const [passwordInput, setPasswordInput] = useState("");
@@ -47,6 +122,8 @@ export function TerminalView() {
   const wsRef = useRef<WebSocket | null>(null);
   const fitAddonRef = useRef<any>(null);
   const passwordInputRef = useRef<HTMLInputElement>(null);
+  const themeRef = useRef(resolvedTheme);
+  themeRef.current = resolvedTheme;
   const passwordResolveRef = useRef<
     ((value: string | typeof PASSWORD_CANCEL) => void) | null
   >(null);
@@ -94,32 +171,9 @@ export function TerminalView() {
         fontWeight: "400",
         fontWeightBold: "600",
         lineHeight: 1.35,
-        letterSpacing: 0.5,
-        allowTransparency: true,
-        theme: {
-          background: "#0c0c0c",
-          foreground: "#d4d4d4",
-          cursor: "#22d3ee",
-          cursorAccent: "#0c0c0c",
-          selectionBackground: "#22d3ee33",
-          selectionForeground: "#ffffff",
-          black: "#1e1e1e",
-          red: "#f87171",
-          green: "#4ade80",
-          yellow: "#facc15",
-          blue: "#60a5fa",
-          magenta: "#c084fc",
-          cyan: "#22d3ee",
-          white: "#d4d4d4",
-          brightBlack: "#525252",
-          brightRed: "#fca5a5",
-          brightGreen: "#86efac",
-          brightYellow: "#fde047",
-          brightBlue: "#93c5fd",
-          brightMagenta: "#d8b4fe",
-          brightCyan: "#67e8f9",
-          brightWhite: "#ffffff",
-        },
+        letterSpacing: 0,
+        allowTransparency: false,
+        theme: xtermTheme(themeRef.current),
         scrollback: 5000,
         convertEol: true,
         allowProposedApi: true,
@@ -184,6 +238,12 @@ export function TerminalView() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Keep xterm colors in sync with app light/dark
+  useEffect(() => {
+    if (!xtermRef.current) return;
+    xtermRef.current.options.theme = xtermTheme(resolvedTheme);
+  }, [resolvedTheme]);
 
   // Handle window resize
   useEffect(() => {
@@ -388,20 +448,91 @@ export function TerminalView() {
     }
   }, [promptPassword, cancelPasswordPrompt]);
 
-  // System action handler (same as before)
-  const handleSystemAction = async (action: 'reboot' | 'reset' | 'purge' | 'update-system' | 'upgrade') => {
+  const clearTerminalQuery = useCallback(() => {
+    if (!searchParams.has("confirm") && !searchParams.has("action")) return;
+    const next = new URLSearchParams(searchParams);
+    next.delete("confirm");
+    next.delete("action");
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
+
+  const openUpgradeConfirm = useCallback(async () => {
+    setShowUpgradeConfirm(true);
+    setVersionLoading(true);
+    try {
+      const info = await fetchVersionInfo(true);
+      if (info) setVersionInfo(info);
+    } finally {
+      setVersionLoading(false);
+    }
+  }, []);
+
+  const dismissUpgradeConfirm = useCallback(() => {
+    pendingUpgradeConfirm = false;
+    setShowUpgradeConfirm(false);
+  }, []);
+
+  // Deep links from sidebar: ?confirm=upgrade | legacy ?action=upgrade → confirm (not fake wait)
+  useEffect(() => {
+    const confirm = searchParams.get("confirm");
+    const action = searchParams.get("action");
+    if (
+      confirm === "upgrade" ||
+      action === "upgrade" ||
+      action === "upgrade_simulated"
+    ) {
+      pendingUpgradeConfirm = true;
+      clearTerminalQuery();
+    }
+    // Module flag survives StrictMode remount after the query is stripped.
+    // Consume on microtask so the remount effect still sees the flag.
+    if (pendingUpgradeConfirm) {
+      void openUpgradeConfirm();
+      queueMicrotask(() => {
+        pendingUpgradeConfirm = false;
+      });
+    }
+  }, [searchParams, clearTerminalQuery, openUpgradeConfirm]);
+
+  useEffect(() => {
+    if (!waitState) return;
+    setRefreshInSec(waitState.kind === "upgrade" ? 90 : 120);
+    const id = window.setInterval(() => {
+      setRefreshInSec((s) => (s > 0 ? s - 1 : 0));
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [waitState]);
+
+  const handleSystemAction = async (
+    action: "reboot" | "reset" | "purge" | "update-system" | "upgrade",
+  ) => {
     setIsProcessing(true);
     setShowRebootDialog(false);
     setShowResetDialog(false);
     setShowPurgeDialog(false);
-    
+    setShowUpgradeConfirm(false);
+    setShowUpdateConfirm(false);
+    if (action === "upgrade") pendingUpgradeConfirm = false;
+
     try {
       const res = await authFetch(`${API_URL}/api/system/${action}`, {
         method: "POST",
       });
       const data = await res.json();
-      
+
       if (!res.ok) throw new Error(data.error || "Action failed");
+
+      if (action === "upgrade" || action === "update-system") {
+        const simulated = Boolean(data.message?.includes("Simulated"));
+        setWaitState({
+          kind: action,
+          current: versionInfo?.current ?? getCachedVersion()?.current,
+          latest: versionInfo?.latest ?? getCachedVersion()?.latest,
+          simulated,
+        });
+        return;
+      }
+
       toast.success(data.message || `${action} successful`);
     } catch (err: any) {
       toast.error(err.message || `Failed to ${action} server`);
@@ -410,380 +541,448 @@ export function TerminalView() {
     }
   };
 
+  const fitAfterLayout = () => {
+    setTimeout(() => {
+      if (fitAddonRef.current) {
+        try {
+          fitAddonRef.current.fit();
+        } catch {}
+        if (wsRef.current?.readyState === WebSocket.OPEN && xtermRef.current) {
+          try {
+            wsRef.current.send(
+              JSON.stringify({
+                type: "resize",
+                cols: xtermRef.current.cols,
+                rows: xtermRef.current.rows,
+              }),
+            );
+          } catch {}
+        }
+      }
+    }, 100);
+  };
+
+  const termBg = resolvedTheme === "light" ? "#fafafa" : "#0a0a0a";
+  const statusLabel = connected ? "live" : connecting ? "connecting" : "offline";
+  const hostLocked =
+    !!waitState && !waitState.simulated && waitState.kind === "upgrade";
+  const hostBusy = isProcessing || !!waitState;
+  const upgradeTargetLabel =
+    versionLoading && !versionInfo?.latest
+      ? "…"
+      : versionInfo?.latest
+        ? formatVersion(versionInfo.latest)
+        : versionLoading
+          ? "…"
+          : "unknown";
+
   return (
-    <div className="flex flex-col gap-5 animate-in fade-in slide-in-from-bottom-4 duration-700">
-      {/* Control Center - Action Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        {/* System Update Card */}
-        <Card className="p-3 bg-background border-border shadow-sm hover:shadow-md transition-shadow duration-300 rounded-xl group border-l-4 border-l-cyan-500">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-cyan-500/10">
-                <RefreshCw className="h-4 w-4 text-cyan-500" />
-              </div>
-              <div className="flex flex-col">
-                <h3 className="font-bold text-sm">Update System</h3>
-                <p className="text-[10px] text-muted-foreground leading-tight">apt update & upgrade</p>
-              </div>
-            </div>
-            <Button 
-              variant="secondary"
-              size="sm"
-              onClick={() => handleSystemAction('update-system')}
-              disabled={isProcessing}
-              className="font-bold h-8 px-3 rounded-lg shadow-sm bg-cyan-500/10 text-cyan-500 hover:bg-cyan-500/20 border border-cyan-500/20"
-            >
-              Update
-            </Button>
-          </div>
-        </Card>
+    <div className="flex flex-col gap-4">
+      {/* Host controls — single quiet strip, not rainbow cards */}
+      <div className="flex flex-col gap-2 border-b border-border pb-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+        <p className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+          Host
+        </p>
+        <div className="flex flex-wrap items-center gap-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={hostBusy}
+            onClick={() => setShowUpdateConfirm(true)}
+            className="h-8 px-2.5 text-xs font-medium text-muted-foreground hover:text-foreground"
+          >
+            Update packages
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={hostBusy}
+            onClick={() => void openUpgradeConfirm()}
+            className="h-8 px-2.5 text-xs font-medium text-muted-foreground hover:text-foreground"
+          >
+            Upgrade Docklift
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={isProcessing || hostLocked}
+            onClick={() => setShowPurgeDialog(true)}
+            className="h-8 px-2.5 text-xs font-medium text-muted-foreground hover:text-foreground"
+          >
+            Purge images
+          </Button>
+          <span
+            aria-hidden
+            className="mx-1 hidden h-4 w-px bg-border sm:inline-block"
+          />
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={isProcessing || hostLocked}
+            onClick={() => setShowResetDialog(true)}
+            className="h-8 px-2.5 text-xs font-medium text-muted-foreground hover:text-foreground"
+          >
+            Reset stack
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={isProcessing || hostLocked}
+            onClick={() => setShowRebootDialog(true)}
+            className="h-8 px-2.5 text-xs font-medium text-destructive hover:bg-destructive/10 hover:text-destructive"
+          >
+            Reboot
+          </Button>
+        </div>
+      </div>
 
-        {/* Docklift Upgrade Card */}
-        <Card className="p-3 bg-background border-border shadow-sm hover:shadow-md transition-shadow duration-300 rounded-xl group border-l-4 border-l-emerald-500">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-emerald-500/10">
-                <TerminalIcon className="h-4 w-4 text-emerald-500" />
-              </div>
-              <div className="flex flex-col">
-                <h3 className="font-bold text-sm">Upgrade Docklift</h3>
-                <p className="text-[10px] text-muted-foreground leading-tight">Latest version</p>
-              </div>
-            </div>
-            <Button 
-              variant="secondary"
-              size="sm"
-              onClick={() => handleSystemAction('upgrade')}
-              disabled={isProcessing}
-              className="font-bold h-8 px-3 rounded-lg shadow-sm bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 border border-emerald-500/20"
+      {/* Shell frame */}
+      <div
+        className={cn(
+          "flex flex-col overflow-hidden border border-border bg-background",
+          isFullscreen
+            ? "fixed inset-0 z-50 m-0 h-screen w-screen rounded-none border-0"
+            : "min-h-0",
+        )}
+      >
+        <div className="flex items-center justify-between gap-3 border-b border-border px-3 py-2">
+          <div className="flex min-w-0 items-baseline gap-2">
+            <span className="truncate font-mono text-xs text-foreground">
+              root@docklift
+            </span>
+            <span className="text-muted-foreground/50">·</span>
+            <span
+              className={cn(
+                "shrink-0 text-[11px] tabular-nums",
+                connected
+                  ? "text-foreground"
+                  : connecting
+                    ? "text-muted-foreground"
+                    : "text-muted-foreground/70",
+              )}
             >
-              Upgrade
-            </Button>
+              {statusLabel}
+            </span>
           </div>
-        </Card>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => {
+              setIsFullscreen((v) => !v);
+              fitAfterLayout();
+            }}
+            className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
+            title={isFullscreen ? "Exit full screen" : "Full screen"}
+          >
+            {isFullscreen ? (
+              <Minimize2 className="h-3.5 w-3.5" />
+            ) : (
+              <Maximize2 className="h-3.5 w-3.5" />
+            )}
+          </Button>
+        </div>
 
-        {/* Reboot Card */}
-        <Card className="p-3 bg-background border-border shadow-sm hover:shadow-md transition-shadow duration-300 rounded-xl group border-l-4 border-l-rose-500">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-rose-500/10">
-                <Power className="h-4 w-4 text-rose-500" />
-              </div>
-              <div className="flex flex-col">
-                <h3 className="font-bold text-sm">Reboot Server</h3>
-                <p className="text-[10px] text-muted-foreground leading-tight">Full system restart</p>
-              </div>
+        <div
+          ref={terminalRef}
+          className={cn(
+            "flex-1 p-2",
+            !isFullscreen &&
+              "min-h-[min(70vh,560px)] sm:min-h-[min(72vh,640px)]",
+          )}
+          style={{ background: termBg }}
+        />
+      </div>
+
+      <Dialog
+        open={showUpgradeConfirm}
+        onOpenChange={(open) => {
+          if (!open) dismissUpgradeConfirm();
+          else setShowUpgradeConfirm(true);
+        }}
+      >
+        <DialogContent className="sm:max-w-md gap-5">
+          <DialogHeader className="space-y-2 pr-6">
+            <DialogTitle>Upgrade Docklift?</DialogTitle>
+            <DialogDescription>
+              The panel will go offline while the stack rebuilds. Keep this tab
+              open — when it returns, refresh.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="rounded-lg border border-border bg-muted/40 px-3 py-3 font-mono text-xs">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-muted-foreground">Now</span>
+              <span className="tabular-nums text-foreground">
+                {versionLoading && !versionInfo
+                  ? "…"
+                  : formatVersion(versionInfo?.current)}
+              </span>
             </div>
-            <Button 
+            <div className="mt-2 flex items-center justify-between gap-3 border-t border-border/70 pt-2">
+              <span className="text-muted-foreground">Installing</span>
+              <span className="tabular-nums font-medium text-foreground">
+                {upgradeTargetLabel}
+              </span>
+            </div>
+          </div>
+
+          <p className="text-sm text-muted-foreground">
+            {upgradeTargetLabel === "unknown"
+              ? "Could not resolve the target version from GitHub. You can still start — upgrade.sh will pull the latest release."
+              : "Usually ready in 1–2 minutes. Deployed apps keep running; only the Docklift panel restarts."}
+          </p>
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={dismissUpgradeConfirm}
+              disabled={isProcessing}
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={isProcessing || versionLoading}
+              onClick={() => handleSystemAction("upgrade")}
+            >
+              {isProcessing
+                ? "Starting…"
+                : versionLoading
+                  ? "Checking version…"
+                  : "Start upgrade"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showUpdateConfirm} onOpenChange={setShowUpdateConfirm}>
+        <DialogContent className="sm:max-w-md gap-5">
+          <DialogHeader className="space-y-2 pr-6">
+            <DialogTitle>Update host packages?</DialogTitle>
+            <DialogDescription>
+              Runs <span className="font-mono text-foreground">apt update</span>{" "}
+              and upgrade on the server. This can take several minutes.
+            </DialogDescription>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            The panel usually stays up. If this page stops responding, wait 1–2
+            minutes, then refresh.
+          </p>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => setShowUpdateConfirm(false)}
+              disabled={isProcessing}
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={isProcessing}
+              onClick={() => handleSystemAction("update-system")}
+            >
+              {isProcessing ? "Starting…" : "Start update"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!waitState}
+        onOpenChange={(open) => {
+          if (!open) setWaitState(null);
+        }}
+      >
+        <DialogContent
+          className="sm:max-w-md gap-5"
+          showCloseButton={false}
+          onPointerDownOutside={(e) => e.preventDefault()}
+          onEscapeKeyDown={(e) => e.preventDefault()}
+        >
+          <DialogHeader className="space-y-2">
+            <DialogTitle>
+              {waitState?.kind === "upgrade"
+                ? waitState.simulated
+                  ? "Upgrade simulated"
+                  : "Upgrade in progress"
+                : waitState?.simulated
+                  ? "Package update simulated"
+                  : "Package update in progress"}
+            </DialogTitle>
+            <DialogDescription>
+              {waitState?.kind === "upgrade"
+                ? waitState.simulated
+                  ? "Dev mode did not restart the stack. Nothing is offline."
+                  : "This UI will go offline while Docklift restarts. That is expected."
+                : waitState?.simulated
+                  ? "Dev mode did not change host packages."
+                  : "Host packages are updating in the background. This page may briefly disconnect."}
+            </DialogDescription>
+          </DialogHeader>
+
+          {waitState?.kind === "upgrade" && !waitState.simulated && (
+            <div className="rounded-lg border border-border bg-muted/40 px-3 py-3 font-mono text-xs">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-muted-foreground">Target</span>
+                <span className="tabular-nums font-medium text-foreground">
+                  {formatVersion(waitState.latest)}
+                </span>
+              </div>
+              {waitState.current && (
+                <div className="mt-2 flex items-center justify-between gap-3 border-t border-border/70 pt-2">
+                  <span className="text-muted-foreground">From</span>
+                  <span className="tabular-nums text-foreground">
+                    {formatVersion(waitState.current)}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {!waitState?.simulated && (
+            <p className="text-sm text-muted-foreground">
+              {refreshInSec > 0 ? (
+                <>
+                  Try refreshing in about{" "}
+                  <span className="font-medium tabular-nums text-foreground">
+                    {Math.floor(refreshInSec / 60)}:
+                    {String(refreshInSec % 60).padStart(2, "0")}
+                  </span>
+                  {waitState?.kind === "upgrade"
+                    ? ". The new Docklift version is available once the panel comes back."
+                    : ". The panel should respond again once package updates finish."}
+                </>
+              ) : (
+                <>You can refresh now — if the page still fails, wait another minute.</>
+              )}
+            </p>
+          )}
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            {(waitState?.simulated || refreshInSec === 0) && (
+              <Button variant="outline" onClick={() => setWaitState(null)}>
+                Dismiss
+              </Button>
+            )}
+            <Button onClick={() => window.location.reload()}>
+              Refresh page
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showRebootDialog} onOpenChange={setShowRebootDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Reboot this server?</DialogTitle>
+            <DialogDescription>
+              Every project goes offline for a few minutes. In-flight
+              deployments stop. The machine restarts completely.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setShowRebootDialog(false)}>
+              Cancel
+            </Button>
+            <Button
               variant="destructive"
-              size="sm"
-              onClick={() => setShowRebootDialog(true)}
-              className="font-bold h-8 px-3 rounded-lg shadow-sm"
+              disabled={isProcessing}
+              onClick={() => handleSystemAction("reboot")}
             >
               Reboot
             </Button>
-          </div>
-        </Card>
-
-        {/* Reset Card */}
-        <Card className="p-3 bg-background border-border shadow-sm hover:shadow-md transition-shadow duration-300 rounded-xl group border-l-4 border-l-amber-500">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-amber-500/10">
-                <RefreshCw className="h-4 w-4 text-amber-500" />
-              </div>
-              <div className="flex flex-col">
-                <h3 className="font-bold text-sm">Reset Services</h3>
-                <p className="text-[10px] text-muted-foreground leading-tight">Docker restart</p>
-              </div>
-            </div>
-            <Button 
-              variant="outline"
-              size="sm"
-              onClick={() => setShowResetDialog(true)}
-              className="font-bold h-8 px-3 rounded-lg shadow-sm border-amber-500/30 text-amber-500 hover:bg-amber-500/10"
-            >
-              Reset
-            </Button>
-          </div>
-        </Card>
-      </div>
-
-      {/* Interactive Terminal */}
-      <Card 
-        className={cn(
-          "flex flex-col bg-[#0c0c0c] border border-[#2a2a2a] overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.5)] rounded-2xl relative transition-all duration-300",
-          isFullscreen ? "fixed inset-0 z-50 rounded-none border-0 h-screen w-screen m-0" : ""
-        )}
-      >
-        {/* Subtle glow */}
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(34,211,238,0.03),transparent)] pointer-events-none" />
-        
-        {/* Terminal Header */}
-        <div className="px-3 sm:px-4 py-2.5 border-b border-[#2a2a2a] flex items-center justify-between bg-[#111]/90 backdrop-blur-md z-10">
-          <div className="flex items-center gap-3 sm:gap-5">
-            <div className="flex gap-1.5 sm:gap-2">
-              <div className="w-3 h-3 rounded-full bg-[#ff5f56] shadow-[0_0_8px_rgba(255,95,86,0.25)]" />
-              <div className="w-3 h-3 rounded-full bg-[#ffbd2e] shadow-[0_0_8px_rgba(255,189,46,0.25)]" />
-              <div className="w-3 h-3 rounded-full bg-[#27c93f] shadow-[0_0_8px_rgba(39,201,63,0.25)]" />
-            </div>
-            <div className="hidden sm:flex items-center gap-2 px-3 py-1 bg-[#1a1a1a] rounded-lg border border-[#252525]">
-              <TerminalIcon className="h-3.5 w-3.5 text-cyan-400" />
-              <span className="text-[11px] font-bold text-[#888] tracking-[0.15em] uppercase">bash — root@docklift</span>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className={cn(
-              "flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-bold tracking-wide transition-all",
-              connected 
-                ? "text-emerald-400 bg-emerald-400/10 border-emerald-400/20 shadow-[0_0_10px_rgba(52,211,153,0.08)]"
-                : connecting
-                  ? "text-amber-400 bg-amber-400/10 border-amber-400/20"
-                  : "text-zinc-500 bg-zinc-500/10 border-zinc-500/20"
-            )}>
-              <div className={cn(
-                "w-1.5 h-1.5 rounded-full",
-                connected ? "bg-emerald-400 animate-pulse" : connecting ? "bg-amber-400 animate-pulse" : "bg-zinc-500"
-              )} />
-              <span className="hidden sm:inline">{connected ? "CONNECTED" : connecting ? "CONNECTING" : "OFFLINE"}</span>
-            </div>
-
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                const newState = !isFullscreen;
-                setIsFullscreen(newState);
-                // Give layout time to adjust before fitting
-                setTimeout(() => {
-                  if (fitAddonRef.current) {
-                    try { fitAddonRef.current.fit(); } catch {}
-                    // Notify backend of resize
-                    if (wsRef.current?.readyState === WebSocket.OPEN && xtermRef.current) {
-                      try {
-                        wsRef.current.send(JSON.stringify({ 
-                          type: "resize", 
-                          cols: xtermRef.current.cols, 
-                          rows: xtermRef.current.rows 
-                        }));
-                      } catch {}
-                    }
-                  }
-                }, 100);
-              }}
-              className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground hover:bg-white/10 rounded-md ml-1"
-              title={isFullscreen ? "Exit Full Screen" : "Full Screen"}
-            >
-              {isFullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
-            </Button>
-          </div>
-        </div>
-
-        <div 
-          ref={terminalRef}
-          className={cn(
-            "flex-1 p-1 z-10",
-            !isFullscreen && "min-h-[280px] sm:min-h-[400px] md:min-h-[500px] lg:min-h-[600px]"
-          )}
-          style={{ background: "#0c0c0c" }}
-        />
-      </Card>
-
-      {/* Reboot Confirmation Dialog */}
-      <Dialog open={showRebootDialog} onOpenChange={setShowRebootDialog}>
-        <DialogContent className="sm:max-w-md bg-background border-border shadow-2xl rounded-3xl">
-          <DialogHeader className="space-y-4">
-            <div className="mx-auto w-16 h-16 rounded-2xl bg-rose-500/10 flex items-center justify-center">
-              <Power className="h-8 w-8 text-rose-500" />
-            </div>
-            <div className="text-center space-y-2">
-              <DialogTitle className="text-2xl font-bold tracking-tight">Full System Reboot</DialogTitle>
-              <DialogDescription className="text-muted-foreground text-sm leading-relaxed max-w-[280px] mx-auto">
-                Safety check: you are about to restart the physical server machine.
-              </DialogDescription>
-            </div>
-          </DialogHeader>
-          
-          <div className="space-y-3 my-4">
-            <div className="p-4 rounded-2xl bg-secondary/30 border border-border flex items-center gap-4">
-              <AlertTriangle className="h-5 w-5 text-rose-500 shrink-0" />
-              <p className="text-sm font-semibold">Every project will go offline (2m)</p>
-            </div>
-            <div className="p-4 rounded-2xl bg-secondary/30 border border-border flex items-center gap-4">
-              <XCircle className="h-5 w-5 text-rose-500 shrink-0" />
-              <p className="text-sm font-semibold">Ongoing deployments will be lost</p>
-            </div>
-          </div>
-
-          <DialogFooter className="flex flex-col sm:flex-row gap-3 pt-2">
-            <Button
-              variant="ghost"
-              onClick={() => setShowRebootDialog(false)}
-              className="flex-1 font-bold text-base h-12 rounded-2xl"
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={() => handleSystemAction('reboot')}
-              className="flex-1 rounded-2xl bg-gradient-to-r from-violet-500 to-purple-600 hover:from-violet-600 hover:to-purple-700 text-white font-bold text-base h-12 shadow-xl shadow-violet-500/20"
-            >
-              Restart Server
-            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Reset Confirmation Dialog */}
       <Dialog open={showResetDialog} onOpenChange={setShowResetDialog}>
-        <DialogContent className="sm:max-w-md bg-background border-border shadow-2xl rounded-3xl">
-          <DialogHeader className="space-y-4">
-            <div className="mx-auto w-16 h-16 rounded-2xl bg-amber-500/10 flex items-center justify-center">
-              <RefreshCw className="h-8 w-8 text-amber-500" />
-            </div>
-            <div className="text-center space-y-2">
-              <DialogTitle className="text-2xl font-bold tracking-tight">Reset Stack Services</DialogTitle>
-              <DialogDescription className="text-muted-foreground text-sm leading-relaxed max-w-[280px] mx-auto">
-                Refreshes core Docklift components and background workers.
-              </DialogDescription>
-            </div>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Reset Docklift services?</DialogTitle>
+            <DialogDescription>
+              Restarts core Docklift containers and workers. Running app
+              projects stay up unless they depend on the panel briefly.
+            </DialogDescription>
           </DialogHeader>
-          
-          <div className="space-y-3 my-4">
-            <div className="p-4 rounded-2xl bg-secondary/30 border border-border flex items-center gap-4">
-              <CheckCircle2 className="h-5 w-5 text-amber-500 shrink-0" />
-              <p className="text-sm font-semibold">Fixes service communication errors</p>
-            </div>
-            <div className="p-4 rounded-2xl bg-secondary/30 border border-border flex items-center gap-4">
-              <CheckCircle2 className="h-5 w-5 text-amber-500 shrink-0" />
-              <p className="text-sm font-semibold">Flushes background worker queues</p>
-            </div>
-          </div>
-
-          <DialogFooter className="flex flex-col sm:flex-row gap-3 pt-2">
-            <Button
-              variant="ghost"
-              onClick={() => setShowResetDialog(false)}
-              className="flex-1 font-bold text-base h-12 rounded-2xl"
-            >
-              Wait, Cancel
-            </Button>
-            <Button
-              variant="warning"
-              onClick={() => handleSystemAction('reset')}
-              className="flex-1 rounded-2xl bg-gradient-to-r from-violet-500 to-purple-600 hover:from-violet-600 hover:to-purple-700 text-white font-bold text-base h-12 shadow-xl shadow-violet-500/20 border-0"
-            >
-              Reset Services
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Purge Confirmation Dialog */}
-      <Dialog open={showPurgeDialog} onOpenChange={setShowPurgeDialog}>
-        <DialogContent className="sm:max-w-md bg-background border-border shadow-2xl">
-          <DialogHeader className="space-y-3">
-            <div className="mx-auto w-14 h-14 rounded-2xl bg-cyan-500/10 flex items-center justify-center border border-cyan-500/10">
-              <Trash2 className="h-6 w-6 text-cyan-500" />
-            </div>
-            <div className="text-center space-y-1">
-              <DialogTitle className="text-xl font-bold tracking-tight">Purge dangling images</DialogTitle>
-              <DialogDescription className="text-muted-foreground text-sm">
-                Removes only untagged Docker images. Does not touch host system files, swap, or other containers.
-              </DialogDescription>
-            </div>
-          </DialogHeader>
-          
-          <div className="space-y-2 my-2">
-            <div className="p-3 rounded-xl bg-secondary/50 border border-border flex items-center gap-3">
-              <CheckCircle2 className="h-4 w-4 text-cyan-500" />
-              <p className="text-xs font-bold">Dangling (untagged) images only</p>
-            </div>
-            <div className="p-3 rounded-xl bg-secondary/50 border border-border flex items-center gap-3">
-              <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
-              <p className="text-xs font-bold text-muted-foreground">No host prune, journal, apt, or /tmp wipe</p>
-            </div>
-            <div className="p-3 rounded-xl bg-secondary/50 border border-border flex items-center gap-3">
-              <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
-              <p className="text-xs font-bold text-muted-foreground">Other Docker workloads are never restarted</p>
-            </div>
-          </div>
-
-          <DialogFooter className="flex flex-col sm:flex-row gap-2 mt-2">
-            <Button
-              variant="ghost"
-              onClick={() => setShowPurgeDialog(false)}
-              className="flex-1 rounded-xl font-bold h-10"
-            >
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setShowResetDialog(false)}>
               Cancel
             </Button>
             <Button
-              variant="success"
-              onClick={() => handleSystemAction('purge')}
-              className="flex-1 rounded-xl font-bold h-10 shadow-lg shadow-emerald-500/20"
+              disabled={isProcessing}
+              onClick={() => handleSystemAction("reset")}
             >
-              Purge All
+              Reset stack
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Terminal Password Verification Dialog */}
-      <Dialog open={showPasswordDialog} onOpenChange={(open) => {
-        if (!open) {
-          cancelPasswordPrompt();
-        }
-      }}>
-        <DialogContent className="sm:max-w-md bg-background border-border shadow-2xl rounded-3xl">
-          <DialogHeader className="space-y-4">
-            <div className="mx-auto w-16 h-16 rounded-2xl bg-cyan-500/10 flex items-center justify-center border border-cyan-500/20">
-              <TerminalIcon className="h-8 w-8 text-cyan-500" />
-            </div>
-            <div className="text-center space-y-2">
-              <DialogTitle className="text-2xl font-bold tracking-tight">Terminal Access</DialogTitle>
-              <DialogDescription className="text-muted-foreground text-sm leading-relaxed max-w-[300px] mx-auto">
-                Verify your password to open an interactive terminal session.
-              </DialogDescription>
-            </div>
+      <Dialog open={showPurgeDialog} onOpenChange={setShowPurgeDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Purge dangling images?</DialogTitle>
+            <DialogDescription>
+              Removes untagged Docker images only. No host prune, journal wipe,
+              or restart of other workloads.
+            </DialogDescription>
           </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setShowPurgeDialog(false)}>
+              Cancel
+            </Button>
+            <Button
+              disabled={isProcessing}
+              onClick={() => handleSystemAction("purge")}
+            >
+              Purge images
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-          <form onSubmit={(e) => { e.preventDefault(); handlePasswordSubmit(); }} className="space-y-4 my-2">
+      <Dialog
+        open={showPasswordDialog}
+        onOpenChange={(open) => {
+          if (!open) cancelPasswordPrompt();
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Confirm terminal access</DialogTitle>
+            <DialogDescription>
+              Enter your account password to open a root shell on this host.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handlePasswordSubmit();
+            }}
+            className="space-y-4"
+          >
             <div className="space-y-2">
               <Input
                 ref={passwordInputRef}
                 type="password"
-                placeholder="Enter your account password"
+                placeholder="Account password"
                 value={passwordInput}
                 onChange={(e) => setPasswordInput(e.target.value)}
-                className="h-12 rounded-xl bg-secondary/30 border-border text-center font-mono tracking-widest text-lg"
+                className="h-10 font-mono"
                 autoFocus
               />
               {passwordError && (
-                <p className="text-rose-400 text-xs font-semibold text-center">{passwordError}</p>
+                <p className="text-sm text-destructive">{passwordError}</p>
               )}
             </div>
-
-            <div className="p-3 rounded-xl bg-amber-500/5 border border-amber-500/20 flex items-start gap-3">
-              <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
-              <p className="text-[11px] text-amber-500/80 font-medium leading-relaxed">
-                This opens a full interactive shell session. Your password is only used for verification and is never stored.
-              </p>
-            </div>
-
-            <DialogFooter className="flex flex-col sm:flex-row gap-3 pt-1">
+            <DialogFooter className="gap-2 sm:gap-0">
               <Button
                 type="button"
-                variant="ghost"
+                variant="outline"
                 onClick={cancelPasswordPrompt}
-                className="flex-1 font-bold text-base h-12 rounded-2xl"
               >
                 Cancel
               </Button>
-              <Button
-                type="submit"
-                disabled={!passwordInput.trim()}
-                className="flex-1 rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white font-bold text-base h-12 shadow-xl shadow-cyan-500/20"
-              >
-                Open Terminal
+              <Button type="submit" disabled={!passwordInput.trim()}>
+                Open shell
               </Button>
             </DialogFooter>
           </form>
