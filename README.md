@@ -73,10 +73,21 @@ redeploys on every push — all from a web UI, with no vendor lock-in.
 
 ## 🚀 Quick Start
 
-One-command install on Ubuntu/Debian:
+One-command install on Ubuntu/Debian (latest GitHub release):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh | sudo bash
+```
+
+Pin a specific release (see [Releases](https://github.com/SSujitX/docklift/releases)) — pass the
+version to bash, not in the curl URL:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh | sudo bash -s -- v=2.0.2
+```
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh | sudo DOCKLIFT_VERSION=2.0.2 bash
 ```
 
 The installer prints your public URL, for example:
@@ -100,10 +111,10 @@ backend logs. The Setup page requires it before the first admin account can be c
 the IP alone is not enough to claim the panel. It is never exposed through any public API.
 
 ```bash
-# Grab it from the logs…
 docker logs docklift-backend | grep -A8 "Fresh install"
+```
 
-# …or read it straight off disk
+```bash
 sudo cat /opt/docklift/data/.bootstrap-secret
 ```
 
@@ -280,14 +291,34 @@ re-run `docker compose up -d` from that directory to apply changes:
 
 ### Production (recommended)
 
+Install (latest release):
+
 ```bash
-# Install
 curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh | sudo bash
+```
 
-# Upgrade (preserves data)
+Install a specific release (`bash -s -- v=2.0.2` or `DOCKLIFT_VERSION=2.0.2`):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh | sudo bash -s -- v=2.0.2
+```
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh | sudo DOCKLIFT_VERSION=2.0.2 bash
+```
+
+> Pinning/downgrading with `install.sh` rebuilds that tag and does **not** run `upgrade.sh`’s DB snapshot.
+> Prefer `upgrade.sh` to move forward; backup before installing an older tag.
+
+Upgrade to latest release (preserves data; always targets GitHub latest, not a pin):
+
+```bash
 curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/upgrade.sh | sudo bash
+```
 
-# Uninstall
+Uninstall:
+
+```bash
 curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/uninstall.sh | sudo bash -s -- -y
 ```
 
@@ -307,7 +338,13 @@ curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install-dev
 
 ```bash
 git clone https://github.com/SSujitX/docklift.git
+```
+
+```bash
 cd docklift
+```
+
+```bash
 docker compose up -d
 ```
 
