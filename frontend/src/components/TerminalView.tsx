@@ -686,9 +686,9 @@ export function TerminalView() {
               <Trash2 className="h-6 w-6 text-cyan-500" />
             </div>
             <div className="text-center space-y-1">
-              <DialogTitle className="text-xl font-bold tracking-tight">Purge Resources</DialogTitle>
+              <DialogTitle className="text-xl font-bold tracking-tight">Purge dangling images</DialogTitle>
               <DialogDescription className="text-muted-foreground text-sm">
-                Complete cleanup: Docker + HOST system. Safe operations only.
+                Removes only untagged Docker images. Does not touch host system files, swap, or other containers.
               </DialogDescription>
             </div>
           </DialogHeader>
@@ -696,15 +696,15 @@ export function TerminalView() {
           <div className="space-y-2 my-2">
             <div className="p-3 rounded-xl bg-secondary/50 border border-border flex items-center gap-3">
               <CheckCircle2 className="h-4 w-4 text-cyan-500" />
-              <p className="text-xs font-bold">Docker cleanup + Restart user containers</p>
+              <p className="text-xs font-bold">Dangling (untagged) images only</p>
             </div>
             <div className="p-3 rounded-xl bg-secondary/50 border border-border flex items-center gap-3">
-              <CheckCircle2 className="h-4 w-4 text-cyan-500" />
-              <p className="text-xs font-bold">HOST cleanup (cache, logs, apt, temp)</p>
+              <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
+              <p className="text-xs font-bold text-muted-foreground">No host prune, journal, apt, or /tmp wipe</p>
             </div>
             <div className="p-3 rounded-xl bg-secondary/50 border border-border flex items-center gap-3">
-              <CheckCircle2 className="h-4 w-4 text-cyan-500" />
-              <p className="text-xs font-bold">Clear swap if safe (30%+ RAM free)</p>
+              <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
+              <p className="text-xs font-bold text-muted-foreground">Other Docker workloads are never restarted</p>
             </div>
           </div>
 
