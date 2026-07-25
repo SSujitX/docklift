@@ -12,21 +12,21 @@ export const Troubleshooting = () => (
 
     <div className="space-y-4">
       <div className="bg-secondary/50 rounded-xl p-6">
-        <h4 className="font-semibold mb-2 text-red-500">Port Already in Use</h4>
+        <h4 className="font-semibold mb-2 text-red-500">Can&apos;t open SERVER_IP:55xx</h4>
         <ol className="list-decimal list-inside text-sm text-muted-foreground space-y-1">
-          <li>Check <code className="bg-primary/10 px-1.5 py-0.5 rounded text-primary">/ports</code> for allocations</li>
-          <li>Stop conflicting container</li>
-          <li>Or redeploy to get a new port</li>
+          <li>Host ports are off by default — use your custom domain, or enable <strong>Publish host ports</strong> in Build Settings and redeploy</li>
+          <li>Check <code className="bg-primary/10 px-1.5 py-0.5 rounded text-primary">/ports</code> for reserved host ports</li>
         </ol>
       </div>
 
       <div className="bg-secondary/50 rounded-xl p-6">
-        <h4 className="font-semibold mb-2 text-red-500">Domain Not Working</h4>
+        <h4 className="font-semibold mb-2 text-red-500">Domain returns 502</h4>
         <ol className="list-decimal list-inside text-sm text-muted-foreground space-y-1">
+          <li>Confirm the app container is running and listening on its internal port</li>
           <li>Verify DNS: <code className="bg-primary/10 px-1.5 py-0.5 rounded text-primary">nslookup yourdomain.com</code></li>
-          <li>Check Nginx config in <code className="bg-primary/10 px-1.5 py-0.5 rounded text-primary">/etc/docklift/nginx-conf/</code></li>
-          <li>Reload Nginx: <code className="bg-primary/10 px-1.5 py-0.5 rounded text-primary">docker exec docklift-nginx-proxy nginx -s reload</code></li>
-          <li>If using Cloudflare: SSL mode <strong>Full (strict)</strong> after Docklift shows HTTPS Active; use DNS-only while first issuing the cert</li>
+          <li>Ensure nginx-proxy is on the project network after deploy</li>
+          <li>Reload proxy: <code className="bg-primary/10 px-1.5 py-0.5 rounded text-primary">docker exec docklift-nginx-proxy nginx -s reload</code></li>
+          <li>Cloudflare: SSL mode <strong>Full (strict)</strong> once HTTPS is active</li>
         </ol>
       </div>
 
