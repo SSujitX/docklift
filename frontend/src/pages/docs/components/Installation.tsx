@@ -28,10 +28,10 @@ export const Installation = () => (
         ]}
       />
       <p className="text-sm text-muted-foreground mt-3">
-        Access Docklift at <code className="bg-primary/10 px-1.5 py-0.5 rounded text-primary">http://127.0.0.1:8080</code> by default
-        (localhost bind). For LAN/public access, set <code className="bg-primary/10 px-1.5 py-0.5 rounded text-primary">DASHBOARD_BIND=0.0.0.0</code>
-        only behind HTTPS/VPN/firewall. On first setup, paste the bootstrap secret from
-        <code className="bg-primary/10 px-1.5 py-0.5 rounded text-primary">docker logs docklift-backend</code>.
+        The installer prints <code className="bg-primary/10 px-1.5 py-0.5 rounded text-primary">Dashboard: http://SERVER_IP:8080</code> and a one-time
+        <strong> Setup code</strong>. Open that URL, paste the code, and create your admin account.
+        Raw HTTP is convenient for first setup — not encrypted. Later: Settings → Domain (HTTPS), a firewall,
+        or <code className="bg-primary/10 px-1.5 py-0.5 rounded text-primary">DASHBOARD_BIND=127.0.0.1</code> for localhost-only.
       </p>
     </div>
 
@@ -76,9 +76,12 @@ export const Installation = () => (
           <span className="text-emerald-500">✓</span> Auto-backup
         </div>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <span className="text-emerald-500">✓</span> Auto-migrate DB
+          <span className="text-emerald-500">✓</span> Image + DB rollback
         </div>
       </div>
+      <p className="text-xs text-muted-foreground mt-3">
+        Upgrade pins the previous git ref and database backup; on build or health failure it rolls back automatically.
+      </p>
     </div>
 
     <div className="bg-secondary/50 rounded-xl p-6 mb-4">
@@ -105,12 +108,13 @@ export const Installation = () => (
         items={[
           { comment: "Setup Backend", cmd: "cd backend && bun install" },
           { cmd: "bun run dev" },
-          { comment: "Setup Frontend (separate terminal)", cmd: "cd frontend && npm install" },
-          { cmd: "npm run dev" }
+          { comment: "Setup Frontend (separate terminal)", cmd: "cd frontend && bun install" },
+          { cmd: "bun run dev" }
         ]}
       />
       <p className="text-sm text-muted-foreground mt-3">
-        Access at <code className="bg-primary/10 px-1.5 py-0.5 rounded text-primary">http://localhost:3000</code>
+        Frontend: <code className="bg-primary/10 px-1.5 py-0.5 rounded text-primary">http://localhost:3600</code>
+        {" "}· Backend API: <code className="bg-primary/10 px-1.5 py-0.5 rounded text-primary">http://localhost:8000</code>
       </p>
     </div>
   </section>
