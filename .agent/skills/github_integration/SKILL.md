@@ -45,9 +45,15 @@ Unsafe OAuth code→token exchange is **removed**. The route may still redirect 
 ## Key Components
 
 ### Repository Listing
--   **Endpoint**: `GET /api/github/repos`
--   **Logic**: Fetches repositories from **all** installations accessible to the App.
--   **Important**: Uses pagination to ensure all repositories are retrieved (recursively fetching all pages).
+-   **Endpoint**: `GET /api/github/repos` (optional `?owner=login`)
+-   **Response**: `{ repositories, failedInstallations, fallbackSingle }` — never silently
+    drop a failed install into an empty success list. `fallbackSingle: true` means only the
+    saved install was queried (installations list failed).
+-   **Logic**: Lists **all** App installations (paginated), then repos for each install
+    (paginated), deduped by repo id. `check-installation` must **not** overwrite a valid
+    saved install with `installations[0]` (that hid personal behind the last org).
+-   **UI**: New Project Private tab shows **All** + every connected `@login` chip; search
+    filters the combined list (not a single-account badge). Toast on partial/fallback failures.
 
 ### Webhooks (Auto-Deploy)
 -   **Endpoint**: `POST /api/github/webhook` (global — project matching is by repo URL, not `/webhook/:projectId`).
