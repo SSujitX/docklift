@@ -12,24 +12,97 @@ interface VersionInfo {
   current: string;
   latest: string;
   updateAvailable: boolean;
+  githubOk?: boolean;
+  checkedAt?: string;
 }
 
-// Cached across mounts so collapsing the rail — or the desktop and drawer rails
-// mounting together — never repeats the requests.
+// Soft cache shared by desktop + mobile rails. One poller only — both Sidebars
+// mount in AppShell, so per-instance intervals would double GitHub traffic.
 let cachedStars: number | null = null;
 let cachedVersion: VersionInfo | null = null;
 let versionRequest: Promise<VersionInfo | null> | null = null;
 let starsRequest: Promise<number | null> | null = null;
+let lastVersionFetchAt = 0;
+let pollerSubscribers = 0;
+let pollerIntervalId: number | null = null;
+let focusBound = false;
+
+const CLIENT_REFRESH_WHEN_CURRENT_MS = 2 * 60 * 1000;
+const CLIENT_REFRESH_WHEN_UPDATE_MS = 15 * 60 * 1000;
+const FOCUS_DEBOUNCE_MS = 60 * 1000;
+
+type VersionListener = (data: VersionInfo | null) => void;
+const versionListeners = new Set<VersionListener>();
+
+function notifyVersionListeners(data: VersionInfo | null) {
+  for (const listener of versionListeners) {
+    listener(data);
+  }
+}
 
 function loadVersion(): Promise<VersionInfo | null> {
-  versionRequest ??= fetch("/api/system/version", { headers: getAuthHeaders() })
+  const now = Date.now();
+  const ttl = cachedVersion?.updateAvailable
+    ? CLIENT_REFRESH_WHEN_UPDATE_MS
+    : cachedVersion?.githubOk === false
+      ? 30 * 1000
+      : CLIENT_REFRESH_WHEN_CURRENT_MS;
+
+  if (
+    cachedVersion &&
+    lastVersionFetchAt > 0 &&
+    now - lastVersionFetchAt < ttl
+  ) {
+    return Promise.resolve(cachedVersion);
+  }
+
+  // Always coalesce — never start a second in-flight /version call
+  if (versionRequest) {
+    return versionRequest;
+  }
+
+  // No ?refresh=1 on routine polls — server 2m TTL is enough; avoids GitHub stampede
+  versionRequest = fetch("/api/system/version", { headers: getAuthHeaders() })
     .then((res) => (res.ok ? res.json() : null))
     .then((data: VersionInfo | null) => {
-      cachedVersion = data;
+      if (data) {
+        cachedVersion = data;
+        lastVersionFetchAt = Date.now();
+        notifyVersionListeners(data);
+      }
       return data;
     })
-    .catch(() => null);
+    .catch(() => null)
+    .finally(() => {
+      versionRequest = null;
+    });
+
   return versionRequest;
+}
+
+function ensureVersionPoller() {
+  if (pollerIntervalId === null) {
+    pollerIntervalId = window.setInterval(() => {
+      if (cachedVersion?.updateAvailable) return;
+      void loadVersion();
+    }, CLIENT_REFRESH_WHEN_CURRENT_MS);
+  }
+  if (!focusBound) {
+    focusBound = true;
+    window.addEventListener("focus", () => {
+      if (cachedVersion?.updateAvailable) return;
+      if (Date.now() - lastVersionFetchAt < FOCUS_DEBOUNCE_MS) return;
+      void loadVersion();
+    });
+  }
+}
+
+function releaseVersionPoller() {
+  if (pollerSubscribers > 0) return;
+  if (pollerIntervalId !== null) {
+    window.clearInterval(pollerIntervalId);
+    pollerIntervalId = null;
+  }
 }
 
 function loadStars(): Promise<number | null> {
@@ -57,19 +130,24 @@ export function SidebarStatus({ collapsed }: { collapsed: boolean }) {
   const navigate = useNavigate();
 
   useEffect(() => {
-    let active = true;
-    if (!cachedVersion) {
-      loadVersion().then((data) => {
-        if (active && data) setVersion(data);
-      });
-    }
+    const onVersion: VersionListener = (data) => {
+      if (data) setVersion(data);
+    };
+    versionListeners.add(onVersion);
+    pollerSubscribers += 1;
+    ensureVersionPoller();
+    void loadVersion().then((data) => {
+      if (data) setVersion(data);
+    });
+
     if (cachedStars === null) {
-      loadStars().then((count) => {
-        if (active) setStars(count);
-      });
+      void loadStars().then((count) => setStars(count));
     }
+
     return () => {
-      active = false;
+      versionListeners.delete(onVersion);
+      pollerSubscribers = Math.max(0, pollerSubscribers - 1);
+      releaseVersionPoller();
     };
   }, []);
 
@@ -172,6 +250,11 @@ export function SidebarStatus({ collapsed }: { collapsed: boolean }) {
       <p className="px-2.5 text-[10px] font-medium tracking-wide text-sidebar-muted/70">
         v{currentVersion} · © {new Date().getFullYear()} Docklift
       </p>
+      {version && version.githubOk === false && !version.updateAvailable && (
+        <p className="px-2.5 text-[10px] text-amber-600/90 dark:text-amber-400/90">
+          Update check unavailable
+        </p>
+      )}
     </div>
   );
 }
