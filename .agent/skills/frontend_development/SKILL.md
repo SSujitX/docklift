@@ -20,7 +20,9 @@ Docklift uses **Vite + React + React Router** for its dashboard (static SPA in p
 | `/terminal` | `pages/Terminal.tsx` | Web terminal (xterm.js) |
 | `/system` | `pages/System.tsx` | System health |
 | `/ports` | `pages/Ports.tsx` | Docker port mapping |
-| `/databases` | `pages/Databases.tsx` | Database projects |
+| `/databases` | `pages/Databases.tsx` | Managed databases list |
+| `/databases/new` | `pages/NewDatabase.tsx` | One-click engine create |
+| — | `components/databases/*` | Connection, link, attach panels |
 | `/settings` | `pages/Settings.tsx` | Settings + GitHub |
 | `/docs/*` | `pages/docs/*` | Built-in documentation |
 
