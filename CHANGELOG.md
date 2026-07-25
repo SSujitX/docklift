@@ -1,3 +1,10 @@
+## [2.0.7](https://github.com/SSujitX/docklift/compare/v2.0.6...v2.0.7) (2026-07-25)
+
+
+### Features
+
+* **ui:** enhance ProjectActionBar with improved styling and new danger action ([262452f](https://github.com/SSujitX/docklift/commit/262452fe2f96a3bdfe69f4b57fc84c6a6429d2b8))
+
 ## [2.0.6](https://github.com/SSujitX/docklift/compare/v2.0.5...v2.0.6) (2026-07-25)
 
 
