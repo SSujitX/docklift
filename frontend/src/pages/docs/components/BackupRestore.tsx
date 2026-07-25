@@ -92,12 +92,11 @@ export const BackupRestore = () => (
         </div>
 
         <ol className="list-decimal list-inside text-sm text-muted-foreground space-y-3">
-          <li>Go to <span className="text-foreground font-bold">Settings → Backup</span></li>
-          <li>Click <span className="text-foreground font-bold">Upload & Restore</span></li>
-          <li>Select your backup .zip file</li>
-          <li>Confirm the restore operation</li>
-          <li>Wait for the restore to complete</li>
-          <li>Re-deploy your projects after restore</li>
+          <li>Go to <span className="text-foreground font-bold">Settings → Restore</span></li>
+          <li>Upload a backup .zip or pick a previously uploaded file</li>
+          <li>Confirm with your <span className="text-foreground font-bold">account password</span> (step-up auth)</li>
+          <li>Wait for the restore stream (API is locked while maintenance runs)</li>
+          <li>Backend restarts; projects are reconciled automatically when possible</li>
         </ol>
       </div>
     </div>
@@ -112,11 +111,14 @@ export const BackupRestore = () => (
         You can restore a backup immediately after installing Docklift on a new server, before creating any users:
       </p>
       <ol className="list-decimal list-inside text-sm text-muted-foreground space-y-2">
-        <li>Install Docklift on your new server</li>
-        <li>Open the Docklift URL - you'll see the setup page</li>
-        <li>Instead of creating a new account, click <span className="text-foreground font-bold">Restore from Backup</span></li>
-        <li>Upload your backup file</li>
-        <li>Your previous users, projects, and settings will be restored</li>
+        <li>Install Docklift on your new server (note the Setup code from the installer)</li>
+        <li>Open <code className="bg-primary/10 px-1.5 py-0.5 rounded text-primary">http://SERVER_IP:8080</code></li>
+        <li>Enter the Setup code, then choose <span className="text-foreground font-bold">Restore from Backup</span></li>
+        <li>Upload your backup file (no admin password yet — setup token authorizes this once)</li>
+        <li>Setup code is consumed only after a full successful restore (admin present + reconcile OK)</li>
+        <li>If restore fails or is incomplete, the DB rolls back and the setup code stays valid for retry</li>
+        <li>If DB rollback itself fails, DockLift seals recovery (`data/.restore-critical`) — do not retry until repaired and cleared</li>
+        <li>If DB rollback itself fails, DockLift seals critical mode (<code className="bg-primary/10 px-1 rounded">.restore-critical</code>) until an admin clears it after manual repair</li>
       </ol>
       <div className="mt-4 p-3 bg-emerald-500/5 border border-emerald-500/20 rounded-lg">
         <p className="text-xs text-muted-foreground">
