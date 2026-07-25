@@ -12,6 +12,7 @@ interface BuildEnv {
   key: string;
   value: string;
   is_build_arg: boolean | null;
+  is_secret?: boolean | null;
 }
 
 export function summarizeBuildFailure(command: string, output: string, code: number): string {
@@ -87,13 +88,28 @@ export async function buildServiceImage(opts: {
   if (service.builder === 'dockerfile') {
     if (!service.dockerfilePath) throw new Error('Resolved Dockerfile path is missing');
     const dockerfile = path.resolve(projectPath, service.dockerfilePath);
-    const args = ['build', '--progress', 'plain', '-t', imageTag, '-f', dockerfile];
-    for (const item of envVars.filter((item) => item.is_build_arg)) {
+    const buildArgs = envVars.filter((item) => item.is_build_arg && !item.is_secret);
+    const secrets = envVars.filter((item) => item.is_build_arg && item.is_secret);
+    // Prefer BuildKit so --secret works when secrets are configured
+    const args = secrets.length
+      ? ['buildx', 'build', '--load', '--progress', 'plain', '-t', imageTag, '-f', dockerfile]
+      : ['build', '--progress', 'plain', '-t', imageTag, '-f', dockerfile];
+    for (const item of buildArgs) {
       args.push('--build-arg', `${item.key}=${item.value}`);
+    }
+    for (const item of secrets) {
+      args.push('--secret', `id=${item.key},env=${item.key}`);
+      writeLog(`🔐 Passing ${item.key} as BuildKit secret (not build-arg)\n`);
     }
     args.push(context);
     writeLog(`🐳 Building ${service.name} with ${service.dockerfilePath}\n`);
-    await run('docker', args, { cwd: context, onProcess }, writeLog);
+    const buildEnv = secrets.length
+      ? {
+          ...process.env,
+          ...Object.fromEntries(secrets.map((item) => [item.key, item.value])),
+        }
+      : process.env;
+    await run('docker', args, { cwd: context, env: buildEnv, onProcess }, writeLog);
     return;
   }
 
