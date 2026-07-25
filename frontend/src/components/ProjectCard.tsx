@@ -122,6 +122,7 @@ export function ProjectCard({ project, onRefresh }: ProjectCardProps) {
              project.status === 'running' ? 'bg-emerald-500 shadow-emerald-500/50' :
              project.status === 'building' ? 'bg-amber-500 shadow-amber-500/50 animate-pulse' :
              project.status === 'error' ? 'bg-red-500 shadow-red-500/50' :
+             project.status === 'degraded' ? 'bg-orange-500 shadow-orange-500/50' :
              'bg-zinc-400'
           }`} />
 
@@ -142,6 +143,10 @@ export function ProjectCard({ project, onRefresh }: ProjectCardProps) {
                ) : project.status === "error" ? (
                   <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20 uppercase tracking-wide">
                     Error
+                  </span>
+               ) : project.status === "degraded" ? (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-orange-500/10 text-orange-600 dark:text-orange-400 border border-orange-500/20 uppercase tracking-wide">
+                    Degraded
                   </span>
                ) : (
                   <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-zinc-500/10 text-zinc-500 dark:text-zinc-400 border border-zinc-500/20 uppercase tracking-wide">
@@ -176,7 +181,7 @@ export function ProjectCard({ project, onRefresh }: ProjectCardProps) {
 
         {/* Actions Section */}
         <div className="flex items-center gap-2 pl-6 md:pl-0 border-t md:border-t-0 border-border/40 pt-3 md:pt-0 mt-1 md:mt-0" onClick={(e) => e.stopPropagation()}>
-            {project.status === "running" ? (
+            {project.status === "running" || project.status === "degraded" ? (
               <>
                  <Button
                    size="icon"
