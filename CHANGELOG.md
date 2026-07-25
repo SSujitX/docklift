@@ -1,3 +1,11 @@
+## [2.0.3](https://github.com/SSujitX/docklift/compare/v2.0.2...v2.0.3) (2026-07-25)
+
+
+### Bug Fixes
+
+* **system:** stop caching stale no-update checks ([d92f05d](https://github.com/SSujitX/docklift/commit/d92f05d620953cc59a93cd095e0b2dbe13c4290b))
+* **ui:** refresh version banner without github spam ([d02911d](https://github.com/SSujitX/docklift/commit/d02911d203c3ef62a2aa19c4493238fe0e009df0))
+
 ## [2.0.2](https://github.com/SSujitX/docklift/compare/v2.0.1...v2.0.2) (2026-07-25)
 
 
