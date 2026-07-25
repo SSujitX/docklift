@@ -11,7 +11,7 @@ function TerminalContent() {
       <PageHeader
         eyebrow="Operate"
         title="Terminal"
-        description="Interactive shell with full access to the Docklift host."
+        description="Root shell on this host, plus quiet controls for packages, upgrades, and restarts."
         icon={SquareTerminal}
       />
       <TerminalView />
