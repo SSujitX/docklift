@@ -1,6 +1,6 @@
 /**
  * Production DB bootstrap:
- * 1) Dedupe env_variables (so unique(project_id, key) can apply)
+ * 1) Dedupe env_variables (so unique(project_id, service_name, key) can apply)
  * 2) prisma migrate deploy (checked-in migrations — never db push --accept-data-loss)
  * 3) Baseline legacy db-push installs, then repair any missing columns/indexes
  */
@@ -63,9 +63,22 @@ export async function repairLegacySchema(): Promise<void> {
       );
       console.log('[ensureDb] Added env_variables.is_secret');
     }
-    await prisma.$executeRawUnsafe(
-      `CREATE UNIQUE INDEX IF NOT EXISTS "env_variables_project_id_key_key" ON "env_variables"("project_id", "key")`
-    );
+
+    const hasServiceScope = await columnExists('env_variables', 'service_name');
+    if (hasServiceScope) {
+      // Scoped env: unique is (project_id, service_name, key). Never recreate the
+      // pre-scope (project_id, key) index — it blocks shared+service overrides.
+      await prisma.$executeRawUnsafe(
+        `DROP INDEX IF EXISTS "env_variables_project_id_key_key"`
+      );
+      await prisma.$executeRawUnsafe(
+        `CREATE UNIQUE INDEX IF NOT EXISTS "env_variables_project_id_service_name_key_key" ON "env_variables"("project_id", "service_name", "key")`
+      );
+    } else {
+      await prisma.$executeRawUnsafe(
+        `CREATE UNIQUE INDEX IF NOT EXISTS "env_variables_project_id_key_key" ON "env_variables"("project_id", "key")`
+      );
+    }
   }
 }
 
