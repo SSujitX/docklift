@@ -35,18 +35,23 @@ export const Deployment = () => (
       <ol className="list-decimal list-inside space-y-2 text-muted-foreground">
         <li>Pull latest code from GitHub (if applicable)</li>
         <li>Use a repository Dockerfile, or let Railpack detect the framework</li>
-        <li>Build a tagged image and auto-allocate a port (5500-5600 by default)</li>
-        <li>Generate DockLift runtime state outside the source repository</li>
-        <li>Run the built image with persistent storage attached</li>
-        <li>Update Nginx reverse proxy config</li>
-        <li>Stream logs to browser in real-time</li>
+        <li>Build a tagged image (BuildKit secrets for marked build vars)</li>
+        <li>Write runtime compose under deployments/.docklift/&lt;id&gt;/ on a per-project network</li>
+        <li>Start containers (host ports only if Publish host ports is enabled)</li>
+        <li>Attach nginx-proxy to the project network; update domain vhosts</li>
+        <li>Stream logs to the browser in real time</li>
       </ol>
+      <p className="text-xs text-muted-foreground mt-3">
+        Cancel anytime tears containers down for a fresh start. Past success/failed history is not rewritten.
+        Partial fleets show status <strong>degraded</strong>.
+      </p>
     </div>
 
     <div className="bg-secondary/50 rounded-xl p-6">
       <h4 className="font-semibold mb-3">Multi-Service Projects</h4>
       <p className="text-sm text-muted-foreground mb-4">
         Dockerfile projects can contain multiple services. Railpack projects currently resolve to one application service.
+        Prefer custom domains; host ports are optional.
       </p>
       <StaticCodeBlock 
         title="Project Structure"
@@ -54,11 +59,11 @@ export const Deployment = () => (
         color="blue"
         code={`my-project/
 ├── api/
-│   └── Dockerfile      # → Port 6001
+│   └── Dockerfile      # → domain or opt-in host port
 ├── frontend/
-│   └── Dockerfile      # → Port 6002
+│   └── Dockerfile
 └── worker/
-    └── Dockerfile      # → Port 6003`} 
+    └── Dockerfile`}
       />
     </div>
   </section>
