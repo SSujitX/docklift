@@ -1,3 +1,27 @@
+## [2.0.6](https://github.com/SSujitX/docklift/compare/v2.0.5...v2.0.6) (2026-07-25)
+
+
+### Bug Fixes
+
+* **db:** drop legacy env unique after scope migrate ([65093a0](https://github.com/SSujitX/docklift/commit/65093a08a360f30af225fc3abbe1a2c11e41df6a))
+
+
+### Features
+
+* **api:** accept service-scoped env CRUD ([5b82a2a](https://github.com/SSujitX/docklift/commit/5b82a2a7e3955339684454adabe331fa049ea730))
+* **compose:** pass per-service env into compose ([32025fa](https://github.com/SSujitX/docklift/commit/32025fa3d7e916676f19cabc356d60c00c2694eb))
+* **db:** migrate env to service-scope unique ([b860238](https://github.com/SSujitX/docklift/commit/b86023865ddedcdd554aea0417b4daeaff5b379e))
+* **db:** scope env vars by service name ([6fc6738](https://github.com/SSujitX/docklift/commit/6fc673862290fef5cdc6537b1e246cadbfd32774))
+* **deploy:** inject merged service env on deploy ([fe6225b](https://github.com/SSujitX/docklift/commit/fe6225b3ea4eebaaa6ed414a05f5cc98fde9472e))
+* **env:** merge shared and service-scoped vars ([c7c6634](https://github.com/SSujitX/docklift/commit/c7c6634168d0436cfabfb0996c56792eee0aa676))
+* **env:** scope env manager by service ([10d7c04](https://github.com/SSujitX/docklift/commit/10d7c042dcf17c583f16a136feaa6a4cda82d02f))
+* **types:** add env service_name field ([1acef2b](https://github.com/SSujitX/docklift/commit/1acef2bbb0931d0df09ed5e4ccbf0801c43858fe))
+* **ui:** add all-services action bar ([915f874](https://github.com/SSujitX/docklift/commit/915f8742dce382794ed7da564ca684ae70d463fe))
+* **ui:** add all-services workspace rail ([a917b1d](https://github.com/SSujitX/docklift/commit/a917b1d67743e0491a5caed5f50fcbf5005ebcda))
+* **ui:** add bare button variant ([61b49a1](https://github.com/SSujitX/docklift/commit/61b49a10e8a228aa3d5333734d394db6d8a4d5d1))
+* **ui:** label dashboard project lifecycle actions ([262702c](https://github.com/SSujitX/docklift/commit/262702ce2c7e2c800a3ddfa0e1e1355ce582df09))
+* **ui:** split all-services vs service workspace ([b2786f7](https://github.com/SSujitX/docklift/commit/b2786f7cee8ecde68341686deee9a69cde06b735))
+
 ## [2.0.5](https://github.com/SSujitX/docklift/compare/v2.0.4...v2.0.5) (2026-07-25)
 
 
