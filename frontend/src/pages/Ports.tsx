@@ -11,15 +11,26 @@ import { authFetch } from "@/lib/auth";
 export default function PortsPage() {
   const [ports, setPorts] = useState<Port[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     authFetch(`${API_URL}/api/ports`)
-      .then((res) => res.json())
+      .then(async (res) => {
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error((data as { error?: string }).error || `Failed to load ports (${res.status})`);
+        }
+        return res.json();
+      })
       .then((data) => {
         setPorts(Array.isArray(data) ? data : []);
+        setError(null);
         setLoading(false);
       })
-      .catch(() => setLoading(false));
+      .catch((err: Error) => {
+        setError(err.message || "Failed to load ports");
+        setLoading(false);
+      });
   }, []);
 
   const usedPorts = ports.filter((p) => p.is_locked);
@@ -44,6 +55,12 @@ export default function PortsPage() {
           </>
         }
       />
+
+      {error && (
+        <div className="mb-4 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-600 dark:text-red-400">
+          {error}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card className="p-6">
