@@ -38,6 +38,7 @@ import {
   normalizeDomainList,
 } from '../lib/domainOwnership.js';
 import { isProjectDeploying, setProjectDeploying } from '../lib/deploymentState.js';
+import { envForService } from '../lib/envVariables.js';
 import { runCompose } from '../lib/runCompose.js';
 import { syncProjectStatusFromContainers } from '../lib/projectStatusSync.js';
 
@@ -730,45 +731,54 @@ async function deployProject(req: Request, res: Response) {
     });
     
     if (envVars.length > 0) {
-      writeLog(`   🔐 Including ${envVars.length} environment variable(s)\n`);
+      const sharedCount = envVars.filter((v) => !v.service_name).length;
+      const scopedCount = envVars.length - sharedCount;
+      writeLog(
+        `   🔐 Including ${envVars.length} environment variable(s)` +
+          (scopedCount > 0
+            ? ` (${sharedCount} shared, ${scopedCount} service-scoped)\n`
+            : `\n`),
+      );
     }
-    
-    // Validate public build args against Dockerfiles; secrets need BuildKit mounts
-    const publicBuildArgKeys = envVars
-      .filter((v) => v.is_build_arg && !(v as { is_secret?: boolean }).is_secret)
-      .map((v) => v.key);
-    const secretBuildKeys = envVars
-      .filter((v) => v.is_build_arg && (v as { is_secret?: boolean }).is_secret)
-      .map((v) => v.key);
-    if (publicBuildArgKeys.length > 0) {
-      for (const df of buildServices.filter((item) => item.builder === 'dockerfile')) {
-         const missingArgs = validateDockerBuildArgs(path.join(projectPath, df.dockerfile_path), publicBuildArgKeys);
-         if (missingArgs.length > 0) {
-           writeLog(`\n⚠️  WARNING: The following build arguments are configured but missing 'ARG' instructions in ${df.dockerfile_path}:\n`);
-           missingArgs.forEach(arg => writeLog(`    - ${arg}\n`));
-           writeLog(`    These variables will NOT be available during the build process! Please add "ARG ${missingArgs[0]}" to your Dockerfile.\n\n`);
-         }
+
+    // Validate public build args / secrets per service (shared + that service only)
+    for (const df of buildServices.filter((item) => item.builder === 'dockerfile')) {
+      const scoped = envForService(envVars, df.name);
+      const publicBuildArgKeys = scoped
+        .filter((v) => v.is_build_arg && !(v as { is_secret?: boolean }).is_secret)
+        .map((v) => v.key);
+      const secretBuildKeys = scoped
+        .filter((v) => v.is_build_arg && (v as { is_secret?: boolean }).is_secret)
+        .map((v) => v.key);
+      if (publicBuildArgKeys.length > 0) {
+        const missingArgs = validateDockerBuildArgs(
+          path.join(projectPath, df.dockerfile_path),
+          publicBuildArgKeys,
+        );
+        if (missingArgs.length > 0) {
+          writeLog(`\n⚠️  WARNING: The following build arguments are configured but missing 'ARG' instructions in ${df.dockerfile_path}:\n`);
+          missingArgs.forEach((arg) => writeLog(`    - ${arg}\n`));
+          writeLog(`    These variables will NOT be available during the build process! Please add "ARG ${missingArgs[0]}" to your Dockerfile.\n\n`);
+        }
       }
-    }
-    if (secretBuildKeys.length > 0) {
-      const missingSecrets: string[] = [];
-      for (const df of buildServices.filter((item) => item.builder === 'dockerfile')) {
+      if (secretBuildKeys.length > 0) {
+        const missingSecrets: string[] = [];
         const dfPath = path.join(projectPath, df.dockerfile_path);
         for (const key of secretBuildKeys) {
           if (!dockerfileMountsSecret(dfPath, key)) {
             missingSecrets.push(`${key} (in ${df.dockerfile_path})`);
           }
         }
-      }
-      if (missingSecrets.length > 0) {
-        writeLog(`\n❌ PREFLIGHT FAILED: secret build vars need Dockerfile mounts:\n`);
-        for (const item of missingSecrets) {
-          writeLog(`    - ${item}\n`);
+        if (missingSecrets.length > 0) {
+          writeLog(`\n❌ PREFLIGHT FAILED: secret build vars need Dockerfile mounts:\n`);
+          for (const item of missingSecrets) {
+            writeLog(`    - ${item}\n`);
+          }
+          writeLog(`    Add: RUN --mount=type=secret,id=<KEY> …\n`);
+          throw new Error(
+            `Secret build vars missing Dockerfile mounts: ${missingSecrets.join(', ')}`,
+          );
         }
-        writeLog(`    Add: RUN --mount=type=secret,id=<KEY> …\n`);
-        throw new Error(
-          `Secret build vars missing Dockerfile mounts: ${missingSecrets.join(', ')}`
-        );
       }
     }
     
@@ -792,12 +802,13 @@ async function deployProject(req: Request, res: Response) {
       if (!buildService) throw new Error(`Build plan missing service ${serviceData.name}`);
       const imageTag = `docklift-${projectId.slice(0, 8)}-${dockerSlug(serviceData.name)}:${deployment.id.slice(0, 8)}`;
       writeLog(`\n${'─'.repeat(40)}\n`);
+      const serviceEnv = envForService(envVars, serviceData.name);
       await buildServiceImage({
         projectPath,
         statePath,
         service: buildService,
         imageTag,
-        envVars,
+        envVars: serviceEnv,
         writeLog,
         onProcess: (child) => registerBuild(projectId, child, deployment.id),
       });
@@ -826,6 +837,7 @@ async function deployProject(req: Request, res: Response) {
         value: v.value,
         is_build_arg: v.is_build_arg ?? false,
         is_runtime: v.is_runtime ?? true,
+        service_name: v.service_name ?? '',
       })),
       { projectId, publishHostPort }
     );
