@@ -2,8 +2,7 @@
 import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
-import { config } from '../lib/config.js';
-import { shortPathHash } from '../lib/naming.js';
+import { projectNetworkName, shortPathHash } from '../lib/naming.js';
 
 interface ServiceConfig {
   name: string;
@@ -23,9 +22,18 @@ export interface RuntimeServiceConfig {
   name: string;
   image: string;
   internal_port: number;
-  port: number;
+  /** Host port when publish_host_port is enabled; omit/null = no host publish */
+  port?: number | null;
   container_name: string;
   volumes?: Array<{ key: string; name: string; mountPath: string }>;
+}
+
+export interface RuntimeComposeOptions {
+  projectId: string;
+  publishHostPort?: boolean;
+  /** Soft defaults — apps can still OOM if they ignore cgroup limits */
+  memLimit?: string;
+  cpus?: number;
 }
 
 // Directories to ignore when scanning
@@ -131,11 +139,16 @@ export function dedupeScannedServices(services: ServiceConfig[]): ServiceConfig[
 /**
  * Write DockLift-owned runtime state outside the source checkout. Repository
  * Dockerfiles and docker-compose.yml files are never modified.
+ *
+ * Isolation: each project gets its own bridge network. The edge proxy is
+ * attached to that network after `compose up` (see docker.connectProxyToProjectNetwork).
+ * Control-plane services stay on docklift_network only.
  */
 export function generateRuntimeCompose(
   composePath: string,
   services: RuntimeServiceConfig[],
-  envVars: EnvVar[] = []
+  envVars: EnvVar[] = [],
+  options?: RuntimeComposeOptions
 ): void {
   const runtimeEnv = envVars
     .filter((item) => item.is_runtime)
@@ -143,28 +156,54 @@ export function generateRuntimeCompose(
       acc[item.key] = item.value;
       return acc;
     }, {});
+
+  const projectId = options?.projectId || 'unknown';
+  const netName = projectNetworkName(projectId);
+  const publishHost = options?.publishHostPort === true;
+  // Soft defaults: enough for Node/Python and common DB images. Override via options.
+  // Do NOT cap_drop ALL by default — Postgres/MySQL/Redis often need extra caps to init.
+  const memLimit = options?.memLimit; // unset = no compose mem_limit
+  const cpus = options?.cpus; // unset = no compose cpus limit
+
   const composeConfig: Record<string, any> = {
     services: {},
     networks: {
-      default: {
-        external: true,
-        name: config.dockerNetwork,
+      project: {
+        name: netName,
+        labels: {
+          'com.docklift.managed': 'true',
+          'com.docklift.project': projectId,
+        },
       },
     },
   };
   const topLevelVolumes: Record<string, { name: string; external: true }> = {};
 
   for (const service of services) {
+    const labels: Record<string, string> = {
+      'com.docklift.managed': 'true',
+      'com.docklift.project': projectId,
+      'com.docklift.service': service.name,
+    };
     const definition: Record<string, unknown> = {
       image: service.image,
       container_name: service.container_name,
-      ports: [`${service.port}:${service.internal_port}`],
       restart: 'unless-stopped',
+      networks: ['project'],
+      labels,
       environment: {
         ...runtimeEnv,
         PORT: String(service.internal_port),
       },
+      security_opt: ['no-new-privileges:true'],
     };
+    if (memLimit) definition.mem_limit = memLimit;
+    if (cpus != null) definition.cpus = String(cpus);
+
+    if (publishHost && service.port != null) {
+      definition.ports = [`${service.port}:${service.internal_port}`];
+    }
+
     if (service.volumes?.length) {
       definition.volumes = service.volumes.map((volume) => {
         topLevelVolumes[volume.key] = { name: volume.name, external: true };
@@ -209,5 +248,20 @@ export function validateDockerBuildArgs(dockerfilePath: string, buildArgs: strin
   } catch (error) {
     console.warn('Failed to validate Dockerfile args:', error);
     return [];
+  }
+}
+
+/** True when Dockerfile mounts a BuildKit secret id (RUN --mount=type=secret,id=…). */
+export function dockerfileMountsSecret(dockerfilePath: string, secretId: string): boolean {
+  try {
+    if (!fs.existsSync(dockerfilePath)) return false;
+    const content = fs.readFileSync(dockerfilePath, 'utf-8');
+    const re = new RegExp(
+      `type\\s*=\\s*secret[^\\n]*id\\s*=\\s*${secretId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`,
+      'i'
+    );
+    return re.test(content);
+  } catch {
+    return false;
   }
 }
