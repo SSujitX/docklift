@@ -769,10 +769,26 @@ router.post('/execute', async (req: AuthenticatedRequest, res: Response) => {
 // Version Check & Upgrade
 // ========================================
 
-// Cache for version check (1 hour)
-let cachedVersionInfo: { current: string; latest: string; updateAvailable: boolean } | null = null;
+type VersionInfo = {
+  current: string;
+  latest: string;
+  updateAvailable: boolean;
+  /** false when GitHub could not be reached — do not treat as "already latest" */
+  githubOk: boolean;
+  checkedAt: string;
+};
+
+let cachedVersionInfo: VersionInfo | null = null;
 let lastVersionCheck = 0;
-const VERSION_CACHE_TTL = 3600000; // 1 hour
+let cachedTtlMs = 0;
+/** In-flight GitHub probe — concurrent /version callers share one fetch. */
+let versionCheckInFlight: Promise<VersionInfo> | null = null;
+// Fresh releases must appear quickly: short TTL when no update / GitHub failed.
+const VERSION_TTL_UPDATE_MS = 15 * 60 * 1000;
+const VERSION_TTL_CURRENT_MS = 2 * 60 * 1000;
+const VERSION_TTL_GITHUB_FAIL_MS = 30 * 1000;
+/** Ignore ?refresh=1 spam — still serve cache if younger than this. */
+const VERSION_REFRESH_MIN_INTERVAL_MS = 30 * 1000;
 
 // Read current version from package.json dynamically
 function getCurrentVersion(): string {
@@ -785,54 +801,91 @@ function getCurrentVersion(): string {
   }
 }
 
+function isNewerVersion(latest: string, current: string): boolean {
+  const currentParts = current.split('.').map((p) => Number.parseInt(p, 10));
+  const latestParts = latest.split('.').map((p) => Number.parseInt(p, 10));
+  for (let i = 0; i < 3; i++) {
+    const l = Number.isFinite(latestParts[i]) ? latestParts[i] : 0;
+    const c = Number.isFinite(currentParts[i]) ? currentParts[i] : 0;
+    if (l > c) return true;
+    if (l < c) return false;
+  }
+  return false;
+}
+
+async function fetchVersionInfo(): Promise<VersionInfo> {
+  const now = Date.now();
+  const currentVersion = getCurrentVersion();
+  let latestVersion = currentVersion;
+  let githubOk = false;
+  try {
+    const response = await fetch(
+      'https://api.github.com/repos/SSujitX/docklift/releases/latest',
+      {
+        headers: {
+          Accept: 'application/vnd.github+json',
+          'User-Agent': 'Docklift',
+          'X-GitHub-Api-Version': '2022-11-28',
+        },
+      },
+    );
+    if (response.ok) {
+      const data = (await response.json()) as { tag_name?: string };
+      latestVersion = data.tag_name?.replace(/^v/, '') || currentVersion;
+      githubOk = true;
+    } else {
+      console.warn(
+        `[version] GitHub releases/latest failed: ${response.status} ${response.statusText}`,
+      );
+    }
+  } catch (err) {
+    console.warn('[version] GitHub releases/latest error:', err);
+  }
+
+  // Only claim "no update" when GitHub answered. A failed probe must not
+  // freeze updateAvailable=false for an hour after a new release ships.
+  const updateAvailable = githubOk && isNewerVersion(latestVersion, currentVersion);
+  const info: VersionInfo = {
+    current: currentVersion,
+    latest: latestVersion,
+    updateAvailable,
+    githubOk,
+    checkedAt: new Date(now).toISOString(),
+  };
+  cachedVersionInfo = info;
+  lastVersionCheck = now;
+  cachedTtlMs = !githubOk
+    ? VERSION_TTL_GITHUB_FAIL_MS
+    : updateAvailable
+      ? VERSION_TTL_UPDATE_MS
+      : VERSION_TTL_CURRENT_MS;
+  return info;
+}
+
+function getOrFetchVersionInfo(forceRefresh: boolean): Promise<VersionInfo> {
+  const now = Date.now();
+  const cacheFresh =
+    cachedVersionInfo && cachedTtlMs > 0 && now - lastVersionCheck < cachedTtlMs;
+  const refreshCooldownOk = now - lastVersionCheck >= VERSION_REFRESH_MIN_INTERVAL_MS;
+
+  if (cacheFresh && !(forceRefresh && refreshCooldownOk)) {
+    return Promise.resolve(cachedVersionInfo!);
+  }
+  if (versionCheckInFlight) {
+    return versionCheckInFlight;
+  }
+  versionCheckInFlight = fetchVersionInfo().finally(() => {
+    versionCheckInFlight = null;
+  });
+  return versionCheckInFlight;
+}
+
 // GET /api/system/version - Check for updates
 router.get('/version', async (req: Request, res: Response) => {
   try {
-    const now = Date.now();
-    
-    // Return cached result if still valid
-    if (cachedVersionInfo && (now - lastVersionCheck) < VERSION_CACHE_TTL) {
-      return res.json(cachedVersionInfo);
-    }
-
-    // Fetch latest release from GitHub
-    const currentVersion = getCurrentVersion();
-    let latestVersion = currentVersion;
-    try {
-      const response = await fetch('https://api.github.com/repos/SSujitX/docklift/releases/latest', {
-        headers: { 'User-Agent': 'Docklift' }
-      });
-      if (response.ok) {
-        const data = await response.json() as { tag_name?: string };
-        // Remove 'v' prefix if present
-        latestVersion = data.tag_name?.replace(/^v/, '') || currentVersion;
-      }
-    } catch {
-      // If GitHub API fails, assume no updates
-    }
-
-    // Compare versions
-    const currentParts = currentVersion.split('.').map(Number);
-    const latestParts = latestVersion.split('.').map(Number);
-    
-    let updateAvailable = false;
-    for (let i = 0; i < 3; i++) {
-      if ((latestParts[i] || 0) > (currentParts[i] || 0)) {
-        updateAvailable = true;
-        break;
-      } else if ((latestParts[i] || 0) < (currentParts[i] || 0)) {
-        break;
-      }
-    }
-
-    cachedVersionInfo = {
-      current: currentVersion,
-      latest: latestVersion,
-      updateAvailable
-    };
-    lastVersionCheck = now;
-
-    res.json(cachedVersionInfo);
+    const forceRefresh = req.query.refresh === '1' || req.query.refresh === 'true';
+    const info = await getOrFetchVersionInfo(forceRefresh);
+    res.json(info);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
