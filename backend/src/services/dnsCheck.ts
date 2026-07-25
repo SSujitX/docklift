@@ -28,12 +28,12 @@ export async function getServerPublicIp(): Promise<string | null> {
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 4000);
-    const res = await fetch('http://ip-api.com/json/?fields=query', { signal: controller.signal });
+    const res = await fetch('https://api.ipify.org?format=json', { signal: controller.signal });
     clearTimeout(timer);
     if (res.ok) {
-      const data = (await res.json()) as { query?: string };
-      if (data.query) {
-        cachedServerIp = data.query;
+      const data = (await res.json()) as { ip?: string };
+      if (data.ip) {
+        cachedServerIp = data.ip;
       }
     }
   } catch {
