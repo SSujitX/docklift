@@ -17,7 +17,20 @@ import {
 import { composeProjectName, dockerSlug, shortPathHash, shortProjectId } from '../lib/naming.js';
 import { isProjectDeploying } from '../lib/deploymentState.js';
 import { syncProjectStatusFromContainers } from '../lib/projectStatusSync.js';
+import { isValidEnvKey, normalizeEnvValue } from '../lib/envVariables.js';
 import { spawnSync } from 'child_process';
+
+function isValidGithubRepoUrl(url: string): boolean {
+  try {
+    const u = new URL(url);
+    if (u.protocol !== 'https:' && u.protocol !== 'http:') return false;
+    if (u.hostname !== 'github.com' && u.hostname !== 'www.github.com') return false;
+    const parts = u.pathname.replace(/\.git$/, '').split('/').filter(Boolean);
+    return parts.length >= 2;
+  } catch {
+    return false;
+  }
+}
 
 const router = Router();
 const uploadDir = path.join(config.dataPath, 'uploads');
@@ -203,6 +216,38 @@ router.post('/', (req: Request, res: Response, next: NextFunction) => {
       internal_port,
     } = req.body;
 
+    const nameTrim = typeof name === 'string' ? name.trim() : '';
+    if (!nameTrim || nameTrim.length > 120) {
+      unlinkUploadedFile(req);
+      return res.status(400).json({ error: 'Project name is required (max 120 characters)' });
+    }
+
+    const resolvedSource =
+      source_type === 'github' || source_type === 'upload'
+        ? source_type
+        : req.file
+          ? 'upload'
+          : typeof github_url === 'string' && github_url.trim()
+            ? 'github'
+            : null;
+
+    if (!resolvedSource) {
+      unlinkUploadedFile(req);
+      return res.status(400).json({
+        error: 'A valid source is required: GitHub repository URL or ZIP upload',
+      });
+    }
+
+    if (resolvedSource === 'github') {
+      const url = typeof github_url === 'string' ? github_url.trim() : '';
+      if (!url || !isValidGithubRepoUrl(url)) {
+        unlinkUploadedFile(req);
+        return res.status(400).json({ error: 'A valid GitHub repository URL is required' });
+      }
+    } else if (!req.file) {
+      return res.status(400).json({ error: 'ZIP upload is required for upload projects' });
+    }
+
     // Validate domain format to prevent Nginx config injection
     if (domain && !isValidDomainList(domain)) {
       unlinkUploadedFile(req);
@@ -212,16 +257,16 @@ router.post('/', (req: Request, res: Response, next: NextFunction) => {
     // Create project record
     const project = await prisma.project.create({
       data: {
-        name,
+        name: nameTrim,
         description: description || null,
-        source_type: source_type || 'upload',
-        github_url: github_url || null,
+        source_type: resolvedSource,
+        github_url: resolvedSource === 'github' ? String(github_url).trim() : null,
         github_branch: github_branch || null,
         project_type: project_type || 'app',
         domain: domain || null,
         status: 'pending',
-        auto_deploy: source_type === 'github',
-        webhook_secret: source_type === 'github' ? generateWebhookSecret() : null,
+        auto_deploy: resolvedSource === 'github',
+        webhook_secret: resolvedSource === 'github' ? generateWebhookSecret() : null,
         build_type: normalizeBuildType(build_type),
         base_directory: String(base_directory || '.').trim() || '.',
         dockerfile_path: dockerfile_path ? String(dockerfile_path).trim() : null,
@@ -235,10 +280,10 @@ router.post('/', (req: Request, res: Response, next: NextFunction) => {
 
 
     // Handle file upload or git clone
-    if (source_type === 'github' && github_url) {
-      let authUrl = github_url;
+    if (resolvedSource === 'github' && github_url) {
+      let authUrl = String(github_url).trim();
       try {
-        const match = github_url.match(/github\.com[/:]([^/]+)\/([^\/]+)/);
+        const match = authUrl.match(/github\.com[/:]([^/]+)\/([^\/]+)/);
         if (match) {
           const [, owner, rawRepo] = match;
           const repo = rawRepo.endsWith('.git') ? rawRepo.slice(0, -4) : rawRepo;
@@ -253,7 +298,7 @@ router.post('/', (req: Request, res: Response, next: NextFunction) => {
           
           if (installId) {
             const token = await getInstallationToken(installId);
-            const urlObj = new URL(github_url);
+            const urlObj = new URL(authUrl);
             urlObj.username = 'x-access-token';
             urlObj.password = token;
             authUrl = urlObj.toString();
@@ -263,12 +308,13 @@ router.post('/', (req: Request, res: Response, next: NextFunction) => {
         console.warn('Failed to inject GitHub token, trying public clone:', err);
       }
 
+      const publicGithubUrl = String(github_url).trim();
       try {
         await cloneRepo(authUrl, projectPath, github_branch || undefined);
         try {
           const { scrubOriginRemote } = await import('../services/git.js');
-          await scrubOriginRemote(projectPath, github_url);
-          if (authUrl !== github_url) {
+          await scrubOriginRemote(projectPath, publicGithubUrl);
+          if (authUrl !== publicGithubUrl) {
             await verifyOriginHasNoCredentials(projectPath);
           }
         } catch (scrubErr) {
@@ -324,6 +370,7 @@ router.patch('/:id', async (req: Request, res: Response) => {
       base_directory,
       dockerfile_path,
       internal_port,
+      publish_host_port,
     } = req.body;
 
     // Validate domain format if provided
@@ -348,6 +395,9 @@ router.patch('/:id', async (req: Request, res: Response) => {
         }),
         ...(internal_port !== undefined && {
           internal_port: Math.min(65535, Math.max(1, parseInt(internal_port, 10) || 3000)),
+        }),
+        ...(publish_host_port !== undefined && {
+          publish_host_port: Boolean(publish_host_port),
         }),
       },
     });
@@ -514,25 +564,52 @@ router.delete('/:id', async (req: Request, res: Response) => {
       where: { project_id: projectId },
     });
     
-    // Attempt to stop and remove Docker containers first
+    // Stop and remove Docker containers first — abort delete if teardown fails
     if (project) {
-      try {
-        const { composeProjectAliases } = await import('../lib/naming.js');
-        const aliases = composeProjectAliases(project.name, projectId);
-        // Stop current + legacy compose project names (UUID-era)
-        for (const alias of aliases) {
-          const composeArgs =
-            alias === composeProjectName(project.name, projectId) && fs.existsSync(runtimeCompose)
-              ? ['compose', '-f', runtimeCompose, '-p', alias]
-              : ['compose', '-p', alias];
-          spawnSync('docker', [...composeArgs, 'down', '--remove-orphans', '--rmi', 'all'], {
+      const { disconnectProxyFromProjectNetwork, connectProxyToProjectNetwork, teardownProjectNetwork } =
+        await import('../services/docker.js');
+      const { isComposeTeardownOk } = await import('../lib/composeTeardown.js');
+      const { composeProjectAliases } = await import('../lib/naming.js');
+
+      // Must disconnect proxy before compose down can remove the project network
+      await disconnectProxyFromProjectNetwork(projectId);
+
+      const aliases = composeProjectAliases(project.name, projectId);
+      const primary = composeProjectName(project.name, projectId);
+      for (const alias of aliases) {
+        const composeArgs =
+          alias === primary && fs.existsSync(runtimeCompose)
+            ? ['compose', '-f', runtimeCompose, '-p', alias]
+            : ['compose', '-p', alias];
+        const down = spawnSync(
+          'docker',
+          [...composeArgs, 'down', '--remove-orphans', '--rmi', 'all'],
+          {
             cwd: projectPath,
             timeout: 60000,
             shell: false,
+            encoding: 'utf8',
+          }
+        );
+        // Primary compose project must tear down cleanly (or already be gone).
+        // Legacy aliases: same rule — never delete DB records while containers may still run.
+        if (!isComposeTeardownOk(down, alias)) {
+          try {
+            await connectProxyToProjectNetwork(projectId);
+          } catch {
+            /* best-effort restore of domain routing */
+          }
+          const detail = `${down.stderr || down.stdout || down.error?.message || 'compose down failed'}`.trim();
+          return res.status(409).json({
+            error: `Cannot delete project: Docker teardown failed for "${alias}" (owned containers/networks still present). ${detail || 'Stop containers manually, then retry.'}`,
           });
         }
-      } catch (dockerError) {
-        console.warn(`Docker cleanup warned for project ${projectId}:`, dockerError);
+      }
+
+      try {
+        await teardownProjectNetwork(projectId);
+      } catch (netErr) {
+        console.warn(`Project network cleanup warned for ${projectId}:`, netErr);
       }
 
       for (const volume of persistentVolumes) {
@@ -595,28 +672,27 @@ router.get('/:id/env', async (req: Request, res: Response) => {
 
 router.post('/:id/env', async (req: Request, res: Response) => {
   try {
-    const { key, value, is_build_arg, is_runtime } = req.body;
+    const { key, value, is_build_arg, is_runtime, is_secret } = req.body;
+    if (!isValidEnvKey(key)) {
+      return res.status(400).json({
+        error: 'Invalid env key. Use letters, digits, underscore; must start with a letter or _.',
+      });
+    }
     const envVar = await prisma.envVariable.create({
       data: {
         project_id: req.params.id,
         key,
-        value: (() => {
-          let v = value.trim();
-          if (v.length >= 2) {
-            const first = v.charAt(0);
-            const last = v.charAt(v.length - 1);
-            if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
-              v = v.substring(1, v.length - 1);
-            }
-          }
-          return v;
-        })(),
+        value: normalizeEnvValue(value),
         is_build_arg: is_build_arg ?? false,
         is_runtime: is_runtime ?? true,
-      },
+        is_secret: Boolean(is_secret),
+      } as Parameters<typeof prisma.envVariable.create>[0]['data'],
     });
     res.status(201).json(envVar);
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.code === 'P2002') {
+      return res.status(409).json({ error: 'Environment variable key already exists for this project' });
+    }
     res.status(500).json({ error: 'Failed to create environment variable' });
   }
 });
@@ -631,6 +707,7 @@ router.post('/:id/env/bulk', async (req: Request, res: Response) => {
     
     const lines = content.split('\n').filter((line: string) => line.trim());
     const envVars: { key: string; value: string }[] = [];
+    const seen = new Set<string>();
     
     for (const line of lines) {
       const trimmed = line.trim();
@@ -640,37 +717,42 @@ router.post('/:id/env/bulk', async (req: Request, res: Response) => {
       if (eqIndex === -1) continue;
       
       const key = trimmed.substring(0, eqIndex).trim();
-      let value = trimmed.substring(eqIndex + 1).trim();
+      const value = normalizeEnvValue(trimmed.substring(eqIndex + 1));
       
-      // Remove surrounding quotes if present
-      if (value.length >= 2) {
-        const first = value.charAt(0);
-        const last = value.charAt(value.length - 1);
-        if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
-          value = value.substring(1, value.length - 1);
-        }
+      if (!isValidEnvKey(key)) {
+        return res.status(400).json({ error: `Invalid env key: ${key}` });
       }
-      
-      if (key) {
-        envVars.push({ key, value });
-      }
+      if (seen.has(key)) continue;
+      seen.add(key);
+      envVars.push({ key, value });
     }
     
     if (envVars.length === 0) {
       return res.status(400).json({ error: 'No valid KEY=VALUE pairs found' });
     }
+
+    let createdCount = 0;
+    for (const { key, value } of envVars) {
+      try {
+        await prisma.envVariable.create({
+          data: {
+            project_id: req.params.id,
+            key,
+            value,
+            is_build_arg: is_build_arg ?? true,
+            is_runtime: is_runtime ?? true,
+          },
+        });
+        createdCount += 1;
+      } catch (error: any) {
+        if (error?.code === 'P2002') {
+          return res.status(409).json({ error: `Environment variable already exists: ${key}` });
+        }
+        throw error;
+      }
+    }
     
-    const created = await prisma.envVariable.createMany({
-      data: envVars.map(({ key, value }) => ({
-        project_id: req.params.id,
-        key,
-        value,
-        is_build_arg: is_build_arg ?? true,
-        is_runtime: is_runtime ?? true,
-      })),
-    });
-    
-    res.status(201).json({ count: created.count, message: `Added ${created.count} environment variable(s)` });
+    res.status(201).json({ count: createdCount, message: `Added ${createdCount} environment variable(s)` });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Failed to bulk import environment variables' });
