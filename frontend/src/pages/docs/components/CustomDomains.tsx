@@ -32,8 +32,11 @@ export const CustomDomains = () => (
       <ol className="list-decimal list-inside space-y-2 text-muted-foreground">
         <li>Go to <strong>Project → Domains</strong> tab</li>
         <li>Add domain for each service (e.g., <code className="bg-primary/10 px-1.5 py-0.5 rounded text-primary">api.example.com</code>)</li>
-        <li>Save — nginx routes traffic and Let&apos;s Encrypt issues HTTPS</li>
+        <li>Save — nginx-proxy routes to <code className="bg-primary/10 px-1.5 py-0.5 rounded text-primary">container_name:internal_port</code> on the project network and Let&apos;s Encrypt issues HTTPS</li>
       </ol>
+      <p className="text-xs text-muted-foreground mt-3">
+        You do not need a published host port for domain traffic. Host ports are optional (Build Settings).
+      </p>
     </div>
     
     <div className="bg-secondary/50 rounded-xl p-6 mb-6">
