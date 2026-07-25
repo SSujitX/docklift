@@ -17,7 +17,8 @@ export const WebTerminal = () => (
         <li><strong>Interactive Bash Session</strong>: Real-time PTY with tab completion and history</li>
         <li><strong>Root Access</strong>: Direct control over the host via Docker privileged mode</li>
         <li><strong>Host strip</strong>: Update packages, upgrade Docklift, purge dangling images, reset stack, reboot — plain text actions above the shell</li>
-        <li><strong>Upgrade / update dialogs</strong>: Confirm before start (panel offline + target version); then a wait dialog with refresh timing (Esc/overlay locked until countdown ends)</li>
+        <li><strong>Step-up password</strong>: Host actions and the root shell all require your account password again (JWT alone is not enough). Cancel aborts — the action does not continue</li>
+        <li><strong>Upgrade / update dialogs</strong>: Confirm before start (panel offline + target version); password; then a wait dialog with refresh timing (Esc/overlay locked until countdown ends)</li>
         <li><strong>Full Screen Mode</strong>: Maximize terminal for better visibility</li>
         <li><strong>Light & dark</strong>: Shell colors follow the panel theme</li>
         <li><strong>Clipboard Support</strong>: Select to copy, <kbd className="px-1 py-0.5 rounded bg-muted font-mono text-xs">Ctrl+C</kbd> to copy/interrupt, <kbd className="px-1 py-0.5 rounded bg-muted font-mono text-xs">Ctrl+V</kbd> to paste</li>
