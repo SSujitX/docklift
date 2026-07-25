@@ -57,11 +57,12 @@ const IP_CACHE_TTL = 300000; // 5 minutes
 // Fetch public IP and location in background
 async function fetchPublicIPInfo() {
   try {
-    const response = await fetch('http://ip-api.com/json/?fields=query,city,country');
+    // HTTPS only — never plaintext IP discovery APIs
+    const response = await fetch('https://api.ipify.org?format=json');
     if (response.ok) {
-      const data = await response.json() as { query?: string; city?: string; country?: string };
-      cachedPublicIP = data.query || 'N/A';
-      cachedLocation = data.city && data.country ? `${data.city}, ${data.country}` : 'N/A';
+      const data = await response.json() as { ip?: string };
+      cachedPublicIP = data.ip || 'N/A';
+      cachedLocation = 'N/A';
     }
   } catch {
     // Fallback to local IP if external API fails
@@ -486,11 +487,14 @@ async function getSystemStats(): Promise<SystemStats> {
         serverTime: new Date().toLocaleString(),
         cpuModel: actualCpuModel,
         cpuCores: `${actualCpuCores} Cores @ ${actualCpuSpeed} GHz`,
-        loadAvg: {
-          load1: parseFloat(cpuLoad.avgLoad?.toFixed(2) || '0'),
-          load5: parseFloat((cpuLoad.avgLoad * 0.8)?.toFixed(2) || '0'),
-          load15: parseFloat((cpuLoad.avgLoad * 0.6)?.toFixed(2) || '0')
-        },
+        loadAvg: (() => {
+          const [load1, load5, load15] = os.loadavg();
+          return {
+            load1: parseFloat((load1 || 0).toFixed(2)),
+            load5: parseFloat((load5 || 0).toFixed(2)),
+            load15: parseFloat((load15 || 0).toFixed(2)),
+          };
+        })(),
         swap: {
           total: memData.swaptotal,
           used: memData.swapused
@@ -579,161 +583,51 @@ router.get('/ip', async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/system/purge - Clean up system resources and free memory (ENHANCED + SAFE)
+/**
+ * POST /api/system/purge — DockLift-scoped cleanup only.
+ * Removed (do not restore without expert step-up auth): host-wide docker prune -af,
+ * restarting foreign containers, swap cycling, drop_caches, journal vacuum, apt clean, /tmp wipe.
+ */
 router.post('/purge', async (req: Request, res: Response) => {
   try {
-    console.log(`[AUDIT] System purge initiated from IP: ${req.ip}`);
+    const { requireStepUpPassword } = await import('../lib/stepUpAuth.js');
+    if (!(await requireStepUpPassword(req, res))) return;
+
+    console.log(`[AUDIT] System purge (DockLift-scoped) from IP: ${req.ip}`);
     const results: string[] = [];
     let memoryBefore = 0;
     let memoryAfter = 0;
-    
-    // Capture memory before purge
+
     try {
       const memData = await si.mem();
       memoryBefore = Math.round((memData.used / memData.total) * 100);
-    } catch (err) {
-      // Non-critical, continue
+    } catch {
+      /* ignore */
     }
 
-    // 1. Aggressive Docker Cleanup (SAFE: removed --volumes to protect user data)
-    try {
-      // Using -a to remove all unused images, but NOT --volumes for safety
-      const { stdout: dockerOutput } = await execAsync('docker system prune -af', { timeout: 60000 });
-      results.push('✓ Aggressive Docker cleanup completed (unused images, networks removed)');
-    } catch (err: any) {
-      console.error('Docker prune failed:', err);
-      results.push('✗ Docker cleanup failed');
-    }
+    // Never auto-prune host Docker images from the panel — dangling layers may belong
+    // to unrelated workloads on a shared host.
+    results.push('○ Automatic Docker image cleanup is disabled (shared-host safe)');
+    results.push('○ Host maintenance (swap, cache, journal, apt, /tmp) is not available via the panel');
+    results.push('○ Foreign containers are never restarted by DockLift purge');
 
-    // 2. Restart User Containers (Exclude Docklift containers)
-    // This frees memory from long-running containers with memory leaks
-    if (process.platform === 'linux') {
-      try {
-        // Get all running container IDs
-        const { stdout: containerList } = await execAsync('docker ps -q', { timeout: 10000 });
-        const allContainerIds = containerList.trim().split('\n').filter(id => id.length > 0);
-        
-        if (allContainerIds.length > 0) {
-          // Get container names to filter out Docklift containers
-          const { stdout: containerNames } = await execAsync(`docker inspect --format='{{.Id}} {{.Name}}' ${allContainerIds.join(' ')}`, { timeout: 10000 });
-          
-          // Filter out Docklift containers
-          const dockliftContainers = CORE_CONTAINERS;
-          const userContainers = containerNames
-            .trim()
-            .split('\n')
-            .filter(line => {
-              const [id, name] = line.split(' ');
-              const containerName = name.replace(/^\//, ''); // Remove leading slash from name
-              return !dockliftContainers.some(dc => containerName.includes(dc));
-            })
-            .map(line => line.split(' ')[0]);
-          
-          if (userContainers.length > 0) {
-            await execAsync(`docker restart ${userContainers.join(' ')}`, { timeout: 120000 });
-            results.push(`✓ Restarted ${userContainers.length} user container(s) to free memory`);
-          } else {
-            results.push('○ No user containers to restart (only Docklift services running)');
-          }
-        } else {
-          results.push('○ No containers to restart');
-        }
-      } catch (err: any) {
-        console.error('Container restart failed:', err);
-        results.push('✗ Container restart failed');
-      }
-    } else {
-      results.push('○ Container restart only supported on Linux');
-    }
-
-    // 3. Clear Swap Memory (SAFE: Only if sufficient RAM available)
-    // SAFETY CHECK: Only clear swap if we have at least 30% free RAM
-    if (process.platform === 'linux') {
-      try {
-        // Get memory stats first
-        const memData = await si.mem();
-        const freeMemoryPercent = ((memData.free + memData.available) / memData.total) * 100;
-        
-        // Check if swap is enabled
-        const { stdout: swapInfo } = await execAsync('cat /proc/swaps');
-        const swapLines = swapInfo.trim().split('\n');
-        
-        if (swapLines.length > 1) { // More than just header line
-          // SAFETY CHECK: Only clear swap if we have enough free RAM
-          if (freeMemoryPercent >= 30) {
-            await execAsync('swapoff -a && swapon -a', { timeout: 60000 });
-            results.push('✓ Swap memory cleared and re-enabled (safe - sufficient RAM available)');
-          } else {
-            results.push(`⚠ Swap clearing skipped (low RAM: ${freeMemoryPercent.toFixed(1)}% free, need 30%+)`);
-          }
-        } else {
-          results.push('○ No swap configured');
-        }
-      } catch (err: any) {
-        console.error('Swap clearing failed:', err);
-        results.push('✗ Swap clearing failed');
-      }
-    } else {
-      results.push('○ Swap clearing only supported on Linux');
-    }
-
-    // 4. HOST-LEVEL CLEANUP (runs on host via nsenter, not inside container)
-    if (process.platform === 'linux') {
-      // 4a. Clear PAGE CACHE on HOST (safe - Linux rebuilds as needed)
-      try {
-        // sync first to write dirty pages, then clear cache
-        await execAsync('nsenter --target 1 --mount --uts --ipc --net --pid -- sh -c "sync && echo 3 > /proc/sys/vm/drop_caches"', { timeout: 15000 });
-        results.push('✓ HOST page cache cleared (safe - will rebuild as needed)');
-      } catch (err: any) {
-        console.error('Host cache clearing failed:', err);
-        results.push('○ HOST cache clearing skipped');
-      }
-
-      // 4b. Clear old SYSTEMD JOURNAL logs (can grow large)
-      try {
-        await execAsync('nsenter --target 1 --mount --uts --ipc --net --pid -- journalctl --vacuum-time=3d', { timeout: 30000 });
-        results.push('✓ HOST journal logs cleaned (kept 3 days)');
-      } catch (err: any) {
-        // journalctl might not exist or permission denied
-        results.push('○ HOST journal cleanup skipped');
-      }
-
-      // 4c. Clear APT cache (Debian/Ubuntu)
-      try {
-        await execAsync('nsenter --target 1 --mount --uts --ipc --net --pid -- apt-get clean 2>/dev/null || true', { timeout: 30000 });
-        results.push('✓ HOST apt cache cleared');
-      } catch (err: any) {
-        results.push('○ HOST apt cleanup skipped');
-      }
-
-      // 4d. Clear tmp files older than 7 days (safe)
-      try {
-        await execAsync('nsenter --target 1 --mount --uts --ipc --net --pid -- find /tmp -type f -atime +7 -delete 2>/dev/null || true', { timeout: 30000 });
-        results.push('✓ HOST temp files cleaned (7+ days old)');
-      } catch (err: any) {
-        results.push('○ HOST temp cleanup skipped');
-      }
-    }
-
-    // 4. Reset system stats cache to reflect changes immediately
     cachedStats = null;
     lastFetch = 0;
 
-    // Capture memory after purge (give it a moment to settle)
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    await new Promise((resolve) => setTimeout(resolve, 500));
     try {
       const memData = await si.mem();
       memoryAfter = Math.round((memData.used / memData.total) * 100);
-    } catch (err) {
-      // Non-critical
+    } catch {
+      /* ignore */
     }
 
-    res.json({ 
-      message: 'Enhanced purge operation completed', 
+    res.json({
+      message: 'DockLift-scoped cleanup completed',
       details: results,
       memoryBefore: memoryBefore || null,
       memoryAfter: memoryAfter || null,
-      memorySaved: (memoryBefore && memoryAfter) ? `${memoryBefore - memoryAfter}%` : null
+      memorySaved: memoryBefore && memoryAfter ? `${memoryBefore - memoryAfter}%` : null,
     });
   } catch (error) {
     console.error('Purge error:', error);
