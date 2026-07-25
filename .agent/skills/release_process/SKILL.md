@@ -71,6 +71,34 @@ git commit -m "feat(api): add new endpoint *force minor*"
 git commit -m "chore: update comments *skip release*"
 ```
 
+## Server upgrade script (`upgrade.sh`)
+
+When documenting or changing upgrades:
+- Pin `ROLLBACK_REF=$(git rev-parse HEAD)` before fetching new code.
+- On compose build failure **or** failed `/api/health` after start: checkout previous ref, restore
+  `.db.bak`, recreate stack.
+- Stop backend before DB snapshot; prefer `sqlite3 .backup`, else copy while stopped.
+- Tag `docklift-backend:pre-upgrade` / `docklift-frontend:pre-upgrade` before rebuild; rollback
+  retags those images (do not rely only on rebuilding an old git ref).
+- Create/validate backup directory **before** stopping backend.
+- `docker compose stop backend` must succeed; probe run-state as running | stopped | probe-error
+  (no `|| true` on stop). Abort before DB copy on running **or** probe-error; restart backend on abort.
+- Capture `backend_run_state` with `if backend_run_state; then … else BACKEND_STATE=$?; fi` —
+  never as a standalone call under `set -e` (return 1/2 would abort before the snapshot).
+  Behavioral coverage: `scripts/test-upgrade-backend-run-state.sh` (stubbed Docker).
+- `arm_rollback` immediately after verified stop; `disarm_rollback` only after final health OK.
+
+- Health probe: `docker compose exec backend node -e "fetch('http://127.0.0.1:8000/api/health')…"`.
+- Print `http://SERVER_IP:8080` after success.
+- Preserve `data/`, `deployments/`, nginx confs, certs, user `dl_*` containers.
+- `format_time` must tolerate `((0))` under `set -e` (`|| true`).
+
+Install scripts (`install.sh` / `install-dev.sh`): print Dashboard URL + Setup code; `cd /opt/docklift`
+before `docker compose`; same `format_time` rule.
+
+Uninstall: DockLift-named/labelled resources only (incl. `dl-net-*`); **no** host-wide
+`docker system prune` / `builder prune`.
+
 ## How to Release
 
 ```bash
