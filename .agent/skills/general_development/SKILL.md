@@ -20,7 +20,7 @@ backend/          Express + Prisma API (TypeScript, ESM)
   src/routes/     HTTP endpoints
   src/services/   Docker, git, build, nginx, certs, terminal
   src/lib/        Config, auth middleware, naming, path/origin security
-  prisma/         schema.prisma (no migrations dir — db push on boot)
+  prisma/         schema.prisma + migrations/ (ensureDb migrate deploy on boot)
 frontend/         Vite + React 19 dashboard
   src/app/        AppShell + router
   src/components/ shell/, ui/, feature components
@@ -105,9 +105,13 @@ cd frontend; .\node_modules\.bin\tsc -b --noEmit
 - **Auth**: JWT in `localStorage`, short-lived separate tokens for SSE. See `authentication`.
 - **Deployments**: the backend clones/unzips source, resolves Dockerfile vs Railpack, builds a tagged
   image, and writes its **own** compose file under `deployments/.docklift/<projectId>/` — repository
-  files are never modified. See `deployment_system`.
-- **Networking**: two nginx containers (dashboard gateway `:8080`, public proxy `:80`/`:443`) plus a
-  certbot sidecar. See `networking_proxy`.
+  files are never modified. Apps land on **per-project networks**; host ports are opt-in. See
+  `deployment_system`.
+- **Networking**: two nginx containers (dashboard gateway `:8080` default `0.0.0.0`, public proxy
+  `:80`/`:443`) plus a certbot sidecar; proxy attaches to each project network and routes to
+  `container_name:internal_port`. See `networking_proxy`.
+- **Onboarding**: install prints `http://SERVER_IP:8080` + bootstrap setup code; first account cannot
+  be claimed without it. See `authentication`.
 
 ## Conventions
 
@@ -115,6 +119,14 @@ cd frontend; .\node_modules\.bin\tsc -b --noEmit
 - Reuse `lib/naming.ts` for any Docker name; never build those strings inline.
 - Reuse `LogViewer` for anything log-shaped rather than writing another console.
 - Read the `security_hardening` checklist before adding an endpoint.
+- **Always keep docs in sync with code.** For any major behavior change (bind defaults, networking,
+  deploy lifecycle, auth/setup, purge/restore, schema, install/upgrade scripts): update in the
+  **same change** —
+  1. matching `.agent/skills/*/SKILL.md`
+  2. operator docs (`README.md`, `commands.md`)
+  3. install/upgrade/uninstall `.sh` scripts when behavior changes
+  4. in-app docs under `frontend/src/pages/docs/components/`
+  Do not ship code-only updates and leave skills/docs/scripts stale.
 
 ## Troubleshooting
 
