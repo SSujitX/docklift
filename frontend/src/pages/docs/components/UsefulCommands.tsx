@@ -115,10 +115,12 @@ export const UsefulCommands = () => (
 
       <div className="bg-secondary/50 rounded-xl p-6">
         <h4 className="font-semibold mb-4 text-red-500 flex items-center gap-2">
-          Upgrade / uninstall
+          Install / upgrade / uninstall
         </h4>
         <div className="space-y-4">
           {[
+            { cmd: "curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh | sudo bash", desc: "Install latest release" },
+            { cmd: "curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh | sudo bash -s -- v=2.0.2", desc: "Install pinned release (v=)" },
             { cmd: "curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/upgrade.sh | sudo bash", desc: "Safe upgrade (keeps data)" },
             { cmd: 'curl -fsSL "https://raw.githubusercontent.com/SSujitX/docklift/master/uninstall.sh" | sudo bash -s -- -y', desc: "Full uninstall (destructive)" },
           ].map((item, i) => (
