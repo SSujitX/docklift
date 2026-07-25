@@ -86,7 +86,7 @@ export const UsefulCommands = () => (
           {[
             { cmd: "docker exec -it docklift-backend node dist/scripts/reset-password.js", desc: "Reset admin password (prints new one)" },
             { cmd: 'grep \'"version"\' backend/package.json', desc: "Show current Docklift version" },
-            { cmd: "curl -s http://127.0.0.1:8080/api/health", desc: "Health check via gateway" },
+            { cmd: "curl -s http://SERVER_IP:8080/api/health", desc: "Health check via dashboard gateway" },
           ].map((item, i) => (
             <CommandBlock key={i} label={item.desc} command={item.cmd} color="amber" />
           ))}
@@ -103,8 +103,9 @@ export const UsefulCommands = () => (
         </h4>
         <div className="space-y-4">
           {[
-            { cmd: "docker network inspect docklift_network", desc: "Inspect Docklift network" },
-            { cmd: "sudo ss -tulpn | grep -E ':(80|8080|5500)'", desc: "Check host listeners" },
+            { cmd: "docker network inspect docklift_network", desc: "Control-plane network" },
+            { cmd: "docker network ls --filter label=com.docklift.managed=true", desc: "Project networks (dl-net-*)" },
+            { cmd: "sudo ss -tulpn | grep -E ':(80|443|8080|5500)'", desc: "Check host listeners" },
             { cmd: "for port in {5500..5600}; do sudo fuser -k ${port}/tcp 2>/dev/null; done", desc: "Free app port pool (5500–5600)" },
           ].map((item, i) => (
             <CommandBlock key={i} label={item.desc} command={item.cmd} color="emerald" />
