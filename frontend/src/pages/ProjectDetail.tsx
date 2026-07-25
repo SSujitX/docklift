@@ -1298,8 +1298,10 @@ export default function ProjectDetail() {
                     }));
                     const notPublicYet =
                       !hasHostPort && domainLinks.length === 0;
+                    // Persisted flag only — never the unsaved Build checkbox
                     const awaitingHostPortPublish =
-                      notPublicYet && publishHostPort;
+                      notPublicYet &&
+                      Boolean(project?.publish_host_port);
 
                     return (
                       <Card
@@ -1309,173 +1311,182 @@ export default function ProjectDetail() {
                           multiService &&
                             workspace === "project" &&
                             "hover:bg-secondary/20",
-                          workspace === "service" &&
-                            selectedService?.id === svc.id &&
-                            "bg-secondary/25 ring-1 ring-border",
                         )}
                       >
-                        <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:gap-5 sm:p-5">
-                          {/* Left: open service workspace (avoid nesting controls in a button) */}
-                          <div
-                            className={cn(
-                              "flex min-w-0 items-start gap-3 sm:items-center sm:gap-4",
-                              multiService &&
-                                workspace === "project" &&
-                                "cursor-pointer rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                            )}
-                            role={
-                              multiService && workspace === "project"
-                                ? "button"
-                                : undefined
-                            }
-                            tabIndex={
-                              multiService && workspace === "project"
-                                ? 0
-                                : undefined
-                            }
-                            onClick={() => {
-                              if (multiService && workspace === "project") {
-                                selectService(svc.id);
+                        <div className="flex flex-col gap-4 p-4 sm:p-5">
+                          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-5">
+                            {/* Left: open service workspace (avoid nesting controls in a button) */}
+                            <div
+                              className={cn(
+                                "flex min-w-0 items-start gap-3 sm:items-center sm:gap-4",
+                                multiService &&
+                                  workspace === "project" &&
+                                  "cursor-pointer rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                              )}
+                              role={
+                                multiService && workspace === "project"
+                                  ? "button"
+                                  : undefined
                               }
-                            }}
-                            onKeyDown={(e) => {
-                              if (!(multiService && workspace === "project")) {
-                                return;
+                              tabIndex={
+                                multiService && workspace === "project"
+                                  ? 0
+                                  : undefined
                               }
-                              if (e.key === "Enter" || e.key === " ") {
-                                e.preventDefault();
-                                selectService(svc.id);
-                              }
-                            }}
-                          >
-                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border bg-secondary/40 sm:h-11 sm:w-11">
-                              <Server className="h-4 w-4 text-muted-foreground sm:h-5 sm:w-5" />
+                              onClick={() => {
+                                if (multiService && workspace === "project") {
+                                  selectService(svc.id);
+                                }
+                              }}
+                              onKeyDown={(e) => {
+                                if (!(multiService && workspace === "project")) {
+                                  return;
+                                }
+                                if (e.key === "Enter" || e.key === " ") {
+                                  e.preventDefault();
+                                  selectService(svc.id);
+                                }
+                              }}
+                            >
+                              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border bg-secondary/40 sm:h-11 sm:w-11">
+                                <Server className="h-4 w-4 text-muted-foreground sm:h-5 sm:w-5" />
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                                  <span className="truncate text-base font-semibold sm:text-lg">
+                                    {svc.name}
+                                  </span>
+                                  <StatusBadge status={svc.status} />
+                                </div>
+                                <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground sm:mt-1 sm:gap-2 sm:text-xs">
+                                  <span className="rounded bg-secondary/80 px-1 py-0.5 font-mono text-[9px] sm:px-1.5 sm:text-xs">
+                                    Port {svc.internal_port}
+                                  </span>
+                                  <span className="hidden text-muted-foreground/30 sm:inline">
+                                    ·
+                                  </span>
+                                  <span className="flex min-w-0 items-center gap-1 truncate">
+                                    <FileCode className="h-2.5 w-2.5 shrink-0 sm:h-3 sm:w-3" />
+                                    <span className="truncate">
+                                      {svc.dockerfile_path}
+                                    </span>
+                                  </span>
+                                </p>
+                              </div>
                             </div>
-                            <div className="min-w-0 flex-1">
-                              <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-                                <span className="truncate text-base font-semibold sm:text-lg">
-                                  {svc.name}
-                                </span>
-                                <StatusBadge status={svc.status} />
-                                {workspace === "service" &&
-                                  selectedService?.id === svc.id && (
-                                  <span className="text-[10px] font-medium text-muted-foreground">
-                                    Workspace
+
+                            {/* Public endpoints when available */}
+                            {(hostPortReady ||
+                              (hasHostPort && !hostPortReady) ||
+                              domainLinks.length > 0) && (
+                              <div className="flex flex-wrap gap-2 sm:items-end sm:justify-end">
+                                {hostPortReady && (
+                                  <a
+                                    href={`http://${portHost}:${svc.port}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="flex h-8 items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 font-mono text-[10px] font-medium text-foreground transition-colors hover:bg-secondary sm:h-9 sm:px-3 sm:text-xs"
+                                  >
+                                    <span className="truncate max-w-[120px] sm:max-w-none">
+                                      {portHost}:{svc.port}
+                                    </span>
+                                    <ExternalLink className="h-2.5 w-2.5 shrink-0 sm:h-3 sm:w-3" />
+                                  </a>
+                                )}
+                                {hasHostPort && !hostPortReady && (
+                                  <span className="inline-flex h-7 items-center rounded-lg border border-border/50 bg-secondary/50 px-2.5 font-mono text-[10px] font-bold text-muted-foreground sm:h-9 sm:rounded-xl sm:px-4 sm:text-xs">
+                                    Host port {svc.port}
                                   </span>
                                 )}
+                                {domainLinks.map((link, idx) => (
+                                  <a
+                                    key={idx}
+                                    href={link.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="flex h-8 items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 font-mono text-[10px] font-medium text-foreground transition-colors hover:bg-secondary sm:h-9 sm:px-3 sm:text-xs"
+                                  >
+                                    <span className="truncate max-w-[120px] sm:max-w-none">
+                                      {link.label}
+                                    </span>
+                                    <ExternalLink className="h-2.5 w-2.5 shrink-0 sm:h-3 sm:w-3" />
+                                  </a>
+                                ))}
                               </div>
-                              <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5 sm:mt-1 flex flex-wrap items-center gap-1.5 sm:gap-2">
-                                <span className="font-mono bg-secondary/80 px-1 sm:px-1.5 py-0.5 rounded text-[9px] sm:text-xs">
-                                  Port {svc.internal_port}
-                                </span>
-                                <span className="text-muted-foreground/30 hidden sm:inline">
-                                  /
-                                </span>
-                                <span className="flex items-center gap-1 truncate">
-                                  <FileCode className="h-2.5 w-2.5 sm:h-3 sm:w-3 shrink-0" />
-                                  <span className="truncate">
-                                    {svc.dockerfile_path}
-                                  </span>
-                                </span>
-                              </p>
-                            </div>
+                            )}
                           </div>
 
-                          {/* Right: public endpoints or "not public yet" hint */}
-                          <div className="flex flex-wrap gap-2 sm:flex-col sm:gap-2 sm:items-end ml-0 sm:ml-auto shrink-0 max-w-full sm:max-w-[280px]">
-                            {hostPortReady && (
-                              <a
-                                href={`http://${portHost}:${svc.port}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                onClick={(e) => e.stopPropagation()}
-                                className="flex h-8 items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 font-mono text-[10px] font-medium text-foreground transition-colors hover:bg-secondary sm:h-9 sm:px-3 sm:text-xs"
-                              >
-                                <span className="truncate max-w-[120px] sm:max-w-none">
-                                  {portHost}:{svc.port}
-                                </span>
-                                <ExternalLink className="h-2.5 w-2.5 sm:h-3 sm:w-3 shrink-0" />
-                              </a>
-                            )}
-                            {hasHostPort && !hostPortReady && (
-                              <span className="h-7 sm:h-9 px-2.5 sm:px-4 inline-flex items-center rounded-lg sm:rounded-xl bg-secondary/50 text-muted-foreground font-mono text-[10px] sm:text-xs font-bold border border-border/50">
-                                Host port {svc.port}
-                              </span>
-                            )}
-                            {domainLinks.map((link, idx) => (
-                              <a
-                                key={idx}
-                                href={link.url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                onClick={(e) => e.stopPropagation()}
-                                className="flex h-8 items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 font-mono text-[10px] font-medium text-foreground transition-colors hover:bg-secondary sm:h-9 sm:px-3 sm:text-xs"
-                              >
-                                <span className="truncate max-w-[120px] sm:max-w-none">
-                                  {link.label}
-                                </span>
-                                <ExternalLink className="h-2.5 w-2.5 sm:h-3 sm:w-3 shrink-0" />
-                              </a>
-                            ))}
-                            {notPublicYet && (
-                              <div className="rounded-xl border border-border/50 bg-secondary/40 px-3 py-2 text-left sm:text-right">
-                                <p className="text-[11px] sm:text-xs font-semibold text-foreground/90">
-                                  Not public yet
-                                </p>
-                                <p className="mt-0.5 text-[10px] sm:text-[11px] text-muted-foreground leading-snug">
-                                  {awaitingHostPortPublish ? (
-                                    <>
-                                      Publish host ports is on — redeploy to
-                                      allocate a host{" "}
-                                      <span className="font-mono">IP:port</span>
-                                      . Or add a domain to go public on{" "}
-                                      <span className="font-mono">:80/:443</span>
-                                      .
-                                    </>
-                                  ) : (
-                                    <>
-                                      Host ports are off by default, so{" "}
-                                      <span className="font-mono">IP:port</span>{" "}
-                                      is not open. Add a domain, or enable
-                                      Publish host ports in Build and redeploy.
-                                    </>
-                                  )}
-                                </p>
-                                <div className="mt-2 flex flex-wrap gap-1.5 sm:justify-end">
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      if (multiService) {
-                                        selectService(svc.id, "domains");
-                                      } else {
-                                        setActiveTab("domains");
-                                      }
-                                    }}
-                                    className="h-7 rounded-lg border border-border bg-background px-2.5 text-[10px] font-medium text-foreground transition-colors hover:bg-secondary"
-                                  >
-                                    Add domain
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      if (awaitingHostPortPublish) {
-                                        confirmAction("redeploy");
-                                      } else {
-                                        goToProjectTab("build");
-                                      }
-                                    }}
-                                    className="h-7 rounded-lg border border-border bg-background px-2.5 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-                                  >
-                                    {awaitingHostPortPublish
-                                      ? "Redeploy"
-                                      : "Build settings"}
-                                  </button>
-                                </div>
+                          {notPublicYet && (
+                            <div className="rounded-xl border border-border bg-secondary/30 px-4 py-3.5">
+                              <p className="text-sm font-semibold tracking-tight text-foreground">
+                                Private by default
+                              </p>
+                              <p className="mt-1.5 max-w-2xl text-xs leading-relaxed text-muted-foreground sm:text-[13px]">
+                                {awaitingHostPortPublish ? (
+                                  <>
+                                    Publish host ports is on — redeploy to open
+                                    an{" "}
+                                    <span className="font-mono text-foreground/80">
+                                      IP:port
+                                    </span>
+                                    , or add a domain for HTTPS on{" "}
+                                    <span className="font-mono text-foreground/80">
+                                      :80/:443
+                                    </span>
+                                    . Prefer a domain: raw host ports advertise
+                                    your server’s real IP and are easier to
+                                    scan.
+                                  </>
+                                ) : (
+                                  <>
+                                    This service is not on the public internet
+                                    yet. Add a domain for HTTPS — that is the
+                                    safe path. Avoid sharing{" "}
+                                    <span className="font-mono text-foreground/80">
+                                      IP:port
+                                    </span>
+                                    : it reveals your origin server address and
+                                    can expose apps on this host to anyone who
+                                    finds the port.
+                                  </>
+                                )}
+                              </p>
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (multiService) {
+                                      selectService(svc.id, "domains");
+                                    } else {
+                                      setActiveTab("domains");
+                                    }
+                                  }}
+                                  className="h-8 rounded-lg border border-border bg-background px-3 text-xs font-medium text-foreground transition-colors hover:bg-secondary"
+                                >
+                                  Add domain
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (awaitingHostPortPublish) {
+                                      confirmAction("redeploy");
+                                    } else {
+                                      goToProjectTab("build");
+                                    }
+                                  }}
+                                  className="h-8 rounded-lg border border-border bg-background px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                                >
+                                  {awaitingHostPortPublish
+                                    ? "Redeploy"
+                                    : "Build settings"}
+                                </button>
                               </div>
-                            )}
-                          </div>
+                            </div>
+                          )}
                         </div>
                       </Card>
                     );
