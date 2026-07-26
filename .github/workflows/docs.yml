@@ -5,7 +5,13 @@ on:
     branches: [master]
     paths:
       - "website/**"
+      - "CHANGELOG.md"
       - ".github/workflows/docs.yml"
+  # Release commits use [skip ci], so also rebuild after a successful Release & Test
+  # (that is when CHANGELOG.md is updated by semantic-release).
+  workflow_run:
+    workflows: ["Release & Test"]
+    types: [completed]
   workflow_dispatch:
 
 permissions:
@@ -19,9 +25,15 @@ concurrency:
 
 jobs:
   build:
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # workflow_run.head_sha is the commit that *started* Release & Test
+          # (before semantic-release). Check out the branch tip so the later
+          # chore(release) commit — and its CHANGELOG.md — is included.
+          ref: ${{ github.event_name == 'workflow_run' && (github.event.workflow_run.head_branch || 'master') || github.sha }}
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
@@ -36,6 +48,7 @@ jobs:
           path: website/.vitepress/dist
 
   deploy:
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     needs: build
     runs-on: ubuntu-latest
     environment:
