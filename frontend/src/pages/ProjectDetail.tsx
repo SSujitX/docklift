@@ -1280,8 +1280,7 @@ export default function ProjectDetail() {
                   {(!multiService || workspace === "service") && (
                     <TabsTrigger value="domains" className={PROJECT_TAB_TRIGGER}>
                       <Globe className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                      <span className="hidden sm:inline">Domains</span>
-                      <span className="sm:hidden">DNS</span>
+                      Domain
                     </TabsTrigger>
                   )}
                 </>
@@ -2318,12 +2317,12 @@ export default function ProjectDetail() {
                 <h3 className="flex items-center gap-2 text-lg font-semibold tracking-tight sm:text-xl">
                   <Globe className="h-5 w-5 text-muted-foreground" />
                   {workspace === "service" && selectedService
-                    ? `Domains · ${selectedService.name}`
-                    : "Service domains"}
+                    ? `Domain · ${selectedService.name}`
+                    : "Service domain"}
                 </h3>
                 <p className="mt-1 text-xs text-muted-foreground sm:text-sm">
-                  Domains belong to this service only. Adding a domain saves it,
-                  wires the reverse proxy, and requests a certificate.
+                  Belongs to this service. Saves the hostname, wires the reverse
+                  proxy, and requests a certificate.
                 </p>
               </div>
 
