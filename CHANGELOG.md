@@ -1,3 +1,10 @@
+# [2.1.0](https://github.com/SSujitX/docklift/compare/v2.0.14...v2.1.0) (2026-07-26)
+
+
+### Bug Fixes
+
+* **shell:** keep sidebar active on nested routes *force minor* ([b71c5cf](https://github.com/SSujitX/docklift/commit/b71c5cfcd3854c3bca4d9a939c278562684a49d3))
+
 ## [2.0.14](https://github.com/SSujitX/docklift/compare/v2.0.13...v2.0.14) (2026-07-26)
 
 ## [2.0.13](https://github.com/SSujitX/docklift/compare/v2.0.12...v2.0.13) (2026-07-26)
