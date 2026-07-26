@@ -25,30 +25,41 @@ export function PageHeader({
   className,
 }: PageHeaderProps) {
   return (
-    <div className={cn("mb-8 flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between", className)}>
-      <div className="flex min-w-0 items-start gap-4">
+    <div
+      className={cn(
+        "mb-6 flex flex-col gap-4 sm:mb-8 sm:gap-5 lg:flex-row lg:items-start lg:justify-between",
+        className,
+      )}
+    >
+      <div className="flex min-w-0 items-start gap-3 sm:gap-4">
         {Icon && (
           <span className="hidden h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-brand/20 bg-brand/10 sm:flex">
             <Icon className="h-5.5 w-5.5 text-brand" />
           </span>
         )}
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           {eyebrow && (
             <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-brand">
               {eyebrow}
             </p>
           )}
-          <h1 className="mt-1 truncate text-2xl font-bold tracking-tight sm:text-3xl">
+          <h1 className="mt-1 text-xl font-bold tracking-tight sm:truncate sm:text-2xl md:text-3xl">
             {title}
           </h1>
           {description && (
-            <p className="mt-1.5 max-w-2xl text-sm text-muted-foreground">{description}</p>
+            <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+              {description}
+            </p>
           )}
-          {meta && <div className="mt-4 flex flex-wrap gap-2">{meta}</div>}
+          {meta && <div className="mt-3 flex flex-wrap gap-2 sm:mt-4">{meta}</div>}
         </div>
       </div>
 
-      {actions && <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>}
+      {actions && (
+        <div className="flex w-full shrink-0 flex-wrap items-center gap-2 sm:w-auto">
+          {actions}
+        </div>
+      )}
     </div>
   );
 }
