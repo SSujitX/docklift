@@ -3,11 +3,12 @@
 import { useState, useEffect, Suspense } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { PageHeader } from "@/components/shell/PageHeader";
+import { useShell } from "@/components/shell/ShellContext";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Server, Network, Container, Info, Loader2, Check, X, Sparkles, Globe, Plus, Trash2, ExternalLink, Copy, AlertTriangle, User, Lock, ShieldCheck, KeyRound, Mail, UserCircle, HardDrive, Download, RotateCcw, Archive, Upload, FileUp, SlidersHorizontal } from "lucide-react";
+import { Server, Network, Container, Info, Loader2, Check, X, Sparkles, Globe, Plus, Trash2, ExternalLink, Copy, AlertTriangle, Lock, ShieldCheck, KeyRound, Mail, UserCircle, HardDrive, Download, RotateCcw, Archive, Upload, FileUp, SlidersHorizontal } from "lucide-react";
 import { GithubIcon } from "@/components/icons/GithubIcon";
 import { toast } from "sonner";
 import { API_URL, copyToClipboard } from "@/lib/utils";
@@ -16,6 +17,7 @@ import { authFetch, startGithubInstallAndNavigate } from "@/lib/auth";
 import { useAuth } from "@/components/AuthProvider";
 import { SslStatusBadge, type SslInfo } from "@/components/SslStatusBadge";
 import { consumeProgressStream } from "@/lib/streamProgress";
+import { SETTINGS_TAB_IDS, settingsSectionLabel } from "@/lib/settingsNav";
 
 interface GitHubStatus {
   connected: boolean;
@@ -107,16 +109,16 @@ function SettingsContent() {
 
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const { setBreadcrumbLeaf } = useShell();
 
   // Sync activeTab with URL query parameter
   useEffect(() => {
     const tab = searchParams.get("tab");
-    const validTabs = ['github', 'server', 'port', 'docker', 'domain', 'profile', 'backup', 'restore'];
 
-    if (tab && validTabs.includes(tab)) {
+    if (tab && SETTINGS_TAB_IDS.includes(tab)) {
       setActiveTab(tab);
     } else if (!tab) {
-      setActiveTab('profile');
+      setActiveTab("profile");
     }
 
     if (searchParams.get("github") === "connected") {
@@ -124,6 +126,10 @@ function SettingsContent() {
       navigate("/settings?tab=github", { replace: true });
     }
   }, [searchParams, navigate]);
+
+  useEffect(() => {
+    setBreadcrumbLeaf(settingsSectionLabel(activeTab));
+  }, [activeTab, setBreadcrumbLeaf]);
 
   // Fetch data based on active tab
   useEffect(() => {
@@ -142,10 +148,6 @@ function SettingsContent() {
       setProfileData({ name: user.name || '', email: user.email || '' });
     }
   }, [user]);
-
-  const handleTabChange = (tabId: string) => {
-    navigate(`/settings?tab=${tabId}`);
-  };
 
   const fetchServerIP = async () => {
     try {
@@ -661,183 +663,142 @@ function SettingsContent() {
     <>
       <div>
         <PageHeader
-          eyebrow="Workspace"
-          title="Settings"
+          title={settingsSectionLabel(activeTab)}
           description="Manage your account, server, integrations, and domains."
           icon={SlidersHorizontal}
         />
 
-        <div className="flex flex-col md:flex-row gap-8">
-          {/* Sidebar Navigation */}
-          <aside className="w-full md:w-64 shrink-0 space-y-2">
-            <nav className="flex md:flex-col overflow-x-auto md:overflow-visible gap-2 p-1">
-              {[
-                { id: 'profile', label: 'Profile', icon: User },
-                { id: 'github', label: 'GitHub', icon: GithubIcon },
-                { id: 'server', label: 'Server', icon: Server },
-                { id: 'port', label: 'Port', icon: Network },
-                { id: 'docker', label: 'Docker', icon: Container },
-                { id: 'domain', label: 'Domains', icon: Globe },
-                { id: 'backup', label: 'Backup', icon: Archive },
-                { id: 'restore', label: 'Restore', icon: RotateCcw },
-              ].map((item) => {
-                const Icon = item.icon;
-                const isActive = activeTab === item.id;
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => handleTabChange(item.id)}
-                    className={`relative flex shrink-0 items-center gap-3 whitespace-nowrap rounded-xl px-3 py-2.5 text-sm font-medium transition-colors
-                      ${isActive
-                        ? "bg-brand/10 text-brand"
-                        : "text-muted-foreground hover:bg-secondary/70 hover:text-foreground"
-                      }`}
-                  >
-                    {isActive && (
-                      <span className="absolute left-0 top-1/2 hidden h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-brand md:block" />
-                    )}
-                    <Icon className={`h-4 w-4 ${isActive ? "text-brand" : "text-muted-foreground/60"}`} />
-                    {item.label}
-                  </button>
-                );
-              })}
-            </nav>
-          </aside>
-
-          {/* Main Content Area */}
-          <div className="flex-1 min-w-0">
-            {/* Profile Tab */}
+        <div className="min-w-0 overflow-x-auto">
+            {/* Profile */}
             {activeTab === 'profile' && (
-              <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <div className="grid gap-6">
-                  {/* Account Info */}
-                  <Card className="p-6 border-cyan-500/10 bg-card/50 backdrop-blur-sm">
-                    <div className="flex items-center gap-4 mb-6">
-                      <div className="p-3 rounded-2xl bg-cyan-500/10 border border-cyan-500/20">
-                        <UserCircle className="h-6 w-6 text-cyan-500" />
+              <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                <div className="grid gap-4">
+                  <Card className="rounded-2xl border-border/60 p-5 sm:p-6">
+                    <div className="mb-5 flex items-center gap-3">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-border bg-secondary/40">
+                        <UserCircle className="h-5 w-5 text-muted-foreground" />
                       </div>
                       <div>
-                        <h2 className="text-xl font-black">Account Profile</h2>
-                        <p className="text-xs text-muted-foreground uppercase tracking-widest font-bold mt-0.5">Personal Identity</p>
+                        <h2 className="text-lg font-semibold tracking-tight">Account profile</h2>
+                        <p className="text-sm text-muted-foreground">Name and email for this Docklift account.</p>
                       </div>
                     </div>
                     
                     <form onSubmit={handleUpdateProfile} className="space-y-4">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <div className="space-y-2">
-                          <label className="text-xs font-black uppercase tracking-wider text-muted-foreground ml-1">Full Name</label>
+                          <label className="text-xs font-medium text-muted-foreground">Full name</label>
                           <Input 
                             value={profileData.name}
                             onChange={(e) => setProfileData({ ...profileData, name: e.target.value })}
                             placeholder="John Doe"
-                            className="bg-secondary/30 h-11 border-border/40 focus:border-cyan-500/50 transition-all font-medium"
+                            className="h-10"
                           />
                         </div>
                         <div className="space-y-2">
-                          <label className="text-xs font-black uppercase tracking-wider text-muted-foreground ml-1">Email Address</label>
+                          <label className="text-xs font-medium text-muted-foreground">Email address</label>
                           <div className="relative">
-                            <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/50" />
+                            <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/60" />
                             <Input 
                               type="email"
                               value={profileData.email}
                               onChange={(e) => setProfileData({ ...profileData, email: e.target.value })}
                               placeholder="john@example.com"
-                              className="bg-secondary/30 h-11 pl-10 border-border/40 focus:border-cyan-500/50 transition-all font-medium"
+                              className="h-10 pl-10"
                             />
                           </div>
                         </div>
                       </div>
-                      <div className="flex justify-end pt-2">
+                      <div className="flex justify-end pt-1">
                         <Button 
                           type="submit" 
                           disabled={updatingProfile}
-                          className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white font-black px-6 rounded-xl shadow-lg shadow-cyan-500/20"
+                          className="h-10 bg-brand px-5 font-semibold text-brand-foreground hover:brightness-110"
                         >
-                          {updatingProfile ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Check className="h-4 w-4 mr-2" />}
-                          Update Profile
+                          {updatingProfile ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}
+                          Update profile
                         </Button>
                       </div>
                     </form>
                   </Card>
 
-                  {/* Security Section */}
-                  <Card className="p-6 border-red-500/10 bg-card/50 backdrop-blur-sm">
-                    <div className="flex items-center gap-4 mb-6">
-                      <div className="p-3 rounded-2xl bg-red-500/10 border border-red-500/20">
-                        <ShieldCheck className="h-6 w-6 text-red-500" />
+                  <Card className="rounded-2xl border-border/60 p-5 sm:p-6">
+                    <div className="mb-5 flex items-center gap-3">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-border bg-secondary/40">
+                        <ShieldCheck className="h-5 w-5 text-muted-foreground" />
                       </div>
                       <div>
-                        <h2 className="text-xl font-black">Security</h2>
-                        <p className="text-xs text-muted-foreground uppercase tracking-widest font-bold mt-0.5">Password Management</p>
+                        <h2 className="text-lg font-semibold tracking-tight">Security</h2>
+                        <p className="text-sm text-muted-foreground">Change the password used to sign in.</p>
                       </div>
                     </div>
 
                     <form onSubmit={handleChangePassword} className="space-y-4">
                       <div className="space-y-2">
-                        <label className="text-xs font-black uppercase tracking-wider text-muted-foreground ml-1">Current Password</label>
+                        <label className="text-xs font-medium text-muted-foreground">Current password</label>
                         <div className="relative">
-                          <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/50" />
+                          <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/60" />
                           <Input 
                             type={showCurrentPassword ? "text" : "password"}
                             value={passwordData.currentPassword}
                             onChange={(e) => setPasswordData({ ...passwordData, currentPassword: e.target.value })}
-                            placeholder="Current Password"
-                            className="bg-secondary/30 h-11 pl-10 pr-10 border-border/40 focus:border-red-500/30 transition-all font-medium"
+                            placeholder="Current password"
+                            className="h-10 pl-10 pr-10"
                           />
                           <button 
                             type="button" 
                             onClick={() => setShowCurrentPassword(!showCurrentPassword)}
-                            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
                           >
                             {showCurrentPassword ? <Lock className="h-4 w-4" /> : <ShieldCheck className="h-4 w-4" />}
                           </button>
                         </div>
                       </div>
                       
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <div className="space-y-2">
-                          <label className="text-xs font-black uppercase tracking-wider text-muted-foreground ml-1">New Password</label>
+                          <label className="text-xs font-medium text-muted-foreground">New password</label>
                           <div className="relative">
-                            <KeyRound className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/50" />
+                            <KeyRound className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/60" />
                             <Input 
                               type={showNewPassword ? "text" : "password"}
                               value={passwordData.newPassword}
                               onChange={(e) => setPasswordData({ ...passwordData, newPassword: e.target.value })}
-                              placeholder="New Password"
-                              className="bg-secondary/30 h-11 pl-10 pr-10 border-border/40 focus:border-cyan-500/30 transition-all font-medium"
+                              placeholder="New password"
+                              className="h-10 pl-10 pr-10"
                             />
                             <button 
                               type="button" 
                               onClick={() => setShowNewPassword(!showNewPassword)}
-                              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
                             >
                               {showNewPassword ? <Lock className="h-4 w-4" /> : <ShieldCheck className="h-4 w-4" />}
                             </button>
                           </div>
                         </div>
                         <div className="space-y-2">
-                          <label className="text-xs font-black uppercase tracking-wider text-muted-foreground ml-1">Confirm New Password</label>
+                          <label className="text-xs font-medium text-muted-foreground">Confirm new password</label>
                           <div className="relative">
-                            <KeyRound className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/50" />
+                            <KeyRound className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/60" />
                             <Input 
                               type="password"
                               value={passwordData.confirmPassword}
                               onChange={(e) => setPasswordData({ ...passwordData, confirmPassword: e.target.value })}
-                              placeholder="Confirm Password"
-                              className="bg-secondary/30 h-11 pl-10 border-border/40 focus:border-cyan-500/30 transition-all font-medium"
+                              placeholder="Confirm password"
+                              className="h-10 pl-10"
                             />
                           </div>
                         </div>
                       </div>
 
-                      <div className="flex justify-end pt-2">
+                      <div className="flex justify-end pt-1">
                         <Button 
                           type="submit" 
                           disabled={updatingPassword || !passwordData.newPassword}
-                          className="bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white font-black px-6 rounded-xl shadow-lg shadow-violet-500/20 active:scale-95 transition-all border-none"
+                          className="h-10 bg-brand px-5 font-semibold text-brand-foreground hover:brightness-110"
                         >
-                          {updatingPassword ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <ShieldCheck className="h-4 w-4 mr-2" />}
-                          Change Password
+                          {updatingPassword ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldCheck className="mr-2 h-4 w-4" />}
+                          Change password
                         </Button>
                       </div>
                     </form>
@@ -1625,7 +1586,6 @@ function SettingsContent() {
               </div>
             )}
 
-          </div>
         </div>
       </div>
 
