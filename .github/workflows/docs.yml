@@ -1,4 +1,12 @@
+# Build VitePress site → GitHub Pages (docklift.dev).
+# Called from Release after semantic-release, or on website/CHANGELOG pushes.
 name: Docs
+run-name: >-
+  Docs · ${{
+    github.event_name == 'workflow_call' && format('after Release · {0}', github.ref_name) ||
+    github.event_name == 'workflow_dispatch' && format('manual · {0}', github.ref_name) ||
+    format('site · {0}', github.ref_name)
+  }}
 
 on:
   push:
@@ -7,12 +15,8 @@ on:
       - "website/**"
       - "CHANGELOG.md"
       - ".github/workflows/docs.yml"
-  # Release commits use [skip ci], so also rebuild after a successful Release & Test
-  # (that is when CHANGELOG.md is updated by semantic-release).
-  workflow_run:
-    workflows: ["Release & Test"]
-    types: [completed]
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
@@ -25,15 +29,14 @@ concurrency:
 
 jobs:
   build:
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    name: Build site
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          # workflow_run.head_sha is the commit that *started* Release & Test
-          # (before semantic-release). Check out the branch tip so the later
-          # chore(release) commit — and its CHANGELOG.md — is included.
-          ref: ${{ github.event_name == 'workflow_run' && (github.event.workflow_run.head_branch || 'master') || github.sha }}
+          # workflow_call from Release: tip of branch includes chore(release) + CHANGELOG.
+          # push / dispatch: the triggering commit (or branch tip for dispatch).
+          ref: ${{ github.event_name == 'workflow_call' && github.ref_name || github.sha }}
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
@@ -48,7 +51,7 @@ jobs:
           path: website/.vitepress/dist
 
   deploy:
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    name: Deploy Pages
     needs: build
     runs-on: ubuntu-latest
     environment:
