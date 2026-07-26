@@ -10,25 +10,28 @@ Docklift uses **semantic-release** to fully automate versioning, changelogs, and
 ## How It Works
 
 ```
-Push to master → Run "Release & Test" workflow → semantic-release handles everything
+Push to master → CI + Install green → Run "Release" → semantic-release + Docs (Pages)
 ```
 
-### Pipeline Steps (automatic)
-1. Runs tests via `test-ubuntu.yml`
-2. Analyzes commit messages to determine version bump
-3. Bumps `package.json` in root, frontend, and backend
-4. Updates `CHANGELOG.md`
-5. Commits bumped files back to master: `chore(release): X.Y.Z [skip ci]`
-6. Creates git tag `vX.Y.Z`
-7. Creates GitHub Release with generated notes
-8. Docs site (`docklift.dev`) rebuilds after a successful **Release & Test** (`workflow_run` in `docs.yml` — needed because the release commit uses `[skip ci]`). That Docs run checks out the **branch tip** (not `workflow_run.head_sha`, which is pre–semantic-release). Also redeploys on pushes that touch `website/**` or `CHANGELOG.md`. Homepage preview + `/changelog` sync from root `CHANGELOG.md` at VitePress build time (`website/scripts/sync-changelog.mjs`).
+### Pipeline Steps
+1. **CI** (`ci.yml`) and **Install** (`install.yml`, Ubuntu matrix cell) run on push — not inside Release
+2. You manually run **Release** when those are green
+3. semantic-release analyzes commits, bumps `package.json` (root/frontend/backend), updates `CHANGELOG.md`
+4. Commits `chore(release): X.Y.Z [skip ci]`, tags `vX.Y.Z`, creates GitHub Release
+5. Same Release run calls **Docs** (`workflow_call`) so docklift.dev gets the new changelog / Pages deploy
+6. Docs also runs alone on `website/**` / `CHANGELOG.md` pushes (no release needed)
+
+Homepage preview + `/changelog` sync from root `CHANGELOG.md` at VitePress build time (`website/scripts/sync-changelog.mjs`).
 
 ## Key Files
 
 | File | Purpose |
 |------|---------|
 | `release.config.cjs` | semantic-release config (plugins, release rules, assets) |
-| `.github/workflows/release.yml` | GitHub Actions workflow (manual trigger via `workflow_dispatch`) |
+| `.github/workflows/release.yml` | Manual **Release** (semantic-release + Docs) |
+| `.github/workflows/install.yml` | Install smoke matrix (Ubuntu now; extend later) |
+| `.github/workflows/ci.yml` | Fast typecheck / unit / frontend build |
+| `.github/workflows/docs.yml` | VitePress → GitHub Pages |
 | `CHANGELOG.md` | Auto-updated changelog |
 | `package.json` (root) | Root version + semantic-release devDependencies |
 
@@ -70,9 +73,9 @@ git commit -m "feat: something *force minor*"   # → minor  → 1.4.0
 git commit -m "feat: something *force major*"   # → major  → 2.0.0
 git commit -m "chore: docs *skip release*"      # → none   → stays 1.3.21
 
-# 2) Push, then GitHub → Actions → "Release & Test" → Run workflow
-# semantic-release bumps package.json (root/frontend/backend), CHANGELOG.md, tag + GitHub Release
-# You do NOT edit CHANGELOG.md by hand — it is generated from these commits.
+# 2) Push — wait for CI + Install to go green
+# 3) GitHub → Actions → "Release" → Run workflow
+# semantic-release bumps versions + CHANGELOG; Docs deploys in the same run
 ```
 
 | Commit signal | Release | Demo (`1.3.21` →) |
@@ -124,8 +127,8 @@ git commit -m "fix(deploy): description of change"   # → patch
 # 2. Push to master
 git push origin master
 
-# 3. GitHub → Actions → "Release & Test" → Run workflow
-# semantic-release bumps versions, CHANGELOG.md, tag + GitHub Release
+# 3. Wait for CI + Install, then Actions → "Release" → Run workflow
+# semantic-release + Docs (Pages) in one run
 ```
 
 ## Version Bump Strategy
