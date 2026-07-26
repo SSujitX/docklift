@@ -1,12 +1,13 @@
 // New project page - wizard for creating projects via GitHub, public repo, or file upload
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
-import { BranchSelector } from "@/components/BranchSelector";
+import { BranchSelector, type GitRefKind } from "@/components/BranchSelector";
 import { GithubIcon } from "@/components/icons/GithubIcon";
+import { PageHeader } from "@/components/shell/PageHeader";
 import {
   Upload,
   FolderUp,
@@ -15,27 +16,23 @@ import {
   Check,
   Lock,
   Search,
-  ExternalLink,
   Globe,
-  Database,
   ArrowLeft,
   ArrowRight,
   Shield,
   FlaskConical,
-  Link as LinkIcon,
   Info,
-  ChevronRight,
   Plus as PlusIcon,
   Trash2,
   X,
   Eye,
   EyeOff,
   Box,
+  Container,
 } from "lucide-react";
 import { API_URL, cn } from "@/lib/utils";
 import { authFetch, startGithubInstallAndNavigate } from "@/lib/auth";
 import { toast } from "sonner";
-import { Project } from "@/lib/types";
 import {
   Dialog,
   DialogContent,
@@ -99,13 +96,6 @@ function NewProjectContent() {
   const [newEnvIsBuild, setNewEnvIsBuild] = useState(false);
   const [newEnvIsRuntime, setNewEnvIsRuntime] = useState(true);
 
-  // Database Connection Helper State
-  const [needsDb, setNeedsDb] = useState(false);
-  const [dbUrl, setDbUrl] = useState("");
-  const [dbInBuild, setDbInBuild] = useState(true);
-  const [dbInRuntime, setDbInRuntime] = useState(true);
-  const [existingDbs, setExistingDbs] = useState<Project[]>([]);
-  const [showDbAssistant, setShowDbAssistant] = useState(false);
   const [showAddEnv, setShowAddEnv] = useState(false);
   const [showBulkEnv, setShowBulkEnv] = useState(false);
   const [bulkEnvContent, setBulkEnvContent] = useState("");
@@ -125,50 +115,89 @@ function NewProjectContent() {
   const [selectedRepo, setSelectedRepo] = useState<GitHubRepo | null>(null);
   const [showGitHubConnect, setShowGitHubConnect] = useState(false);
   const [branches, setBranches] = useState<string[]>([]);
+  const [tags, setTags] = useState<string[]>([]);
   const [branchesLoading, setBranchesLoading] = useState(false);
+  const [tagsLoading, setTagsLoading] = useState(false);
+  const [refKind, setRefKind] = useState<GitRefKind>("branch");
+  const refKindRef = useRef<GitRefKind>("branch");
   const [repoAccessError, setRepoAccessError] = useState<string | null>(null);
   /** Sticky warning when /repos is partial or single-install fallback */
   const [reposWarning, setReposWarning] = useState<string | null>(null);
 
   useEffect(() => {
+    refKindRef.current = refKind;
+  }, [refKind]);
+
+  useEffect(() => {
     fetchGitHubStatus();
-    fetchExistingDatabases();
   }, []);
 
-  // Debounced branch fetch for public repo
+  // Debounced branch + tag fetch for public repo
   useEffect(() => {
     if (sourceType === "public" && githubUrl && isValidGithubUrl(githubUrl)) {
-      setBranches([]); // Clear previous branches
-      setGithubBranch(""); // Clear previous selection
-      setRepoAccessError(null); // Clear previous error
+      setBranches([]);
+      setTags([]);
+      setGithubBranch("");
+      setRefKind("branch");
+      setRepoAccessError(null);
       const timer = setTimeout(() => {
         const match = githubUrl.match(/github\.com\/([^\/]+\/[^\/]+)/);
         if (match) {
           const repoPath = match[1].replace(/\.git$/, "").replace(/\/$/, "");
-          fetchBranches(repoPath, "public");
+          fetchRefs(repoPath, "public");
         }
       }, 600);
       return () => clearTimeout(timer);
-    } else {
-        setBranches([]);
-        setRepoAccessError(null);
+    } else if (sourceType === "public") {
+      setBranches([]);
+      setTags([]);
+      setRepoAccessError(null);
     }
   }, [githubUrl, sourceType]);
 
-  const fetchBranches = async (repoIdentifier: string, type: "public" | "private") => {
+  const pickDefaultBranch = (list: string[], current: string) => {
+    if (list.includes(current)) return current;
+    if (list.includes("main")) return "main";
+    if (list.includes("master")) return "master";
+    return list[0] || "";
+  };
+
+  const handleRefKindChange = (next: GitRefKind) => {
+    // No tags → stay on Branch (ignore Tag mode)
+    if (next === "tag" && tags.length === 0) {
+      if (!tagsLoading) {
+        toast.message("This repository has no tags — using a branch instead");
+      }
+      return;
+    }
+    setRefKind(next);
+    if (next === "branch") {
+      setGithubBranch((prev) => pickDefaultBranch(branches, prev));
+    } else {
+      // No selection → latest tag (API returns newest-first)
+      setGithubBranch((prev) => (tags.includes(prev) ? prev : tags[0]));
+    }
+  };
+
+  const fetchRefs = async (repoIdentifier: string, type: "public" | "private") => {
     setBranchesLoading(true);
+    setTagsLoading(true);
     setRepoAccessError(null);
     try {
-      const res = await authFetch(`${API_URL}/api/github/branches?repo=${repoIdentifier}&type=${type}`);
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        if (res.status === 404) {
+      const [branchesRes, tagsRes] = await Promise.all([
+        authFetch(`${API_URL}/api/github/branches?repo=${encodeURIComponent(repoIdentifier)}&type=${type}`),
+        authFetch(`${API_URL}/api/github/tags?repo=${encodeURIComponent(repoIdentifier)}&type=${type}`),
+      ]);
+
+      if (!branchesRes.ok) {
+        const errorData = await branchesRes.json().catch(() => ({}));
+        if (branchesRes.status === 404) {
           if (type === "public") {
             setRepoAccessError("Repository not found or is private. For private repos, use the 'Private Repository' tab.");
           }
           throw new Error("Not found");
         }
-        if (res.status === 403) {
+        if (branchesRes.status === 403) {
           if (type === "public") {
             setRepoAccessError("Cannot access this repository. It may be private - please use the 'Private Repository' tab.");
           }
@@ -176,21 +205,41 @@ function NewProjectContent() {
         }
         throw new Error(errorData.error || "Failed");
       }
-      const data = await res.json();
-      setBranches(data);
+
+      const branchList: string[] = await branchesRes.json();
+      setBranches(Array.isArray(branchList) ? branchList : []);
       setRepoAccessError(null);
-      
-      // Auto-select default branch if current selection is invalid
-      if (!data.includes(githubBranch)) {
-         if (data.includes("main")) setGithubBranch("main");
-         else if (data.includes("master")) setGithubBranch("master");
-         else if (data.length > 0) setGithubBranch(data[0]);
+
+      let tagList: string[] = [];
+      if (tagsRes.ok) {
+        const raw = await tagsRes.json();
+        tagList = Array.isArray(raw) ? raw : [];
+      } else if (type === "private") {
+        toast.warning("Could not load tags for this repository");
+      }
+      setTags(tagList);
+
+      // Tag mode with no tags → fall back to Branch
+      if (refKindRef.current === "tag" && tagList.length === 0) {
+        setRefKind("branch");
+        refKindRef.current = "branch";
+        setGithubBranch((prev) => pickDefaultBranch(branchList, prev));
+      } else {
+        setGithubBranch((prev) => {
+          if (refKindRef.current === "tag") {
+            // Empty/invalid selection → latest tag
+            return tagList.includes(prev) ? prev : tagList[0];
+          }
+          return pickDefaultBranch(branchList, prev);
+        });
       }
     } catch {
-       // Silent fail for public typing
-       if (type === 'private') toast.error("Failed to fetch branches");
+      setBranches([]);
+      setTags([]);
+      if (type === "private") toast.error("Failed to fetch branches");
     } finally {
       setBranchesLoading(false);
+      setTagsLoading(false);
     }
   };
 
@@ -285,16 +334,6 @@ function NewProjectContent() {
     }
   };
 
-  const fetchExistingDatabases = async () => {
-    try {
-      const res = await authFetch(`${API_URL}/api/projects`);
-      const data: Project[] = await res.json();
-      setExistingDbs(data.filter(p => p.project_type === "database"));
-    } catch (error) {
-      console.error("Failed to fetch databases");
-    }
-  };
-
   const handleConnectGitHub = async () => {
     try {
       await startGithubInstallAndNavigate(window.location.href, { sameTab: true });
@@ -308,8 +347,9 @@ function NewProjectContent() {
     setName(repo.name);
     setGithubUrl(repo.clone_url);
     setGithubBranch(repo.default_branch);
-    fetchBranches(repo.full_name, "private");
-    setStep(2); // Auto-advance to config (previously 3)
+    setRefKind("branch");
+    fetchRefs(repo.full_name, "private");
+    setStep(2);
   };
 
   const repoOwner = (repo: GitHubRepo) =>
@@ -380,17 +420,7 @@ function NewProjectContent() {
       const newProject = await createRes.json();
 
       // 2. Inject ENVs
-      const varsToInject = [...envVars];
-      if (needsDb && dbUrl) {
-        varsToInject.push({
-          key: "DATABASE_URL",
-          value: dbUrl,
-          is_build_arg: dbInBuild,
-          is_runtime: dbInRuntime,
-        });
-      }
-
-      for (const env of varsToInject) {
+      for (const env of envVars) {
         await authFetch(`${API_URL}/api/projects/${newProject.id}/env`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -426,13 +456,21 @@ function NewProjectContent() {
 
   const handlePublicSubmit = () => {
     if (!githubUrl) return toast.error("Please enter a repository URL");
-    
+
     // Strict GitHub URL validation
     const githubPattern = /^https:\/\/github\.com\/[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+(\.git)?\/?$/;
     if (!githubPattern.test(githubUrl.trim())) {
       return toast.error("Please enter a valid public GitHub repository URL (e.g., https://github.com/username/repo)");
     }
-    
+
+    if (!githubBranch) {
+      return toast.error(
+        refKind === "tag"
+          ? "Select a tag to deploy"
+          : "Select a branch to deploy",
+      );
+    }
+
     if (!name) setName(githubUrl.split("/").pop()?.replace(".git", "") || "my-app");
     setStep(2);
   };
@@ -444,94 +482,104 @@ function NewProjectContent() {
     return pattern.test(url.trim());
   };
 
-  return (
-    <div className="mx-auto w-full max-w-4xl">
-        {/* Navigation & Header */}
-        <div className="mb-8 sm:mb-10">
-          <button 
-            onClick={() => step > 1 ? setStep(step - 1) : navigate("/")}
-            className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors mb-4 group"
-          >
-            <ArrowLeft className="h-4 w-4 group-hover:-translate-x-0.5 transition-transform" />
-            {step === 1 ? "Dashboard" : "Back"}
-          </button>
-          
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">
-                New Project
-              </h1>
-              <p className="text-muted-foreground text-sm mt-1">
-                {step === 1 && "Select your code source"}
-                {step === 2 && "Configure environment"}
-              </p>
-            </div>
-            
-            {/* Step Indicator */}
-            <div className="flex items-center gap-2 bg-secondary/50 rounded-full px-3 py-1.5">
-              <div className={cn(
-                "flex items-center justify-center h-6 w-6 rounded-full text-xs font-bold transition-all",
-                step >= 1 ? "bg-foreground text-background" : "bg-muted text-muted-foreground"
-              )}>1</div>
-              <div className={cn("w-6 h-0.5 rounded-full", step >= 2 ? "bg-foreground" : "bg-muted")} />
-              <div className={cn(
-                "flex items-center justify-center h-6 w-6 rounded-full text-xs font-bold transition-all",
-                step >= 2 ? "bg-foreground text-background" : "bg-muted text-muted-foreground"
-              )}>2</div>
-            </div>
-          </div>
-        </div>
+  const stepDescription =
+    step === 1
+      ? "Pick a public repository, a private GitHub App repository, or upload source."
+      : "Name the project, choose the builder, and set environment variables.";
 
-        <div className="space-y-6">
-          {/* STEP 1: Source Selection */}
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => (step > 1 ? setStep(step - 1) : navigate("/"))}
+        className="mb-6 inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        {step === 1 ? "Back to Projects" : "Back"}
+      </button>
+
+      <PageHeader
+        eyebrow="Deploy"
+        title="New Project"
+        description={stepDescription}
+        icon={Container}
+        actions={
+          <div
+            className="inline-flex items-center gap-2 rounded-xl border border-border/60 bg-secondary/40 px-3 py-1.5"
+            aria-label={`Step ${step} of 2`}
+          >
+            <span
+              className={cn(
+                "flex h-7 w-7 items-center justify-center rounded-lg text-xs font-semibold",
+                step >= 1
+                  ? "bg-brand text-brand-foreground"
+                  : "bg-muted text-muted-foreground",
+              )}
+            >
+              1
+            </span>
+            <span
+              className={cn(
+                "h-0.5 w-6 rounded-full",
+                step >= 2 ? "bg-brand" : "bg-border",
+              )}
+            />
+            <span
+              className={cn(
+                "flex h-7 w-7 items-center justify-center rounded-lg text-xs font-semibold",
+                step >= 2
+                  ? "bg-brand text-brand-foreground"
+                  : "bg-muted text-muted-foreground",
+              )}
+            >
+              2
+            </span>
+          </div>
+        }
+      />
+
+      <div className="w-full space-y-6">
+          {/* STEP 1: Source Selection — same content width as Projects list */}
           {step === 1 && (
-            <div className="space-y-6">
-              {/* Source Type Tabs */}
-              <div className="flex justify-center">
-                <div className="inline-flex flex-wrap justify-center gap-2">
-                  <button
-                    onClick={() => setSourceType("public")}
-                    className={cn(
-                      "flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all",
-                      sourceType === "public" 
-                        ? "bg-foreground text-background shadow-md" 
-                        : "bg-secondary/50 text-muted-foreground hover:text-foreground hover:bg-secondary"
-                    )}
-                  >
-                    <Globe className="h-4 w-4" />
-                    <span className="hidden sm:inline">Public Repository</span>
-                    <span className="sm:hidden">Public</span>
-                  </button>
-                  <button
-                    onClick={() => setSourceType("github")}
-                    className={cn(
-                      "flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all",
-                      sourceType === "github" 
-                        ? "bg-foreground text-background shadow-md" 
-                        : "bg-secondary/50 text-muted-foreground hover:text-foreground hover:bg-secondary"
-                    )}
-                  >
-                    <Lock className="h-4 w-4" />
-                    <span className="hidden sm:inline">Private Repository</span>
-                    <span className="sm:hidden">Private</span>
-                  </button>
-                  <button
-                    onClick={() => setSourceType("upload")}
-                    className={cn(
-                      "flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all",
-                      sourceType === "upload" 
-                        ? "bg-foreground text-background shadow-md" 
-                        : "bg-secondary/50 text-muted-foreground hover:text-foreground hover:bg-secondary"
-                    )}
-                  >
-                    <Upload className="h-4 w-4" />
-                    Direct Upload
-                  </button>
-                </div>
+            <div className="w-full space-y-5 sm:space-y-6">
+              <div
+                className="grid w-full grid-cols-3 gap-1.5 sm:gap-2"
+                role="tablist"
+                aria-label="Project source"
+              >
+                {(
+                  [
+                    { id: "public" as const, label: "Public Repository", short: "Public", icon: Globe },
+                    { id: "github" as const, label: "Private Repository", short: "Private", icon: Lock },
+                    { id: "upload" as const, label: "Direct upload", short: "Upload", icon: Upload },
+                  ] as const
+                ).map((tab) => {
+                  const active = sourceType === tab.id;
+                  const Icon = tab.icon;
+                  return (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      role="tab"
+                      aria-selected={active}
+                      onClick={() => setSourceType(tab.id)}
+                      className={cn(
+                        "inline-flex min-h-11 w-full items-center justify-center gap-1.5 rounded-xl border px-1.5 py-2.5 text-center text-xs font-medium transition-colors sm:min-h-12 sm:gap-2 sm:px-3 sm:text-sm",
+                        active
+                          ? "border-brand/30 bg-brand/10 text-brand"
+                          : "border-border/60 bg-secondary/40 text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      <Icon className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />
+                      <span className="hidden truncate sm:inline">{tab.label}</span>
+                      <span className="truncate sm:hidden">{tab.short}</span>
+                    </button>
+                  );
+                })}
               </div>
 
               {sourceType === "public" && (
-                <Card className="p-5 sm:p-6 border-border/30 rounded-2xl">
+                <Card className="rounded-2xl border-border/60 p-5 sm:p-6">
                   <div className="space-y-5">
                     <div className="space-y-2">
                       <label className="text-sm font-medium">Repository URL</label>
@@ -542,42 +590,52 @@ function NewProjectContent() {
                         className={cn(
                           "h-11 bg-secondary/30",
                           githubUrl && isValidGithubUrl(githubUrl) === false && "border-red-500 focus-visible:ring-red-500",
-                          githubUrl && isValidGithubUrl(githubUrl) === true && "border-green-500 focus-visible:ring-green-500"
+                          githubUrl && isValidGithubUrl(githubUrl) === true && "border-emerald-500 focus-visible:ring-emerald-500"
                         )}
                       />
                       {githubUrl && isValidGithubUrl(githubUrl) === false && (
-                        <p className="text-xs text-red-500 flex items-center gap-1">
+                        <p className="flex items-center gap-1 text-xs text-red-500">
                           <X className="h-3 w-3" /> Invalid URL format
                         </p>
                       )}
                       {githubUrl && isValidGithubUrl(githubUrl) === true && (
-                        <p className="text-xs text-green-500 flex items-center gap-1">
+                        <p className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400">
                           <Check className="h-3 w-3" /> Valid URL
                         </p>
                       )}
                     </div>
                     <div className="space-y-2">
-                      <label className="text-sm font-medium">Branch</label>
+                      <label className="text-sm font-medium">Deploy from</label>
                       <BranchSelector
                         branches={branches}
+                        tags={tags}
                         value={githubBranch}
                         onChange={setGithubBranch}
+                        kind={refKind}
+                        onKindChange={handleRefKindChange}
                         loading={branchesLoading}
+                        tagsLoading={tagsLoading}
                         disabled={!githubUrl || isValidGithubUrl(githubUrl) !== true}
                       />
                       {repoAccessError && (
-                        <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-start gap-2">
-                          <Lock className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+                        <div className="flex items-start gap-2 rounded-xl border border-amber-500/20 bg-amber-500/10 p-3">
+                          <Lock className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
                           <span className="text-xs text-amber-600 dark:text-amber-400">{repoAccessError}</span>
                         </div>
                       )}
                     </div>
                     <Button 
                       onClick={handlePublicSubmit} 
-                      disabled={!githubUrl || isValidGithubUrl(githubUrl) !== true}
-                      className="w-full h-11 bg-zinc-900 hover:bg-zinc-800 text-white font-medium"
+                      disabled={
+                        !githubUrl ||
+                        isValidGithubUrl(githubUrl) !== true ||
+                        !githubBranch ||
+                        branchesLoading ||
+                        (refKind === "tag" && tagsLoading)
+                      }
+                      className="h-11 w-full bg-brand font-semibold text-brand-foreground shadow-lg shadow-brand/20 hover:brightness-110"
                     >
-                      Continue <ArrowRight className="h-4 w-4 ml-2" />
+                      Continue <ArrowRight className="ml-2 h-4 w-4" />
                     </Button>
                   </div>
                 </Card>
@@ -586,15 +644,18 @@ function NewProjectContent() {
               {sourceType === "github" && (
                 <div className="space-y-4">
                   {!githubStatus?.connected ? (
-                    <Card className="p-8 text-center border-dashed border-2 rounded-2xl flex flex-col items-center">
-                      <div className="h-14 w-14 rounded-xl bg-zinc-900 flex items-center justify-center mb-4">
-                        <GithubIcon className="h-7 w-7 text-white" />
+                    <Card className="flex flex-col items-center rounded-2xl border-2 border-dashed border-border/60 p-8 text-center sm:p-10">
+                      <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-brand/20 bg-brand/10">
+                        <GithubIcon className="h-7 w-7 text-brand" />
                       </div>
-                      <h3 className="text-lg font-bold mb-2">Connect GitHub</h3>
-                      <p className="text-sm text-muted-foreground max-w-xs mb-6">
-                        Create a GitHub App to access your repositories.
+                      <h3 className="mb-2 text-lg font-semibold tracking-tight">Connect GitHub</h3>
+                      <p className="mb-6 max-w-xs text-sm text-muted-foreground">
+                        Install the Docklift GitHub App to deploy private repositories.
                       </p>
-                      <Button onClick={() => setShowGitHubConnect(true)} className="h-10 px-6 bg-zinc-900 hover:bg-zinc-800 text-white">
+                      <Button
+                        onClick={() => setShowGitHubConnect(true)}
+                        className="h-10 bg-brand px-6 font-semibold text-brand-foreground shadow-lg shadow-brand/20 hover:brightness-110"
+                      >
                         Connect GitHub
                       </Button>
                       <GitHubConnect 
@@ -607,33 +668,32 @@ function NewProjectContent() {
                       />
                     </Card>
                   ) : (
-                    <Card className="border-border/30 rounded-2xl overflow-hidden">
-                      {/* Header: all connected accounts + search */}
-                      <div className="bg-secondary/30 px-4 py-3 space-y-3 border-b border-border/30">
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <div className="h-2 w-2 rounded-full bg-green-500 shrink-0" />
-                            <span className="text-xs font-medium text-muted-foreground truncate">
+                    <Card className="overflow-hidden rounded-2xl border-border/60">
+                      <div className="space-y-3 border-b border-border/60 bg-secondary/30 px-4 py-3">
+                        <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+                          <div className="flex min-w-0 items-center gap-2">
+                            <div className="h-2 w-2 shrink-0 rounded-full bg-emerald-500" />
+                            <span className="truncate text-xs font-medium text-muted-foreground">
                               {githubInstallations.length > 0
                                 ? `${githubInstallations.length} GitHub account${githubInstallations.length === 1 ? "" : "s"} connected`
                                 : `@${githubStatus.username || "connected"}`}
                             </span>
                           </div>
-                          <div className="flex items-center gap-2 w-full sm:w-auto">
+                          <div className="flex w-full items-center gap-2 sm:w-auto">
                             <div className="relative flex-1 sm:w-56">
-                              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                              <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                               <Input
                                 placeholder="Search all repos..."
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
-                                className="pl-9 h-9 text-sm bg-background/50 border-border/40"
+                                className="h-9 border-border/40 bg-background/50 pl-9 text-sm"
                               />
                             </div>
                             <Button
                               type="button"
                               variant="outline"
                               size="sm"
-                              className="h-9 shrink-0 rounded-lg"
+                              className="h-9 shrink-0 rounded-xl border-border/60"
                               title="Add another personal account or organization"
                               onClick={handleAddGithubAccount}
                             >
@@ -648,10 +708,10 @@ function NewProjectContent() {
                               type="button"
                               onClick={() => setAccountFilter(null)}
                               className={cn(
-                                "h-7 px-2.5 rounded-lg text-[11px] font-semibold border transition-colors",
+                                "h-7 rounded-lg border px-2.5 text-[11px] font-semibold transition-colors",
                                 accountFilter === null
-                                  ? "bg-foreground text-background border-foreground"
-                                  : "bg-background/50 text-muted-foreground border-border/40 hover:text-foreground",
+                                  ? "border-brand/30 bg-brand/10 text-brand"
+                                  : "border-border/40 bg-background/50 text-muted-foreground hover:text-foreground",
                               )}
                             >
                               All
@@ -662,10 +722,10 @@ function NewProjectContent() {
                                 type="button"
                                 onClick={() => setAccountFilter(inst.login)}
                                 className={cn(
-                                  "h-7 px-2.5 rounded-lg text-[11px] font-semibold border transition-colors inline-flex items-center gap-1.5 max-w-full",
+                                  "inline-flex h-7 max-w-full items-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-semibold transition-colors",
                                   accountFilter === inst.login
-                                    ? "bg-foreground text-background border-foreground"
-                                    : "bg-background/50 text-muted-foreground border-border/40 hover:text-foreground",
+                                    ? "border-brand/30 bg-brand/10 text-brand"
+                                    : "border-border/40 bg-background/50 text-muted-foreground hover:text-foreground",
                                 )}
                                 title={
                                   inst.type === "Organization"
@@ -686,20 +746,19 @@ function NewProjectContent() {
                           </div>
                         )}
                         {reposWarning && (
-                          <p className="text-[11px] text-amber-600 dark:text-amber-400 leading-snug">
+                          <p className="text-[11px] leading-snug text-amber-600 dark:text-amber-400">
                             {reposWarning}
                           </p>
                         )}
                       </div>
-                      {/* Repo List */}
-                      <div className="max-h-80 overflow-y-auto divide-y divide-border/20">
+                      <div className="max-h-80 divide-y divide-border/40 overflow-y-auto">
                         {reposLoading || githubLoading ? (
-                          <div className="p-12 flex flex-col items-center gap-3 text-muted-foreground">
+                          <div className="flex flex-col items-center gap-3 p-12 text-muted-foreground">
                             <Loader2 className="h-6 w-6 animate-spin" />
                             <span className="text-sm">Loading repos...</span>
                           </div>
                         ) : filteredRepos.length === 0 ? (
-                          <div className="p-12 text-center text-sm text-muted-foreground space-y-2">
+                          <div className="space-y-2 p-12 text-center text-sm text-muted-foreground">
                             <p>No repositories found</p>
                             <p className="text-xs">
                               {accountFilter
@@ -711,18 +770,18 @@ function NewProjectContent() {
                           <div 
                             key={repo.id}
                             onClick={() => handleSelectRepo(repo)}
-                            className="group flex items-center justify-between p-4 hover:bg-secondary/30 cursor-pointer transition-colors"
+                            className="group flex cursor-pointer items-center justify-between p-4 transition-colors hover:bg-secondary/40"
                           >
-                            <div className="flex items-center gap-3 min-w-0">
-                              <div className="h-9 w-9 rounded-lg bg-secondary/50 flex items-center justify-center shrink-0">
+                            <div className="flex min-w-0 items-center gap-3">
+                              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-border/60 bg-secondary/40">
                                 {repo.private ? <Lock className="h-4 w-4 text-muted-foreground" /> : <Globe className="h-4 w-4 text-muted-foreground" />}
                               </div>
                               <div className="min-w-0">
-                                <h4 className="font-medium text-sm truncate">{repo.full_name}</h4>
-                                <p className="text-xs text-muted-foreground truncate">{repo.description || "No description"}</p>
+                                <h4 className="truncate text-sm font-medium">{repo.full_name}</h4>
+                                <p className="truncate text-xs text-muted-foreground">{repo.description || "No description"}</p>
                               </div>
                             </div>
-                            <ArrowRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 shrink-0 ml-2" />
+                            <ArrowRight className="ml-2 h-4 w-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
                           </div>
                         ))}
                       </div>
@@ -738,23 +797,23 @@ function NewProjectContent() {
                   onDragOver={handleDrag}
                   onDrop={handleDrop}
                   className={cn(
-                    "border-2 border-dashed rounded-2xl p-10 sm:p-12 text-center cursor-pointer transition-all",
-                    dragActive ? "border-cyan-500 bg-cyan-500/5" : "border-border/50 hover:border-cyan-500/40 hover:bg-secondary/20",
-                    files && "border-cyan-500/50 bg-cyan-500/5"
+                    "cursor-pointer rounded-2xl border-2 border-dashed p-10 text-center transition-colors sm:p-12",
+                    dragActive ? "border-brand/50 bg-brand/5" : "border-border/60 hover:border-brand/40 hover:bg-secondary/20",
+                    files && "border-brand/40 bg-brand/5"
                   )}
                   onClick={() => document.getElementById("file-upload-input")?.click()}
                 >
                   <input id="file-upload-input" type="file" multiple className="hidden" onChange={(e) => { setFiles(e.target.files); setStep(2); }} />
                   <div className="flex flex-col items-center">
-                    <div className="h-14 w-14 rounded-xl bg-secondary flex items-center justify-center mb-4">
-                      <FolderUp className="h-7 w-7 text-muted-foreground" />
+                    <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-brand/20 bg-brand/10">
+                      <FolderUp className="h-7 w-7 text-brand" />
                     </div>
-                    <h3 className="text-lg font-bold mb-2">Upload Project</h3>
-                    <p className="text-sm text-muted-foreground max-w-sm">
+                    <h3 className="mb-2 text-lg font-semibold tracking-tight">Upload Project</h3>
+                    <p className="max-w-sm text-sm text-muted-foreground">
                       Drop a ZIP file or click to browse
                     </p>
                     {files && (
-                      <div className="mt-4 px-4 py-1.5 rounded-full bg-cyan-500/10 text-cyan-500 text-sm font-medium flex items-center gap-2">
+                      <div className="mt-4 inline-flex items-center gap-2 rounded-xl border border-brand/30 bg-brand/10 px-4 py-1.5 text-sm font-medium text-brand">
                         <Check className="h-4 w-4" /> {files.length} file(s) selected
                       </div>
                     )}
@@ -764,12 +823,10 @@ function NewProjectContent() {
             </div>
           )}
           {step === 2 && (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className="lg:col-span-2 space-y-6">
-                {/* General Config */}
-                <Card className="p-5 space-y-4 rounded-2xl border-border/30">
-                  <h3 className="text-base font-semibold flex items-center gap-2">
-                    <Sparkles className="h-4 w-4 text-cyan-500" />
+            <div className="w-full space-y-6 pb-28 sm:pb-24">
+                <Card className="space-y-4 rounded-2xl border-border/60 p-5">
+                  <h3 className="flex items-center gap-2 text-base font-semibold tracking-tight">
+                    <Sparkles className="h-4 w-4 text-brand" />
                     Configuration
                   </h3>
                   
@@ -779,53 +836,62 @@ function NewProjectContent() {
                       placeholder="my-app" 
                       value={name}
                       onChange={(e) => setName(e.target.value)}
-                      className="h-10 bg-secondary/30" 
+                      className="h-11 bg-secondary/30" 
                     />
                   </div>
 
-                  {sourceType === "github" && selectedRepo && (
-                    <div className="p-4 rounded-xl bg-secondary/30 border border-border/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <GithubIcon className="h-5 w-5 shrink-0" />
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium truncate">{selectedRepo?.full_name}</p>
-                          <div className="flex items-center gap-2 mt-1">
-                            <span className="text-xs text-muted-foreground">Branch:</span>
-                            <BranchSelector
-                                branches={branches}
-                                value={githubBranch}
-                                onChange={setGithubBranch}
-                                loading={branchesLoading}
-                                className="h-8 text-xs w-36"
-                            />
+                  {(sourceType === "github" || sourceType === "public") && githubUrl && (
+                    <div className="space-y-3 rounded-xl border border-border/60 bg-secondary/30 p-4">
+                      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <GithubIcon className="h-5 w-5 shrink-0" />
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium">
+                              {selectedRepo?.full_name ||
+                                githubUrl
+                                  .replace(/^https:\/\/github\.com\//, "")
+                                  .replace(/\.git$/, "")}
+                            </p>
+                            <p className="mt-0.5 text-xs text-muted-foreground">
+                              Deploy from {refKind === "tag" ? "tag" : "branch"}
+                            </p>
                           </div>
                         </div>
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          onClick={() => setStep(1)} 
+                          className="shrink-0 text-xs font-medium text-brand hover:text-brand"
+                        >
+                          Change
+                        </Button>
                       </div>
-                      <Button 
-                        variant="ghost" 
-                        size="sm" 
-                        onClick={() => setStep(1)} 
-                        className="text-xs text-cyan-500 hover:text-cyan-600"
-                      >
-                        Change
-                      </Button>
+                      <BranchSelector
+                        branches={branches}
+                        tags={tags}
+                        value={githubBranch}
+                        onChange={setGithubBranch}
+                        kind={refKind}
+                        onKindChange={handleRefKindChange}
+                        loading={branchesLoading}
+                        tagsLoading={tagsLoading}
+                      />
                     </div>
                   )}
                 </Card>
 
-                {/* Build Config */}
-                <Card className="p-5 space-y-5 rounded-2xl border-border/30">
+                <Card className="space-y-5 rounded-2xl border-border/60 p-5">
                   <div>
-                    <h3 className="text-base font-semibold flex items-center gap-2">
-                      <Box className="h-4 w-4 text-orange-500" />
+                    <h3 className="flex items-center gap-2 text-base font-semibold tracking-tight">
+                      <Box className="h-4 w-4 text-muted-foreground" />
                       Build
                     </h3>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Choose how DockLift turns your source into a container.
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Choose how Docklift turns your source into a container.
                     </p>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                     {([
                       ["auto", "Auto", "Detect the best builder"],
                       ["dockerfile", "Dockerfile", "Use your Dockerfile"],
@@ -836,14 +902,14 @@ function NewProjectContent() {
                         type="button"
                         onClick={() => setBuildType(value)}
                         className={cn(
-                          "p-3 rounded-xl border text-left transition-all",
+                          "rounded-2xl border p-3 text-left transition-colors",
                           buildType === value
-                            ? "border-orange-500/40 bg-orange-500/5"
-                            : "border-border/40 hover:bg-secondary/30",
+                            ? "border-brand/40 bg-brand/10"
+                            : "border-border/60 bg-card/40 hover:bg-secondary/40",
                         )}
                       >
-                        <span className="text-sm font-bold">{label}</span>
-                        <span className="block text-[10px] text-muted-foreground mt-1">
+                        <span className="text-sm font-semibold">{label}</span>
+                        <span className="mt-1 block text-[10px] leading-relaxed text-muted-foreground">
                           {description}
                         </span>
                       </button>
@@ -895,19 +961,18 @@ function NewProjectContent() {
                   )}
                 </Card>
 
-                {/* ENVIRONMENT VARIABLES MANAGER */}
-                <Card className="p-5 space-y-4 rounded-2xl border-border/30">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <h3 className="text-base font-semibold flex items-center gap-2">
-                      <Lock className="h-4 w-4 text-emerald-500" />
+                <Card className="space-y-4 rounded-2xl border-border/60 p-5">
+                  <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+                    <h3 className="flex items-center gap-2 text-base font-semibold tracking-tight">
+                      <Lock className="h-4 w-4 text-muted-foreground" />
                       Environment Variables
                     </h3>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                     <Dialog open={showAddEnv} onOpenChange={setShowAddEnv}>
                       <DialogTrigger asChild>
-                        <Button variant="outline" size="sm" className="h-8 text-xs">
-                          <PlusIcon className="h-3.5 w-3.5 mr-1.5" /> Add
+                        <Button variant="outline" size="sm" className="h-9 rounded-xl border-border/60 text-xs">
+                          <PlusIcon className="mr-1.5 h-3.5 w-3.5" /> Add
                         </Button>
                       </DialogTrigger>
                       <DialogContent className="sm:max-w-md">
@@ -917,22 +982,22 @@ function NewProjectContent() {
                         <div className="space-y-6 pt-4">
                           <div className="grid grid-cols-1 gap-4">
                             <div className="space-y-1.5">
-                              <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest ml-1">Key</label>
+                              <label className="ml-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Key</label>
                               <Input 
                                 placeholder="e.g. API_KEY" 
                                 value={newEnvKey}
                                 onChange={(e) => setNewEnvKey(e.target.value.toUpperCase().replace(/\s+/g, '_'))}
-                                className="bg-secondary/20 h-11 border-border/40 font-mono"
+                                className="h-11 border-border/40 bg-secondary/20 font-mono"
                               />
                             </div>
                             <div className="space-y-1.5">
-                              <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest ml-1">Value</label>
+                              <label className="ml-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Value</label>
                               <Input 
                                 placeholder="Value..." 
                                 type="text"
                                 value={newEnvValue}
                                 onChange={(e) => setNewEnvValue(e.target.value)}
-                                className="bg-secondary/20 h-11 border-border/40 font-mono"
+                                className="h-11 border-border/40 bg-secondary/20 font-mono"
                               />
                             </div>
                           </div>
@@ -943,13 +1008,13 @@ function NewProjectContent() {
                                 type="button"
                                 onClick={() => setNewEnvIsBuild(!newEnvIsBuild)}
                                 className={cn(
-                                  "flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all text-[10px] font-bold uppercase tracking-wider w-fit",
-                                  newEnvIsBuild ? "bg-cyan-500/10 border-cyan-500/30 text-cyan-500" : "bg-transparent border-border/40 text-muted-foreground hover:border-border"
+                                  "inline-flex w-fit items-center gap-2 rounded-xl border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider transition-colors",
+                                  newEnvIsBuild ? "border-brand/30 bg-brand/10 text-brand" : "border-border/40 text-muted-foreground hover:border-border"
                                 )}
                               >
                                 <FlaskConical className="h-3 w-3" /> Inject in Build
                               </button>
-                              <span className="text-[9px] text-muted-foreground px-1 font-medium">Next.js/Prisma build-args</span>
+                              <span className="px-1 text-[9px] font-medium text-muted-foreground">Next.js/Prisma build-args</span>
                             </div>
 
                             <div className="flex flex-col gap-1.5">
@@ -957,25 +1022,25 @@ function NewProjectContent() {
                                 type="button"
                                 onClick={() => setNewEnvIsRuntime(!newEnvIsRuntime)}
                                 className={cn(
-                                  "flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all text-[10px] font-bold uppercase tracking-wider w-fit",
-                                  newEnvIsRuntime ? "bg-blue-500/10 border-blue-500/30 text-blue-500" : "bg-transparent border-border/40 text-muted-foreground hover:border-border"
+                                  "inline-flex w-fit items-center gap-2 rounded-xl border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider transition-colors",
+                                  newEnvIsRuntime ? "border-brand/30 bg-brand/10 text-brand" : "border-border/40 text-muted-foreground hover:border-border"
                                 )}
                               >
                                 <Globe className="h-3 w-3" /> Inject in Runtime
                               </button>
-                              <span className="text-[9px] text-muted-foreground px-1 font-medium">Available after deploy</span>
+                              <span className="px-1 text-[9px] font-medium text-muted-foreground">Available after deploy</span>
                             </div>
                           </div>
 
                           {!newEnvIsBuild && !newEnvIsRuntime && (
-                            <div className="p-3 rounded-xl bg-amber-500/5 border border-amber-500/20 flex gap-2">
-                              <Info className="h-4 w-4 text-amber-500 shrink-0" />
-                              <p className="text-[10px] text-amber-700 font-medium">You must select at least one injection scope for this variable to be active.</p>
+                            <div className="flex gap-2 rounded-xl border border-amber-500/20 bg-amber-500/5 p-3">
+                              <Info className="h-4 w-4 shrink-0 text-amber-500" />
+                              <p className="text-[10px] font-medium text-amber-700 dark:text-amber-400">You must select at least one injection scope for this variable to be active.</p>
                             </div>
                           )}
 
                           <div className="flex justify-end gap-3 pt-2">
-                            <Button variant="ghost" onClick={() => setShowAddEnv(false)} className="rounded-xl font-bold">Cancel</Button>
+                            <Button variant="ghost" onClick={() => setShowAddEnv(false)} className="rounded-xl">Cancel</Button>
                             <Button 
                               disabled={!newEnvKey || !newEnvValue || (!newEnvIsBuild && !newEnvIsRuntime)}
                               onClick={() => {
@@ -993,7 +1058,7 @@ function NewProjectContent() {
                                 setNewEnvValue("");
                                 setShowAddEnv(false);
                               }}
-                              className="bg-blue-600 hover:bg-blue-500 text-white h-11 px-8 rounded-xl font-bold shadow-lg disabled:opacity-50"
+                              className="h-11 rounded-xl bg-brand px-8 font-semibold text-brand-foreground shadow-lg shadow-brand/20 hover:brightness-110 disabled:opacity-50"
                             >
                               Add Variable
                             </Button>
@@ -1004,8 +1069,8 @@ function NewProjectContent() {
 
                     <Dialog open={showBulkEnv} onOpenChange={setShowBulkEnv}>
                       <DialogTrigger asChild>
-                        <Button variant="outline" size="sm" className="h-9 px-4 rounded-xl font-bold border-cyan-500/20 text-cyan-600 hover:bg-cyan-500/5 hover:border-cyan-500/40 w-full sm:w-auto">
-                          <Upload className="h-4 w-4 mr-2" /> Bulk Import
+                        <Button variant="outline" size="sm" className="h-9 w-full rounded-xl border-border/60 px-4 text-xs sm:w-auto">
+                          <Upload className="mr-2 h-4 w-4" /> Bulk Import
                         </Button>
                       </DialogTrigger>
                       <DialogContent className="sm:max-w-lg">
@@ -1014,7 +1079,7 @@ function NewProjectContent() {
                         </DialogHeader>
                         <div className="space-y-4 pt-4">
                           <div className="space-y-2">
-                            <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest ml-1">
+                            <label className="ml-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                               Paste KEY=VALUE pairs (one per line)
                             </label>
                             <textarea
@@ -1024,18 +1089,17 @@ SESSION_SECRET=your-secret-here
 # Lines starting with # are ignored`}
                               value={bulkEnvContent}
                               onChange={(e) => setBulkEnvContent(e.target.value)}
-                              className="w-full h-40 p-4 font-mono text-sm bg-secondary/20 border border-border/40 rounded-xl resize-none focus:outline-none focus:border-cyan-500/50"
+                              className="h-40 w-full resize-none rounded-xl border border-border/40 bg-secondary/20 p-4 font-mono text-sm outline-none focus:border-brand/50 focus:ring-2 focus:ring-brand/20"
                             />
                           </div>
                           
-                          {/* Build/Runtime Toggles for Bulk Import */}
-                          <div className="flex items-center gap-6 p-3 rounded-xl bg-secondary/30 border border-border/40">
-                            <div className="flex items-center gap-2 group cursor-pointer" onClick={() => setBulkIsBuild(!bulkIsBuild)}>
+                          <div className="flex flex-col gap-3 rounded-xl border border-border/40 bg-secondary/30 p-3 sm:flex-row sm:items-center sm:gap-6">
+                            <div className="group flex cursor-pointer items-center gap-2" onClick={() => setBulkIsBuild(!bulkIsBuild)}>
                               <div className={cn(
-                                "h-4 w-4 rounded border transition-colors flex items-center justify-center",
-                                bulkIsBuild ? "bg-orange-500 border-orange-500" : "bg-transparent border-muted-foreground/40"
+                                "flex h-4 w-4 items-center justify-center rounded border transition-colors",
+                                bulkIsBuild ? "border-brand bg-brand" : "border-muted-foreground/40 bg-transparent"
                               )}>
-                                {bulkIsBuild && <Check className="h-3 w-3 text-white" strokeWidth={4} />}
+                                {bulkIsBuild && <Check className="h-3 w-3 text-brand-foreground" strokeWidth={4} />}
                               </div>
                               <div className="flex flex-col">
                                 <span className="text-xs font-semibold">Build Argument</span>
@@ -1043,12 +1107,12 @@ SESSION_SECRET=your-secret-here
                               </div>
                             </div>
 
-                            <div className="flex items-center gap-2 group cursor-pointer" onClick={() => setBulkIsRuntime(!bulkIsRuntime)}>
+                            <div className="group flex cursor-pointer items-center gap-2" onClick={() => setBulkIsRuntime(!bulkIsRuntime)}>
                               <div className={cn(
-                                "h-4 w-4 rounded border transition-colors flex items-center justify-center",
-                                bulkIsRuntime ? "bg-orange-500 border-orange-500" : "bg-transparent border-muted-foreground/40"
+                                "flex h-4 w-4 items-center justify-center rounded border transition-colors",
+                                bulkIsRuntime ? "border-brand bg-brand" : "border-muted-foreground/40 bg-transparent"
                               )}>
-                                {bulkIsRuntime && <Check className="h-3 w-3 text-white" strokeWidth={4} />}
+                                {bulkIsRuntime && <Check className="h-3 w-3 text-brand-foreground" strokeWidth={4} />}
                               </div>
                               <div className="flex flex-col">
                                 <span className="text-xs font-semibold">Runtime Variable</span>
@@ -1061,7 +1125,7 @@ SESSION_SECRET=your-secret-here
                             {bulkEnvContent.split('\n').filter(l => l.trim() && !l.trim().startsWith('#') && l.includes('=')).length} variables detected
                           </p>
                           <div className="flex justify-end gap-3 pt-2">
-                            <Button variant="ghost" onClick={() => setShowBulkEnv(false)} className="rounded-xl font-bold">Cancel</Button>
+                            <Button variant="ghost" onClick={() => setShowBulkEnv(false)} className="rounded-xl">Cancel</Button>
                             <Button 
                               disabled={!bulkEnvContent.trim()}
                               onClick={() => {
@@ -1090,7 +1154,7 @@ SESSION_SECRET=your-secret-here
                                 setBulkEnvContent("");
                                 setShowBulkEnv(false);
                               }}
-                              className="bg-cyan-500 hover:bg-cyan-600 text-white h-11 px-8 rounded-xl font-bold shadow-lg disabled:opacity-50"
+                              className="h-11 rounded-xl bg-brand px-8 font-semibold text-brand-foreground shadow-lg shadow-brand/20 hover:brightness-110 disabled:opacity-50"
                             >
                               Import All
                             </Button>
@@ -1103,49 +1167,50 @@ SESSION_SECRET=your-secret-here
 
                   <div className="space-y-4">
                     {envVars.length === 0 ? (
-                      <div className="p-12 text-center rounded-2xl bg-secondary/10 border border-dashed border-border/60">
-                         <Shield className="h-8 w-8 text-muted-foreground/30 mx-auto mb-3" />
-                         <p className="text-xs text-muted-foreground font-medium">No custom environment variables added yet.</p>
+                      <div className="rounded-2xl border border-dashed border-border/60 bg-secondary/10 px-4 py-12 text-center">
+                         <Shield className="mx-auto mb-3 h-8 w-8 text-muted-foreground/30" />
+                         <p className="text-xs font-medium text-muted-foreground">No custom environment variables added yet.</p>
                       </div>
                     ) : (
                       <div className="grid grid-cols-1 gap-2">
                         {envVars.map((env, i) => (
-                          <div key={i} className="flex items-center justify-between p-3.5 rounded-xl bg-secondary/30 border border-border/40 group hover:border-emerald-500/20 transition-all">
-                            <div className="flex items-center gap-4 min-w-0">
-                              <div className="h-8 w-8 rounded-lg bg-emerald-500/5 flex items-center justify-center shrink-0">
-                                <Lock className="h-3.5 w-3.5 text-emerald-600" />
+                          <div key={i} className="group flex items-center justify-between rounded-xl border border-border/60 bg-secondary/30 p-3.5 transition-colors hover:border-brand/30">
+                            <div className="flex min-w-0 items-center gap-3 sm:gap-4">
+                              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-background/50">
+                                <Lock className="h-3.5 w-3.5 text-muted-foreground" />
                               </div>
-                              <div className="flex flex-col min-w-0">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-sm font-mono font-bold tracking-tight truncate">{env.key}</span>
+                              <div className="flex min-w-0 flex-col">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="truncate font-mono text-sm font-semibold tracking-tight">{env.key}</span>
                                   <div className="flex gap-1.5">
                                     <div className={cn(
-                                      "h-5 px-1.5 rounded-full flex items-center gap-1 text-[8px] font-bold uppercase tracking-widest transition-all",
+                                      "flex h-5 items-center gap-1 rounded-md border px-1.5 text-[8px] font-semibold uppercase tracking-wider",
                                       env.is_build_arg 
-                                        ? "bg-orange-100 text-orange-600 border border-orange-300" 
-                                        : "bg-gray-100 text-gray-400 border border-gray-200"
+                                        ? "border-brand/30 bg-brand/10 text-brand" 
+                                        : "border-border/60 bg-secondary/40 text-muted-foreground"
                                     )}>
                                       <FlaskConical className="h-2.5 w-2.5" />
                                       Bld
                                     </div>
                                     <div className={cn(
-                                      "h-5 px-1.5 rounded-full flex items-center gap-1 text-[8px] font-bold uppercase tracking-widest transition-all",
+                                      "flex h-5 items-center gap-1 rounded-md border px-1.5 text-[8px] font-semibold uppercase tracking-wider",
                                       env.is_runtime 
-                                        ? "bg-orange-100 text-orange-600 border border-orange-300" 
-                                        : "bg-gray-100 text-gray-400 border border-gray-200"
+                                        ? "border-brand/30 bg-brand/10 text-brand" 
+                                        : "border-border/60 bg-secondary/40 text-muted-foreground"
                                     )}>
                                       <Globe className="h-2.5 w-2.5" />
                                       Run
                                     </div>
                                   </div>
                                 </div>
-                                <span className="text-xs font-mono text-muted-foreground truncate opacity-80 mt-0.5">
+                                <span className="mt-0.5 truncate font-mono text-xs text-muted-foreground opacity-80">
                                   {revealedEnvs.includes(i) ? env.value : "••••••••••••"}
                                 </span>
                               </div>
                             </div>
-                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100">
                               <button 
+                                type="button"
                                 onClick={() => {
                                   if (revealedEnvs.includes(i)) {
                                     setRevealedEnvs(revealedEnvs.filter(idx => idx !== i));
@@ -1153,13 +1218,14 @@ SESSION_SECRET=your-secret-here
                                     setRevealedEnvs([...revealedEnvs, i]);
                                   }
                                 }}
-                                className="p-2 text-muted-foreground hover:bg-secondary rounded-lg transition-colors"
+                                className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-secondary"
                               >
                                 {revealedEnvs.includes(i) ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                               </button>
                               <button 
+                                type="button"
                                 onClick={() => setEnvVars(envVars.filter((_, idx) => idx !== i))}
-                                className="p-2 text-muted-foreground hover:text-destructive hover:bg-destructive/5 rounded-lg transition-colors"
+                                className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-destructive/5 hover:text-destructive"
                               >
                                 <Trash2 className="h-4 w-4" />
                               </button>
@@ -1171,176 +1237,55 @@ SESSION_SECRET=your-secret-here
                   </div>
                 </Card>
 
-                {/* DATABASE HELPER */}
-                <Card className={cn(
-                  "p-0 overflow-hidden rounded-3xl transition-all duration-500 border-2",
-                  needsDb ? "border-blue-500/40 bg-blue-500/[0.02]" : "border-border/40"
-                )}>
-                  <div className="p-8 space-y-8">
-                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className={cn(
-                          "p-2 rounded-lg transition-colors",
-                          needsDb ? "bg-blue-500 text-white" : "bg-blue-500/10 text-blue-500"
-                        )}>
-                          <Database className="h-5 w-5" />
-                        </div>
-                        <div>
-                          <h3 className="text-xl font-bold">Database Assistant</h3>
-                          <p className="text-xs text-muted-foreground font-medium mt-0.5">Quickly inject DATABASE_URL for build and runtime.</p>
-                        </div>
-                      </div>
-                      <button 
-                        type="button"
-                        onClick={() => setNeedsDb(!needsDb)}
-                        className={cn(
-                          "h-6 w-11 rounded-full relative transition-colors duration-300 focus:outline-none",
-                          needsDb ? "bg-blue-500" : "bg-secondary"
+              {/* Sticky one-page CTA — same width as form, no empty sidebar */}
+              <div className="pointer-events-none fixed inset-x-0 bottom-0 z-20 lg:left-[var(--shell-rail,17rem)]">
+                <div className="pointer-events-auto border-t border-border/60 bg-background/90 px-3 py-3 backdrop-blur-xl sm:px-4 md:px-8">
+                  <div className="mx-auto flex w-full max-w-7xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold tracking-tight">
+                        {name || "Untitled project"}
+                      </p>
+                      <div className="mt-1.5 flex flex-wrap gap-1.5">
+                        <span className="inline-flex items-center rounded-lg border border-border/60 bg-secondary/40 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                          Application
+                        </span>
+                        <span className="inline-flex items-center rounded-lg border border-border/60 bg-secondary/40 px-2 py-0.5 text-[10px] font-medium capitalize text-muted-foreground">
+                          {sourceType === "github" ? "Private" : sourceType}
+                        </span>
+                        <span className="inline-flex items-center rounded-lg border border-border/60 bg-secondary/40 px-2 py-0.5 text-[10px] font-medium capitalize text-muted-foreground">
+                          {buildType}
+                        </span>
+                        {githubBranch && (
+                          <span className="inline-flex max-w-[12rem] items-center truncate rounded-lg border border-brand/25 bg-brand/10 px-2 py-0.5 text-[10px] font-medium text-brand">
+                            {refKind === "tag" ? "tag" : "branch"}:{githubBranch}
+                          </span>
                         )}
-                      >
-                        <div className={cn(
-                          "absolute top-1 left-1 bg-white h-4 w-4 rounded-full transition-transform duration-300 shadow-sm",
-                          needsDb ? "translate-x-5" : "translate-x-0"
-                        )} />
-                      </button>
-                    </div>
-
-                    {needsDb && (
-                      <div className="space-y-8 animate-in zoom-in-95 fade-in duration-300">
-                        <div className="space-y-4">
-                          <div className="flex items-center justify-between px-1">
-                            <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Connection String (DATABASE_URL)</label>
-                          </div>
-                          
-                          <div className="relative group">
-                            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                              <LinkIcon className="h-4 w-4 text-muted-foreground group-focus-within:text-blue-500" />
-                            </div>
-                            <Input 
-                              placeholder="postgresql://user:pass@host:port/dbname" 
-                              value={dbUrl}
-                              onChange={(e) => {
-                                let val = e.target.value;
-                                if (val.length >= 2) {
-                                  const first = val.charAt(0);
-                                  const last = val.charAt(val.length - 1);
-                                  if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
-                                    val = val.substring(1, val.length - 1);
-                                  }
-                                }
-                                setDbUrl(val);
-                              }}
-                              className="h-14 pl-11 bg-background border-blue-500/20 focus:border-blue-500 rounded-2xl shadow-inner font-mono text-sm" 
-                            />
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                          <div 
-                            onClick={() => setDbInBuild(!dbInBuild)}
-                            className={cn(
-                              "p-4 rounded-2xl border transition-all cursor-pointer flex items-center gap-4 group",
-                              dbInBuild ? "border-blue-500/40 bg-blue-500/[0.05]" : "border-border/60 hover:bg-secondary/40"
-                            )}
-                          >
-                            <div className={cn(
-                              "h-5 w-5 rounded-full border transition-all flex items-center justify-center",
-                              dbInBuild ? "bg-blue-500 border-blue-500" : "bg-transparent border-muted-foreground/30"
-                            )}>
-                              {dbInBuild && <Check className="h-3 w-3 text-white" strokeWidth={4} />}
-                            </div>
-                            <div className="flex flex-col">
-                              <span className="text-sm font-bold flex items-center gap-1.5 text-blue-600">
-                                <FlaskConical className="h-3.5 w-3.5" /> Inject in Build
-                              </span>
-                              <span className="text-[10px] text-muted-foreground font-medium">Use as --build-arg for Next.js/Prisma</span>
-                            </div>
-                          </div>
-
-                          <div 
-                            onClick={() => setDbInRuntime(!dbInRuntime)}
-                            className={cn(
-                              "p-4 rounded-2xl border transition-all cursor-pointer flex items-center gap-4 group",
-                              dbInRuntime ? "border-blue-500/40 bg-blue-500/[0.05]" : "border-border/60 hover:bg-secondary/40"
-                            )}
-                          >
-                            <div className={cn(
-                              "h-5 w-5 rounded-full border transition-all flex items-center justify-center",
-                              dbInRuntime ? "bg-emerald-500 border-emerald-500" : "bg-transparent border-muted-foreground/30"
-                            )}>
-                              {dbInRuntime && <Check className="h-3 w-3 text-white" strokeWidth={4} />}
-                            </div>
-                            <div className="flex flex-col">
-                              <span className="text-sm font-bold flex items-center gap-1.5 text-emerald-600">
-                                <Globe className="h-3.5 w-3.5" /> Inject in Runtime
-                              </span>
-                              <span className="text-[10px] text-muted-foreground font-medium">Available to your app after deploy</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        {!dbInBuild && !dbInRuntime && (
-                          <div className="p-4 rounded-2xl bg-amber-500/5 border border-amber-500/20 flex gap-3">
-                            <Info className="h-5 w-5 text-amber-500 shrink-0" />
-                            <div className="space-y-1">
-                              <p className="text-sm text-amber-900 font-bold">No scope selected</p>
-                              <p className="text-xs text-amber-700 font-medium leading-relaxed">Please select at least one injection scope (Build or Runtime) for the Database URL to be active.</p>
-                            </div>
-                          </div>
+                        {envVars.length > 0 && (
+                          <span className="inline-flex items-center rounded-lg border border-border/60 bg-secondary/40 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                            {envVars.length} env
+                          </span>
                         )}
-
-                        <div className="flex items-start gap-3 p-4 rounded-2xl bg-blue-500/5 border border-blue-500/10">
-                          <Info className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
-                          <div className="space-y-1">
-                            <p className="text-[10px] leading-relaxed text-blue-700/80 font-medium italic">
-                              Prisma and Next.js Static Generation often require the database URL at build time. Selecting "Inject in Build" will pass this as a Docker build-arg.
-                            </p>
-                            <p className="text-[10px] leading-relaxed text-blue-700/80 font-bold">
-                              Ensure your Dockerfile includes <code className="bg-blue-500/10 px-1 rounded border border-blue-500/20 not-italic">ARG DATABASE_URL</code> and optionally <code className="bg-blue-500/10 px-1 rounded border border-blue-500/20 not-italic">ENV DATABASE_URL=$DATABASE_URL</code>
-                            </p>
-                          </div>
-                        </div>
                       </div>
-                    )}
-                  </div>
-                </Card>
-              </div>
-
-              <div>
-                <Card className="p-5 bg-secondary/20 border-border/30 rounded-2xl sticky top-20">
-                  <h4 className="text-xs font-semibold text-muted-foreground mb-4">Summary</h4>
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">Type</span>
-                      <span className="font-medium">Application</span>
                     </div>
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">Source</span>
-                      <span className="font-medium capitalize">{sourceType}</span>
-                    </div>
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">Build</span>
-                      <span className="font-medium capitalize">{buildType}</span>
-                    </div>
-                    <div className="pt-2 border-t border-border/30">
-                       <p className="text-xs text-muted-foreground mb-1">Project</p>
-                       <p className="font-semibold truncate">{name || "Untitled"}</p>
-                    </div>
-                    <Button 
-                      onClick={handleSubmit} 
-                      disabled={loading}
-                      className="w-full h-10 mt-2 bg-zinc-900 hover:bg-zinc-800 text-white shadow-lg shadow-zinc-900/10"
+                    <Button
+                      onClick={handleSubmit}
+                      disabled={loading || !name.trim()}
+                      className="h-11 w-full shrink-0 bg-brand px-6 font-semibold text-brand-foreground shadow-lg shadow-brand/20 hover:brightness-110 sm:w-auto sm:min-w-[11rem]"
                     >
-                      {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Sparkles className="h-4 w-4 mr-2" />}
+                      {loading ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Sparkles className="mr-2 h-4 w-4" />
+                      )}
                       Create Project
                     </Button>
                   </div>
-                </Card>
+                </div>
               </div>
             </div>
           )}
-        </div>
-    </div>
+      </div>
+    </>
   );
 }
 
