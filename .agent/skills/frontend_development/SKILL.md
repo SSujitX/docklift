@@ -11,20 +11,20 @@ Docklift uses **Vite + React + React Router** for its dashboard (static SPA in p
 
 | Route | File | Description |
 |-------|------|-------------|
-| `/` | `pages/Dashboard.tsx` | Dashboard (project list, system stats) |
+| `/` | `pages/Dashboard.tsx` | Projects list (mobile cards / desktop table, filters, pagination) |
 | `/sign-in` | `pages/SignIn.tsx` | Login page |
 | `/setup` | `pages/Setup.tsx` | First-run registration |
-| `/projects/new` | `pages/NewProject.tsx` | Project creation wizard |
+| `/projects/new` | `pages/NewProject.tsx` | Project creation wizard (PageHeader, brand chips/cards) |
 | `/projects/:id` | `pages/ProjectDetail.tsx` | Project detail tabs |
-| `/logs` | `pages/Logs.tsx` | System logs (SSE) |
-| `/terminal` | `pages/Terminal.tsx` | Web terminal (xterm.js) |
-| `/system` | `pages/System.tsx` | System health |
-| `/ports` | `pages/Ports.tsx` | Docker port mapping |
-| `/databases` | `pages/Databases.tsx` | Managed databases list |
-| `/databases/new` | `pages/NewDatabase.tsx` | One-click engine create |
+| `/logs` | `pages/Logs.tsx` | System logs (SSE) — compact header, one-viewport fill |
+| `/terminal` | `pages/Terminal.tsx` | Web terminal (xterm.js) — compact header, one-viewport fill |
+| `/system` | `pages/System.tsx` | Host metrics (`SystemOverview`) — compact Operate header, **page scrolls** (not one-viewport) |
+| `/ports` | `pages/Ports.tsx` | Docker port mapping — compact header, one-viewport fill |
+| `/databases` | `pages/Databases.tsx` | Managed DBs (Projects-style filters, mobile cards / desktop table) |
+| `/databases/new` | `pages/NewDatabase.tsx` | Full-width create + sticky CTA (matches New Project) |
 | — | `components/databases/*` | Connection, link, attach panels |
 | `/settings` | `pages/Settings.tsx` | Settings + GitHub |
-| `/docs/*` | `pages/docs/*` | Built-in documentation |
+| Docs | external | https://docklift.dev (VitePress site in `website/`) |
 
 Router: `src/app/router.tsx` (lazy route chunks). `/sign-in` and `/setup` render
 bare; every other route is nested under `app/AppShell.tsx`.
@@ -38,11 +38,12 @@ wrapper, because `AppShell` already supplies the top bar, max width and padding.
 | Component | Purpose |
 |-----------|---------|
 | `AppShell.tsx` (`app/`) | Fixed rail, mobile drawer, top bar, content `<main>` |
-| `Sidebar.tsx` | Brand, New Project, search, grouped nav, status, user |
+| `Sidebar.tsx` | Brand, New Project, grouped nav, Settings tree, version footer |
 | `navigation.ts` | Nav groups + breadcrumbs — add new pages here once |
-| `SidebarUser.tsx` | Account block: identity, theme switcher, sign out |
-| `SidebarStatus.tsx` | Version, upgrade prompt, GitHub stars |
-| `TopBar.tsx` | Breadcrumbs, mobile menu trigger, palette trigger |
+| `lib/settingsNav.ts` | Settings section ids/labels shared by rail tree + Settings page |
+| `AccountMenu.tsx` | Header account menu: identity, profile, sign out (theme is TopBar toggle) |
+| `SidebarStatus.tsx` | Version + upgrade prompt (star cache shared with TopBar) |
+| `TopBar.tsx` | Breadcrumbs, search, GitHub star, theme toggle, account menu |
 | `CommandPalette.tsx` | Ctrl/Cmd+K: pages, projects, actions |
 | `PageHeader.tsx` | `PageHeader` + `StatChip` for consistent page titles |
 
@@ -59,7 +60,7 @@ elements and `top-20` for spaced ones.
 | `LogViewer.tsx` | `components/` | Shared log viewer (search, copy, download, clear, fullscreen) — used for project/service runtime logs and System Logs |
 | `SystemLogsPanel.tsx` | `components/` | SSE system logs |
 | `TerminalView.tsx` | `components/` | xterm.js + WS terminal |
-| `FileEditor.tsx` | `components/` | Monaco editor |
+| `FileEditor.tsx` | `components/` | Full-screen IDE Monaco editor (dirty state, Ctrl/⌘S, Esc) |
 | `AuthProvider.tsx` | `components/` | Auth + route redirects |
 | `ServiceDomainCard.tsx` | `components/domains/` | Domain list + SSL (serial mutation queue) |
 
