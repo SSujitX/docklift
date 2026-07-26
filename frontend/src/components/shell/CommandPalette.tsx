@@ -18,6 +18,7 @@ import { useFocusTrap } from "@/lib/focusTrap";
 import { useTheme } from "@/lib/theme";
 import { API_URL, cn } from "@/lib/utils";
 import type { Project } from "@/lib/types";
+import { SETTINGS_SECTIONS, settingsHref } from "@/lib/settingsNav";
 import { navItems, type IconComponent } from "./navigation";
 import { useShell } from "./ShellContext";
 
@@ -63,14 +64,30 @@ export function CommandPalette() {
       action();
     };
 
-    const pages: Command[] = navItems.map((item) => ({
-      id: `nav:${item.href}`,
-      label: item.label,
-      hint: item.description,
-      group: "Go to",
-      icon: item.icon,
-      run: close(() => navigate(item.href)),
-    }));
+    const pages: Command[] = [
+      ...navItems.map((item) => ({
+        id: `nav:${item.href}`,
+        label: item.label,
+        hint: item.description,
+        group: "Go to",
+        icon: item.icon,
+        run: close(() => {
+          if (item.external) {
+            window.open(item.href, "_blank", "noopener,noreferrer");
+            return;
+          }
+          navigate(item.href);
+        }),
+      })),
+      ...SETTINGS_SECTIONS.map((section) => ({
+        id: `settings:${section.id}`,
+        label: section.label,
+        hint: section.description,
+        group: "Settings",
+        icon: section.icon,
+        run: close(() => navigate(settingsHref(section.id))),
+      })),
+    ];
 
     const projectCommands: Command[] = projects.map((project) => ({
       id: `project:${project.id}`,
