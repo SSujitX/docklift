@@ -20,6 +20,10 @@ import {
   getDatabaseEngine,
   isDatabaseEngineId,
   listDatabaseEngines,
+  listDatabaseEnginesWithLiveVersions,
+  managedServiceMarker,
+  resolveEngineImage,
+  volumeMountForEngine,
 } from '../lib/databaseEngines.js';
 import {
   assertEnvKeyAvailable,
@@ -32,8 +36,15 @@ import {
 
 const router = Router();
 
-router.get('/engines', (_req: Request, res: Response) => {
-  res.json(listDatabaseEngines());
+router.get('/engines', async (_req: Request, res: Response) => {
+  try {
+    // Live tags from Docker Hub (cached); static list if Hub is down
+    const engines = await listDatabaseEnginesWithLiveVersions();
+    res.json(engines);
+  } catch (error) {
+    console.error(error);
+    res.json(listDatabaseEngines());
+  }
 });
 
 router.get('/', async (_req: Request, res: Response) => {
@@ -94,13 +105,31 @@ router.post('/', async (req: Request, res: Response) => {
       });
     }
     const engine = getDatabaseEngine(engineId)!;
+    const liveCatalog = await listDatabaseEnginesWithLiveVersions();
+    const liveEngine = liveCatalog.find((e) => e.id === engineId) || engine;
+    const versionRaw =
+      typeof req.body?.version === 'string'
+        ? req.body.version
+        : typeof req.body?.tag === 'string'
+          ? req.body.tag
+          : typeof req.body?.image === 'string'
+            ? req.body.image
+            : null;
+    const resolved = resolveEngineImage(liveEngine, versionRaw, {
+      allowedTags: liveEngine.versions.map((v) => v.tag),
+    });
+    if ('error' in resolved) {
+      return res.status(400).json({ error: resolved.error });
+    }
+    const { image: selectedImage, tag: selectedTag } = resolved;
+
     const creds = defaultDatabaseCredentials(nameTrim);
     const runtimeEnv = engineRuntimeEnv(engine, creds);
 
     const project = await prisma.project.create({
       data: {
         name: nameTrim,
-        description: `${engine.label} managed by DockLift`,
+        description: `${engine.label} ${selectedTag} managed by DockLift`,
         source_type: 'managed',
         project_type: 'database',
         db_engine: engine.id,
@@ -118,7 +147,7 @@ router.post('/', async (req: Request, res: Response) => {
     fs.mkdirSync(projectPath, { recursive: true });
     fs.writeFileSync(
       path.join(projectPath, 'README.docklift-db.md'),
-      `# ${nameTrim}\n\nManaged ${engine.label} (${engine.image}).\nDo not replace with application source.\n`,
+      `# ${nameTrim}\n\nManaged ${engine.label} (${selectedImage}).\nDo not replace with application source.\n`,
       'utf8',
     );
 
@@ -127,7 +156,7 @@ router.post('/', async (req: Request, res: Response) => {
       data: {
         project_id: project.id,
         name: engine.serviceName,
-        dockerfile_path: `[managed:${engine.id}]`,
+        dockerfile_path: managedServiceMarker(engine.id, selectedImage),
         container_name: containerName,
         internal_port: engine.port,
         port: null,
@@ -157,7 +186,7 @@ router.post('/', async (req: Request, res: Response) => {
         service_name: engine.serviceName,
         name: volumeName,
         display_name: volumeLabel,
-        mount_path: engine.volumeMount,
+        mount_path: volumeMountForEngine(engine, selectedImage),
       },
     });
     const volResult = spawnSync(
@@ -193,7 +222,9 @@ router.post('/', async (req: Request, res: Response) => {
       ...project,
       services: [service],
       persistent_volumes: [volume],
-      engine,
+      engine: { ...engine, image: selectedImage },
+      image: selectedImage,
+      version: selectedTag,
       connection_url,
       credentials: {
         username: creds.username || null,
