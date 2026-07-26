@@ -1,15 +1,14 @@
-name: Release & Test
+# Manual release only. Run Install + CI on master first; this does not re-test.
+# After semantic-release, deploys Docs (changelog + Pages) in the same run.
+name: Release
+run-name: Release · ${{ github.ref_name }}
 
 on:
   workflow_dispatch:
 
 jobs:
-  test:
-    uses: ./.github/workflows/test-ubuntu.yml
-
   release:
-    name: Create Release
-    needs: [test]
+    name: semantic-release
     permissions:
       contents: write
       issues: write
@@ -25,10 +24,20 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: "22"
 
       - run: npm ci
       - run: npx semantic-release
         env:
           # Prefer GH_TOKEN (PAT) for branch-protected repos; otherwise empty secret falls back to GITHUB_TOKEN.
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
+
+  docs:
+    name: Docs
+    needs: [release]
+    uses: ./.github/workflows/docs.yml
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    secrets: inherit
