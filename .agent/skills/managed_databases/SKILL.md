@@ -12,15 +12,19 @@ DockLift databases are first-class managed projects (`project_type=database`,
 
 Defined in `backend/src/lib/databaseEngines.ts`:
 
-| id | Image | Env key for apps |
-|----|-------|------------------|
-| postgres | postgres:16-alpine | DATABASE_URL |
-| mysql | mysql:8.4 | DATABASE_URL |
-| mariadb | mariadb:11 | DATABASE_URL |
-| redis | redis:7-alpine | REDIS_URL |
-| mongodb | mongo:7 | MONGODB_URI |
+| id | New-create default | Bare `[managed:id]` pin | Env key |
+|----|--------------------|-------------------------|---------|
+| postgres | postgres:18-alpine | postgres:16-alpine | DATABASE_URL |
+| mysql | mysql:8.4 | mysql:8.4 | DATABASE_URL |
+| mariadb | mariadb:11 | mariadb:11 | DATABASE_URL |
+| redis | redis:8-alpine | redis:7-alpine | REDIS_URL |
+| mongodb | mongo:8 | mongo:7 | MONGODB_URI |
 
-- Official images + named volume at the engine mount path
+- **`GET /api/databases/engines`** loads **live tags from Docker Hub** (`dockerHubTags.ts`, 6h cache only when pagination completes); static `versions` are fallback
+- Filtered to operator-friendly majors (e.g. `18`, `18-alpine`) — not every distro/RC tag
+- Create accepts `version` (tag); stores full image on service as `[managed:engine|repo:tag]`
+- Deploy pulls the **stored** image; bare `[managed:engine]` → `LEGACY_MANAGED_IMAGES` (never silent major bump)
+- **Postgres volume mount is version-aware**: ≤17 → `/var/lib/postgresql/data`; 18+/`latest` → `/var/lib/postgresql` (official image contract). Create + deploy sync `persistent_volumes.mount_path`. Redeploy cannot migrate data that already landed on an anonymous volume under the old `/data` mount — recreate + restore if needed.
 - Credentials stored as project env (passwords marked `is_secret`)
 - `publish_host_port` default **false** — prefer linking
 
@@ -28,13 +32,17 @@ Defined in `backend/src/lib/databaseEngines.ts`:
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| GET | `/api/databases/engines` | Catalog |
-| GET/POST | `/api/databases` | List / create |
+| GET | `/api/databases/engines` | Catalog (+ live Hub `versions`, `imageRepo`) |
+| GET/POST | `/api/databases` | List / create (`version` / `tag` on create) |
 | GET | `/api/databases/:id/connection` | URL + credentials |
 | GET/POST/DELETE | `/api/databases/:id/links` | Link management |
 | GET | `/api/databases/links/by-app/:appProjectId` | Links on an app |
 
-Create does **not** require Git. Deploy pulls the image (no Dockerfile build).
+Create does **not** require Git. Deploy **async-pulls** the image (never `spawnSync` —
+blocking pull freezes the whole API and blanks the project UI). Pull is registered with
+the deploy cancel tracker (kill + timeout), and the deploy lock is owned by
+`deploymentId` so a cancelled pull cannot unlock a newer deploy. Pull output streams into
+deployment logs (polled from Deployments tab).
 
 ## Linking
 
@@ -52,8 +60,11 @@ After DB or app deploy, links are re-applied (network join).
 
 - `/databases` — list
 - `/databases/new` — engine picker + create & deploy
-- Project detail (database) — Connection + Linked apps (`ManagedDatabasePanel`)
-- Project detail (app) — Attach database (`AttachDatabasePanel`)
+- Project detail (database) — tabs: **Overview · Deployments · Logs** only
+  (no Environment / Build / Storage / Source / Domains — credentials on Overview Connection;
+  locked at create; recreate to rotate; prefer linking over public DNS)
+- Overview — Connection + Linked apps (`ManagedDatabasePanel`)
+- Project detail (app) — Attach database (`AttachDatabasePanel`): scope picker only on **All services**; locked to current service in service workspace (rounded custom selects)
 - Logs — same LogViewer as apps (service runtime logs)
 
 ## Rules
