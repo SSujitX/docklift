@@ -12,12 +12,20 @@ import {
   Settings,
   SquareTerminal,
 } from "lucide-react";
+import { SETTINGS_SECTIONS, settingsHref } from "@/lib/settingsNav";
 
 /** lucide-react ships untyped here, so icons are described structurally. */
 export type IconComponent = ComponentType<{
   className?: string;
   strokeWidth?: number;
 }>;
+
+export interface NavChild {
+  label: string;
+  href: string;
+  icon: IconComponent;
+  description?: string;
+}
 
 export interface NavItem {
   label: string;
@@ -26,6 +34,10 @@ export interface NavItem {
   description: string;
   /** Only highlight on an exact path match (used for the "/" root). */
   exact?: boolean;
+  /** Opens outside the app shell (e.g. docs site). */
+  external?: boolean;
+  /** Collapsible tree children (e.g. Settings sections). */
+  children?: NavChild[];
 }
 
 export interface NavGroup {
@@ -89,12 +101,19 @@ export const navGroups: NavGroup[] = [
         href: "/settings",
         icon: Settings,
         description: "Account, domains and integrations",
+        children: SETTINGS_SECTIONS.map((section) => ({
+          label: section.label,
+          href: settingsHref(section.id),
+          icon: section.icon,
+          description: section.description,
+        })),
       },
       {
         label: "Docs",
-        href: "/docs",
+        href: "https://docklift.dev",
         icon: BookOpen,
-        description: "Guides and API reference",
+        description: "Guides and commands on docklift.dev",
+        external: true,
       },
     ],
   },
@@ -127,7 +146,6 @@ const segmentLabels: Record<string, string> = {
   logs: "Logs",
   terminal: "Terminal",
   settings: "Settings",
-  docs: "Docs",
 };
 
 export interface Crumb {
@@ -139,6 +157,12 @@ export interface Crumb {
 export function breadcrumbsFor(pathname: string, leafLabel?: string): Crumb[] {
   const segments = pathname.split("/").filter(Boolean);
   if (segments.length === 0) return [{ label: "Projects" }];
+
+  if (segments[0] === "settings") {
+    const crumbs: Crumb[] = [{ label: "Settings", href: "/settings" }];
+    if (leafLabel) crumbs.push({ label: leafLabel });
+    return crumbs;
+  }
 
   const crumbs: Crumb[] = [];
   segments.forEach((segment, index) => {
