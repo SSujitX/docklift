@@ -69,7 +69,6 @@ export function ServiceSwitcher({
     el.addEventListener("scroll", updateScrollAffordance, { passive: true });
     const ro = new ResizeObserver(updateScrollAffordance);
     ro.observe(el);
-    // Content width can grow without the scroller box resizing
     for (const child of Array.from(el.children)) {
       if (child instanceof HTMLElement) ro.observe(child);
     }
@@ -92,7 +91,7 @@ export function ServiceSwitcher({
     const el = scrollerRef.current;
     if (!el) return;
     el.scrollBy({
-      left: dir * Math.max(200, el.clientWidth * 0.6),
+      left: dir * Math.max(160, el.clientWidth * 0.55),
       behavior: "smooth",
     });
   };
@@ -100,56 +99,63 @@ export function ServiceSwitcher({
   if (services.length <= 1) return null;
 
   const chipBase =
-    "inline-flex shrink-0 items-center gap-2 rounded-xl border px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+    "inline-flex shrink-0 items-center gap-1.5 rounded-xl border px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40 sm:gap-2 sm:px-3 sm:py-2.5";
 
   return (
-    <div className={cn("flex flex-col gap-3", className)}>
+    <div className={cn("flex min-w-0 flex-col gap-2.5 sm:gap-3", className)}>
       <div className="min-w-0">
         <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
           Workspace
         </p>
-        <p className="mt-0.5 text-xs text-muted-foreground">
+        <p className="mt-0.5 text-xs text-muted-foreground sm:hidden">
+          All services or one app.
+        </p>
+        <p className="mt-0.5 hidden text-xs text-muted-foreground sm:block">
           All services covers deploy, build, and shared env. Open one service for
           that app’s env, domains, storage, and runtime logs.
         </p>
       </div>
 
-      <div className="relative">
-        <button
-          type="button"
-          aria-label="Scroll workspace left"
-          disabled={!canScrollLeft}
-          tabIndex={canScrollLeft ? 0 : -1}
-          onClick={() => scrollByAmount(-1)}
-          className={cn(
-            "absolute left-0 top-1/2 z-10 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-background/95 text-foreground shadow-md backdrop-blur-sm transition-opacity hover:bg-secondary disabled:pointer-events-none",
-            canScrollLeft ? "opacity-100" : "opacity-0",
-          )}
-        >
-          <ChevronLeft className="h-4 w-4" />
-        </button>
-        <button
-          type="button"
-          aria-label="Scroll workspace right"
-          disabled={!canScrollRight}
-          tabIndex={canScrollRight ? 0 : -1}
-          onClick={() => scrollByAmount(1)}
-          className={cn(
-            "absolute right-0 top-1/2 z-10 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-background/95 text-foreground shadow-md backdrop-blur-sm transition-opacity hover:bg-secondary disabled:pointer-events-none",
-            canScrollRight ? "opacity-100" : "opacity-0",
-          )}
-        >
-          <ChevronRight className="h-4 w-4" />
-        </button>
+      <div className="relative min-w-0">
+        {hasOverflow && (
+          <>
+            <button
+              type="button"
+              aria-label="Scroll workspace left"
+              disabled={!canScrollLeft}
+              tabIndex={canScrollLeft ? 0 : -1}
+              onClick={() => scrollByAmount(-1)}
+              className={cn(
+                "absolute left-0 top-1/2 z-10 hidden h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-border/60 bg-background/95 text-foreground shadow-md backdrop-blur-sm transition-opacity hover:bg-secondary disabled:pointer-events-none sm:flex",
+                canScrollLeft ? "opacity-100" : "opacity-0",
+              )}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              aria-label="Scroll workspace right"
+              disabled={!canScrollRight}
+              tabIndex={canScrollRight ? 0 : -1}
+              onClick={() => scrollByAmount(1)}
+              className={cn(
+                "absolute right-0 top-1/2 z-10 hidden h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-border/60 bg-background/95 text-foreground shadow-md backdrop-blur-sm transition-opacity hover:bg-secondary disabled:pointer-events-none sm:flex",
+                canScrollRight ? "opacity-100" : "opacity-0",
+              )}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </>
+        )}
 
         <div
           ref={scrollerRef}
           role="group"
           aria-label="All services or one service workspace"
           className={cn(
-            "flex max-w-full gap-2 overflow-x-auto scroll-smooth py-1",
-            "custom-scrollbar [scrollbar-width:thin]",
-            hasOverflow ? "px-10" : "px-0.5",
+            "flex max-w-full gap-2 overflow-x-auto scroll-smooth py-0.5",
+            "[-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+            hasOverflow ? "sm:px-10" : "px-0",
           )}
         >
           <button
@@ -160,7 +166,7 @@ export function ServiceSwitcher({
             className={cn(
               chipBase,
               workspace === "project"
-                ? "border-brand/50 bg-brand/10 text-foreground shadow-sm ring-2 ring-brand/25"
+                ? "border-brand/40 bg-brand/10 text-foreground shadow-sm"
                 : "border-border/60 bg-secondary/40 text-muted-foreground hover:border-border hover:bg-secondary hover:text-foreground",
             )}
           >
@@ -179,8 +185,7 @@ export function ServiceSwitcher({
           </button>
 
           {services.map((svc) => {
-            const active =
-              workspace === "service" && svc.id === selectedId;
+            const active = workspace === "service" && svc.id === selectedId;
             return (
               <button
                 key={svc.id}
@@ -190,13 +195,13 @@ export function ServiceSwitcher({
                 onClick={() => onSelectService(svc.id)}
                 className={cn(
                   chipBase,
-                  "min-w-[10.5rem] max-w-[16rem]",
+                  "max-w-[12rem] sm:max-w-[16rem]",
                   active
-                    ? "border-brand/50 bg-brand/10 text-foreground shadow-sm ring-2 ring-brand/25"
+                    ? "border-brand/40 bg-brand/10 text-foreground shadow-sm"
                     : "border-border/60 bg-secondary/40 text-muted-foreground hover:border-border hover:bg-secondary hover:text-foreground",
                 )}
               >
-                <span className="min-w-0 flex-1 truncate text-xs font-semibold">
+                <span className="min-w-0 truncate text-xs font-semibold">
                   {svc.name}
                 </span>
                 <StatusBadge status={svc.status || "pending"} size="sm" />
