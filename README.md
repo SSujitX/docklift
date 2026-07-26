@@ -286,7 +286,9 @@ docker volume ls --filter label=com.docklift.project
 ## 🌐 Domains & HTTPS
 
 1. Point an **A record** at your server's IP.
-2. Add the domain to a service in Docklift.
+2. Add the hostname in Docklift — **project Domain** for an app service, or **Settings → Domain**
+   for the panel (`panel.example.com`). Same UI: DNS guide, inline add, Check DNS, Retry HTTPS,
+   and Let's Encrypt activity.
 3. Docklift writes an HTTP vhost, certbot solves the ACME HTTP-01 challenge, and the vhost is
    rewritten with HTTPS plus an HTTP→HTTPS redirect. Renewals run automatically every 12 hours.
 
@@ -457,21 +459,33 @@ Run from `backend/`:
 ### 🏷️ Releases
 
 Docklift uses [semantic-release](https://github.com/semantic-release/semantic-release) for
-versioning, changelogs and GitHub Releases.
+versioning, changelogs and GitHub Releases. Do **not** hand-edit version fields or `CHANGELOG.md`.
 
-1. Push commits to `master` using [conventional commits](#commit-convention)
-2. **GitHub → Actions → "Release & Test"** → **Run workflow**
-3. semantic-release determines the version, bumps `package.json` (root, frontend, backend), updates
-   `CHANGELOG.md`, tags, and publishes the release
+```bash
+# Assume current version is 1.3.21 (root + frontend + backend stay in sync)
 
-| Commit subject | Release |
-|----------------|---------|
-| `feat:`, `fix:`, `perf:`, `refactor:`, `docs:`, `chore:` … | Patch (1.3.10 → 1.3.11) |
-| contains `*force minor*` | Minor (1.3.10 → 1.4.0) |
-| contains `BREAKING CHANGE` or `*force major*` | Major (1.3.10 → 2.0.0) |
-| contains `*skip release*` | No release |
+# 1) Commit with conventional messages on master
+git commit -m "fix(deploy): description"       # → patch  → 1.3.22
+git commit -m "feat(api): description"          # → patch  → 1.3.22
+git commit -m "chore: cleanup"                  # → patch  → 1.3.22
+git commit -m "feat: something *force minor*"   # → minor  → 1.4.0
+git commit -m "feat: something *force major*"   # → major  → 2.0.0
+git commit -m "chore: docs *skip release*"      # → none   → stays 1.3.21
 
-> 📖 Config: [release.config.cjs](release.config.cjs) · Workflow: [.github/workflows/release.yml](.github/workflows/release.yml)
+# 2) Push, then GitHub → Actions → "Release & Test" → Run workflow
+# semantic-release bumps package.json (root/frontend/backend), CHANGELOG.md, tag + GitHub Release
+```
+
+| Commit signal | Release | Demo (`1.3.21` →) |
+|---------------|---------|-------------------|
+| `feat:`, `fix:`, `perf:`, `refactor:`, `docs:`, `test:`, `ci:`, `chore:` … | Patch | `1.3.22` |
+| `*force minor*` in subject | Minor | `1.4.0` |
+| `*force major*` / `BREAKING CHANGE` | Major | `2.0.0` |
+| `*skip release*` in subject | None | `1.3.21` (unchanged) |
+
+SemVer reminder: **patch** = bug fix / small change, **minor** = new feature (forced here), **major** = breaking change.
+
+> 📖 Full guide: [commands.md](commands.md#6-version-check--release) · Config: [release.config.cjs](release.config.cjs) · Workflow: [.github/workflows/release.yml](.github/workflows/release.yml)
 
 ---
 
@@ -592,6 +606,16 @@ refactor: Code restructure
 test:     Add tests
 chore:    Maintenance
 ```
+
+By default every conventional type ships a **patch**. Force a larger bump (or skip) in the subject:
+
+```
+*force minor*   → minor
+*force major*   → major   (or BREAKING CHANGE)
+*skip release*  → no release
+```
+
+See the **Releases** section above for a worked `1.3.21` example.
 
 ---
 
