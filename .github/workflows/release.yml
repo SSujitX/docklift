@@ -1,7 +1,7 @@
 # Manual release only. Run Install + CI on master first; this does not re-test.
 # After semantic-release, deploys Docs (changelog + Pages) in the same run.
 name: Release
-run-name: Release · ${{ github.ref_name }}
+run-name: "Release · ${{ github.ref_name }}"
 
 on:
   workflow_dispatch:
