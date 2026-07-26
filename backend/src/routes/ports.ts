@@ -6,34 +6,88 @@ import * as dockerService from '../services/docker.js';
 
 const router = Router();
 
-// List all ports
+// List all ports (+ projects running without a host port — private by default)
 router.get('/', async (req: Request, res: Response) => {
   try {
     const dbPorts = await prisma.port.findMany({
       include: {
         project: {
-          select: { id: true, name: true, status: true }
-        }
+          select: { id: true, name: true, status: true },
+        },
       },
     });
-    
-    // Create a map for easy lookup
-    const portMap = new Map(dbPorts.map(p => [p.port, p]));
-    
-    const allPorts = [];
+
+    const portMap = new Map(dbPorts.map((p) => [p.port, p]));
+
+    const ports = [];
     for (let p = config.portRangeStart; p <= config.portRangeEnd; p++) {
       if (portMap.has(p)) {
-        allPorts.push(portMap.get(p));
+        ports.push(portMap.get(p));
       } else {
-        allPorts.push({
+        ports.push({
           port: p,
           project_id: null,
           is_locked: false,
         });
       }
     }
-    
-    res.json(allPorts);
+
+    // Projects can be Running with zero host ports (domains / Docker DNS / DB linking)
+    const allocatedProjectIds = new Set(
+      dbPorts
+        .filter((p) => p.is_locked && p.project_id)
+        .map((p) => p.project_id as string),
+    );
+
+    const live = await prisma.project.findMany({
+      where: {
+        status: { in: ['running', 'degraded', 'building', 'pending'] },
+      },
+      select: {
+        id: true,
+        name: true,
+        status: true,
+        project_type: true,
+        db_engine: true,
+        publish_host_port: true,
+        services: {
+          select: { id: true, port: true, name: true },
+        },
+      },
+      orderBy: { updated_at: 'desc' },
+    });
+
+    const private_running = live
+      .filter((project) => {
+        if (allocatedProjectIds.has(project.id)) return false;
+        const hasHostPort = project.services.some(
+          (s) => typeof s.port === 'number' && s.port > 0,
+        );
+        return !hasHostPort;
+      })
+      .map((project) => ({
+        id: project.id,
+        name: project.name,
+        status: project.status,
+        project_type: project.project_type,
+        db_engine: project.db_engine,
+        publish_host_port: project.publish_host_port === true,
+        reason:
+          project.project_type === 'database'
+            ? 'Managed databases stay off the host — link them to apps over Docker DNS'
+            : project.publish_host_port
+              ? 'Publish host ports is on — redeploy to claim a pool port'
+              : 'Private by default — add a domain or enable Publish host ports + redeploy',
+      }));
+
+    res.json({
+      ports,
+      private_running,
+      pool: {
+        start: config.portRangeStart,
+        end: config.portRangeEnd,
+      },
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Failed to list ports' });
@@ -75,7 +129,7 @@ router.delete('/:port', async (req: Request, res: Response) => {
     await prisma.port.deleteMany({
       where: { port },
     });
-    
+
     res.json({ status: 'deleted' });
   } catch (error) {
     console.error(error);
