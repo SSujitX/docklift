@@ -16,6 +16,14 @@ bun run dev
 bun run build
 ```
 
+`predev` / `prebuild` run `scripts/sync-changelog.mjs`, which copies the repo-root
+`CHANGELOG.md` into `website/changelog.md` (gitignored — do not edit by hand).
+The homepage `<ChangelogPreview />` also loads that same root file via a VitePress
+data loader. The Docs workflow redeploys on `website/**` / `CHANGELOG.md` pushes and
+after a successful **Release & Test** run (`workflow_run`, because release commits
+include `[skip ci]`). On `workflow_run`, checkout uses the **branch tip** so the
+post-release `CHANGELOG.md` is included (not `head_sha`, which is pre-bump).
+
 Output: `.vitepress/dist` (deployed by `.github/workflows/docs.yml` to GitHub Pages).
 
 ## Custom domain
