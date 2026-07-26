@@ -54,8 +54,8 @@ export async function pullRepo(projectPath: string, res: Response, branch?: stri
     // Get current commit before fetch for comparison
     const beforeCommit = (await git.revparse(['HEAD'])).trim().substring(0, 7);
     
-    // Fetch branches + tags so tag pin deploys can refresh
-    await git.fetch(['origin', '--tags', '--prune', '--force']);
+    // Fetch branches + tags; prune-tags drops local tags deleted on the remote
+    await git.fetch(['origin', '--tags', '--prune', '--prune-tags', '--force']);
     res.write(`   ✅ Fetched from origin (branches + tags)\n`);
 
     const remoteBranches = await git.branch(['-r']);
@@ -66,14 +66,27 @@ export async function pullRepo(projectPath: string, res: Response, branch?: stri
       await git.reset(['--hard', remoteBranch]);
       res.write(`   ✅ Reset to ${remoteBranch}\n`);
     } else {
-      // Fail closed: do not reset to a bare name that might resolve to a stale tag
-      // when the branch was deleted/renamed.
+      // Fail closed: require the tag to exist on the remote (not only a stale local tag)
       const tagRef = `refs/tags/${targetRef}`;
+      const remoteTag = (
+        await git.raw(['ls-remote', '--tags', '--refs', 'origin', tagRef])
+      ).trim();
+      if (!remoteTag) {
+        throw new Error(
+          `Ref "${targetRef}" not found as remote branch (${remoteBranch}) or tag (${tagRef})`,
+        );
+      }
+      // Refresh the local tag from the ls-remote result, then reset
+      try {
+        await git.raw(['fetch', 'origin', `+${tagRef}:${tagRef}`, '--force']);
+      } catch {
+        /* fetch --tags above usually suffices; local verify next */
+      }
       try {
         await git.raw(['rev-parse', '--verify', `${tagRef}^{commit}`]);
       } catch {
         throw new Error(
-          `Ref "${targetRef}" not found as remote branch (${remoteBranch}) or tag (${tagRef})`,
+          `Ref "${targetRef}" exists on remote but could not be resolved locally`,
         );
       }
       await git.reset(['--hard', tagRef]);
