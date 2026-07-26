@@ -58,7 +58,7 @@ function ShellFrame() {
 
       <div className="shell-inset transition-[padding] duration-200 ease-out">
         <TopBar />
-        <main className="mx-auto w-full max-w-7xl px-4 py-8 md:px-8">
+        <main className="mx-auto w-full max-w-7xl px-3 py-5 sm:px-4 sm:py-8 md:px-8">
           <Outlet />
         </main>
       </div>
