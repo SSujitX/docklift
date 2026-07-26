@@ -224,7 +224,7 @@ git commit -m "chore: docs *skip release*"      # → none   → stays 1.3.21
 
 | Commit signal | Release | Demo (`1.3.21` →) |
 |---------------|---------|-------------------|
-| `feat:`, `fix:`, `perf:`, `refactor:`, `chore:` | Patch | `1.3.22` |
+| `feat:`, `fix:`, `perf:`, `refactor:`, `docs:`, `test:`, `ci:`, `chore:` … | Patch | `1.3.22` |
 | `*force minor*` in subject | Minor | `1.4.0` |
 | `*force major*` / `BREAKING CHANGE` | Major | `2.0.0` |
 | `*skip release*` in subject | None | `1.3.21` (unchanged) |
