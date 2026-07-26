@@ -1,12 +1,7 @@
 # Build VitePress site → GitHub Pages (docklift.dev).
 # Called from Release after semantic-release, or on website/CHANGELOG pushes.
 name: Docs
-run-name: >-
-  Docs · ${{
-    github.event_name == 'workflow_call' && format('after Release · {0}', github.ref_name) ||
-    github.event_name == 'workflow_dispatch' && format('manual · {0}', github.ref_name) ||
-    format('site · {0}', github.ref_name)
-  }}
+run-name: "Docs · ${{ github.event_name == 'workflow_call' && format('after Release · {0}', github.ref_name) || github.event_name == 'workflow_dispatch' && format('manual · {0}', github.ref_name) || format('site · {0}', github.ref_name) }}"
 
 on:
   push:
