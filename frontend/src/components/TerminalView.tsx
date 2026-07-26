@@ -34,6 +34,8 @@ type WaitState = {
 
 /** Survives React StrictMode remounts when URL query is cleared before dialog state commits. */
 let pendingUpgradeConfirm = false;
+/** Keep shell WS deferred across StrictMode remount + query strip for sidebar upgrade. */
+let pendingShellDeferForUpgrade = false;
 
 const PASSWORD_CANCEL = Symbol("terminal_password_cancel");
 
@@ -121,6 +123,8 @@ export function TerminalView({ className }: { className?: string }) {
   const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [upgradePassword, setUpgradePassword] = useState("");
+  const [upgradePasswordError, setUpgradePasswordError] = useState("");
   
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<any>(null);
@@ -132,6 +136,25 @@ export function TerminalView({ className }: { className?: string }) {
   const passwordResolveRef = useRef<
     ((value: string | typeof PASSWORD_CANCEL) => void) | null
   >(null);
+  /** Skip shell WS auth while sidebar upgrade confirm is open (one password only). */
+  const shellDeferredRef = useRef(false);
+  /** True while the upgrade confirm dialog is open (survives async xterm init). */
+  const upgradeConfirmOpenRef = useRef(false);
+  /** Bumped to abort in-flight connectWebSocket (token fetch / WS open). */
+  const connectGenerationRef = useRef(0);
+  const connectWebSocketRef = useRef<
+    ((term: any, fitAddon: any) => Promise<void>) | null
+  >(null);
+  const ensureShellConnectedRef = useRef<() => void>(() => {});
+
+  const isShellDeferred = () =>
+    shellDeferredRef.current || pendingShellDeferForUpgrade;
+
+  const deferShellForUpgrade = () => {
+    pendingShellDeferForUpgrade = true;
+    shellDeferredRef.current = true;
+    connectGenerationRef.current += 1;
+  };
 
   // Cleanup on unmount
   useEffect(() => {
@@ -224,12 +247,33 @@ export function TerminalView({ className }: { className?: string }) {
         try { fitAddon.fit(); } catch {}
       });
 
-      // Connect to server
-      term.writeln("\x1b[90mConnecting to server...\x1b[0m");
-      term.writeln("");
+      // Sidebar "Upgrade now" lands on ?confirm=upgrade — defer shell auth so the
+      // upgrade dialog is the only password prompt.
+      const params = new URLSearchParams(window.location.search);
+      const deferForUpgrade =
+        params.get("confirm") === "upgrade" ||
+        params.get("action") === "upgrade" ||
+        params.get("action") === "upgrade_simulated" ||
+        pendingUpgradeConfirm ||
+        pendingShellDeferForUpgrade ||
+        shellDeferredRef.current ||
+        upgradeConfirmOpenRef.current;
 
-      // Now connect WebSocket
-      connectWebSocket(term, fitAddon);
+      if (deferForUpgrade) {
+        shellDeferredRef.current = true;
+        term.writeln(
+          "\x1b[90mShell paused — confirm the upgrade first (one password).\x1b[0m",
+        );
+        term.writeln("");
+        // Cancel may have run before xterm was ready — resume now if dialog is gone.
+        if (!upgradeConfirmOpenRef.current) {
+          ensureShellConnectedRef.current();
+        }
+      } else {
+        term.writeln("\x1b[90mConnecting to server...\x1b[0m");
+        term.writeln("");
+        void connectWebSocket(term, fitAddon);
+      }
     }
 
     initTerminal();
@@ -325,7 +369,38 @@ export function TerminalView({ className }: { className?: string }) {
     setShowPasswordDialog(false);
   }, [passwordInput]);
 
+  const ensureShellConnected = useCallback(() => {
+    if (!shellDeferredRef.current && !pendingShellDeferForUpgrade) return;
+    // Clear defer even if a live WS already exists (sidebar upgrade while connected).
+    if (wsRef.current || connected) {
+      pendingShellDeferForUpgrade = false;
+      shellDeferredRef.current = false;
+      return;
+    }
+    // xterm still loading — keep defer flags so initTerminal can resume later.
+    if (!xtermRef.current || !fitAddonRef.current) return;
+    if (!connectWebSocketRef.current) return;
+    pendingShellDeferForUpgrade = false;
+    shellDeferredRef.current = false;
+    xtermRef.current.writeln("\x1b[90mConnecting to server...\x1b[0m");
+    xtermRef.current.writeln("");
+    void connectWebSocketRef.current(xtermRef.current, fitAddonRef.current);
+  }, [connected]);
+
+  useEffect(() => {
+    ensureShellConnectedRef.current = ensureShellConnected;
+  }, [ensureShellConnected]);
+
   const connectWebSocket = useCallback(async (term: any, fitAddon: any) => {
+    if (isShellDeferred()) {
+      setConnecting(false);
+      return;
+    }
+
+    const gen = connectGenerationRef.current;
+    const aborted = () =>
+      gen !== connectGenerationRef.current || isShellDeferred();
+
     setConnecting(true);
 
     // Session JWT stays in Authorization — only a short-lived purpose=terminal token goes in the WS URL
@@ -342,6 +417,10 @@ export function TerminalView({ className }: { className?: string }) {
       const tokenRes = await authFetch(`${API_URL}/api/auth/terminal-token`, {
         method: "POST",
       });
+      if (aborted()) {
+        setConnecting(false);
+        return;
+      }
       if (!tokenRes.ok) {
         throw new Error("Failed to issue terminal token");
       }
@@ -349,7 +428,16 @@ export function TerminalView({ className }: { className?: string }) {
       token = tokenData.token;
       if (!token) throw new Error("Empty terminal token");
     } catch (err: any) {
+      if (aborted()) {
+        setConnecting(false);
+        return;
+      }
       term.writeln(`  \x1b[1;31m✗ ${err?.message || "Terminal auth failed"}\x1b[0m`);
+      setConnecting(false);
+      return;
+    }
+
+    if (aborted()) {
       setConnecting(false);
       return;
     }
@@ -363,25 +451,42 @@ export function TerminalView({ className }: { className?: string }) {
 
     try {
       const ws = new WebSocket(wsUrl);
+      if (aborted()) {
+        ws.close();
+        setConnecting(false);
+        return;
+      }
       wsRef.current = ws;
 
       ws.onopen = () => {
+        if (aborted()) {
+          ws.close();
+          return;
+        }
         term.writeln("  \x1b[1;32m✓ Connected to server\x1b[0m");
         term.writeln("  \x1b[90mAuthenticating...\x1b[0m");
       };
 
       ws.onmessage = async (event) => {
         try {
+          if (aborted()) {
+            ws.close();
+            return;
+          }
           const msg = JSON.parse(event.data);
 
           if (msg.type === "auth_required") {
+            if (aborted()) {
+              ws.close();
+              return;
+            }
             const password = await promptPassword({
               title: "Confirm terminal access",
               description:
                 "Enter your account password to open a root shell on this host.",
               submitLabel: "Open shell",
             });
-            if (password === PASSWORD_CANCEL) {
+            if (aborted() || password === PASSWORD_CANCEL) {
               setConnecting(false);
               ws.close();
               return;
@@ -395,6 +500,10 @@ export function TerminalView({ className }: { className?: string }) {
           }
 
           if (msg.type === "auth_success") {
+            if (aborted()) {
+              ws.close();
+              return;
+            }
             setConnected(true);
             setConnecting(false);
             term.writeln("  \x1b[1;32m✓ Authenticated — terminal ready\x1b[0m");
@@ -417,6 +526,10 @@ export function TerminalView({ className }: { className?: string }) {
           }
 
           if (msg.type === "auth_error") {
+            if (aborted()) {
+              ws.close();
+              return;
+            }
             term.writeln(`  \x1b[1;31m✗ ${msg.message || "Authentication failed"}\x1b[0m`);
             setConnecting(false);
             const password = await promptPassword({
@@ -425,7 +538,7 @@ export function TerminalView({ className }: { className?: string }) {
                 "Password rejected. Enter your account password to open a root shell.",
               submitLabel: "Open shell",
             });
-            if (password === PASSWORD_CANCEL) {
+            if (aborted() || password === PASSWORD_CANCEL) {
               setConnecting(false);
               ws.close();
               return;
@@ -451,15 +564,24 @@ export function TerminalView({ className }: { className?: string }) {
       };
 
       ws.onclose = () => {
+        if (wsRef.current === ws) {
+          wsRef.current = null;
+        }
         setConnected(false);
         setConnecting(false);
+
+        // Upgrade confirm owns the only password prompt — do not arm reconnect.
+        if (aborted() || isShellDeferred()) {
+          return;
+        }
+
         term.writeln("");
         term.writeln("  \x1b[1;33m⚠ Disconnected from server\x1b[0m");
         term.writeln("  \x1b[90mPress any key to reconnect...\x1b[0m");
 
-        // Reconnect on keypress
         const disposable = term.onData(() => {
           disposable.dispose();
+          if (isShellDeferred()) return;
           term.writeln("");
           term.writeln("  \x1b[90mReconnecting...\x1b[0m");
           connectWebSocket(term, fitAddon);
@@ -472,10 +594,18 @@ export function TerminalView({ className }: { className?: string }) {
       };
 
     } catch (err: any) {
+      if (aborted()) {
+        setConnecting(false);
+        return;
+      }
       term.writeln(`  \x1b[1;31m✗ Connection failed: ${err.message}\x1b[0m`);
       setConnecting(false);
     }
   }, [promptPassword, cancelPasswordPrompt]);
+
+  useEffect(() => {
+    connectWebSocketRef.current = connectWebSocket;
+  }, [connectWebSocket]);
 
   const clearTerminalQuery = useCallback(() => {
     if (!searchParams.has("confirm") && !searchParams.has("action")) return;
@@ -486,6 +616,25 @@ export function TerminalView({ className }: { className?: string }) {
   }, [searchParams, setSearchParams]);
 
   const openUpgradeConfirm = useCallback(async () => {
+    // Don't race a shell password prompt with the upgrade dialog.
+    // Deep-link may have set pendingShellDefer — clear it if the shell is already live.
+    upgradeConfirmOpenRef.current = true;
+    if (connected) {
+      pendingShellDeferForUpgrade = false;
+      shellDeferredRef.current = false;
+    } else {
+      deferShellForUpgrade();
+      if (passwordResolveRef.current) {
+        cancelPasswordPrompt();
+      }
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+      setConnecting(false);
+    }
+    setUpgradePassword("");
+    setUpgradePasswordError("");
     setShowUpgradeConfirm(true);
     setVersionLoading(true);
     try {
@@ -494,12 +643,18 @@ export function TerminalView({ className }: { className?: string }) {
     } finally {
       setVersionLoading(false);
     }
-  }, []);
+  }, [cancelPasswordPrompt, connected]);
 
   const dismissUpgradeConfirm = useCallback(() => {
     pendingUpgradeConfirm = false;
+    upgradeConfirmOpenRef.current = false;
     setShowUpgradeConfirm(false);
-  }, []);
+    setUpgradePassword("");
+    setUpgradePasswordError("");
+    // Do not clear defer flags here — ensureShellConnected clears them when it
+    // can actually connect; if xterm is not ready yet, flags stay for init resume.
+    ensureShellConnected();
+  }, [ensureShellConnected]);
 
   // Deep links from sidebar: ?confirm=upgrade | legacy ?action=upgrade → confirm (not fake wait)
   useEffect(() => {
@@ -511,6 +666,7 @@ export function TerminalView({ className }: { className?: string }) {
       action === "upgrade_simulated"
     ) {
       pendingUpgradeConfirm = true;
+      pendingShellDeferForUpgrade = true;
       clearTerminalQuery();
     }
     // Module flag survives StrictMode remount after the query is stripped.
@@ -532,23 +688,70 @@ export function TerminalView({ className }: { className?: string }) {
     return () => window.clearInterval(id);
   }, [waitState]);
 
+  const startUpgradeFromConfirm = async () => {
+    if (!upgradePassword.trim()) {
+      setUpgradePasswordError("Enter your account password");
+      return;
+    }
+
+    setIsProcessing(true);
+    setUpgradePasswordError("");
+    try {
+      const res = await authFetch(`${API_URL}/api/system/upgrade`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: upgradePassword }),
+      });
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        if (data?.requirePassword) {
+          setUpgradePasswordError(data.error || "Incorrect password");
+          setUpgradePassword("");
+          return;
+        }
+        throw new Error(data.error || "Upgrade failed");
+      }
+
+      pendingUpgradeConfirm = false;
+      pendingShellDeferForUpgrade = false;
+      upgradeConfirmOpenRef.current = false;
+      setShowUpgradeConfirm(false);
+      setUpgradePassword("");
+      const simulated = Boolean(data.message?.includes("Simulated"));
+      // Real upgrade: panel restarts. Simulated with no live shell: reconnect on wait dismiss.
+      shellDeferredRef.current = Boolean(simulated && !wsRef.current && !connected);
+      setWaitState({
+        kind: "upgrade",
+        current: versionInfo?.current ?? getCachedVersion()?.current,
+        latest: versionInfo?.latest ?? getCachedVersion()?.latest,
+        simulated,
+      });
+    } catch (err: any) {
+      toast.error(err.message || "Failed to start upgrade");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   const handleSystemAction = async (
     action: "reboot" | "reset" | "purge" | "update-system" | "upgrade",
   ) => {
+    // Upgrade password lives on the confirm dialog (single prompt).
+    if (action === "upgrade") {
+      await startUpgradeFromConfirm();
+      return;
+    }
+
     setShowRebootDialog(false);
     setShowResetDialog(false);
     setShowPurgeDialog(false);
-    setShowUpgradeConfirm(false);
     setShowUpdateConfirm(false);
-    if (action === "upgrade") pendingUpgradeConfirm = false;
 
-    const labels: Record<typeof action, { title: string; description: string; submit: string }> = {
-      upgrade: {
-        title: "Confirm Docklift upgrade",
-        description:
-          "Enter your account password. Cancel stops the upgrade — JWT alone is not enough.",
-        submit: "Start upgrade",
-      },
+    const labels: Record<
+      Exclude<typeof action, "upgrade">,
+      { title: string; description: string; submit: string }
+    > = {
       "update-system": {
         title: "Confirm package update",
         description:
@@ -574,51 +777,57 @@ export function TerminalView({ className }: { className?: string }) {
       },
     };
 
-    const password = await promptPassword({
-      title: labels[action].title,
-      description: labels[action].description,
-      submitLabel: labels[action].submit,
-    });
-    if (password === PASSWORD_CANCEL) {
-      toast.message("Cancelled — password required");
-      return;
-    }
-
-    setIsProcessing(true);
-    try {
-      const res = await authFetch(`${API_URL}/api/system/${action}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password }),
+    // Wrong password → re-prompt until success or cancel (JWT alone is never enough).
+    for (;;) {
+      const password = await promptPassword({
+        title: labels[action].title,
+        description: labels[action].description,
+        submitLabel: labels[action].submit,
       });
-      const data = await res.json().catch(() => ({}));
-
-      if (!res.ok) {
-        if (data?.requirePassword) {
-          toast.error(data.error || "Password required");
-        }
-        throw new Error(data.error || "Action failed");
-      }
-
-      if (action === "upgrade" || action === "update-system") {
-        const simulated = Boolean(data.message?.includes("Simulated"));
-        setWaitState({
-          kind: action,
-          current: versionInfo?.current ?? getCachedVersion()?.current,
-          latest: versionInfo?.latest ?? getCachedVersion()?.latest,
-          simulated,
-        });
+      if (password === PASSWORD_CANCEL) {
+        toast.message("Cancelled — password required");
         return;
       }
 
-      toast.success(data.message || `${action} successful`);
-    } catch (err: any) {
-      toast.error(err.message || `Failed to ${action} server`);
-    } finally {
-      setIsProcessing(false);
+      setIsProcessing(true);
+      try {
+        const res = await authFetch(`${API_URL}/api/system/${action}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ password }),
+        });
+        const data = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+          if (data?.requirePassword) {
+            toast.error(data.error || "Incorrect password — try again");
+            setIsProcessing(false);
+            continue;
+          }
+          throw new Error(data.error || "Action failed");
+        }
+
+        if (action === "update-system") {
+          const simulated = Boolean(data.message?.includes("Simulated"));
+          setWaitState({
+            kind: action,
+            current: versionInfo?.current ?? getCachedVersion()?.current,
+            latest: versionInfo?.latest ?? getCachedVersion()?.latest,
+            simulated,
+          });
+          return;
+        }
+
+        toast.success(data.message || `${action} successful`);
+        return;
+      } catch (err: any) {
+        toast.error(err.message || `Failed to ${action} server`);
+        return;
+      } finally {
+        setIsProcessing(false);
+      }
     }
   };
-
   const fitAfterLayout = () => {
     setTimeout(() => {
       if (fitAddonRef.current) {
@@ -805,25 +1014,60 @@ export function TerminalView({ className }: { className?: string }) {
               : "Usually ready in 1–2 minutes. Deployed apps keep running; only the Docklift panel restarts."}
           </p>
 
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button
-              variant="outline"
-              onClick={dismissUpgradeConfirm}
-              disabled={isProcessing}
-            >
-              Cancel
-            </Button>
-            <Button
-              disabled={isProcessing || versionLoading}
-              onClick={() => handleSystemAction("upgrade")}
-            >
-              {isProcessing
-                ? "Starting…"
-                : versionLoading
-                  ? "Checking version…"
-                  : "Start upgrade"}
-            </Button>
-          </DialogFooter>
+          <form
+            className="space-y-3"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void startUpgradeFromConfirm();
+            }}
+          >
+            <div className="space-y-2">
+              <label className="text-sm font-medium" htmlFor="upgrade-password">
+                Account password
+              </label>
+              <Input
+                id="upgrade-password"
+                type="password"
+                placeholder="Enter password to start upgrade"
+                value={upgradePassword}
+                onChange={(e) => {
+                  setUpgradePassword(e.target.value);
+                  if (upgradePasswordError) setUpgradePasswordError("");
+                }}
+                className="h-10 font-mono"
+                autoComplete="current-password"
+                autoFocus
+                disabled={isProcessing}
+              />
+              {upgradePasswordError ? (
+                <p className="text-sm text-destructive">{upgradePasswordError}</p>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  JWT alone is not enough. Wrong password stays here so you can try again.
+                </p>
+              )}
+            </div>
+            <DialogFooter className="gap-2 sm:gap-0">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={dismissUpgradeConfirm}
+                disabled={isProcessing}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={isProcessing || versionLoading || !upgradePassword.trim()}
+              >
+                {isProcessing
+                  ? "Starting…"
+                  : versionLoading
+                    ? "Checking version…"
+                    : "Start upgrade"}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 
@@ -861,7 +1105,10 @@ export function TerminalView({ className }: { className?: string }) {
       <Dialog
         open={!!waitState}
         onOpenChange={(open) => {
-          if (!open) setWaitState(null);
+          if (!open) {
+            setWaitState(null);
+            ensureShellConnected();
+          }
         }}
       >
         <DialogContent
@@ -931,7 +1178,13 @@ export function TerminalView({ className }: { className?: string }) {
 
           <DialogFooter className="gap-2 sm:gap-0">
             {(waitState?.simulated || refreshInSec === 0) && (
-              <Button variant="outline" onClick={() => setWaitState(null)}>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setWaitState(null);
+                  ensureShellConnected();
+                }}
+              >
                 Dismiss
               </Button>
             )}
