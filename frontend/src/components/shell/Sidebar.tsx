@@ -223,14 +223,21 @@ export function Sidebar({
         )}
       </div>
 
-      <div className={cn("shrink-0 pt-3", isCollapsed ? "px-2" : "px-3")}>
+      <div
+        className={cn(
+          "shrink-0 pt-3",
+          isCollapsed ? "flex justify-center px-2" : "px-3",
+        )}
+      >
         <Link
           to="/projects/new"
           onClick={() => isMobile && setMobileOpen(false)}
           title={isCollapsed ? "New project" : undefined}
+          aria-label="New project"
           className={cn(
-            "flex h-10 items-center justify-center gap-2 rounded-xl bg-brand text-sm font-semibold text-brand-foreground",
+            "flex items-center justify-center rounded-xl bg-brand text-sm font-semibold text-brand-foreground",
             "shadow-lg shadow-brand/20 transition-all hover:brightness-110 active:scale-[0.98]",
+            isCollapsed ? "h-9 w-9" : "h-10 gap-2",
           )}
         >
           <Plus className="h-4 w-4" strokeWidth={2.5} />
