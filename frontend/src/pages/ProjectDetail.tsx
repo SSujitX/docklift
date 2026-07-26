@@ -379,7 +379,22 @@ export default function ProjectDetail() {
     name: string;
     content: string;
   } | null>(null);
-  const [activeTab, setActiveTab] = useState("overview");
+  const tabFromUrl = searchParams.get("tab");
+  const [activeTab, setActiveTab] = useState(
+    tabFromUrl && tabFromUrl.length > 0 ? tabFromUrl : "overview",
+  );
+
+  // Honor ?tab= from create/redeploy links (e.g. databases → deployments for pull logs)
+  useEffect(() => {
+    const tab = searchParams.get("tab");
+    if (tab && tab !== activeTab) {
+      setActiveTab(tab);
+    }
+    // Only react to URL tab changes — not every activeTab toggle
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+  /** Source tab file browser — open by default; user can collapse via chevron */
+  const [sourceFilesOpen, setSourceFilesOpen] = useState(true);
   const [serverIP, setServerIP] = useState<string>("...");
   const [buildType, setBuildType] = useState<BuildType>("auto");
   const [baseDirectory, setBaseDirectory] = useState(".");
@@ -407,6 +422,7 @@ export default function ProjectDetail() {
 
   const workspace: ProjectWorkspace =
     multiService && selectedService ? "service" : "project";
+  const isDatabase = project?.project_type === "database";
   const showProjectTabs = !multiService || workspace === "project";
   const showServiceTabs = !multiService || workspace === "service";
 
@@ -416,6 +432,18 @@ export default function ProjectDetail() {
     "source",
   ]);
   const SERVICE_ONLY_TABS = new Set(["domains", "storage", "logs"]);
+
+  // Managed DB only has overview / deployments / logs
+  useEffect(() => {
+    if (!isDatabase) return;
+    if (
+      activeTab !== "overview" &&
+      activeTab !== "deployments" &&
+      activeTab !== "logs"
+    ) {
+      setActiveTab("overview");
+    }
+  }, [isDatabase, activeTab]);
 
   // Sync selection + keep URL clean; do not force a service onto multi projects
   useEffect(() => {
@@ -607,43 +635,50 @@ export default function ProjectDetail() {
       let latestList = deps;
       if (latestRes) {
         const latestPayload = await latestRes.json();
-        latestList = Array.isArray(latestPayload) ? latestPayload : [];
+        latestList = Array.isArray(latestPayload)
+          ? latestPayload
+          : Array.isArray(latestPayload?.items)
+            ? latestPayload.items
+            : [];
       }
 
-      // Handle real-time logs for deployments (including auto-deploy via webhooks)
-      // Skip log updates during manual actions (they stream logs directly)
-      if (latestList.length > 0 && !actionLoading) {
+      // Keep logs fresh for the active / currently viewed deploy (auto-select
+      // of latest when none selected is handled in a separate effect below).
+      if (latestList.length > 0 && !actionLoading && viewingDeploymentId) {
         const latestDeployment = latestList[0];
         const isBuilding =
           projectData.status === "building" || projectData.status === "pending";
         const isLatestInProgress = latestDeployment.status === "in_progress";
 
-        // Find the deployment we're currently viewing (may be on another page)
         const viewedDeployment =
           viewingDeploymentId === latestDeployment.id
             ? latestDeployment
             : deps.find((d: Deployment) => d.id === viewingDeploymentId) ||
               null;
 
-        // Detect when to update logs:
-        // 1. Initial page load
-        // 2. A new deployment started (different ID from what we're viewing)
-        // 3. Currently viewing a building deployment (keep updating logs)
-        // 4. The deployment we're viewing just finished (get final logs)
         const shouldUpdateLogs =
-          loading || // Initial load
-          (isLatestInProgress && viewingDeploymentId !== latestDeployment.id) || // New deployment started
-          (isBuilding && viewingDeploymentId === latestDeployment.id) || // Current deployment still building
-          (viewedDeployment &&
-            viewedDeployment.id === latestDeployment.id &&
-            latestDeployment.logs); // Refresh viewed deployment logs
+          (isLatestInProgress && viewingDeploymentId !== latestDeployment.id) ||
+          (isBuilding && viewingDeploymentId === latestDeployment.id) ||
+          (isLatestInProgress &&
+            viewingDeploymentId === latestDeployment.id) ||
+          (viewedDeployment != null &&
+            viewedDeployment.id === latestDeployment.id);
 
         if (shouldUpdateLogs) {
-          // Update logs (use empty string fallback to handle initial null state)
-          setLogs(latestDeployment.logs || "🚀 Starting deployment...\n");
-          setViewingDeploymentId(latestDeployment.id);
+          const source =
+            viewingDeploymentId === latestDeployment.id
+              ? latestDeployment
+              : viewedDeployment || latestDeployment;
+          setLogs(
+            source.logs ||
+              (source.status === "in_progress"
+                ? "🚀 Starting deployment...\n"
+                : "No logs available for this deployment"),
+          );
+          if (isLatestInProgress) {
+            setViewingDeploymentId(latestDeployment.id);
+          }
 
-          // Jump back to the newest page so the active deploy is visible
           if (
             isLatestInProgress &&
             viewingDeploymentId !== latestDeployment.id &&
@@ -652,7 +687,6 @@ export default function ProjectDetail() {
             setHistoryPage(0);
           }
 
-          // Auto-open Deployments for all-services view only — never steal ?service=
           if (
             isLatestInProgress &&
             activeTab !== "deployments" &&
@@ -672,7 +706,6 @@ export default function ProjectDetail() {
   }, [
     projectId,
     navigate,
-    loading,
     actionLoading,
     historyPage,
     viewingDeploymentId,
@@ -685,7 +718,25 @@ export default function ProjectDetail() {
     historyFetchGen.current += 1;
     setHistoryPage(0);
     setDeploymentTotal(0);
+    setDeployments([]);
+    setViewingDeploymentId(null);
+    setLogs("");
   }, [projectId]);
+
+  // Apps + databases: when history arrives and nothing is selected, show latest logs
+  useEffect(() => {
+    if (actionLoading) return;
+    if (viewingDeploymentId != null) return;
+    if (deployments.length === 0) return;
+    const latest = deployments[0];
+    setViewingDeploymentId(latest.id);
+    setLogs(
+      latest.logs ||
+        (latest.status === "in_progress"
+          ? "🚀 Starting deployment...\n"
+          : "No logs available for this deployment"),
+    );
+  }, [deployments, viewingDeploymentId, actionLoading]);
 
   const historyPageCount = Math.max(
     1,
@@ -1099,9 +1150,9 @@ export default function ProjectDetail() {
           {project.project_type === "database" ? "Back to Databases" : "Back to Projects"}
         </Link>
 
-        <div className="mb-8 flex flex-col gap-4 sm:mb-10 md:flex-row md:items-start md:justify-between md:gap-6">
+        <div className="mb-6 flex min-w-0 flex-col gap-4 sm:mb-10 md:flex-row md:items-start md:justify-between md:gap-6">
           <div className="flex min-w-0 flex-1 items-start gap-3 sm:items-center sm:gap-4">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-border bg-secondary/40 sm:h-12 sm:w-12">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border/60 bg-secondary/40 sm:h-12 sm:w-12">
               {project.project_type === "database" ? (
                 <Database className="h-5 w-5 text-muted-foreground sm:h-6 sm:w-6" />
               ) : (
@@ -1109,8 +1160,8 @@ export default function ProjectDetail() {
               )}
             </div>
             <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-                <h1 className="truncate text-2xl font-semibold tracking-tight sm:text-3xl">
+              <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
+                <h1 className="max-w-full truncate text-xl font-semibold tracking-tight sm:text-3xl">
                   {project.name}
                 </h1>
                 <StatusBadge status={project.status} />
@@ -1137,17 +1188,21 @@ export default function ProjectDetail() {
             </div>
           </div>
 
-          {/* Single-service only: actions top-right. Multi-service keeps the Workspace strip below. */}
-          {!multiService && (
-            <ProjectActionBar
-              status={project.status}
-              actionLoading={actionLoading}
-              currentAction={currentAction}
-              onAction={confirmAction}
-              placement="header"
-              className="w-full shrink-0 self-end md:w-auto md:self-start"
-            />
-          )}
+          {/* Project-wide lifecycle actions — always header top-right (whole stack). */}
+          <ProjectActionBar
+            status={project.status}
+            actionLoading={actionLoading}
+            currentAction={currentAction}
+            onAction={confirmAction}
+            placement="header"
+            multiService={multiService}
+            className="w-full shrink-0 md:w-auto md:self-start"
+            title={
+              multiService
+                ? "Affects every service in this project"
+                : undefined
+            }
+          />
         </div>
 
         <Tabs
@@ -1156,7 +1211,7 @@ export default function ProjectDetail() {
           className="space-y-6"
         >
           {multiService && (
-            <div className="space-y-4 border-b border-border pb-4">
+            <div className="min-w-0 space-y-3 border-b border-border/60 pb-4">
               <ServiceSwitcher
                 services={services}
                 workspace={workspace}
@@ -1164,70 +1219,72 @@ export default function ProjectDetail() {
                 onSelectProject={selectProjectWorkspace}
                 onSelectService={(id) => selectService(id, "overview")}
               />
-              <ProjectActionBar
-                status={project.status}
-                actionLoading={actionLoading}
-                currentAction={currentAction}
-                onAction={confirmAction}
-                multiService
-              />
             </div>
           )}
 
-          <div className="sticky top-14 z-10 -mx-4 px-4 md:mx-0 md:px-0 overflow-x-auto md:overflow-visible md:flex md:justify-center">
-            <TabsList className="inline-flex w-max items-center justify-start gap-0.5 rounded-xl border border-border bg-secondary/40 p-1 md:justify-center">
+          {/* Match AppShell padding (px-3 / sm:px-4) — old -mx-4 overflowed phones */}
+          <div className="sticky top-14 z-10 -mx-3 min-w-0 overflow-x-auto px-3 [-ms-overflow-style:none] [scrollbar-width:none] sm:-mx-4 sm:px-4 md:mx-0 md:overflow-visible md:px-0 md:flex md:justify-center [&::-webkit-scrollbar]:hidden">
+            <TabsList className="inline-flex w-max max-w-none items-center justify-start gap-0.5 rounded-xl border border-border/60 bg-secondary/40 p-1 md:justify-center">
               <TabsTrigger value="overview" className={PROJECT_TAB_TRIGGER}>
                 <LayoutDashboard className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                <span className="hidden xs:inline">
+                <span className="hidden sm:inline">
                   {workspace === "service" && multiService
                     ? selectedService?.name || "Service"
                     : "Overview"}
                 </span>
-                <span className="xs:hidden">View</span>
+                <span className="sm:hidden">View</span>
               </TabsTrigger>
 
               {(!multiService || workspace === "project") && (
                 <TabsTrigger value="deployments" className={PROJECT_TAB_TRIGGER}>
                   <Activity className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                  <span className="hidden xs:inline">Deployments</span>
-                  <span className="xs:hidden">Deploy</span>
+                  <span className="hidden sm:inline">Deployments</span>
+                  <span className="sm:hidden">Deploy</span>
                 </TabsTrigger>
               )}
 
-              <TabsTrigger value="env" className={PROJECT_TAB_TRIGGER}>
-                <Key className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                <span className="hidden xs:inline">
-                  {workspace === "service" && multiService ? "Env" : "Environment"}
-                </span>
-                <span className="xs:hidden">Env</span>
-              </TabsTrigger>
+              {!isDatabase && (
+                <>
+                  <TabsTrigger value="env" className={PROJECT_TAB_TRIGGER}>
+                    <Key className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                    <span className="hidden sm:inline">
+                      {workspace === "service" && multiService
+                        ? "Env"
+                        : "Environment"}
+                    </span>
+                    <span className="sm:hidden">Env</span>
+                  </TabsTrigger>
 
-              {(!multiService || workspace === "project") && (
-                <TabsTrigger value="build" className={PROJECT_TAB_TRIGGER}>
-                  <Box className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                  Build
-                </TabsTrigger>
-              )}
+                  {(!multiService || workspace === "project") && (
+                    <TabsTrigger value="build" className={PROJECT_TAB_TRIGGER}>
+                      <Box className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                      Build
+                    </TabsTrigger>
+                  )}
 
-              {(!multiService || workspace === "service") && (
-                <TabsTrigger value="storage" className={PROJECT_TAB_TRIGGER}>
-                  <HardDrive className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                  Storage
-                </TabsTrigger>
-              )}
+                  {(!multiService || workspace === "service") && (
+                    <TabsTrigger value="storage" className={PROJECT_TAB_TRIGGER}>
+                      <HardDrive className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                      <span className="hidden sm:inline">Storage</span>
+                      <span className="sm:hidden">Disk</span>
+                    </TabsTrigger>
+                  )}
 
-              {(!multiService || workspace === "project") && (
-                <TabsTrigger value="source" className={PROJECT_TAB_TRIGGER}>
-                  <FileCode className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                  Source
-                </TabsTrigger>
-              )}
+                  {(!multiService || workspace === "project") && (
+                    <TabsTrigger value="source" className={PROJECT_TAB_TRIGGER}>
+                      <FileCode className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                      Source
+                    </TabsTrigger>
+                  )}
 
-              {(!multiService || workspace === "service") && (
-                <TabsTrigger value="domains" className={PROJECT_TAB_TRIGGER}>
-                  <Globe className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                  Domains
-                </TabsTrigger>
+                  {(!multiService || workspace === "service") && (
+                    <TabsTrigger value="domains" className={PROJECT_TAB_TRIGGER}>
+                      <Globe className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                      <span className="hidden sm:inline">Domains</span>
+                      <span className="sm:hidden">DNS</span>
+                    </TabsTrigger>
+                  )}
+                </>
               )}
 
               {(!multiService || workspace === "service") && (
@@ -1519,6 +1576,11 @@ export default function ProjectDetail() {
                 <AttachDatabasePanel
                   appProjectId={project.id}
                   services={services.map((s) => ({ id: s.id, name: s.name }))}
+                  lockedServiceName={
+                    workspace === "service" && selectedService
+                      ? selectedService.name
+                      : null
+                  }
                 />
               </div>
             ) : null}
@@ -1819,7 +1881,9 @@ export default function ProjectDetail() {
                             </div>
                           </div>
                           <p className="text-[11px] text-muted-foreground line-clamp-1 italic hidden sm:block">
-                            Click to restore log output to terminal
+                            {isViewing
+                              ? "Showing in terminal"
+                              : "Click to show logs in terminal"}
                           </p>
 
                           {deployment.commit_message && (
@@ -1878,6 +1942,7 @@ export default function ProjectDetail() {
           </TabsContent>
           )}
 
+          {!isDatabase && (
           <TabsContent value="env" className={PROJECT_TAB_PANEL}>
             <div>
               <h3 className="flex items-center gap-2 text-xl font-semibold tracking-tight">
@@ -1911,8 +1976,9 @@ export default function ProjectDetail() {
               }
             />
           </TabsContent>
+          )}
 
-          {showProjectTabs && (
+          {!isDatabase && showProjectTabs && (
           <TabsContent value="build" className={PROJECT_TAB_PANEL}>
               <div>
                 <h3 className="text-xl font-bold flex items-center gap-2">
@@ -2074,7 +2140,7 @@ export default function ProjectDetail() {
           </TabsContent>
           )}
 
-          {showServiceTabs && (
+          {!isDatabase && showServiceTabs && (
           <TabsContent value="storage" className={PROJECT_TAB_PANEL}>
               <div>
                 <h3 className="flex items-center gap-2 text-xl font-semibold tracking-tight">
@@ -2205,21 +2271,45 @@ export default function ProjectDetail() {
           </TabsContent>
           )}
 
-          {showProjectTabs && (
+          {!isDatabase && showProjectTabs && (
           <TabsContent value="source" className={PROJECT_TAB_PANEL}>
-            <div className="flex items-center justify-between">
-              <h3 className="text-xl font-bold flex items-center gap-2">
-                <FileCode className="h-5 w-5 text-muted-foreground" />
-                Project Files & Source
-              </h3>
-            </div>
-            <Card className="border-border/40 overflow-hidden">
-              <FileTree files={files} onFileEdit={openFileEditor} />
+            <Card className="overflow-hidden rounded-2xl border-border/60">
+              <button
+                type="button"
+                onClick={() => setSourceFilesOpen((open) => !open)}
+                aria-expanded={sourceFilesOpen}
+                className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left transition-colors hover:bg-secondary/40 sm:px-5"
+              >
+                <span className="flex min-w-0 items-center gap-2">
+                  <FileCode className="h-5 w-5 shrink-0 text-muted-foreground" />
+                  <span className="truncate text-base font-semibold tracking-tight sm:text-lg">
+                    Project Files & Source
+                  </span>
+                </span>
+                <span
+                  className={cn(
+                    "flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-border/60 bg-secondary/40 text-muted-foreground transition-colors",
+                    sourceFilesOpen && "border-brand/30 bg-brand/10 text-brand",
+                  )}
+                  aria-hidden
+                >
+                  {sourceFilesOpen ? (
+                    <ChevronDown className="h-4 w-4" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4" />
+                  )}
+                </span>
+              </button>
+              {sourceFilesOpen && (
+                <div className="border-t border-border/60">
+                  <FileTree files={files} onFileEdit={openFileEditor} />
+                </div>
+              )}
             </Card>
           </TabsContent>
           )}
 
-          {showServiceTabs && (
+          {!isDatabase && showServiceTabs && (
           <TabsContent value="domains" className={PROJECT_TAB_PANEL}>
             <DnsGuideCard serverIP={serverIP} />
 
@@ -2301,7 +2391,7 @@ export default function ProjectDetail() {
           content={editingFile.content}
           onClose={() => setEditingFile(null)}
           onSave={() => {
-            setEditingFile(null);
+            // Keep editor open; refresh tree/metadata in background
             fetchProject();
           }}
         />
