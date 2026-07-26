@@ -17,7 +17,8 @@ export function AppProviders({ children }: { children: ReactNode }) {
         <VersionChecker />
         <ScrollToTop />
         {children}
-        <Toaster position="bottom-right" richColors closeButton />
+        {/* Top-center: visible above sticky footers on every page */}
+        <Toaster />
       </AuthProvider>
     </ThemeProvider>
   );
