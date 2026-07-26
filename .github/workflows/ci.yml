@@ -1,12 +1,26 @@
 name: CI
+run-name: >-
+  CI · ${{
+    github.event_name == 'pull_request' && format('PR #{0}', github.event.pull_request.number) ||
+    github.ref_name
+  }}
 
 on:
   push:
     branches: [master]
+    paths-ignore:
+      - "website/**"
+      - ".github/workflows/docs.yml"
+      - ".github/workflows/install.yml"
   pull_request:
+    paths-ignore:
+      - "website/**"
+      - ".github/workflows/docs.yml"
+      - ".github/workflows/install.yml"
 
 jobs:
   build-and-test:
+    name: Build & test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
