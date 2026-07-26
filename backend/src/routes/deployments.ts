@@ -37,7 +37,15 @@ import {
   formatDomainField,
   normalizeDomainList,
 } from '../lib/domainOwnership.js';
-import { isProjectDeploying, setProjectDeploying } from '../lib/deploymentState.js';
+import {
+  acquireProjectDeploying,
+  beginProjectCancel,
+  clearProjectDeploying,
+  isProjectCancelling,
+  isProjectDeploying,
+  ownsProjectDeploying,
+  releaseProjectDeploying,
+} from '../lib/deploymentState.js';
 import { envForService } from '../lib/envVariables.js';
 import { runCompose } from '../lib/runCompose.js';
 import { syncProjectStatusFromContainers } from '../lib/projectStatusSync.js';
@@ -45,6 +53,9 @@ import {
   credentialsFromEnvMap,
   engineCommand,
   getDatabaseEngine,
+  imageForManagedService,
+  managedServiceMarker,
+  volumeMountForEngine,
 } from '../lib/databaseEngines.js';
 import {
   disconnectLinkedDatabasesFromApp,
@@ -445,6 +456,9 @@ async function deployProject(req: Request, res: Response) {
     if (!fs.existsSync(projectPath)) {
       return res.status(400).json({ error: 'Project files not found' });
     }
+    if (isProjectCancelling(projectId)) {
+      return res.status(409).json({ error: 'A cancel is in progress for this project' });
+    }
     if (isProjectDeploying(projectId)) {
       return res.status(409).json({ error: 'A deployment is already running for this project' });
     }
@@ -455,8 +469,7 @@ async function deployProject(req: Request, res: Response) {
     if (busyDeploy) {
       return res.status(409).json({ error: 'A deployment is already running for this project' });
     }
-    setProjectDeploying(projectId, true);
-    
+
     const { trigger, commit_message } = req.body || {};
 
     // Auto-fetch commit message if not provided (manual deploy)
@@ -475,6 +488,18 @@ async function deployProject(req: Request, res: Response) {
       },
     });
     deploymentId = deployment.id;
+    // Own the lock by deployment id so a cancelled pull's catch cannot unlock a newer deploy
+    if (!acquireProjectDeploying(projectId, deployment.id)) {
+      await prisma.deployment.update({
+        where: { id: deployment.id },
+        data: {
+          status: 'failed',
+          finished_at: new Date(),
+          logs: '❌ Another deployment is already running for this project\n',
+        },
+      }).catch(() => {});
+      return res.status(409).json({ error: 'A deployment is already running for this project' });
+    }
 
     // Set project and all services to 'building' immediately
     await prisma.project.update({
@@ -493,10 +518,25 @@ async function deployProject(req: Request, res: Response) {
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('Transfer-Encoding', 'chunked');
     
+    // Persist logs often enough for Project Detail polling during long image pulls
+    let lastLogSync = Date.now();
+    const syncLogsToDb = async (force = false) => {
+      const now = Date.now();
+      if (!force && now - lastLogSync < 2000) return;
+      lastLogSync = now;
+      await prisma.deployment
+        .update({
+          where: { id: deployment.id },
+          data: { logs: logs.join('') },
+        })
+        .catch((err) => console.error('Failed to sync logs to DB:', err));
+    };
+
     // Helper to write logs to both response and DB logs array
     const writeLog = (text: string) => {
       try { if (!res.writableEnded) res.write(text); } catch {}
       logs.push(text);
+      void syncLogsToDb();
     };
 
     let success = false;
@@ -607,9 +647,17 @@ async function deployProject(req: Request, res: Response) {
     }> = [];
 
     if (isManagedDb && managedEngine) {
+      let service = await prisma.service.findFirst({
+        where: { project_id: projectId, name: managedEngine.serviceName },
+      });
+      const managedImage = imageForManagedService(
+        managedEngine,
+        service?.dockerfile_path,
+      );
+
       writeLog(`\n${'━'.repeat(50)}\n`);
       writeLog(`🗄️  MANAGED DATABASE: ${managedEngine.label}\n`);
-      writeLog(`   Image: ${managedEngine.image}\n`);
+      writeLog(`   Image: ${managedImage}\n`);
       writeLog(`${'━'.repeat(50)}\n\n`);
       if (publishHostPort) {
         writeLog(`  🔓 Host port publish enabled (exposes the DB on the host — prefer linking)\n`);
@@ -617,9 +665,6 @@ async function deployProject(req: Request, res: Response) {
         writeLog(`  🔒 Host ports off — link this database to apps (Docker DNS), or opt-in publish\n`);
       }
 
-      let service = await prisma.service.findFirst({
-        where: { project_id: projectId, name: managedEngine.serviceName },
-      });
       const containerName = serviceContainerName(
         project.name,
         projectId,
@@ -631,7 +676,7 @@ async function deployProject(req: Request, res: Response) {
           data: {
             project_id: projectId,
             name: managedEngine.serviceName,
-            dockerfile_path: `[managed:${managedEngine.id}]`,
+            dockerfile_path: managedServiceMarker(managedEngine.id, managedImage),
             container_name: containerName,
             internal_port: managedEngine.port,
             port,
@@ -647,7 +692,8 @@ async function deployProject(req: Request, res: Response) {
           port?: number | null;
         } = {
           status: 'building',
-          dockerfile_path: `[managed:${managedEngine.id}]`,
+          // Keep existing image marker when present
+          dockerfile_path: managedServiceMarker(managedEngine.id, managedImage),
           internal_port: managedEngine.port,
           container_name: containerName,
         };
@@ -672,22 +718,23 @@ async function deployProject(req: Request, res: Response) {
         service = await prisma.service.update({ where: { id: service.id }, data });
       }
 
-      writeLog(`  🐳 ${service.name}: ${managedEngine.image}\n`);
+      writeLog(`  🐳 ${service.name}: ${managedImage}\n`);
       writeLog(`     Internal port: ${managedEngine.port}\n`);
       writeLog(`     Container: ${service.container_name}\n`);
 
       writeLog(`\n${'─'.repeat(40)}\n`);
-      writeLog(`📥 Pulling ${managedEngine.image}...\n`);
-      const pull = spawnSync('docker', ['pull', managedEngine.image], {
-        encoding: 'utf8',
-        shell: false,
-        timeout: 600_000,
+      writeLog(`📥 Pulling ${managedImage}...\n`);
+      // Async pull — never spawnSync (blocks API). Register child so /cancel can kill it.
+      await dockerService.pullImage(managedImage, {
+        onChunk: (chunk) => writeLog(chunk),
+        onSpawn: (child) => registerBuild(projectId, child, deployment.id),
+        timeoutMs: 600_000,
       });
-      if (pull.stdout) writeLog(pull.stdout);
-      if (pull.stderr) writeLog(pull.stderr);
-      if (pull.status !== 0) {
-        throw new Error(`Failed to pull ${managedEngine.image}`);
+      clearBuild(projectId, deployment.id);
+      if (await isDeploymentCancelled(projectId, deployment.id)) {
+        throw new Error('Deployment cancelled');
       }
+      await syncLogsToDb(true);
       writeLog(`✅ Image ready\n`);
 
       const envMap = Object.fromEntries(envVars.map((v) => [v.key, v.value]));
@@ -696,6 +743,35 @@ async function deployProject(req: Request, res: Response) {
         throw new Error('Managed database credentials missing from project env');
       }
       const cmd = engineCommand(managedEngine, creds);
+      const correctMount = volumeMountForEngine(managedEngine, managedImage);
+
+      // Keep named-volume mount in sync with the image major (Postgres 18+ path change)
+      for (const volume of persistentVolumes) {
+        if (volume.service_name !== service.name) continue;
+        if (volume.mount_path === correctMount) continue;
+        if (
+          managedEngine.id === 'postgres' &&
+          volume.mount_path === '/var/lib/postgresql/data' &&
+          correctMount === '/var/lib/postgresql'
+        ) {
+          writeLog(
+            `  ⚠️ Postgres 18+ was stored with mount /var/lib/postgresql/data.\n` +
+              `     Official images require /var/lib/postgresql. Updating the mount path.\n` +
+              `     If this DB already wrote data under the old mount, it may live on an\n` +
+              `     anonymous Docker volume and will NOT appear after redeploy — recreate\n` +
+              `     + restore from backup if you need that data.\n`,
+          );
+        } else {
+          writeLog(
+            `     🛠️ Updating volume mount ${volume.mount_path} → ${correctMount}\n`,
+          );
+        }
+        await prisma.persistentVolume.update({
+          where: { id: volume.id },
+          data: { mount_path: correctMount },
+        });
+        volume.mount_path = correctMount;
+      }
 
       servicesData.push({
         name: service.name,
@@ -706,7 +782,7 @@ async function deployProject(req: Request, res: Response) {
       });
       runtimeServices.push({
         name: service.name,
-        image: managedEngine.image,
+        image: managedImage,
         internal_port: managedEngine.port,
         port: service.port,
         container_name: service.container_name!,
@@ -968,7 +1044,12 @@ async function deployProject(req: Request, res: Response) {
         writeLog(`   🔐 Including ${envVars.length} database credential env var(s)\n`);
       }
     }
-    if (cancelledDeployments.has(deployment.id)) throw new Error('Deployment cancelled');
+    if (
+      cancelledDeployments.has(deployment.id) ||
+      !ownsProjectDeploying(projectId, deployment.id)
+    ) {
+      throw new Error('Deployment cancelled');
+    }
     generateRuntimeCompose(
       composePath,
       runtimeServices,
@@ -999,19 +1080,22 @@ async function deployProject(req: Request, res: Response) {
         timeout: 60000,
       });
     }
-    
-    let lastUpdate = Date.now();
-    const syncLogsToDb = async (force = false) => {
-      const now = Date.now();
-      if (force || now - lastUpdate > 2000) {
-        lastUpdate = now;
-        await prisma.deployment.update({
-          where: { id: deployment.id },
-          data: { logs: logs.join('') },
-        }).catch(err => console.error('Failed to sync logs to DB:', err));
-      }
-    };
 
+    // Final gate (no await below until child is registered): if cancel stole/cleared the
+    // lock during earlier awaits, do not compose up — that would race redeploy.
+    if (
+      cancelledDeployments.has(deployment.id) ||
+      (await isDeploymentCancelled(projectId, deployment.id)) ||
+      !ownsProjectDeploying(projectId, deployment.id)
+    ) {
+      throw new Error('Deployment cancelled');
+    }
+    // Re-check ownership synchronously after the last await — cancel may have finished
+    // during isDeploymentCancelled and cleared the sentinel.
+    if (!ownsProjectDeploying(projectId, deployment.id)) {
+      throw new Error('Deployment cancelled');
+    }
+    
     // Run docker compose up — detached process group so cancel can signal plugin children
     const dockerProcess = runCompose(
       ['compose', ...composeFileArgs(projectId), '-p', composeProject, 'up', '-d', '--remove-orphans'],
@@ -1021,20 +1105,13 @@ async function deployProject(req: Request, res: Response) {
       },
       {
         onStdout: (data) => {
-          const text = data.toString();
-          logs.push(text);
-          try { if (!res.writableEnded) res.write(text); } catch {}
-          syncLogsToDb();
+          writeLog(data.toString());
         },
         onStderr: (data) => {
-          const text = data.toString();
-          logs.push(text);
-          try { if (!res.writableEnded) res.write(text); } catch {}
-          syncLogsToDb();
+          writeLog(data.toString());
         },
         onClose: async (code) => {
       // Hold deploy lock through status write + nginx/SSL so cancel/delete/redeploy stay serialized
-      const cancelled = await isDeploymentCancelled(projectId, deployment.id);
       clearBuild(projectId, deployment.id);
 
       await syncLogsToDb(true);
@@ -1050,14 +1127,28 @@ async function deployProject(req: Request, res: Response) {
           },
         }).catch(() => {});
         cancelledDeployments.delete(deployment.id);
-        setProjectDeploying(projectId, false);
+        releaseProjectDeploying(projectId, deployment.id);
         if (!res.writableEnded) res.end();
       };
 
-      if (cancelled) {
-        await markCancelledAndRelease();
-        return;
-      }
+      /** Stop if cancel stole the lock or marked us cancelled — check on EVERY gate. */
+      const stopIfSuperseded = async (): Promise<boolean> => {
+        if (!ownsProjectDeploying(projectId, deployment.id)) {
+          writeLog(
+            `\n⚠️ Deploy lost project lock (cancel/redeploy) — skipping further work\n`,
+          );
+          cancelledDeployments.delete(deployment.id);
+          if (!res.writableEnded) res.end();
+          return true;
+        }
+        if (await isDeploymentCancelled(projectId, deployment.id)) {
+          await markCancelledAndRelease();
+          return true;
+        }
+        return false;
+      };
+
+      if (await stopIfSuperseded()) return;
 
       success = code === 0;
       
@@ -1080,6 +1171,8 @@ async function deployProject(req: Request, res: Response) {
           }
         }
       }
+
+      if (await stopIfSuperseded()) return;
 
       if (success) {
         // Use the request host (e.g., server IP) instead of localhost
@@ -1119,14 +1212,13 @@ async function deployProject(req: Request, res: Response) {
           );
         }
 
+        if (await stopIfSuperseded()) return;
+
         writeLog(`\n🧹 Post-deploy cleanup...\n`);
         const purgeResult = await runPostDeploymentPurge();
         writeLog(`   ${purgeResult.message}\n`);
 
-        if (await isDeploymentCancelled(projectId, deployment.id)) {
-          await markCancelledAndRelease();
-          return;
-        }
+        if (await stopIfSuperseded()) return;
       } else if (code !== 0) {
         writeLog(`\n${'━'.repeat(50)}\n`);
         writeLog(`❌ DEPLOY FAILED (Exit Code: ${code})\n`);
@@ -1138,10 +1230,7 @@ async function deployProject(req: Request, res: Response) {
       }
 
       // Final cancel gate — cancel during purge/success logging must not flip to success
-      if (await isDeploymentCancelled(projectId, deployment.id)) {
-        await markCancelledAndRelease();
-        return;
-      }
+      if (await stopIfSuperseded()) return;
       
       // Update logs in DB with final messages (never overwrite cancelled)
       const finalStatus = success ? 'success' : 'failed';
@@ -1158,28 +1247,23 @@ async function deployProject(req: Request, res: Response) {
       });
       if (persisted.count === 0) {
         cancelledDeployments.delete(deployment.id);
-        setProjectDeploying(projectId, false);
+        releaseProjectDeploying(projectId, deployment.id);
         if (!res.writableEnded) res.end();
         return;
       }
+
+      if (await stopIfSuperseded()) return;
       
       if (success) {
-        // Cancel can still arrive during nginx activation — honor it by skipping further work
-        if (await isDeploymentCancelled(projectId, deployment.id)) {
-          await markCancelledAndRelease();
-          return;
-        }
         await syncProjectStatusFromContainers(projectId);
+        if (await stopIfSuperseded()) return;
         try {
           await activateServiceDomains(projectId);
           writeLog(`🌐 Nginx domains activated\n`);
         } catch (e: any) {
           writeLog(`⚠️ Domain activation warning: ${e?.message || 'failed'}\n`);
         }
-        if (await isDeploymentCancelled(projectId, deployment.id)) {
-          await markCancelledAndRelease();
-          return;
-        }
+        if (await stopIfSuperseded()) return;
       } else {
         await prisma.project.update({
           where: { id: projectId },
@@ -1190,7 +1274,7 @@ async function deployProject(req: Request, res: Response) {
           data: { status: 'error' },
         });
       }
-      setProjectDeploying(projectId, false);
+      releaseProjectDeploying(projectId, deployment.id);
       
       writeLog(`\n📊 Deployment complete! Status: ${success ? 'SUCCESS ✅' : 'FAILED ❌'}\n`);
       cancelledDeployments.delete(deployment.id);
@@ -1199,7 +1283,8 @@ async function deployProject(req: Request, res: Response) {
         onError: async (err) => {
       clearBuild(projectId, deployment.id);
       writeLog(`\n❌ Docker execution error: ${err.message}\n`);
-      if (await isDeploymentCancelled(projectId, deployment.id)) {
+      const superseded = !ownsProjectDeploying(projectId, deployment.id);
+      if (superseded || (await isDeploymentCancelled(projectId, deployment.id))) {
         await prisma.deployment.update({
           where: { id: deployment.id },
           data: { status: 'cancelled', logs: logs.join(''), finished_at: new Date() },
@@ -1208,7 +1293,7 @@ async function deployProject(req: Request, res: Response) {
         await failDeploymentState(projectId, deployment.id, logs.join(''));
       }
       cancelledDeployments.delete(deployment.id);
-      setProjectDeploying(projectId, false);
+      releaseProjectDeploying(projectId, deployment.id);
       if (!res.writableEnded) res.end();
         },
       },
@@ -1216,7 +1301,6 @@ async function deployProject(req: Request, res: Response) {
     registerBuild(projectId, dockerProcess, deployment.id);
     
   } catch (error: any) {
-    setProjectDeploying(projectId, false);
     console.error(error);
     if (deploymentId) {
       const cancelled = wasBuildCancelled(projectId, deploymentId);
@@ -1232,6 +1316,8 @@ async function deployProject(req: Request, res: Response) {
         await failDeploymentState(projectId, deploymentId, logs.join(''));
       }
       cancelledDeployments.delete(deploymentId);
+      // Only unlock if this deployment still owns the lock (not a newer concurrent deploy)
+      releaseProjectDeploying(projectId, deploymentId);
     }
     try {
       if (!res.headersSent) {
@@ -1534,15 +1620,27 @@ router.post('/:projectId/redeploy', deployProject);
 
 // Cancel build — kill tracked compose process + tear down project containers
 router.post('/:projectId/cancel', async (req: Request, res: Response) => {
+  const { projectId } = req.params;
+  let cancelLockHeld = false;
   try {
-    const { projectId } = req.params;
     const project = await prisma.project.findUnique({ where: { id: projectId } });
     if (!project) {
       return res.status(404).json({ error: 'Project not found' });
     }
+    if (isProjectCancelling(projectId)) {
+      return res.status(409).json({ error: 'A cancel is already in progress for this project' });
+    }
     const projectPath = path.join(config.deploymentsPath, projectId);
     const composeProject = composeProjectName(project.name, projectId);
     const hasRuntimeCompose = fs.existsSync(runtimeComposePath(projectId));
+
+    // Hold the project lock for the entire teardown so redeploy cannot compose-up
+    // while we compose-down. In-flight deploy catch will release(deploymentId) and no-op.
+    const stolenDeployId = beginProjectCancel(projectId);
+    cancelLockHeld = true;
+    // Mark the lock owner cancelled even if it already flipped to success in onClose
+    // (post-success nginx/status work must stop via cancelledDeployments + !owns).
+    if (stolenDeployId) cancelledDeployments.add(stolenDeployId);
     
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -1667,7 +1765,6 @@ router.post('/:projectId/cancel', async (req: Request, res: Response) => {
       }
     }
 
-    setProjectDeploying(projectId, false);
     if (success) {
       await prisma.service.updateMany({
         where: { project_id: projectId },
@@ -1693,7 +1790,31 @@ router.post('/:projectId/cancel', async (req: Request, res: Response) => {
     }
     res.end();
   } catch (error) {
-    res.status(500).json({ error: 'Failed to cancel build' });
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Failed to cancel build' });
+    } else {
+      try {
+        if (!res.writableEnded) {
+          res.write(`\n❌ Cancel failed\n`);
+          res.end();
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+  } finally {
+    // Always drop cancel lock — even on failure — so the project is not stuck.
+    // If a compose child was registered, kill again and give it a moment to abort
+    // before unlocking so a redeploy cannot overlap an in-flight up.
+    if (cancelLockHeld) {
+      const still = activeBuilds.get(projectId);
+      if (still) {
+        still.cancelled = true;
+        killComposeProcess(still.process);
+        await new Promise((r) => setTimeout(r, 500));
+      }
+      clearProjectDeploying(projectId);
+    }
   }
 });
 
