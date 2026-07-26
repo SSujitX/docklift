@@ -44,6 +44,12 @@ Unsafe OAuth code→token exchange is **removed**. The route may still redirect 
 
 ## Key Components
 
+### Branches & tags (New Project)
+-   **Branches**: `GET /api/github/branches?repo=owner/name&type=public|private`
+-   **Tags**: `GET /api/github/tags?repo=owner/name&type=public|private` — up to 500 tags, newest-first
+-   **UI**: Branch | Tag switcher on New Project; tag pin note (push auto-deploy won't follow tags)
+-   **Git**: `cloneRepo` / `pullRepo` accept branch or tag; pull fetches `--tags` and resets to tag when not a remote branch
+
 ### Repository Listing
 -   **Endpoint**: `GET /api/github/repos` (optional `?owner=login`)
 -   **Response**: `{ repositories, failedInstallations, fallbackSingle }` — never silently
