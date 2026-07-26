@@ -1,3 +1,57 @@
+## [2.0.12](https://github.com/SSujitX/docklift/compare/v2.0.11...v2.0.12) (2026-07-26)
+
+
+### Bug Fixes
+
+* **deploy:** cancellable timed async image pull ([ccebcf4](https://github.com/SSujitX/docklift/commit/ccebcf4d8e80fbeb7e620a97641bc3e8e908e100))
+* **deploy:** own deploy lock by deployment id ([3f2d9d5](https://github.com/SSujitX/docklift/commit/3f2d9d549f0d78a3deae00da65ebc99bc5754ec3))
+* **deploy:** serialize cancel with ownership gates ([8302e85](https://github.com/SSujitX/docklift/commit/8302e85cae36ccf8e0e5220a04b4d62742565cd4))
+* **deploy:** undo proxy links if cancel wins success-tail ([190d60a](https://github.com/SSujitX/docklift/commit/190d60a7af2d777034b5efcd7747f354a343792a))
+* **frontend:** minor file tree polish ([6ff9293](https://github.com/SSujitX/docklift/commit/6ff9293d904889283409393a9f3df64b8dec347b))
+* **git:** fail closed when branch or tag missing ([bccadb6](https://github.com/SSujitX/docklift/commit/bccadb6c27ac3ecb85344287ba26903ced6ca39e))
+* **github:** match tag pins on webhook refs ([48de2cc](https://github.com/SSujitX/docklift/commit/48de2cc0727db981d160376d8a9c20be5eaf146d))
+* **git:** verify tags on remote before reset ([ca68e55](https://github.com/SSujitX/docklift/commit/ca68e55bdbc15ea8114ff2910554f8b85d29c135))
+* **nginx:** abort domain writes when deploy lock lost ([3250898](https://github.com/SSujitX/docklift/commit/3250898a80a7e8d089c42502291b081597dd0ab8))
+
+
+### Features
+
+* **db:** fetch live engine tags from docker hub ([713580e](https://github.com/SSujitX/docklift/commit/713580ee51afdd6753a16f545107f2c8be4a2d52))
+* **db:** persist selected version and mount path ([69af7b3](https://github.com/SSujitX/docklift/commit/69af7b35a8743c5a235bd41c4db4808b7947f2fc))
+* **db:** version-aware mounts and legacy image pins ([053a523](https://github.com/SSujitX/docklift/commit/053a52375f4fa96ae2e8b67ca4cd7dfde69669f2))
+* **frontend:** add account menu ([0b76f2e](https://github.com/SSujitX/docklift/commit/0b76f2ea2a6e0c9bb24245ff251ed7c1506a55a5))
+* **frontend:** add project quick actions ([87653ba](https://github.com/SSujitX/docklift/commit/87653babfb49b27065e04ab3b5d4de60c9eb6f1a))
+* **frontend:** add project resource cell ([465a9b3](https://github.com/SSujitX/docklift/commit/465a9b3a9a17b5f75da9853b66ce7ab5e272ebf8))
+* **frontend:** adjust app shell chrome ([e9a0990](https://github.com/SSujitX/docklift/commit/e9a09906a92151c115de9d00c321d978c1fb0875))
+* **frontend:** align new project create flow ([1b7a9fb](https://github.com/SSujitX/docklift/commit/1b7a9fbb383a388c7d9a13f83501cdfd5831fceb))
+* **frontend:** allow full-height log viewer ([3e2aaab](https://github.com/SSujitX/docklift/commit/3e2aaabaaa06577910958d7607cf07f121b50ee2))
+* **frontend:** compact project action bar ([954033d](https://github.com/SSujitX/docklift/commit/954033d59bc080c31e33b307044ab8d67628ec23))
+* **frontend:** database tabs and deploy log select ([814e74f](https://github.com/SSujitX/docklift/commit/814e74fc8990679ae00c188f01d9696c03e62a5d))
+* **frontend:** denser operate sidebar ([482d22c](https://github.com/SSujitX/docklift/commit/482d22cc6f975a112b33234354ce5538b78888be))
+* **frontend:** fill viewport for system logs ([a98a535](https://github.com/SSujitX/docklift/commit/a98a53574be91f2920258d32ae1c0342e23e0a23))
+* **frontend:** fill viewport for terminal ([1356eea](https://github.com/SSujitX/docklift/commit/1356eead9e919e2e3016f2aba025af08db7646b1))
+* **frontend:** harden file editor save flow ([141146d](https://github.com/SSujitX/docklift/commit/141146d02a02d4abdd2b09fa8c0bba0511247861))
+* **frontend:** improve attach database panel ([8790694](https://github.com/SSujitX/docklift/commit/87906941883cf7025d8c189d85319dc4ca952235))
+* **frontend:** include databases in palette ([c9693c5](https://github.com/SSujitX/docklift/commit/c9693c5a2f0f403c9ae3e88007cb2b2f998a5982))
+* **frontend:** one-viewport logs page ([5d23071](https://github.com/SSujitX/docklift/commit/5d230710275829e331edf6918049acd18da8c442))
+* **frontend:** one-viewport ports page ([2475f6e](https://github.com/SSujitX/docklift/commit/2475f6ec00f6af0cc6503cdef3a64390c65bc728))
+* **frontend:** one-viewport terminal page ([0cefca2](https://github.com/SSujitX/docklift/commit/0cefca2f16896b9ad9001b1bbfd33ec7bf56be68))
+* **frontend:** polish service switcher ([dae9af1](https://github.com/SSujitX/docklift/commit/dae9af1e89a7f534e0d23ea772661d26a3ff6acb))
+* **frontend:** polish sidebar status ([451519b](https://github.com/SSujitX/docklift/commit/451519b1c3a45c292b692303693774ac0f8b351b))
+* **frontend:** projects-style databases list ([d2a32c7](https://github.com/SSujitX/docklift/commit/d2a32c7f7109e629b5d4db6704066bca7bce7717))
+* **frontend:** raise toast provider ([9921351](https://github.com/SSujitX/docklift/commit/9921351d660c346963b9ade7168e4943250a6061))
+* **frontend:** responsive projects dashboard ([4b26d22](https://github.com/SSujitX/docklift/commit/4b26d2298ca1680aa338d8cc6fb8e8dc58109d2d))
+* **frontend:** route docs externally and operate pages ([ce268da](https://github.com/SSujitX/docklift/commit/ce268da7177766744472bfb4f9fd5f02efd0f124))
+* **frontend:** settings nav from shared ids ([495acc2](https://github.com/SSujitX/docklift/commit/495acc2a8a7909450a4eb6910eb980532bcf286e))
+* **frontend:** share settings nav ids ([76d342f](https://github.com/SSujitX/docklift/commit/76d342f4e9508af90d3e2115f07dbee3d1077fca))
+* **frontend:** strengthen global toasts ([2a3603b](https://github.com/SSujitX/docklift/commit/2a3603ba987c764482bf06bf8d19f8cefb31b593))
+* **frontend:** support tag refs in branch selector ([c9cc81a](https://github.com/SSujitX/docklift/commit/c9cc81a8b10831c979e3916483323a9e59d95eca))
+* **frontend:** update shell navigation ([c94c800](https://github.com/SSujitX/docklift/commit/c94c8007b714300f920d297e0970c28b33e42cde))
+* **frontend:** version picker on new database ([fbcd5f9](https://github.com/SSujitX/docklift/commit/fbcd5f99c2048105a3e8e041881dedf7270b7620))
+* **frontend:** wire account menu in top bar ([e9385c5](https://github.com/SSujitX/docklift/commit/e9385c5a0ae8dc537604570772cb018ea390b0c7))
+* **github:** improve branch and tag listing ([c1247f4](https://github.com/SSujitX/docklift/commit/c1247f4d0b8d7bf31195bbef851c36e05dfb8051))
+* **ports:** expose private running projects ([9be11d3](https://github.com/SSujitX/docklift/commit/9be11d3abcfe6d5a8111f31312ce8b496212b1af))
+
 ## [2.0.11](https://github.com/SSujitX/docklift/compare/v2.0.10...v2.0.11) (2026-07-25)
 
 
