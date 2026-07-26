@@ -1026,6 +1026,37 @@ export async function getInstallationIdForRepo(owner: string, repo: string): Pro
   throw new Error(`Could not find installation for ${owner}/${repo}: ${response.status} ${text}`);
 }
 
+async function githubRepoApiHeaders(
+  owner: string,
+  repoName: string,
+  type: unknown,
+): Promise<{ headers: Record<string, string>; fatal?: { status: number; error: string } }> {
+  let headers: Record<string, string> = {
+    Accept: 'application/vnd.github+json',
+    'X-GitHub-Api-Version': '2022-11-28',
+    'User-Agent': 'Docklift-App',
+  };
+
+  try {
+    const installationId = await getInstallationIdForRepo(owner, repoName);
+    const token = await getInstallationToken(installationId);
+    headers = { ...headers, Authorization: `token ${token}` };
+  } catch (err) {
+    console.warn(`Could not resolve installation for ${owner}/${repoName}:`, err);
+    if (type === 'private') {
+      return {
+        headers,
+        fatal: {
+          status: 403,
+          error: 'Access denied: Could not verify GitHub App installation for this repository.',
+        },
+      };
+    }
+  }
+
+  return { headers };
+}
+
 // GET /branches - List branches for a repository
 router.get('/branches', async (req: Request, res: Response) => {
   try {
@@ -1040,29 +1071,14 @@ router.get('/branches', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Invalid repo format. Expected owner/name' });
     }
 
-    let url = `${GITHUB_API_URL}/repos/${repo}/branches`;
-    let headers: Record<string, string> = {
-      Accept: 'application/vnd.github+json',
-      'X-GitHub-Api-Version': '2022-11-28',
-      'User-Agent': 'Docklift-App'
-    };
-
-    // If private/app repository, try to get a token
-    // We try to find the installation ID dynamically for this repo
-    try {
-      const installationId = await getInstallationIdForRepo(owner, repoName);
-      const token = await getInstallationToken(installationId);
-      headers = { ...headers, Authorization: `token ${token}` };
-    } catch (err) {
-      // Fallback: If public repo, we might not need auth, or we might fail. 
-      // But if 'type' is private, this failure is fatal.
-      console.warn(`Could not resolve installation for ${repo}:`, err);
-      if (type === 'private') {
-         return res.status(403).json({ error: 'Access denied: Could not verify GitHub App installation for this repository.' });
-      }
+    const auth = await githubRepoApiHeaders(owner, repoName, type);
+    if (auth.fatal) {
+      return res.status(auth.fatal.status).json({ error: auth.fatal.error });
     }
 
-    const response = await fetch(url, { headers });
+    const response = await fetch(`${GITHUB_API_URL}/repos/${repo}/branches?per_page=100`, {
+      headers: auth.headers,
+    });
 
     if (!response.ok) {
       if (response.status === 404) return res.status(404).json({ error: 'Repository not found' });
@@ -1075,6 +1091,51 @@ router.get('/branches', async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error('Failed to fetch branches:', error);
     res.status(500).json({ error: error.message || 'Failed to fetch branches' });
+  }
+});
+
+// GET /tags - List git tags (newest-first; up to 500)
+router.get('/tags', async (req: Request, res: Response) => {
+  try {
+    const { repo, type } = req.query;
+
+    if (!repo || typeof repo !== 'string') {
+      return res.status(400).json({ error: 'Repo parameter is required (owner/name)' });
+    }
+
+    const [owner, repoName] = repo.split('/');
+    if (!owner || !repoName) {
+      return res.status(400).json({ error: 'Invalid repo format. Expected owner/name' });
+    }
+
+    const auth = await githubRepoApiHeaders(owner, repoName, type);
+    if (auth.fatal) {
+      return res.status(auth.fatal.status).json({ error: auth.fatal.error });
+    }
+
+    const tags: string[] = [];
+    for (let page = 1; page <= 5; page++) {
+      const response = await fetch(
+        `${GITHUB_API_URL}/repos/${repo}/tags?per_page=100&page=${page}`,
+        { headers: auth.headers },
+      );
+
+      if (!response.ok) {
+        if (response.status === 404) return res.status(404).json({ error: 'Repository not found' });
+        if (response.status === 403) return res.status(403).json({ error: 'Rate limit exceeded or access denied' });
+        throw new Error(`GitHub API Error: ${response.statusText}`);
+      }
+
+      const batch = (await response.json()) as { name: string }[];
+      tags.push(...batch.map((t) => t.name));
+      if (batch.length < 100) break;
+    }
+
+    // GitHub returns tags newest-first; keep that order for the UI.
+    res.json(tags);
+  } catch (error: any) {
+    console.error('Failed to fetch tags:', error);
+    res.status(500).json({ error: error.message || 'Failed to fetch tags' });
   }
 });
 
