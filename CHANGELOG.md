@@ -1,3 +1,28 @@
+## [2.0.13](https://github.com/SSujitX/docklift/compare/v2.0.12...v2.0.13) (2026-07-26)
+
+
+### Bug Fixes
+
+* **shell:** size collapsed new-project like logo ([4df7e52](https://github.com/SSujitX/docklift/commit/4df7e52edac8c095b7177dd10934001f0689f22c))
+
+
+### Features
+
+* **domain:** paste urls to bare hostnames ([c8ba282](https://github.com/SSujitX/docklift/commit/c8ba2823c7478b7d76d7e7273b944ad3dffda134))
+* **domains:** add panel domain card ([cb37563](https://github.com/SSujitX/docklift/commit/cb37563afc4bdb1cd9a839e2455e9a99cac664ca))
+* **domains:** add panel ssl events and dns-check ([b562a39](https://github.com/SSujitX/docklift/commit/b562a39590dfe7ab0f147220fa1352632d83363d))
+* **domains:** clean pasted hostnames on add ([e1e9c4e](https://github.com/SSujitX/docklift/commit/e1e9c4e76d112106e1b9eec7d1f11409fa90c3b3))
+* **domains:** simplify dns guide without accordion ([8870208](https://github.com/SSujitX/docklift/commit/887020854790d233d1bdcf213f21640dfc16579f))
+* **frontend:** use singular domain tab label ([723978a](https://github.com/SSujitX/docklift/commit/723978ab11f35a86799ad27654a6b1d246c38ee5))
+* **settings:** match project domain panel ux ([3951cbe](https://github.com/SSujitX/docklift/commit/3951cbe1a92896a9f52480a14580d246ae324887))
+* **shell:** avatar menu with copyable email ([7017cdf](https://github.com/SSujitX/docklift/commit/7017cdf85e97d8d0e5ac77f7dcd09f359b9dd2fa))
+* **website:** add changelog nav and disable html ([a0ffcb9](https://github.com/SSujitX/docklift/commit/a0ffcb9202ef9cc54514b3ed1e373f1bc3699cef))
+* **website:** add homepage changelog preview ([555674a](https://github.com/SSujitX/docklift/commit/555674a8dc2d7252da4ff3367afbed69830a090c))
+* **website:** load changelog releases for homepage ([1ae2620](https://github.com/SSujitX/docklift/commit/1ae2620ebe29b3543f4726fdbc5ccab8bc9e7514))
+* **website:** register changelog preview component ([4056b4f](https://github.com/SSujitX/docklift/commit/4056b4f467610eada09287217b5b4974d711a49a))
+* **website:** show changelog preview on home ([da1c536](https://github.com/SSujitX/docklift/commit/da1c5365f8970b76e24392081d7dba46d9f9132c))
+* **website:** sync changelog from repo root ([0397293](https://github.com/SSujitX/docklift/commit/03972937ded8c7308acba5a70d0b1fe07db29649))
+
 ## [2.0.12](https://github.com/SSujitX/docklift/compare/v2.0.11...v2.0.12) (2026-07-26)
 
 
