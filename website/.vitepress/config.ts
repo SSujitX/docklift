@@ -5,6 +5,7 @@ const guide = [
   { text: "Introduction", link: "/guide/introduction" },
   { text: "Installation", link: "/guide/installation" },
   { text: "Useful Commands", link: "/guide/commands" },
+  { text: "Changelog", link: "/changelog" },
 ];
 
 const deploy = [
@@ -36,6 +37,8 @@ export default defineConfig({
   cleanUrls: true,
   lastUpdated: true,
   ignoreDeadLinks: true,
+  // Changelog commit text is untrusted enough that raw HTML must not render site-wide.
+  markdown: { html: false },
   head: [
     ["link", { rel: "icon", href: "/favicon.svg" }],
     ["meta", { name: "theme-color", content: "#0891b2" }],
@@ -61,6 +64,7 @@ export default defineConfig({
     nav: [
       { text: "Quick Start", link: "/guide/quick-start" },
       { text: "Commands", link: "/guide/commands" },
+      { text: "Changelog", link: "/changelog" },
       { text: "Install", link: "/guide/installation" },
       {
         text: "GitHub",
