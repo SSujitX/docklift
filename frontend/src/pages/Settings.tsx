@@ -7,15 +7,17 @@ import { useShell } from "@/components/shell/ShellContext";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Server, Network, Container, Info, Loader2, Check, X, Sparkles, Globe, Plus, Trash2, ExternalLink, Copy, AlertTriangle, Lock, ShieldCheck, KeyRound, Mail, UserCircle, HardDrive, Download, RotateCcw, Archive, Upload, FileUp, SlidersHorizontal } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Server, Network, Container, Info, Loader2, Check, X, Sparkles, Globe, Plus, Trash2, Copy, AlertTriangle, Lock, ShieldCheck, KeyRound, Mail, UserCircle, HardDrive, Download, RotateCcw, Archive, Upload, FileUp, SlidersHorizontal } from "lucide-react";
 import { GithubIcon } from "@/components/icons/GithubIcon";
 import { toast } from "sonner";
 import { API_URL, copyToClipboard } from "@/lib/utils";
 import { GitHubConnect } from "@/components/GitHubConnect";
 import { authFetch, startGithubInstallAndNavigate } from "@/lib/auth";
 import { useAuth } from "@/components/AuthProvider";
-import { SslStatusBadge, type SslInfo } from "@/components/SslStatusBadge";
+import type { SslInfo } from "@/components/SslStatusBadge";
+import { DnsGuideCard } from "@/components/domains/DnsGuideCard";
+import { PanelDomainCard } from "@/components/domains/PanelDomainCard";
 import { consumeProgressStream } from "@/lib/streamProgress";
 import { SETTINGS_TAB_IDS, settingsSectionLabel } from "@/lib/settingsNav";
 
@@ -68,18 +70,9 @@ function SettingsContent() {
   // Domain State
   const [domains, setDomains] = useState<DomainConfig[]>([]);
   const [loadingDomains, setLoadingDomains] = useState(false);
-  const [showAddDomain, setShowAddDomain] = useState(false);
-  const [newDomain, setNewDomain] = useState({ domain: '', port: '8080' });
-  const [addingDomain, setAddingDomain] = useState(false);
   const [serverIP, setServerIP] = useState<string>('...');
   const [acmeEmail, setAcmeEmail] = useState('');
   const [savingAcmeEmail, setSavingAcmeEmail] = useState(false);
-  const [retryingSslDomain, setRetryingSslDomain] = useState<string | null>(null);
-  
-  // Delete Confirmation State
-  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
-  const [domainToDelete, setDomainToDelete] = useState<string | null>(null);
-  const [deletingDomain, setDeletingDomain] = useState(false);
 
   // Backup State
   const [backups, setBackups] = useState<BackupInfo[]>([]);
@@ -217,23 +210,28 @@ function SettingsContent() {
     }
   };
 
-  const fetchDomains = async () => {
-    setLoadingDomains(true);
+  const fetchDomains = async (opts?: { silent?: boolean }): Promise<boolean> => {
+    if (!opts?.silent) setLoadingDomains(true);
     try {
       const res = await authFetch(`${API_URL}/api/domains`);
       if (res.ok) {
         const data = await res.json();
         setDomains(data);
+      } else {
+        if (!opts?.silent) toast.error("Failed to load domains");
+        return false;
       }
       const emailRes = await authFetch(`${API_URL}/api/domains/ssl/email`);
       if (emailRes.ok) {
         const emailData = await emailRes.json();
         setAcmeEmail(emailData.email || '');
       }
+      return true;
     } catch (error) {
-      toast.error("Failed to load domains");
+      if (!opts?.silent) toast.error("Failed to load domains");
+      return false;
     } finally {
-      setLoadingDomains(false);
+      if (!opts?.silent) setLoadingDomains(false);
     }
   };
 
@@ -252,94 +250,6 @@ function SettingsContent() {
       toast.error(error.message);
     } finally {
       setSavingAcmeEmail(false);
-    }
-  };
-
-  const handleRetryPanelSsl = async (domain: string) => {
-    setRetryingSslDomain(domain);
-    try {
-      const res = await authFetch(`${API_URL}/api/domains/${encodeURIComponent(domain)}/ssl/retry`, {
-        method: "POST",
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "SSL retry failed");
-      if (data.ssl?.status === "active" || data.ssl?.status === "expiring") {
-        toast.success(`HTTPS active for ${domain}`);
-      } else {
-        toast.error(data.ssl?.error || `SSL status: ${data.ssl?.status || "failed"}`);
-      }
-      fetchDomains();
-    } catch (error: any) {
-      toast.error(error.message);
-    } finally {
-      setRetryingSslDomain(null);
-    }
-  };
-
-  const handleAddDomain = async () => {
-    if (!newDomain.domain) {
-      toast.error("Please enter a domain name");
-      return;
-    }
-
-    const port = newDomain.port || '8080';
-
-    setAddingDomain(true);
-    try {
-      const res = await authFetch(`${API_URL}/api/domains`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          domain: newDomain.domain,
-          port: parseInt(port)
-        })
-      });
-
-      const data = await res.json();
-      
-      if (!res.ok) throw new Error(data.error || "Failed to add domain");
-
-      if (data.ssl?.status === "active" || data.ssl?.status === "expiring") {
-        toast.success(`Domain ${newDomain.domain} added — HTTPS active`);
-      } else if (data.ssl?.status === "failed" || data.ssl?.status === "pending") {
-        toast.message(`Domain added — SSL: ${data.ssl.status}`, {
-          description: data.ssl?.error || "Check DNS A record points to this server, then Retry SSL.",
-        });
-      } else {
-        toast.success(`Domain ${newDomain.domain} added successfully`);
-      }
-      setShowAddDomain(false);
-      setNewDomain({ domain: '', port: '8080' });
-      fetchDomains();
-    } catch (error: any) {
-      toast.error(error.message);
-    } finally {
-      setAddingDomain(false);
-    }
-  };
-
-  const handleDeleteDomain = (domain: string) => {
-    setDomainToDelete(domain);
-    setIsDeleteConfirmOpen(true);
-  };
-
-  const confirmDeleteDomain = async () => {
-    if (!domainToDelete) return;
-
-    setDeletingDomain(true);
-    try {
-      const res = await authFetch(`${API_URL}/api/domains/${domainToDelete}`, {
-        method: "DELETE",
-      });
-      
-      if (!res.ok) throw new Error("Failed to delete domain");
-      
-      toast.success("Domain removed");
-      setIsDeleteConfirmOpen(false);
-      setDomainToDelete(null);
-      fetchDomains();
-    } finally {
-      setDeletingDomain(false);
     }
   };
 
@@ -1072,195 +982,64 @@ function SettingsContent() {
               </div>
             )}
 
-            {/* Domain Tab */}
+            {/* Domain Tab — same layout/copy as project Domain (guide + card + activity) */}
             {activeTab === 'domain' && (
               <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <Card className="p-4 sm:p-6 border-indigo-500/20">
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 sm:p-3 rounded-xl bg-indigo-500/10 shrink-0">
-                        <Globe className="h-5 w-5 sm:h-6 sm:w-6 text-indigo-500" />
-                      </div>
-                      <div className="min-w-0">
-                        <h2 className="text-lg sm:text-xl font-semibold">Server Domain</h2>
-                        <p className="text-xs sm:text-sm text-muted-foreground">
-                          Custom domain + automatic Let&apos;s Encrypt HTTPS. After Active, set Cloudflare to Full (strict).
-                        </p>
-                      </div>
-                    </div>
-                    
-                    <Dialog open={showAddDomain} onOpenChange={setShowAddDomain}>
-                      <DialogTrigger asChild>
-                        <Button className="bg-indigo-600 hover:bg-indigo-700 w-full sm:w-auto shrink-0">
-                          <Plus className="h-4 w-4 mr-2" />
-                          Add Domain
-                        </Button>
-                      </DialogTrigger>
-                      <DialogContent>
-                        <DialogHeader>
-                          <DialogTitle>Add Server Domain</DialogTitle>
-                          <DialogDescription>
-                            Map a custom domain to this Docklift panel. Create the DNS records below before adding.
-                          </DialogDescription>
-                        </DialogHeader>
-                        
-                        {/* DNS Instructions */}
-                        <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-sm space-y-2">
-                          <p className="font-medium text-amber-600 dark:text-amber-400">DNS Setup Required</p>
-                          <p className="text-muted-foreground">
-                            Point DNS at this server IP:{' '}
-                            <code className="bg-secondary px-1.5 py-0.5 rounded font-mono font-semibold text-foreground">
-                              {serverIP && serverIP !== '...' && serverIP !== 'N/A' ? serverIP : 'Loading…'}
-                            </code>
-                          </p>
-                          <div className="font-mono text-xs bg-secondary/50 p-2 rounded space-y-1.5">
-                            <div className="grid grid-cols-3 gap-2 text-muted-foreground">
-                              <span>Type</span>
-                              <span>Host</span>
-                              <span>Value</span>
-                            </div>
-                            <div className="grid grid-cols-3 gap-2 font-bold">
-                              <span>A</span>
-                              <span>@ / panel / www</span>
-                              <span className="truncate">{serverIP && serverIP !== '...' ? serverIP : 'Your Server IP'}</span>
-                            </div>
-                          </div>
-                          <p className="text-xs text-muted-foreground">
-                            Create one record for the exact hostname entered below. The root domain and{' '}
-                            <code className="bg-secondary px-1 rounded">www</code> are separate; add each as its own
-                            domain mapping only when you want both.
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            Cloudflare: you can proxy (orange cloud); after SSL is Active, set SSL/TLS to Full (strict).
-                          </p>
-                        </div>
-                        <div className="space-y-4 py-4">
-                          <div className="space-y-2">
-                            <label className="text-sm font-medium">Domain Name</label>
-                            <Input 
-                              placeholder="panel.yourdomain.com" 
-                              value={newDomain.domain}
-                              onChange={(e) => setNewDomain({ ...newDomain, domain: e.target.value })}
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <label className="text-sm font-medium">Docklift Port</label>
-                            <Input 
-                              type="number" 
-                              placeholder="8080" 
-                              value={newDomain.port}
-                              onChange={(e) => setNewDomain({ ...newDomain, port: e.target.value })}
-                            />
-                            <p className="text-xs text-muted-foreground">Docklift runs on port 8080 by default. Change only if you modified it.</p>
-                          </div>
-                        </div>
-                        <DialogFooter>
-                          <Button variant="outline" onClick={() => setShowAddDomain(false)}>Cancel</Button>
-                          <Button onClick={handleAddDomain} disabled={addingDomain} className="bg-indigo-600 hover:bg-indigo-700">
-                            {addingDomain && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                            Add Mapping
-                          </Button>
-                        </DialogFooter>
-                      </DialogContent>
-                    </Dialog>
-                  </div>
+                <DnsGuideCard serverIP={serverIP} />
 
-                  <div className="mb-6 p-4 rounded-xl border border-border/50 bg-secondary/20 space-y-3">
-                    <label className="text-sm font-medium flex items-center gap-2">
-                      <Mail className="h-4 w-4" />
-                      Let&apos;s Encrypt / ACME email
-                      <span className="text-xs font-normal text-muted-foreground">(optional)</span>
-                    </label>
-                    <div className="flex flex-col sm:flex-row gap-2">
-                      <Input
-                        type="email"
-                        value={acmeEmail}
-                        onChange={(e) => setAcmeEmail(e.target.value)}
-                        placeholder="admin@example.com"
-                        className="flex-1"
-                      />
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={handleSaveAcmeEmail}
-                        disabled={savingAcmeEmail || !acmeEmail.includes("@")}
-                      >
-                        {savingAcmeEmail && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-                        Save
-                      </Button>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      Optional. Used for certificate expiry notices. If empty, Docklift uses your admin account email.
+                <Card className="border-border/50 p-4 sm:p-6">
+                  <label className="flex items-center gap-2 text-sm font-medium">
+                    <Mail className="h-4 w-4 text-muted-foreground" />
+                    Let&apos;s Encrypt / ACME email
+                    <span className="text-xs font-normal text-muted-foreground">(optional)</span>
+                  </label>
+                  <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                    <Input
+                      type="email"
+                      value={acmeEmail}
+                      onChange={(e) => setAcmeEmail(e.target.value)}
+                      placeholder="admin@example.com"
+                      className="flex-1"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => void handleSaveAcmeEmail()}
+                      disabled={savingAcmeEmail || !acmeEmail.includes("@")}
+                    >
+                      {savingAcmeEmail && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                      Save
+                    </Button>
+                  </div>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Optional. Used for certificate expiry notices. If empty, Docklift uses your admin account email.
+                  </p>
+                </Card>
+
+                <div className="space-y-3">
+                  <div>
+                    <h3 className="flex items-center gap-2 text-lg font-semibold tracking-tight sm:text-xl">
+                      <Globe className="h-5 w-5 text-muted-foreground" />
+                      Panel domain
+                    </h3>
+                    <p className="mt-1 text-xs text-muted-foreground sm:text-sm">
+                      Maps a hostname to this Docklift dashboard, wires the reverse proxy, and
+                      requests a certificate.
                     </p>
                   </div>
 
                   {loadingDomains ? (
                     <div className="flex justify-center p-8">
-                      <Loader2 className="h-8 w-8 animate-spin text-indigo-500" />
-                    </div>
-                  ) : domains.length > 0 ? (
-                    <div className="rounded-xl border border-border/50 overflow-hidden">
-                      <table className="w-full text-left text-sm">
-                        <thead className="bg-secondary/50 font-medium text-muted-foreground">
-                          <tr>
-                            <th className="px-4 py-3">Domain</th>
-                            <th className="px-4 py-3">SSL</th>
-                            <th className="px-4 py-3">Target Port</th>
-                            <th className="px-4 py-3 text-right">Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-border/50">
-                          {domains.map((d) => (
-                            <tr key={d.domain} className="hover:bg-secondary/20">
-                              <td className="px-4 py-3 font-medium">
-                                <a
-                                  href={`${d.ssl?.status === "active" || d.ssl?.status === "expiring" ? "https" : "http"}://${d.domain}`}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="flex items-center gap-2 hover:text-indigo-500 hover:underline"
-                                >
-                                  {d.domain}
-                                  <ExternalLink className="h-3 w-3 opacity-50" />
-                                </a>
-                              </td>
-                              <td className="px-4 py-3">
-                                <SslStatusBadge
-                                  ssl={d.ssl}
-                                  onRetry={() => handleRetryPanelSsl(d.domain)}
-                                  retrying={retryingSslDomain === d.domain}
-                                />
-                              </td>
-                              <td className="px-4 py-3 font-mono text-muted-foreground">{d.port}</td>
-                              <td className="px-4 py-3 text-right">
-                                <Button 
-                                  variant="ghost" 
-                                  size="sm" 
-                                  className="text-red-500 hover:text-red-600 hover:bg-red-500/10"
-                                  onClick={() => handleDeleteDomain(d.domain)}
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                      <Loader2 className="h-8 w-8 animate-spin text-brand" />
                     </div>
                   ) : (
-                    /* Empty State */
-                    <div className="rounded-xl border border-border/50 overflow-hidden">
-                      <div className="p-8 text-center bg-secondary/20">
-                        <div className="inline-flex items-center justify-center p-4 rounded-full bg-secondary/50 mb-4">
-                          <Globe className="h-8 w-8 text-muted-foreground/50" />
-                        </div>
-                        <h3 className="font-medium text-lg mb-1">No Server Domain Configured</h3>
-                        <p className="text-muted-foreground text-sm max-w-sm mx-auto mb-4">
-                          Access your Docklift panel using a custom domain like <strong>panel.yourdomain.com</strong> instead of IP:Port.
-                        </p>
-                      </div>
-                    </div>
+                    <PanelDomainCard
+                      domains={domains}
+                      serverIP={serverIP}
+                      onUpdate={() => fetchDomains({ silent: true })}
+                    />
                   )}
-                </Card>
+                </div>
               </div>
             )}
 
@@ -1588,39 +1367,6 @@ function SettingsContent() {
 
         </div>
       </div>
-
-      {/* Delete Domain Confirmation Dialog */}
-      <Dialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-red-500">
-              <AlertTriangle className="h-5 w-5" />
-              Remove Server Domain
-            </DialogTitle>
-            <DialogDescription className="pt-2">
-              Are you sure you want to remove <span className="font-mono font-bold text-foreground">{domainToDelete}</span>? 
-              This will stop access to the Docklift panel through this domain.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="outline" onClick={() => setIsDeleteConfirmOpen(false)}>
-              Cancel
-            </Button>
-            <Button 
-              variant="destructive"
-              onClick={confirmDeleteDomain}
-              disabled={deletingDomain}
-            >
-              {deletingDomain ? (
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              ) : (
-                <Trash2 className="h-4 w-4 mr-2" />
-              )}
-              Remove Domain
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Delete Backup Confirmation Dialog */}
       <Dialog open={showDeleteBackupConfirm} onOpenChange={setShowDeleteBackupConfirm}>
