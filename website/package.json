@@ -3,6 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "sync:changelog": "node scripts/sync-changelog.mjs",
+    "predev": "node scripts/sync-changelog.mjs",
+    "prebuild": "node scripts/sync-changelog.mjs",
     "dev": "vitepress dev",
     "build": "vitepress build",
     "preview": "vitepress preview"
