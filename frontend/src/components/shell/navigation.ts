@@ -32,8 +32,13 @@ export interface NavItem {
   href: string;
   icon: IconComponent;
   description: string;
-  /** Only highlight on an exact path match (used for the "/" root). */
-  exact?: boolean;
+  /**
+   * Path prefixes that keep this rail item selected (section pages).
+   * Default: the item `href` (and nested paths under it).
+   * Use for sections whose list URL differs from nested URLs (e.g. Projects
+   * list is `/` but create/detail are `/projects/*`).
+   */
+  section?: string[];
   /** Opens outside the app shell (e.g. docs site). */
   external?: boolean;
   /** Collapsible tree children (e.g. Settings sections). */
@@ -54,19 +59,23 @@ export const navGroups: NavGroup[] = [
         href: "/",
         icon: LayoutGrid,
         description: "Every application you deploy",
-        exact: true,
+        // List is `/`; create + detail live under `/projects/*`.
+        section: ["/", "/projects"],
       },
       {
         label: "Databases",
         href: "/databases",
         icon: Database,
         description: "Managed data services",
+        // List + `/databases/new` (and future `/databases/:id`).
+        section: ["/databases"],
       },
       {
         label: "Ports",
         href: "/ports",
         icon: Anchor,
         description: "Allocated and free host ports",
+        section: ["/ports"],
       },
     ],
   },
@@ -78,18 +87,21 @@ export const navGroups: NavGroup[] = [
         href: "/system",
         icon: Gauge,
         description: "CPU, memory and disk pressure",
+        section: ["/system"],
       },
       {
         label: "Logs",
         href: "/logs",
         icon: ScrollText,
         description: "Live output from every service",
+        section: ["/logs"],
       },
       {
         label: "Terminal",
         href: "/terminal",
         icon: SquareTerminal,
         description: "Interactive shell on the server",
+        section: ["/terminal"],
       },
     ],
   },
@@ -101,6 +113,7 @@ export const navGroups: NavGroup[] = [
         href: "/settings",
         icon: Settings,
         description: "Account, domains and integrations",
+        section: ["/settings"],
         children: SETTINGS_SECTIONS.map((section) => ({
           label: section.label,
           href: settingsHref(section.id),
@@ -121,20 +134,24 @@ export const navGroups: NavGroup[] = [
 
 export const navItems: NavItem[] = navGroups.flatMap((group) => group.items);
 
+/** True when `pathname` is exactly `prefix` or nested under it. */
+function pathInSection(pathname: string, prefix: string): boolean {
+  if (prefix === "/") return pathname === "/";
+  return pathname === prefix || pathname.startsWith(`${prefix}/`);
+}
+
+/**
+ * Highlight a rail item for its whole section (list + nested create/detail),
+ * not only the exact `href`.
+ */
 export function isNavActive(pathname: string, item: NavItem): boolean {
-  if (item.exact) return pathname === item.href;
-  return pathname === item.href || pathname.startsWith(`${item.href}/`);
+  const prefixes = item.section?.length ? item.section : [item.href];
+  return prefixes.some((prefix) => pathInSection(pathname, prefix));
 }
 
 /** The nav entry that owns the current URL, including nested pages. */
 export function activeNavItem(pathname: string): NavItem | undefined {
-  const direct = navItems.find((item) => isNavActive(pathname, item));
-  if (direct) return direct;
-  // Project pages live under the Projects entry even though their paths differ.
-  if (pathname.startsWith("/projects")) {
-    return navItems.find((item) => item.href === "/");
-  }
-  return undefined;
+  return navItems.find((item) => isNavActive(pathname, item));
 }
 
 const segmentLabels: Record<string, string> = {
