@@ -35,8 +35,6 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { PageHeader } from "@/components/shell/PageHeader";
-
 interface SystemStats {
   cpu: {
     usage: number;
@@ -237,13 +235,20 @@ function CircularProgress({
           className="transition-all duration-500 ease-out"
         />
       </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="text-2xl font-bold">{value.toFixed(1)}%</span>
-        <span className="text-xs text-muted-foreground font-medium">
+      <div className="absolute inset-0 flex flex-col items-center justify-center px-1">
+        <span
+          className={cn(
+            "font-bold tabular-nums",
+            size < 110 ? "text-lg" : "text-2xl"
+          )}
+        >
+          {value.toFixed(1)}%
+        </span>
+        <span className="text-[10px] font-medium text-muted-foreground sm:text-xs">
           {label}
         </span>
         {sublabel && (
-          <span className="text-[10px] text-muted-foreground/70">
+          <span className="max-w-full truncate text-[9px] text-muted-foreground/70 sm:text-[10px]">
             {sublabel}
           </span>
         )}
@@ -352,32 +357,40 @@ export function SystemOverview() {
 
   if (loading) {
     return (
-      <div className="space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {[1, 2, 3].map((i) => (
+      <div className="space-y-4 sm:space-y-5">
+        <div className="flex items-center gap-2.5 sm:gap-3">
+          <div className="h-9 w-9 shrink-0 rounded-xl bg-card border border-border shimmer sm:h-10 sm:w-10 sm:rounded-2xl" />
+          <div className="min-w-0 flex-1 space-y-2">
+            <div className="h-5 w-28 rounded-md bg-card border border-border shimmer" />
+            <div className="h-3 w-48 max-w-full rounded-md bg-card border border-border shimmer" />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-4">
+          {[1, 2, 3, 4].map((i) => (
             <div
               key={i}
-              className="h-52 rounded-2xl bg-card border border-border shimmer"
+              className="h-44 rounded-xl bg-card border border-border shimmer sm:h-52 sm:rounded-2xl"
             />
           ))}
         </div>
+        <div className="h-64 rounded-xl bg-card border border-border shimmer sm:rounded-2xl" />
       </div>
     );
   }
 
   if (error || !stats) {
     return (
-      <div className="flex flex-col items-center justify-center py-16">
-        <div className="p-4 rounded-2xl bg-destructive/10 border border-destructive/20 mb-4">
+      <div className="flex flex-col items-center justify-center py-12 sm:py-16">
+        <div className="mb-4 rounded-2xl border border-destructive/20 bg-destructive/10 p-4">
           <Server className="h-8 w-8 text-destructive" />
         </div>
-        <h3 className="text-lg font-semibold mb-2">
+        <h3 className="mb-2 text-lg font-semibold">
           Unable to fetch system stats
         </h3>
-        <p className="text-muted-foreground text-sm mb-4">{error}</p>
+        <p className="mb-4 text-sm text-muted-foreground">{error}</p>
         <button
           onClick={fetchStats}
-          className="px-4 py-2 rounded-lg bg-secondary hover:bg-secondary/80 text-sm font-medium flex items-center gap-2 transition-colors"
+          className="flex items-center gap-2 rounded-lg bg-secondary px-4 py-2 text-sm font-medium transition-colors hover:bg-secondary/80"
         >
           <RefreshCw className="h-4 w-4" />
           Retry
@@ -387,52 +400,63 @@ export function SystemOverview() {
   }
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        eyebrow="Operate"
-        title="System Overview"
-        description={`Real-time server statistics · Updated ${lastUpdate ? lastUpdate.toLocaleTimeString() : "now"}`}
-        icon={Gauge}
-        className="mb-0"
-        actions={
-          <>
-            <button
-              onClick={() => setShowPurgeDialog(true)}
-              disabled={purging}
-              className={cn(
-                "flex items-center gap-2 px-4 py-2 rounded-xl border text-xs font-bold transition-all active:scale-95 shadow-sm",
-                purging
-                  ? "bg-rose-500/10 text-rose-500/30 border-rose-500/20 cursor-not-allowed"
-                  : "bg-background hover:bg-rose-500/5 text-rose-500 border-rose-500/20 hover:border-rose-500/40"
-              )}
-            >
-              {purging ? (
-                <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Trash2 className="h-3.5 w-3.5" />
-              )}
-              Purge Server
-            </button>
-
-            <button
-              onClick={fetchStats}
-              className="p-2.5 rounded-xl bg-secondary/50 hover:bg-secondary border border-border/50 transition-all active:scale-95 text-muted-foreground hover:text-foreground"
-            >
-              <RefreshCw className="h-4 w-4" />
-            </button>
-          </>
-        }
-      />
+    <div className="space-y-4 sm:space-y-5">
+      {/* Compact title row — matches Operate pages; page still scrolls */}
+      <div className="flex items-start justify-between gap-3 sm:items-center">
+        <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-brand/20 bg-brand/10 sm:h-10 sm:w-10 sm:rounded-2xl">
+            <Gauge className="h-4 w-4 text-brand sm:h-[1.125rem] sm:w-[1.125rem]" />
+          </span>
+          <div className="min-w-0">
+            <h1 className="truncate text-lg font-bold tracking-tight sm:text-xl">
+              System
+            </h1>
+            <p className="truncate text-[11px] text-muted-foreground sm:text-xs">
+              Live host metrics · Updated{" "}
+              {lastUpdate ? lastUpdate.toLocaleTimeString() : "now"}
+            </p>
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+          <button
+            onClick={() => setShowPurgeDialog(true)}
+            disabled={purging}
+            title="Purge dangling images"
+            className={cn(
+              "inline-flex h-9 items-center gap-1.5 rounded-xl border px-2.5 text-xs font-bold transition-all active:scale-95 sm:h-10 sm:gap-2 sm:px-3.5",
+              purging
+                ? "cursor-not-allowed border-rose-500/20 bg-rose-500/10 text-rose-500/30"
+                : "border-rose-500/20 bg-background text-rose-500 hover:border-rose-500/40 hover:bg-rose-500/5"
+            )}
+          >
+            {purging ? (
+              <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Trash2 className="h-3.5 w-3.5" />
+            )}
+            <span className="hidden sm:inline">Purge</span>
+          </button>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={fetchStats}
+            title="Refresh stats"
+            className="h-9 w-9 shrink-0 border-border/60 bg-background hover:bg-secondary/80 sm:h-10 sm:w-10"
+          >
+            <RefreshCw className="h-4 w-4 text-muted-foreground" />
+          </Button>
+        </div>
+      </div>
 
       {/* Main Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-4">
         {/* CPU Card */}
-        <div className="p-6 rounded-2xl bg-card border border-border/50 shadow-sm">
-          <div className="flex items-center gap-2 mb-4">
-            <div className="p-2 rounded-lg bg-cyan-500/10">
-              <Cpu className="h-4 w-4 text-cyan-500" />
+        <div className="rounded-xl border border-border/50 bg-card p-3 shadow-sm sm:rounded-2xl sm:p-5">
+          <div className="mb-2.5 flex items-center gap-2 sm:mb-3">
+            <div className="rounded-lg bg-cyan-500/10 p-1.5 sm:p-2">
+              <Cpu className="h-3.5 w-3.5 text-cyan-500 sm:h-4 sm:w-4" />
             </div>
-            <h3 className="font-semibold">CPU</h3>
+            <h3 className="text-sm font-semibold sm:text-base">CPU</h3>
           </div>
           <div className="flex justify-center">
             <CircularProgress
@@ -440,21 +464,22 @@ export function SystemOverview() {
               label="Usage"
               sublabel={`${stats.cpu.cores} cores`}
               color="cyan"
+              size={108}
             />
           </div>
-          <div className="mt-4 pt-4 border-t border-border/50 space-y-1.5">
+          <div className="mt-3 space-y-1 border-t border-border/50 pt-3 sm:mt-4 sm:space-y-1.5 sm:pt-4">
             <p
-              className="text-xs text-muted-foreground truncate"
+              className="truncate text-[10px] text-muted-foreground sm:text-xs"
               title={stats.cpu.model}
             >
               {stats.cpu.model}
             </p>
-            <div className="flex justify-between text-xs">
+            <div className="flex justify-between text-[10px] sm:text-xs">
               <span className="text-muted-foreground">Speed</span>
               <span className="font-medium">{stats.cpu.speed} GHz</span>
             </div>
             {stats.cpu.temperature && (
-              <div className="flex justify-between text-xs">
+              <div className="flex justify-between text-[10px] sm:text-xs">
                 <span className="text-muted-foreground">Temp</span>
                 <span className="font-medium">{stats.cpu.temperature}°C</span>
               </div>
@@ -463,12 +488,12 @@ export function SystemOverview() {
         </div>
 
         {/* Memory Card */}
-        <div className="p-6 rounded-2xl bg-card border border-border/50 shadow-sm">
-          <div className="flex items-center gap-2 mb-4">
-            <div className="p-2 rounded-lg bg-purple-500/10">
-              <CircuitBoard className="h-4 w-4 text-purple-500" />
+        <div className="rounded-xl border border-border/50 bg-card p-3 shadow-sm sm:rounded-2xl sm:p-5">
+          <div className="mb-2.5 flex items-center gap-2 sm:mb-3">
+            <div className="rounded-lg bg-purple-500/10 p-1.5 sm:p-2">
+              <CircuitBoard className="h-3.5 w-3.5 text-purple-500 sm:h-4 sm:w-4" />
             </div>
-            <h3 className="font-semibold">Memory</h3>
+            <h3 className="text-sm font-semibold sm:text-base">Memory</h3>
           </div>
           <div className="flex justify-center">
             <CircularProgress
@@ -478,16 +503,17 @@ export function SystemOverview() {
                 stats.memory.total
               )}`}
               color="purple"
+              size={108}
             />
           </div>
-          <div className="mt-4 pt-4 border-t border-border/50 space-y-1.5">
-            <div className="flex justify-between text-xs">
+          <div className="mt-3 space-y-1 border-t border-border/50 pt-3 sm:mt-4 sm:space-y-1.5 sm:pt-4">
+            <div className="flex justify-between text-[10px] sm:text-xs">
               <span className="text-muted-foreground">Total</span>
               <span className="font-medium">
                 {formatBytes(stats.memory.total)}
               </span>
             </div>
-            <div className="flex justify-between text-xs">
+            <div className="flex justify-between text-[10px] sm:text-xs">
               <span className="text-muted-foreground">Free</span>
               <span className="font-medium text-emerald-500">
                 {formatBytes(stats.memory.free)}
@@ -497,12 +523,12 @@ export function SystemOverview() {
         </div>
 
         {/* Primary Disk Card */}
-        <div className="p-6 rounded-2xl bg-card border border-border/50 shadow-sm">
-          <div className="flex items-center gap-2 mb-4">
-            <div className="p-2 rounded-lg bg-amber-500/10">
-              <HardDrive className="h-4 w-4 text-amber-500" />
+        <div className="rounded-xl border border-border/50 bg-card p-3 shadow-sm sm:rounded-2xl sm:p-5">
+          <div className="mb-2.5 flex items-center gap-2 sm:mb-3">
+            <div className="rounded-lg bg-amber-500/10 p-1.5 sm:p-2">
+              <HardDrive className="h-3.5 w-3.5 text-amber-500 sm:h-4 sm:w-4" />
             </div>
-            <h3 className="font-semibold">Storage</h3>
+            <h3 className="text-sm font-semibold sm:text-base">Storage</h3>
           </div>
           {stats.disk[0] && (
             <>
@@ -514,10 +540,11 @@ export function SystemOverview() {
                     stats.disk[0].total
                   )}`}
                   color="amber"
+                  size={108}
                 />
               </div>
-              <div className="mt-4 pt-4 border-t border-border/50 space-y-1.5">
-                <div className="flex justify-between text-xs">
+              <div className="mt-3 space-y-1 border-t border-border/50 pt-3 sm:mt-4 sm:space-y-1.5 sm:pt-4">
+                <div className="flex justify-between text-[10px] sm:text-xs">
                   <span className="text-muted-foreground">Type</span>
                   <span className="font-medium">
                     {stats.disk[0].type || "Unknown"}
@@ -534,34 +561,34 @@ export function SystemOverview() {
         </div>
 
         {/* Network Card */}
-        <div className="p-6 rounded-2xl bg-card border border-border/50 shadow-sm">
-          <div className="flex items-center gap-2 mb-4">
-            <div className="p-2 rounded-lg bg-emerald-500/10">
-              <Wifi className="h-4 w-4 text-emerald-500" />
+        <div className="rounded-xl border border-border/50 bg-card p-3 shadow-sm sm:rounded-2xl sm:p-5">
+          <div className="mb-2.5 flex items-center gap-2 sm:mb-3">
+            <div className="rounded-lg bg-emerald-500/10 p-1.5 sm:p-2">
+              <Wifi className="h-3.5 w-3.5 text-emerald-500 sm:h-4 sm:w-4" />
             </div>
-            <h3 className="font-semibold">Network</h3>
+            <h3 className="text-sm font-semibold sm:text-base">Network</h3>
           </div>
           <div className="flex justify-center">
-            <div className="w-[120px] h-[120px] rounded-full bg-secondary/50 border-4 border-secondary flex items-center justify-center">
-              <Activity className="h-10 w-10 text-emerald-500 animate-pulse" />
+            <div className="flex h-[108px] w-[108px] items-center justify-center rounded-full border-4 border-secondary bg-secondary/50">
+              <Activity className="h-8 w-8 animate-pulse text-emerald-500 sm:h-9 sm:w-9" />
             </div>
           </div>
-          <div className="mt-4 pt-4 border-t border-border/50 space-y-2">
-            <div className="flex items-center justify-between text-xs">
+          <div className="mt-3 space-y-1.5 border-t border-border/50 pt-3 sm:mt-4 sm:space-y-2 sm:pt-4">
+            <div className="flex items-center justify-between text-[10px] sm:text-xs">
               <div className="flex items-center gap-1.5 text-muted-foreground">
                 <ArrowDownToLine className="h-3 w-3 text-emerald-500" />
-                Download
+                Down
               </div>
-              <span className="font-medium">
+              <span className="font-medium tabular-nums">
                 {formatSpeed(stats.network.rxSpeed)}
               </span>
             </div>
-            <div className="flex items-center justify-between text-xs">
+            <div className="flex items-center justify-between text-[10px] sm:text-xs">
               <div className="flex items-center gap-1.5 text-muted-foreground">
                 <ArrowUpFromLine className="h-3 w-3 text-cyan-500" />
-                Upload
+                Up
               </div>
-              <span className="font-medium">
+              <span className="font-medium tabular-nums">
                 {formatSpeed(stats.network.txSpeed)}
               </span>
             </div>
@@ -570,63 +597,67 @@ export function SystemOverview() {
       </div>
 
       {/* Server Details - Full Width Two Column Layout */}
-      <div className="p-6 rounded-2xl bg-card border border-border/50 shadow-sm">
-        <div className="flex items-center justify-between mb-4">
+      <div className="rounded-xl border border-border/50 bg-card p-3 shadow-sm sm:rounded-2xl sm:p-5">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 sm:mb-4">
           <div className="flex items-center gap-2">
-            <div className="p-2 rounded-lg bg-rose-500/10">
-              <Server className="h-4 w-4 text-rose-500" />
+            <div className="rounded-lg bg-rose-500/10 p-1.5 sm:p-2">
+              <Server className="h-3.5 w-3.5 text-rose-500 sm:h-4 sm:w-4" />
             </div>
-            <h3 className="font-semibold">Server Details</h3>
+            <h3 className="text-sm font-semibold sm:text-base">Server Details</h3>
           </div>
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-gradient-to-r from-emerald-500/10 to-cyan-500/10 border border-emerald-500/20">
-            <Clock className="h-3.5 w-3.5" />
-            <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
-              Uptime: {stats.server.uptimeFormatted}
+          <div className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/20 bg-gradient-to-r from-emerald-500/10 to-cyan-500/10 px-2.5 py-1 sm:rounded-full sm:px-3 sm:py-1.5">
+            <Clock className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+            <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 sm:text-xs">
+              {stats.server.uptimeFormatted}
             </span>
           </div>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-0 text-sm">
+        <div className="grid grid-cols-1 gap-x-8 gap-y-0 text-xs sm:text-sm md:grid-cols-2">
           {/* Left Column */}
           <div className="space-y-0">
-            <div className="flex justify-between py-2 border-b border-border/30">
-              <span className="text-muted-foreground flex items-center gap-2">
+            <div className="flex items-center justify-between gap-3 border-b border-border/30 py-2">
+              <span className="flex shrink-0 items-center gap-2 text-muted-foreground">
                 <Monitor className="h-3.5 w-3.5" /> Hostname
               </span>
-              <span className="font-medium">{stats.server.hostname}</span>
-            </div>
-            <div className="flex justify-between py-2 border-b border-border/30">
-              <span className="text-muted-foreground flex items-center gap-2">
-                <Server className="h-3.5 w-3.5" /> Operating System
+              <span className="min-w-0 truncate text-right font-medium">
+                {stats.server.hostname}
               </span>
-              <span className="font-medium text-xs">
+            </div>
+            <div className="flex items-center justify-between gap-3 border-b border-border/30 py-2">
+              <span className="flex shrink-0 items-center gap-2 text-muted-foreground">
+                <Server className="h-3.5 w-3.5" /> OS
+              </span>
+              <span className="min-w-0 truncate text-right text-[11px] font-medium sm:text-xs">
                 {stats.server.distro || stats.server.platform}
               </span>
             </div>
-            <div className="flex justify-between py-2 border-b border-border/30">
-              <span className="text-muted-foreground flex items-center gap-2">
+            <div className="flex items-center justify-between gap-3 border-b border-border/30 py-2">
+              <span className="flex shrink-0 items-center gap-2 text-muted-foreground">
                 <Zap className="h-3.5 w-3.5" /> Kernel
               </span>
-              <span className="font-medium text-xs">{stats.server.kernel}</span>
+              <span className="min-w-0 truncate text-right text-[11px] font-medium sm:text-xs">
+                {stats.server.kernel}
+              </span>
             </div>
-            <div className="flex justify-between py-2 border-b border-border/30">
-              <span className="text-muted-foreground flex items-center gap-2">
-                <Gauge className="h-3.5 w-3.5" /> Architecture
+            <div className="flex items-center justify-between gap-3 border-b border-border/30 py-2">
+              <span className="flex shrink-0 items-center gap-2 text-muted-foreground">
+                <Gauge className="h-3.5 w-3.5" /> Arch
               </span>
               <span className="font-medium">{stats.server.arch}</span>
             </div>
-            <div className="flex justify-between py-2 border-b border-border/30">
-              <span className="text-muted-foreground flex items-center gap-2">
-                <Calendar className="h-3.5 w-3.5" /> Server Time
+            <div className="flex items-center justify-between gap-3 border-b border-border/30 py-2">
+              <span className="flex shrink-0 items-center gap-2 text-muted-foreground">
+                <Calendar className="h-3.5 w-3.5" /> Time
               </span>
-              <span className="font-medium text-xs">
+              <span className="min-w-0 truncate text-right text-[11px] font-medium sm:text-xs">
                 {stats.server.serverTime}
               </span>
             </div>
-            <div className="flex justify-between py-2 border-b border-border/30 md:border-b-0">
-              <span className="text-muted-foreground flex items-center gap-2">
-                <Network className="h-3.5 w-3.5" /> Active Connections
+            <div className="flex items-center justify-between gap-3 border-b border-border/30 py-2 md:border-b-0">
+              <span className="flex shrink-0 items-center gap-2 text-muted-foreground">
+                <Network className="h-3.5 w-3.5" /> Connections
               </span>
-              <span className="font-medium">
+              <span className="font-medium tabular-nums">
                 {stats.server.activeConnections}
               </span>
             </div>
@@ -634,78 +665,80 @@ export function SystemOverview() {
 
           {/* Right Column */}
           <div className="space-y-0">
-            <div className="flex justify-between py-2 border-b border-border/30">
-              <span className="text-muted-foreground flex items-center gap-2">
+            <div className="flex items-center justify-between gap-3 border-b border-border/30 py-2">
+              <span className="flex shrink-0 items-center gap-2 text-muted-foreground">
                 <Cpu className="h-3.5 w-3.5" /> CPU
               </span>
               <span
-                className="font-medium text-xs truncate max-w-[200px]"
+                className="min-w-0 truncate text-right text-[11px] font-medium sm:max-w-[200px] sm:text-xs"
                 title={stats.server.cpuModel}
               >
                 {stats.server.cpuCores}
               </span>
             </div>
-            <div className="flex justify-between py-2 border-b border-border/30">
-              <span className="text-muted-foreground flex items-center gap-2">
+            <div className="flex items-center justify-between gap-3 border-b border-border/30 py-2">
+              <span className="flex shrink-0 items-center gap-2 text-muted-foreground">
                 <Activity className="h-3.5 w-3.5" /> Load
               </span>
-              <span className="font-medium">
+              <span className="font-medium tabular-nums">
                 <span className="text-cyan-500">
                   {stats.server.loadAvg?.load1 || 0}
                 </span>
-                <span className="text-muted-foreground mx-1">|</span>
+                <span className="mx-1 text-muted-foreground">|</span>
                 <span className="text-amber-500">
                   {stats.server.loadAvg?.load5 || 0}
                 </span>
-                <span className="text-muted-foreground mx-1">|</span>
+                <span className="mx-1 text-muted-foreground">|</span>
                 <span className="text-emerald-500">
                   {stats.server.loadAvg?.load15 || 0}
                 </span>
               </span>
             </div>
             {stats.gpu.available && (
-              <div className="flex justify-between py-2 border-b border-border/30">
-                <span className="text-muted-foreground flex items-center gap-2">
+              <div className="flex items-center justify-between gap-3 border-b border-border/30 py-2">
+                <span className="flex shrink-0 items-center gap-2 text-muted-foreground">
                   <Gauge className="h-3.5 w-3.5" /> GPU
                 </span>
                 <span
-                  className="font-medium text-xs truncate max-w-[200px]"
+                  className="min-w-0 truncate text-right text-[11px] font-medium sm:max-w-[200px] sm:text-xs"
                   title={stats.gpu.model || ""}
                 >
                   {stats.gpu.model}
                 </span>
               </div>
             )}
-            <div className="flex justify-between py-2 border-b border-border/30">
-              <span className="text-muted-foreground flex items-center gap-2">
+            <div className="flex items-center justify-between gap-3 border-b border-border/30 py-2">
+              <span className="flex shrink-0 items-center gap-2 text-muted-foreground">
                 <CircuitBoard className="h-3.5 w-3.5" /> Swap
               </span>
-              <span className="font-medium">
+              <span className="text-right font-medium tabular-nums">
                 {formatBytes(stats.server.swap?.used || 0)} /{" "}
                 {formatBytes(stats.server.swap?.total || 0)}
               </span>
             </div>
-            <div className="flex justify-between py-2 border-b border-border/30">
-              <span className="text-muted-foreground flex items-center gap-2">
-                <Globe className="h-3.5 w-3.5" /> IP Address
+            <div className="flex items-center justify-between gap-3 border-b border-border/30 py-2">
+              <span className="flex shrink-0 items-center gap-2 text-muted-foreground">
+                <Globe className="h-3.5 w-3.5" /> IP
               </span>
-              <span className="font-medium text-cyan-500">
+              <span className="font-medium text-cyan-500 tabular-nums">
                 {stats.server.ipAddress}
               </span>
             </div>
             {stats.server.location && stats.server.location !== "N/A" ? (
-              <div className="flex justify-between py-2">
-                <span className="text-muted-foreground flex items-center gap-2">
+              <div className="flex items-center justify-between gap-3 py-2">
+                <span className="flex shrink-0 items-center gap-2 text-muted-foreground">
                   <MapPin className="h-3.5 w-3.5" /> Location
                 </span>
-                <span className="font-medium">{stats.server.location}</span>
+                <span className="min-w-0 truncate text-right font-medium">
+                  {stats.server.location}
+                </span>
               </div>
             ) : (
-              <div className="flex justify-between py-2">
-                <span className="text-muted-foreground flex items-center gap-2">
-                  <Globe className="h-3.5 w-3.5" /> IP Address
+              <div className="flex items-center justify-between gap-3 py-2">
+                <span className="flex shrink-0 items-center gap-2 text-muted-foreground">
+                  <Globe className="h-3.5 w-3.5" /> IP
                 </span>
-                <span className="font-medium text-cyan-500">
+                <span className="font-medium text-cyan-500 tabular-nums">
                   {stats.server.ipAddress}
                 </span>
               </div>
@@ -715,78 +748,78 @@ export function SystemOverview() {
 
         {/* Top Processes - Full Width Below */}
         {stats.processes && stats.processes.length > 0 && (
-          <div className="mt-4 pt-4 border-t border-border/50">
-            <div className="flex items-center justify-between gap-2 mb-3">
+          <div className="mt-3 border-t border-border/50 pt-3 sm:mt-4 sm:pt-4">
+            <div className="mb-2.5 flex items-center justify-between gap-2 sm:mb-3">
               <div className="flex items-center gap-2">
-                <Activity className="h-4 w-4 text-blue-500" />
-                <span className="font-medium text-sm">
-                  Top Processes
-                </span>
+                <Activity className="h-3.5 w-3.5 text-blue-500 sm:h-4 sm:w-4" />
+                <span className="text-sm font-medium">Top Processes</span>
               </div>
-              <div className="flex items-center gap-1 bg-secondary/50 rounded-lg p-0.5">
+              <div className="flex items-center gap-0.5 rounded-lg bg-secondary/50 p-0.5">
                 <button
-                  onClick={() => setProcessSortBy('cpu')}
+                  onClick={() => setProcessSortBy("cpu")}
                   className={cn(
-                    "px-2 py-1 text-xs font-medium rounded-md transition-all",
-                    processSortBy === 'cpu'
+                    "rounded-md px-2 py-1 text-[11px] font-medium transition-all sm:text-xs",
+                    processSortBy === "cpu"
                       ? "bg-cyan-500/20 text-cyan-500"
                       : "text-muted-foreground hover:text-foreground"
                   )}
                 >
-                  by CPU
+                  CPU
                 </button>
                 <button
-                  onClick={() => setProcessSortBy('mem')}
+                  onClick={() => setProcessSortBy("mem")}
                   className={cn(
-                    "px-2 py-1 text-xs font-medium rounded-md transition-all",
-                    processSortBy === 'mem'
+                    "rounded-md px-2 py-1 text-[11px] font-medium transition-all sm:text-xs",
+                    processSortBy === "mem"
                       ? "bg-purple-500/20 text-purple-500"
                       : "text-muted-foreground hover:text-foreground"
                   )}
                 >
-                  by Memory
+                  Mem
                 </button>
               </div>
             </div>
 
-            <div className="overflow-x-auto rounded-xl border border-border/50">
-              <table className="w-full text-xs text-left min-w-[600px]">
-                <thead className="bg-secondary/50 text-muted-foreground font-medium">
+            <div className="overflow-x-auto rounded-xl border border-border/50 [-webkit-overflow-scrolling:touch]">
+              <table className="w-full min-w-[480px] text-left text-xs sm:min-w-[560px]">
+                <thead className="bg-secondary/50 font-medium text-muted-foreground">
                   <tr>
-                    <th className="px-3 py-2">PID</th>
-                    <th className="px-3 py-2">Process</th>
-                    <th className="px-3 py-2">User</th>
-                    <th className="px-3 py-2 text-right">CPU</th>
-                    <th className="px-3 py-2 text-right">Memory</th>
+                    <th className="px-2.5 py-2 sm:px-3">PID</th>
+                    <th className="px-2.5 py-2 sm:px-3">Process</th>
+                    <th className="px-2.5 py-2 sm:px-3">User</th>
+                    <th className="px-2.5 py-2 text-right sm:px-3">CPU</th>
+                    <th className="px-2.5 py-2 text-right sm:px-3">Memory</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/30 bg-card">
                   {[...stats.processes]
-                    .sort((a, b) => processSortBy === 'cpu' ? b.cpu - a.cpu : b.mem - a.mem)
+                    .sort((a, b) =>
+                      processSortBy === "cpu" ? b.cpu - a.cpu : b.mem - a.mem
+                    )
                     .map((proc) => (
-                    <tr
-                      key={proc.pid}
-                      className="hover:bg-secondary/30 transition-colors"
-                    >
-                      <td className="px-3 py-2 font-mono text-muted-foreground">
-                        {proc.pid}
-                      </td>
-                      <td
-                        className="px-3 py-2 font-medium truncate max-w-[150px]"
-                        title={proc.name}
+                      <tr
+                        key={proc.pid}
+                        className="transition-colors hover:bg-secondary/30"
                       >
-                        {proc.name}
-                      </td>
-                      <td className="px-3 py-2 text-muted-foreground">
-                        {proc.user}
-                      </td>
-                      <td className="px-3 py-2 text-right font-medium text-cyan-500">
-                        {proc.cpu.toFixed(1)}%
-                      </td>
-                      <td className="px-3 py-2 text-right text-purple-500">
-                        {proc.mem.toFixed(1)}%
-                      </td>
-                    </tr>
+                        <td className="px-2.5 py-2 font-mono text-muted-foreground tabular-nums sm:px-3">
+                          {proc.pid}
+                        </td>
+                        <td
+                          className="max-w-[120px] truncate px-2.5 py-2 font-medium sm:max-w-[180px] sm:px-3"
+                          title={proc.name}
+                        >
+                          {proc.name}
+                        </td>
+                        <td className="px-2.5 py-2 text-muted-foreground sm:px-3">
+                          {proc.user}
+                        </td>
+                        <td className="px-2.5 py-2 text-right font-medium tabular-nums text-cyan-500 sm:px-3">
+                          {proc.cpu.toFixed(1)}%
+                        </td>
+                        <td className="px-2.5 py-2 text-right tabular-nums text-purple-500 sm:px-3">
+                          {proc.mem.toFixed(1)}%
+                        </td>
+                      </tr>
                     ))}
                 </tbody>
               </table>
