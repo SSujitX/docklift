@@ -1,7 +1,10 @@
+import { useEffect } from "react";
 import { createBrowserRouter, Navigate } from "react-router-dom";
 import { AppProviders } from "./AppProviders";
 import { AppShell } from "./AppShell";
 import { ProtectedLayout } from "./ProtectedLayout";
+
+const DOCS_URL = "https://docklift.dev";
 
 function Root() {
   return (
@@ -9,6 +12,14 @@ function Root() {
       <ProtectedLayout />
     </AppProviders>
   );
+}
+
+/** In-app /docs routes now live on the public docs site. */
+function DocsRedirect() {
+  useEffect(() => {
+    window.location.replace(DOCS_URL);
+  }, []);
+  return null;
 }
 
 export const router = createBrowserRouter([
@@ -104,29 +115,8 @@ export const router = createBrowserRouter([
               return { Component: m.default };
             },
           },
-          {
-            path: "docs",
-            lazy: async () => {
-              const m = await import("@/pages/docs/DocsLayout");
-              return { Component: m.default };
-            },
-            children: [
-              {
-                index: true,
-                lazy: async () => {
-                  const m = await import("@/pages/docs/DocsIndex");
-                  return { Component: m.default };
-                },
-              },
-              {
-                path: ":slug",
-                lazy: async () => {
-                  const m = await import("@/pages/docs/DocPage");
-                  return { Component: m.default };
-                },
-              },
-            ],
-          },
+          { path: "docs/*", element: <DocsRedirect /> },
+          { path: "docs", element: <DocsRedirect /> },
         ],
       },
       { path: "*", element: <Navigate to="/" replace /> },
