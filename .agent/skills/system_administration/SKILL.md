@@ -161,7 +161,11 @@ Frontend streams use `frontend/src/lib/streamProgress.ts`: require `res.ok` and 
 -   `enterMaintenance()` blocks **all** API traffic except `/api/health` and the active restore stream
     (not just mutating methods).
 -   Files/certs/proxy directory swaps are still not fully transactional with the DB.
--   Directory restores use `lib/fsCopy.ts` (`fs.promises.cp` + atomic swap) — never shell `cp`.
+-   Directory restores use `lib/fsCopy.ts` (`fs.promises.cp` + **content-level** replace inside
+    the target) — never shell `cp`, and never `rename` bind-mount roots (`/deployments`,
+    `/nginx-conf`, `/etc/letsencrypt`). Staging/prev live under the mount as
+    `.docklift-restore-staging-*` / `.docklift-restore-prev-*`. Failed promote or partial
+    move-aside restores from prev; orphaned prev dirs are folded in on the next successful replace.
 -   Restore does **not** wipe other backup ZIPs.
 
 ### Auto-Restore (reconcileSystem)
