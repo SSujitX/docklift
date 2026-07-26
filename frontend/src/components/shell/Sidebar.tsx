@@ -1,20 +1,151 @@
-// The left rail: brand, primary action, grouped navigation, release status and
-// the account block. Shared by the desktop rail and the mobile drawer.
+// The left rail: brand, primary action, grouped navigation (with Settings tree),
+// and version/upgrade footer. Shared by the desktop rail and the mobile drawer.
 
+import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
+  ChevronDown,
   Container,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
-  Search,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { isNavActive, navGroups } from "./navigation";
+import { settingsTabFromSearch } from "@/lib/settingsNav";
+import { isNavActive, navGroups, type NavItem } from "./navigation";
 import { SidebarStatus } from "./SidebarStatus";
-import { SidebarUser } from "./SidebarUser";
 import { useShell } from "./ShellContext";
+
+function SettingsTree({
+  item,
+  isCollapsed,
+  onNavigate,
+}: {
+  item: NavItem;
+  isCollapsed: boolean;
+  onNavigate: () => void;
+}) {
+  const { pathname, search } = useLocation();
+  const onSettings = pathname.startsWith("/settings");
+  const [peekOpen, setPeekOpen] = useState(false);
+  const [userCollapsed, setUserCollapsed] = useState(false);
+  const activeTab = settingsTabFromSearch(search);
+
+  useEffect(() => {
+    if (!onSettings) {
+      setPeekOpen(false);
+      setUserCollapsed(false);
+    }
+  }, [onSettings]);
+
+  // Collapsed by default; auto-expand on Settings routes (chevron can collapse).
+  const treeOpen =
+    !isCollapsed && (onSettings ? !userCollapsed : peekOpen);
+  const parentActive = onSettings;
+
+  if (isCollapsed) {
+    return (
+      <Link
+        to="/settings?tab=profile"
+        onClick={onNavigate}
+        title="Settings"
+        aria-current={parentActive ? "page" : undefined}
+        className={cn(
+          "group relative flex h-10 items-center justify-center rounded-xl text-sm font-medium transition-colors",
+          parentActive
+            ? "bg-brand/12 text-sidebar-foreground"
+            : "text-sidebar-muted hover:bg-sidebar-accent/70 hover:text-sidebar-foreground",
+        )}
+      >
+        {parentActive && (
+          <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-brand shadow-[0_0_12px_hsl(var(--brand)/0.7)]" />
+        )}
+        <item.icon
+          className={cn(
+            "h-4.5 w-4.5 shrink-0",
+            parentActive ? "text-brand" : "text-sidebar-muted group-hover:text-sidebar-foreground",
+          )}
+        />
+      </Link>
+    );
+  }
+
+  return (
+    <div className="space-y-0.5">
+      <div
+        className={cn(
+          "group relative flex items-center rounded-xl text-sm font-medium transition-colors",
+          parentActive
+            ? "bg-brand/12 text-sidebar-foreground"
+            : "text-sidebar-muted hover:bg-sidebar-accent/70 hover:text-sidebar-foreground",
+        )}
+      >
+        {parentActive && (
+          <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-brand shadow-[0_0_12px_hsl(var(--brand)/0.7)]" />
+        )}
+        <Link
+          to="/settings?tab=profile"
+          onClick={onNavigate}
+          className="flex min-w-0 flex-1 items-center gap-2.5 px-2.5 py-2"
+        >
+          <item.icon
+            className={cn(
+              "h-4.5 w-4.5 shrink-0",
+              parentActive ? "text-brand" : "text-sidebar-muted group-hover:text-sidebar-foreground",
+            )}
+          />
+          <span className="truncate">{item.label}</span>
+        </Link>
+        <button
+          type="button"
+          onClick={() => {
+            if (onSettings) setUserCollapsed((value) => !value);
+            else setPeekOpen((open) => !open);
+          }}
+          aria-expanded={treeOpen}
+          aria-label={treeOpen ? "Collapse settings" : "Expand settings"}
+          className="mr-1.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+        >
+          <ChevronDown
+            className={cn(
+              "h-4 w-4 transition-transform duration-200",
+              treeOpen && "rotate-180",
+            )}
+          />
+        </button>
+      </div>
+
+      {treeOpen && item.children && (
+        <div className="ml-3 space-y-0.5 border-l border-sidebar-border pl-2">
+          {item.children.map((child) => {
+            const tab = new URLSearchParams(child.href.split("?")[1] || "").get(
+              "tab",
+            );
+            const childActive = onSettings && activeTab === tab;
+            return (
+              <Link
+                key={child.href}
+                to={child.href}
+                onClick={onNavigate}
+                aria-current={childActive ? "page" : undefined}
+                className={cn(
+                  "flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-[13px] font-medium transition-colors",
+                  childActive
+                    ? "bg-brand/10 text-brand"
+                    : "text-sidebar-muted hover:bg-sidebar-accent/70 hover:text-sidebar-foreground",
+                )}
+              >
+                <child.icon className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">{child.label}</span>
+              </Link>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function Sidebar({
   variant,
@@ -24,7 +155,7 @@ export function Sidebar({
   expandedOnHover?: boolean;
 }) {
   const { pathname } = useLocation();
-  const { collapsed, toggleCollapsed, setMobileOpen, setPaletteOpen } = useShell();
+  const { collapsed, toggleCollapsed, setMobileOpen } = useShell();
   const isMobile = variant === "mobile";
   // The drawer is always full width; only the desktop rail can collapse.
   const isCollapsed = !isMobile && collapsed && !expandedOnHover;
@@ -92,7 +223,7 @@ export function Sidebar({
         )}
       </div>
 
-      <div className={cn("shrink-0 space-y-2 pt-3", isCollapsed ? "px-2" : "px-3")}>
+      <div className={cn("shrink-0 pt-3", isCollapsed ? "px-2" : "px-3")}>
         <Link
           to="/projects/new"
           onClick={() => isMobile && setMobileOpen(false)}
@@ -105,30 +236,6 @@ export function Sidebar({
           <Plus className="h-4 w-4" strokeWidth={2.5} />
           {!isCollapsed && "New project"}
         </Link>
-
-        <button
-          type="button"
-          onClick={() => {
-            setMobileOpen(false);
-            setPaletteOpen(true);
-          }}
-          title={isCollapsed ? "Search (Ctrl+K)" : undefined}
-          className={cn(
-            "flex h-9 w-full items-center rounded-xl border border-sidebar-border bg-sidebar-accent/40 text-sidebar-muted",
-            "transition-colors hover:border-sidebar-muted/40 hover:text-sidebar-foreground",
-            isCollapsed ? "justify-center" : "gap-2 px-2.5",
-          )}
-        >
-          <Search className="h-4 w-4 shrink-0" />
-          {!isCollapsed && (
-            <>
-              <span className="flex-1 text-left text-xs font-medium">Search…</span>
-              <kbd className="rounded border border-sidebar-border bg-sidebar px-1.5 py-0.5 text-[10px] font-semibold">
-                ⌘K
-              </kbd>
-            </>
-          )}
-        </button>
       </div>
 
       <nav
@@ -148,7 +255,51 @@ export function Sidebar({
             )}
 
             {group.items.map((item) => {
-              const active = isNavActive(pathname, item);
+              if (item.children?.length) {
+                return (
+                  <SettingsTree
+                    key={item.href}
+                    item={item}
+                    isCollapsed={isCollapsed}
+                    onNavigate={() => isMobile && setMobileOpen(false)}
+                  />
+                );
+              }
+
+              const active = !item.external && isNavActive(pathname, item);
+              const className = cn(
+                "group relative flex items-center rounded-xl text-sm font-medium transition-colors",
+                isCollapsed ? "h-10 justify-center" : "gap-2.5 px-2.5 py-2",
+                active
+                  ? "bg-brand/12 text-sidebar-foreground"
+                  : "text-sidebar-muted hover:bg-sidebar-accent/70 hover:text-sidebar-foreground",
+              );
+              const icon = (
+                <item.icon
+                  className={cn(
+                    "h-4.5 w-4.5 shrink-0 transition-colors",
+                    active ? "text-brand" : "text-sidebar-muted group-hover:text-sidebar-foreground",
+                  )}
+                />
+              );
+
+              if (item.external) {
+                return (
+                  <a
+                    key={item.href}
+                    href={item.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={() => isMobile && setMobileOpen(false)}
+                    title={isCollapsed ? item.label : undefined}
+                    className={className}
+                  >
+                    {icon}
+                    {!isCollapsed && <span className="truncate">{item.label}</span>}
+                  </a>
+                );
+              }
+
               return (
                 <Link
                   key={item.href}
@@ -156,23 +307,12 @@ export function Sidebar({
                   onClick={() => isMobile && setMobileOpen(false)}
                   title={isCollapsed ? item.label : undefined}
                   aria-current={active ? "page" : undefined}
-                  className={cn(
-                    "group relative flex items-center rounded-xl text-sm font-medium transition-colors",
-                    isCollapsed ? "h-10 justify-center" : "gap-2.5 px-2.5 py-2",
-                    active
-                      ? "bg-brand/12 text-sidebar-foreground"
-                      : "text-sidebar-muted hover:bg-sidebar-accent/70 hover:text-sidebar-foreground",
-                  )}
+                  className={className}
                 >
                   {active && (
                     <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-brand shadow-[0_0_12px_hsl(var(--brand)/0.7)]" />
                   )}
-                  <item.icon
-                    className={cn(
-                      "h-4.5 w-4.5 shrink-0 transition-colors",
-                      active ? "text-brand" : "text-sidebar-muted group-hover:text-sidebar-foreground",
-                    )}
-                  />
+                  {icon}
                   {!isCollapsed && <span className="truncate">{item.label}</span>}
                 </Link>
               );
@@ -183,12 +323,11 @@ export function Sidebar({
 
       <div
         className={cn(
-          "shrink-0 space-y-3 border-t border-sidebar-border py-3",
+          "shrink-0 border-t border-sidebar-border py-3",
           isCollapsed ? "px-2" : "px-3",
         )}
       >
         <SidebarStatus collapsed={isCollapsed} />
-        <SidebarUser collapsed={isCollapsed} />
       </div>
     </div>
   );
