@@ -1,9 +1,10 @@
-// Compact account menu for the top bar: profile + sign out.
+// Compact account menu for the top bar: avatar trigger → email (copyable) + profile + sign out.
 // Theme lives on the TopBar toggle, so appearance is not duplicated here.
 
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { LogOut, UserCircle } from "lucide-react";
+import { Check, Copy, LogOut, UserCircle } from "lucide-react";
+import { toast } from "sonner";
 import { useAuth } from "@/components/AuthProvider";
 import { cn } from "@/lib/utils";
 
@@ -25,6 +26,7 @@ function displayName(name?: string, email?: string): string {
 export function AccountMenu() {
   const { user, logout } = useAuth();
   const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -43,11 +45,26 @@ export function AccountMenu() {
     };
   }, [open]);
 
+  useEffect(() => {
+    if (!open) setCopied(false);
+  }, [open]);
+
   if (!user) return null;
 
   const label = displayName(user.name, user.email);
-  const showEmailUnder =
-    Boolean(user.email) && label.toLowerCase() !== user.email.toLowerCase();
+  const email = user.email?.trim() || "";
+
+  const copyEmail = async () => {
+    if (!email) return;
+    try {
+      await navigator.clipboard.writeText(email);
+      setCopied(true);
+      toast.success("Email copied");
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      toast.error("Could not copy email");
+    }
+  };
 
   return (
     <div ref={containerRef} className="relative">
@@ -57,38 +74,53 @@ export function AccountMenu() {
         aria-expanded={open}
         aria-haspopup="menu"
         aria-label={`Account menu for ${label}`}
-        title={user.email || label}
+        title={email || label}
         className={cn(
-          "flex h-9 items-center gap-2 rounded-full pl-1 pr-1.5 transition-colors sm:pr-2.5",
-          open
-            ? "bg-secondary/70"
-            : "hover:bg-secondary/50",
+          "flex h-9 w-9 items-center justify-center rounded-full transition-colors",
+          open ? "bg-secondary/70" : "hover:bg-secondary/50",
         )}
       >
         <span className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-brand to-blue-600 text-[11px] font-bold text-white">
           {initials(user.name, user.email)}
           <span className="absolute -bottom-px -right-px h-2 w-2 rounded-full border-2 border-background bg-emerald-500" />
         </span>
-        <span className="hidden max-w-[9rem] truncate text-left text-sm font-medium leading-none sm:block">
-          {label}
-        </span>
       </button>
 
       {open && (
         <div
           role="menu"
-          className="absolute right-0 top-full z-50 mt-2 w-[min(16rem,calc(100vw-1.5rem))] overflow-hidden rounded-2xl border border-border/60 bg-background shadow-xl shadow-black/10 animate-in fade-in slide-in-from-top-2 duration-150"
+          className="absolute right-0 top-full z-50 mt-2 w-[min(17rem,calc(100vw-1.5rem))] overflow-hidden rounded-2xl border border-border/60 bg-background shadow-xl shadow-black/10 animate-in fade-in slide-in-from-top-2 duration-150"
         >
-          <div className="flex items-center gap-3 border-b border-border/60 px-3 py-3">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-brand to-blue-600 text-xs font-bold text-white">
-              {initials(user.name, user.email)}
-            </span>
-            <div className="min-w-0">
-              <p className="truncate text-sm font-semibold">{label}</p>
-              {showEmailUnder && (
-                <p className="truncate text-xs text-muted-foreground">{user.email}</p>
-              )}
+          <div className="border-b border-border/60 px-3 py-3">
+            <div className="flex items-center gap-3">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-brand to-blue-600 text-xs font-bold text-white">
+                {initials(user.name, user.email)}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold">{label}</p>
+                {email && label.toLowerCase() !== email.toLowerCase() && (
+                  <p className="text-[11px] text-muted-foreground">Signed in</p>
+                )}
+              </div>
             </div>
+            {email && (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => void copyEmail()}
+                title="Copy email"
+                className="mt-2.5 flex w-full items-center gap-2 rounded-xl border border-border/60 bg-secondary/30 px-2.5 py-2 text-left transition-colors hover:border-brand/30 hover:bg-brand/5"
+              >
+                <span className="min-w-0 flex-1 truncate font-mono text-xs text-foreground/90">
+                  {email}
+                </span>
+                {copied ? (
+                  <Check className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
+                ) : (
+                  <Copy className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                )}
+              </button>
+            )}
           </div>
 
           <div className="p-1.5">
