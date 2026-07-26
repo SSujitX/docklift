@@ -324,10 +324,14 @@ export function LogViewer({
   return (
     <div
       className={cn(
-        "flex flex-col overflow-hidden rounded-xl border border-[#232323] bg-[#0c0c0c] relative",
+        "relative flex flex-col overflow-hidden rounded-xl border border-[#232323] bg-[#0c0c0c]",
         isFullscreen
           ? "fixed inset-0 z-50 h-screen rounded-none"
-          : cn("min-h-[280px]", height),
+          : cn(
+              // Parent-driven fill (Logs page) must not force a tall min-height
+              height.includes("h-full") ? "min-h-0" : "min-h-[280px]",
+              height,
+            ),
       )}
     >
       {/* ─── Header ─── */}
