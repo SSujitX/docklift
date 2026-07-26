@@ -1,7 +1,8 @@
 # Install smoke test — full install.sh on a clean runner.
 # Matrix is Ubuntu-only today; add debian/alma rows later (often via container:).
 name: Install
-run-name: Install · ${{ github.event_name == 'pull_request' && format('PR #{0}', github.event.pull_request.number) || github.ref_name }}
+# Quote the whole value — bare `#{0}` is a YAML comment and truncates `${{ }}`.
+run-name: "Install · ${{ github.event_name == 'pull_request' && format('PR {0}', github.event.pull_request.number) || github.ref_name }}"
 
 on:
   push:
