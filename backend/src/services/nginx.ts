@@ -12,8 +12,19 @@ import { appendSslEvent, certificateFilesExist, issueCertificate } from './certs
 
 export async function updateServiceDomain(
   service: any,
-  opts?: { issueSsl?: boolean; forceSsl?: boolean }
+  opts?: {
+    issueSsl?: boolean;
+    forceSsl?: boolean;
+    /** Cooperative cancel — checked before every write/reload (and around SSL). */
+    shouldContinue?: () => boolean | Promise<boolean>;
+  }
 ) {
+  const assertContinue = async () => {
+    if (opts?.shouldContinue && !(await opts.shouldContinue())) {
+      throw new Error('Deployment cancelled');
+    }
+  };
+
   // Ensure config directory exists
   if (!fs.existsSync(config.nginxConfPath)) {
     fs.mkdirSync(config.nginxConfPath, { recursive: true });
@@ -29,6 +40,7 @@ export async function updateServiceDomain(
 
   if (!shouldExist) {
     if (fs.existsSync(confPath)) {
+      await assertContinue();
       fs.unlinkSync(confPath);
       await reloadNginx();
     }
@@ -48,6 +60,8 @@ export async function updateServiceDomain(
     );
   }
 
+  await assertContinue();
+
   const domainsArray = service.domain
     .split(',')
     .map((d: string) => d.trim().toLowerCase())
@@ -55,6 +69,7 @@ export async function updateServiceDomain(
 
   if (domainsArray.length === 0) {
     if (fs.existsSync(confPath)) {
+      await assertContinue();
       fs.unlinkSync(confPath);
       await reloadNginx();
     }
@@ -81,10 +96,13 @@ export async function updateServiceDomain(
   });
 
   try {
+    await assertContinue();
     fs.writeFileSync(confPath, content);
+    await assertContinue();
     await reloadNginx();
     appendSslEvent(domainsArray, 'info', 'HTTP vhost written and nginx reloaded — ACME challenge path is live.');
   } catch (error) {
+    if (error instanceof Error && error.message === 'Deployment cancelled') throw error;
     console.error('Failed to write Nginx config:', error);
     appendSslEvent(domainsArray, 'error', 'Failed to write the nginx vhost — check backend logs.');
     // Surface reload/write failure — callers must not report domain save as success
@@ -96,7 +114,9 @@ export async function updateServiceDomain(
   if (shouldIssue) {
     const sans = domainsArray;
     try {
+      await assertContinue();
       const status = await issueCertificate(sans, { force: opts?.forceSsl === true });
+      await assertContinue();
       // 3) Rewrite with HTTPS if active
       if (
         status.status === 'active' ||
@@ -110,10 +130,15 @@ export async function updateServiceDomain(
           proxyLocation,
           enableHttps: true,
         });
+        await assertContinue();
         fs.writeFileSync(confPath, content);
         try {
+          await assertContinue();
           await reloadNginx();
         } catch (reloadErr) {
+          if (reloadErr instanceof Error && reloadErr.message === 'Deployment cancelled') {
+            throw reloadErr;
+          }
           appendSslEvent(
             domainsArray,
             'error',
@@ -136,6 +161,7 @@ export async function updateServiceDomain(
         );
       }
     } catch (e: any) {
+      if (e instanceof Error && e.message === 'Deployment cancelled') throw e;
       console.error(`SSL issue failed for ${primaryDomain}:`, e?.message || e);
       appendSslEvent(domainsArray, 'error', e?.message || 'Certificate issuance failed unexpectedly.');
       // Propagate nginx reload failures; soft-fail only pure certbot issuance errors
