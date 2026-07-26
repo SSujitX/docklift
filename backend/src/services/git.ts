@@ -11,7 +11,7 @@ export async function cloneRepo(url: string, targetPath: string, branch?: string
   if (res) {
     res.write(`📥 Cloning repository...\n`);
     res.write(`   URL: ${url}\n`);
-    if (branch) res.write(`   Branch: ${branch}\n`);
+    if (branch) res.write(`   Ref: ${branch}\n`);
   }
   
   // Remove existing directory if it exists
@@ -19,6 +19,7 @@ export async function cloneRepo(url: string, targetPath: string, branch?: string
     fs.rmSync(targetPath, { recursive: true, force: true });
   }
   
+  // `-b` works for branch names and tags
   const options = branch ? ['-b', branch] : [];
   await git.clone(url, targetPath, options);
   
@@ -36,29 +37,50 @@ export async function pullRepo(projectPath: string, res: Response, branch?: stri
   res.write(`📥 Fetching latest changes...\n`);
   
   try {
-    // Determine which branch to sync to
-    let targetBranch = branch;
-    if (!targetBranch) {
+    // Determine which branch/tag to sync to
+    let targetRef = branch;
+    if (!targetRef) {
       try {
-        targetBranch = (await git.revparse(['--abbrev-ref', 'HEAD'])).trim();
+        targetRef = (await git.revparse(['--abbrev-ref', 'HEAD'])).trim();
+        if (targetRef === 'HEAD') {
+          targetRef = (await git.revparse(['HEAD'])).trim();
+        }
       } catch {
-        targetBranch = 'main';
+        targetRef = 'main';
       }
     }
-    res.write(`   Branch: ${targetBranch}\n`);
+    res.write(`   Ref: ${targetRef}\n`);
     
     // Get current commit before fetch for comparison
     const beforeCommit = (await git.revparse(['HEAD'])).trim().substring(0, 7);
     
-    // Step 1: Fetch latest refs from remote (never causes conflicts)
-    await git.fetch('origin', targetBranch);
-    res.write(`   ✅ Fetched from origin\n`);
+    // Fetch branches + tags so tag pin deploys can refresh
+    await git.fetch(['origin', '--tags', '--prune', '--force']);
+    res.write(`   ✅ Fetched from origin (branches + tags)\n`);
+
+    const remoteBranches = await git.branch(['-r']);
+    const remoteBranch = `origin/${targetRef}`;
+    const isBranch = remoteBranches.all.includes(remoteBranch);
+
+    if (isBranch) {
+      await git.reset(['--hard', remoteBranch]);
+      res.write(`   ✅ Reset to ${remoteBranch}\n`);
+    } else {
+      // Fail closed: do not reset to a bare name that might resolve to a stale tag
+      // when the branch was deleted/renamed.
+      const tagRef = `refs/tags/${targetRef}`;
+      try {
+        await git.raw(['rev-parse', '--verify', `${tagRef}^{commit}`]);
+      } catch {
+        throw new Error(
+          `Ref "${targetRef}" not found as remote branch (${remoteBranch}) or tag (${tagRef})`,
+        );
+      }
+      await git.reset(['--hard', tagRef]);
+      res.write(`   ✅ Reset to tag ${targetRef}\n`);
+    }
     
-    // Step 2: Hard reset to exact remote state (guarantees fresh code)
-    await git.reset(['--hard', `origin/${targetBranch}`]);
-    res.write(`   ✅ Reset to origin/${targetBranch}\n`);
-    
-    // Step 3: Clean untracked files and directories (removes stale artifacts)
+    // Clean untracked files and directories (removes stale artifacts)
     await git.clean('f', ['-d']);
     res.write(`   ✅ Cleaned untracked files\n`);
     
