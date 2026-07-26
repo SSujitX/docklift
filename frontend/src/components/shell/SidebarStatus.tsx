@@ -1,10 +1,9 @@
-// Release state for the rail footer: version, upgrade prompt and GitHub stars.
-// Replaces what the old page footer and header used to show.
+// Release state for the rail footer: upgrade prompt only.
+// GitHub stars live in the TopBar; version cache is still shared with Terminal.
 
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowUp, Star } from "lucide-react";
-import { GithubIcon } from "@/components/icons/GithubIcon";
+import { ArrowUp } from "lucide-react";
 import { getAuthHeaders } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 
@@ -130,7 +129,8 @@ function releaseVersionPoller() {
   }
 }
 
-function loadStars(): Promise<number | null> {
+export function loadStars(): Promise<number | null> {
+  if (cachedStars !== null) return Promise.resolve(cachedStars);
   starsRequest ??= fetch("https://api.github.com/repos/SSujitX/docklift")
     .then((res) => (res.ok ? res.json() : null))
     .then((data) => {
@@ -141,16 +141,19 @@ function loadStars(): Promise<number | null> {
   return starsRequest;
 }
 
-function formatStars(count: number | null): string {
+export function formatStars(count: number | null): string {
   if (count === null) return "—";
   if (count < 1000) return String(count);
   const thousands = count / 1000;
   return thousands % 1 === 0 ? `${thousands}k` : `${thousands.toFixed(1)}k`;
 }
 
+export function getCachedStars(): number | null {
+  return cachedStars;
+}
+
 export function SidebarStatus({ collapsed }: { collapsed: boolean }) {
   const [version, setVersion] = useState<VersionInfo | null>(cachedVersion);
-  const [stars, setStars] = useState<number | null>(cachedStars);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -163,10 +166,6 @@ export function SidebarStatus({ collapsed }: { collapsed: boolean }) {
     void loadVersion().then((data) => {
       if (data) setVersion(data);
     });
-
-    if (cachedStars === null) {
-      void loadStars().then((count) => setStars(count));
-    }
 
     return () => {
       versionListeners.delete(onVersion);
@@ -181,43 +180,39 @@ export function SidebarStatus({ collapsed }: { collapsed: boolean }) {
   };
 
   const currentVersion = version?.current || __APP_VERSION__;
+  const updateAvailable = Boolean(version?.updateAvailable);
+  const checkFailed = Boolean(version && version.githubOk === false && !updateAvailable);
 
   if (collapsed) {
     return (
       <div className="flex flex-col items-center gap-2">
-        {version?.updateAvailable && (
+        {updateAvailable && (
           <button
             type="button"
             onClick={handleUpgrade}
-            title={`Upgrade to v${version.latest}`}
+            title={`Upgrade to v${version!.latest}`}
             className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand/15 text-brand transition-colors hover:bg-brand/25"
           >
             <ArrowUp className="h-4 w-4" />
           </button>
         )}
-        <a
-          href="https://github.com/SSujitX/docklift"
-          target="_blank"
-          rel="noopener noreferrer"
-          title={`Star on GitHub — ${formatStars(stars)}`}
-          className="flex h-9 w-9 items-center justify-center rounded-xl text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
-        >
-          <GithubIcon className="h-4 w-4" />
-        </a>
+        <p className="text-[9px] font-semibold tracking-wide text-sidebar-muted/70">
+          v{currentVersion}
+        </p>
       </div>
     );
   }
 
   return (
     <div className="space-y-2">
-      {version?.updateAvailable && (
+      {updateAvailable && (
         <div className="rounded-2xl border border-brand/25 bg-brand/10 p-3">
           <div className="flex items-center gap-2 text-xs font-semibold text-brand">
             <ArrowUp className="h-3.5 w-3.5" />
             Update available
           </div>
           <p className="mt-1 text-[11px] text-sidebar-muted">
-            v{version.current} → v{version.latest}
+            v{version!.current} → v{version!.latest}
           </p>
           <button
             type="button"
@@ -232,24 +227,10 @@ export function SidebarStatus({ collapsed }: { collapsed: boolean }) {
         </div>
       )}
 
-      <a
-        href="https://github.com/SSujitX/docklift"
-        target="_blank"
-        rel="noopener noreferrer"
-        className="flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
-      >
-        <GithubIcon className="h-4 w-4 shrink-0" />
-        <span className="flex-1 truncate text-xs font-medium">Star on GitHub</span>
-        <span className="flex items-center gap-1 rounded-md bg-sidebar-accent px-1.5 py-0.5 text-[10px] font-semibold">
-          <Star className="h-2.5 w-2.5 fill-amber-400 text-amber-400" />
-          {formatStars(stars)}
-        </span>
-      </a>
-
       <p className="px-2.5 text-[10px] font-medium tracking-wide text-sidebar-muted/70">
-        v{currentVersion} · © {new Date().getFullYear()} Docklift
+        v{currentVersion}
       </p>
-      {version && version.githubOk === false && !version.updateAvailable && (
+      {checkFailed && (
         <p className="px-2.5 text-[10px] text-amber-600/90 dark:text-amber-400/90">
           Update check unavailable
         </p>
