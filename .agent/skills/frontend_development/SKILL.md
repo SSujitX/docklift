@@ -62,7 +62,9 @@ elements and `top-20` for spaced ones.
 | `TerminalView.tsx` | `components/` | xterm.js + WS terminal |
 | `FileEditor.tsx` | `components/` | Full-screen IDE Monaco editor (dirty state, Ctrl/⌘S, Esc) |
 | `AuthProvider.tsx` | `components/` | Auth + route redirects |
-| `ServiceDomainCard.tsx` | `components/domains/` | Domain list + SSL (serial mutation queue) |
+| `ServiceDomainCard.tsx` | `components/domains/` | Project service domain list + SSL (serial mutation queue) |
+| `PanelDomainCard.tsx` | `components/domains/` | Settings → Domain panel hostname + SSL (same UX as service card) |
+| `DnsGuideCard.tsx` | `components/domains/` | Shared “Point DNS at this server” guide |
 
 ## API calls (required)
 
@@ -88,8 +90,12 @@ elements and `top-20` for spaced ones.
     the unsaved Build checkbox (`publishHostPort` form state). Secondary CTA when not
     awaiting: **Build settings** (navigates; does not publish). If Publish is already
     saved on but `svc.port` is still null, say redeploy is required. No “Workspace” badge.
--   Domains empty-state: private-by-default + domain preferred; mention Build → Publish
-    host ports + redeploy as the opt-in `IP:port` path.
+-   Domain tab (singular label): `DnsGuideCard` highlights “Point DNS at this server”
+    with short Cloudflare tips (no accordion). Empty-state: private-by-default + domain
+    preferred; mention Build → Publish host ports + redeploy as the opt-in `IP:port` path.
+-   Settings → Domain (`/settings?tab=domain`): same guide + inline add (no popup),
+    SSL status pills, Check DNS, Retry HTTPS, and Let’s Encrypt activity log via
+    `PanelDomainCard` — mirror project Domain, not a table/dialog.
 -   Env manager: optional **BuildKit secret** flag (`is_secret`) when `is_build_arg` is on.
 
 ## Dev server
