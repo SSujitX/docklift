@@ -472,8 +472,10 @@ git commit -m "feat: something *force minor*"   # → minor  → 1.4.0
 git commit -m "feat: something *force major*"   # → major  → 2.0.0
 git commit -m "chore: docs *skip release*"      # → none   → stays 1.3.21
 
-# 2) Push, then GitHub → Actions → "Release & Test" → Run workflow
+# 2) Push — wait for CI + Install (Ubuntu) to go green
+# 3) GitHub → Actions → "Release" → Run workflow
 # semantic-release bumps package.json (root/frontend/backend), CHANGELOG.md, tag + GitHub Release
+# Release then deploys Docs (changelog on docklift.dev)
 ```
 
 | Commit signal | Release | Demo (`1.3.21` →) |
