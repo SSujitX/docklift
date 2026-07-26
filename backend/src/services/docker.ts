@@ -1,10 +1,12 @@
 // Docker service - container operations (status, logs, stats) and compose streaming
 import Docker from 'dockerode';
-import { spawn } from 'child_process';
+import { spawn, type ChildProcess } from 'child_process';
 import { Response } from 'express';
 import path from 'path';
 import { config } from '../lib/config.js';
 import { projectNetworkName } from '../lib/naming.js';
+
+const DEFAULT_PULL_TIMEOUT_MS = 600_000;
 
 const docker = new Docker();
 
@@ -151,25 +153,149 @@ export async function getContainerStats(containerName: string): Promise<Record<s
   try {
     const container = docker.getContainer(containerName);
     const stats = await container.stats({ stream: false });
-    
-    // Calculate CPU and memory usage
-    const cpuDelta = stats.cpu_stats.cpu_usage.total_usage - stats.precpu_stats.cpu_usage.total_usage;
-    const systemDelta = stats.cpu_stats.system_cpu_usage - stats.precpu_stats.system_cpu_usage;
-    const cpuPercent = systemDelta > 0 ? (cpuDelta / systemDelta) * 100 : 0;
-    
-    const memoryUsage = stats.memory_stats.usage || 0;
-    const memoryLimit = stats.memory_stats.limit || 1;
-    const memoryPercent = (memoryUsage / memoryLimit) * 100;
-    
+
+    const cpuDelta =
+      (stats.cpu_stats?.cpu_usage?.total_usage || 0) -
+      (stats.precpu_stats?.cpu_usage?.total_usage || 0);
+    const systemDelta =
+      (stats.cpu_stats?.system_cpu_usage || 0) -
+      (stats.precpu_stats?.system_cpu_usage || 0);
+    const onlineCpus =
+      stats.cpu_stats?.online_cpus ||
+      stats.cpu_stats?.cpu_usage?.percpu_usage?.length ||
+      1;
+    const cpuPercent =
+      systemDelta > 0 ? (cpuDelta / systemDelta) * onlineCpus * 100 : 0;
+
+    const memoryUsage = stats.memory_stats?.usage || 0;
+    const memoryLimit = stats.memory_stats?.limit || 1;
+    const memoryPercent =
+      memoryLimit > 0 ? (memoryUsage / memoryLimit) * 100 : 0;
+
     return {
-      cpu_percent: cpuPercent.toFixed(2),
+      cpu_percent: (Number.isFinite(cpuPercent) ? cpuPercent : 0).toFixed(2),
       memory_usage: (memoryUsage / 1024 / 1024).toFixed(2) + ' MB',
       memory_limit: (memoryLimit / 1024 / 1024).toFixed(2) + ' MB',
-      memory_percent: memoryPercent.toFixed(2),
+      memory_percent: (Number.isFinite(memoryPercent) ? memoryPercent : 0).toFixed(2),
     };
   } catch {
     return null;
   }
+}
+
+export interface PullImageOptions {
+  onChunk?: (text: string) => void;
+  /** Register the child immediately so /cancel can kill mid-pull. */
+  onSpawn?: (child: ChildProcess) => void;
+  /** Kill and reject after this many ms (default 10 minutes). */
+  timeoutMs?: number;
+  /** When aborted, the pull child is killed and the promise rejects. */
+  signal?: AbortSignal;
+}
+
+/**
+ * Pull an image without blocking the Node event loop.
+ * Streams docker pull output so deploy logs stay live.
+ * Supports cancel (kill child) and a hard timeout.
+ */
+export function pullImage(
+  image: string,
+  onChunkOrOptions?: ((text: string) => void) | PullImageOptions,
+): Promise<void> {
+  const options: PullImageOptions =
+    typeof onChunkOrOptions === 'function'
+      ? { onChunk: onChunkOrOptions }
+      : onChunkOrOptions || {};
+  const timeoutMs = options.timeoutMs ?? DEFAULT_PULL_TIMEOUT_MS;
+
+  return new Promise((resolve, reject) => {
+    if (options.signal?.aborted) {
+      reject(new Error(`Pull cancelled: ${image}`));
+      return;
+    }
+
+    const child = spawn('docker', ['pull', image], {
+      shell: false,
+      windowsHide: true,
+      detached: process.platform !== 'win32',
+    });
+    options.onSpawn?.(child);
+
+    let settled = false;
+    const settle = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      options.signal?.removeEventListener('abort', onAbort);
+      fn();
+    };
+
+    const killPull = () => {
+      if (!child.pid) return;
+      try {
+        if (process.platform === 'win32') {
+          spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], {
+            stdio: 'ignore',
+            windowsHide: true,
+          });
+        } else {
+          try {
+            process.kill(-child.pid, 'SIGTERM');
+          } catch {
+            child.kill('SIGTERM');
+          }
+          setTimeout(() => {
+            try {
+              if (child.pid) {
+                try {
+                  process.kill(-child.pid, 'SIGKILL');
+                } catch {
+                  child.kill('SIGKILL');
+                }
+              }
+            } catch {
+              /* already dead */
+            }
+          }, 2000);
+        }
+      } catch {
+        try {
+          child.kill('SIGKILL');
+        } catch {
+          /* ignore */
+        }
+      }
+    };
+
+    const onAbort = () => {
+      killPull();
+      settle(() => reject(new Error(`Pull cancelled: ${image}`)));
+    };
+    options.signal?.addEventListener('abort', onAbort, { once: true });
+
+    const timer = setTimeout(() => {
+      killPull();
+      settle(() =>
+        reject(new Error(`Timed out pulling ${image} after ${timeoutMs}ms`)),
+      );
+    }, timeoutMs);
+
+    child.stdout?.on('data', (data: Buffer) => options.onChunk?.(data.toString()));
+    child.stderr?.on('data', (data: Buffer) => options.onChunk?.(data.toString()));
+    child.on('error', (err) => settle(() => reject(err)));
+    child.on('close', (code) => {
+      if (options.signal?.aborted) {
+        settle(() => reject(new Error(`Pull cancelled: ${image}`)));
+        return;
+      }
+      if (code === 0) settle(() => resolve());
+      else {
+        settle(() =>
+          reject(new Error(`Failed to pull ${image} (exit ${code ?? 'null'})`)),
+        );
+      }
+    });
+  });
 }
 
 // Stream docker compose up
