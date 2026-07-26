@@ -15,12 +15,11 @@
 </p>
 
 <p align="center">
-  <a href="#-quick-start">Quick Start</a> •
+  <a href="https://docklift.dev">Docs</a> •
+  <a href="https://docklift.dev/guide/quick-start">Quick Start</a> •
+  <a href="https://docklift.dev/guide/commands">Commands</a> •
   <a href="#-features">Features</a> •
   <a href="#-how-it-works">How it Works</a> •
-  <a href="#-builds-dockerfile-or-railpack">Builds</a> •
-  <a href="#-domains--https">Domains & HTTPS</a> •
-  <a href="#-commands-reference">Commands</a> •
   <a href="#-contributing">Contributing</a>
 </p>
 
@@ -60,6 +59,7 @@ Kubernetes, Swarm, or a managed cloud account.
 
 ## 📑 Table of Contents
 
+- [**Documentation site**](https://docklift.dev) — quick start, full guides, commands
 - [Quick Start](#-quick-start)
 - [Features](#-features)
 - [How it Works](#-how-it-works)
@@ -81,6 +81,8 @@ Kubernetes, Swarm, or a managed cloud account.
 ---
 
 ## 🚀 Quick Start
+
+Full walkthrough: **[docklift.dev/guide/quick-start](https://docklift.dev/guide/quick-start)** · Commands: **[docklift.dev/guide/commands](https://docklift.dev/guide/commands)**
 
 One-command install on Ubuntu/Debian (latest GitHub release):
 
@@ -243,7 +245,13 @@ runtime secrets don't get baked into image layers.
 ## 🗄️ Managed Databases
 
 **Databases → New Database** creates Postgres, MySQL, MariaDB, Redis, or MongoDB from official
-images (no Git/ZIP). Host ports stay **off** by default.
+images (no Git/ZIP). Version tags load from Docker Hub automatically (majors / Alpine where
+available). Host ports stay **off** by default. Database detail tabs are Overview, Deployments, and Logs
+(credentials on Overview → Connection; no Environment / Build / Source / Domains).
+
+**Ports** lists the opt-in host pool only. A Running app or database with publish
+off will not show as Allocated — use domain/linking, or enable **Publish host ports**
+and redeploy.
 
 1. Create & deploy the database.
 2. Open it → **Link** to a project (or one service), or from an app → **Attach database**.
