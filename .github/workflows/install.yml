@@ -1,0 +1,93 @@
+# Install smoke test — full install.sh on a clean runner.
+# Matrix is Ubuntu-only today; add debian/alma rows later (often via container:).
+name: Install
+run-name: Install · ${{ github.event_name == 'pull_request' && format('PR #{0}', github.event.pull_request.number) || github.ref_name }}
+
+on:
+  push:
+    branches: [master]
+    paths-ignore:
+      - "website/**"
+      - ".github/workflows/docs.yml"
+  pull_request:
+    branches: [master]
+    paths-ignore:
+      - "website/**"
+      - ".github/workflows/docs.yml"
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  install:
+    name: ${{ matrix.distro }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - distro: ubuntu
+            # Future examples (uncomment / extend when ready):
+            # - distro: debian
+            #   container: debian:bookworm
+            # - distro: alma
+            #   container: almalinux:9
+
+    # container: ${{ matrix.container || '' }}  — enable when non-Ubuntu rows need it
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Preparing System
+        id: setup
+        run: |
+          ST=$(date +%s)
+          sudo apt-get update -qq && sudo apt-get install -y -qq curl sudo
+          echo "duration=$(($(date +%s) - ST))" >> $GITHUB_OUTPUT
+
+      - name: Installing Docklift
+        id: install
+        run: |
+          ST=$(date +%s)
+          chmod +x install.sh
+          sudo CI=true DOCKLIFT_CI_LOCAL=true ./install.sh 2>&1 | tee install_output_txt
+          echo "duration=$(($(date +%s) - ST))" >> $GITHUB_OUTPUT
+          echo "exit_code=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
+        continue-on-error: true
+
+      - name: Verifying Services
+        id: verify
+        run: |
+          c() { sudo docker ps | grep -q "$1" && echo "✅ Running" || echo "❌ Not Running"; }
+          {
+            echo "backend=$(c docklift-backend)"
+            echo "frontend=$(c docklift-frontend)"
+            echo "nginx=$(c docklift-nginx)"
+            echo "proxy=$(c docklift-nginx-proxy)"
+            [ -d "/opt/docklift" ] && echo "dir=✅ Created" || echo "dir=❌ Missing"
+            v=$(grep -o '"version": *"[^"]*"' /opt/docklift/backend/package.json 2>/dev/null | head -1 | cut -d'"' -f4 || echo "Unknown")
+            echo "version=$v"
+          } >> $GITHUB_OUTPUT
+
+      - name: Generate Summary
+        if: always()
+        run: |
+          CODE=${{ steps.install.outputs.exit_code }}
+          {
+            echo "### $([ "$CODE" = "0" ] && echo "✅ Success" || echo "❌ Failed"): Docklift Installation (${{ matrix.distro }})"
+            echo "- **Version:** \`${{ steps.verify.outputs.version }}\` | **Path:** \`/opt/docklift\` (${{ steps.verify.outputs.dir }})"
+            echo "| Service | Status |" ; echo "|---|---|"
+            echo "| Backend | ${{ steps.verify.outputs.backend }} |"
+            echo "| Frontend | ${{ steps.verify.outputs.frontend }} |"
+            echo "| Web UI | ${{ steps.verify.outputs.nginx }} |"
+            echo "| Proxy | ${{ steps.verify.outputs.proxy }} |"
+            echo "\n**Timing:** Setup: ${{ steps.setup.outputs.duration }}s \| Install: ${{ steps.install.outputs.duration }}s"
+            if [ "$CODE" != "0" ]; then
+              echo "\n### ❌ Error Logs\n\`\`\`bash"
+              tail -50 install_output_txt || echo "No logs"
+              echo "\`\`\`"
+            fi
+          } >> $GITHUB_STEP_SUMMARY
+
+      - name: Fail check
+        if: steps.install.outputs.exit_code != '0'
+        run: exit 1
