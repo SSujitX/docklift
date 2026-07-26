@@ -9,17 +9,16 @@ import {
   Square,
   Trash2,
   XCircle,
-  Layers,
 } from "lucide-react";
 
 const ACTION =
-  "h-9 gap-1.5 rounded-lg px-3.5 text-xs sm:text-sm font-semibold shadow-none border transition-colors";
+  "h-10 gap-1.5 rounded-xl px-3 text-xs sm:h-9 sm:text-sm font-semibold shadow-none border transition-colors";
 
 const ACTION_PRIMARY =
   `${ACTION} bg-brand text-brand-foreground border-transparent hover:bg-brand hover:brightness-110 hover:text-brand-foreground`;
 
 const ACTION_SECONDARY =
-  `${ACTION} bg-background text-foreground border-border hover:bg-secondary hover:text-foreground`;
+  `${ACTION} bg-background text-foreground border-border/60 hover:bg-secondary hover:text-foreground`;
 
 /** Quiet danger (Delete) — visible border + tint, not ghost-grey. */
 const ACTION_DANGER =
@@ -42,10 +41,12 @@ interface ProjectActionBarProps {
   actionLoading: boolean;
   currentAction: string | null;
   onAction: (action: string) => void;
-  /** Multi-service: make “all services” explicit so service workspace isn’t confused. */
+  /** Multi-service: aria/tooltip clarifies whole-stack scope. */
   multiService?: boolean;
-  /** Header: right-aligned cluster next to the title (single-service). */
+  /** Header: cluster next to the project title (top-right on desktop). */
   placement?: "header" | "panel";
+  /** Optional tooltip / title on the action group. */
+  title?: string;
   className?: string;
 }
 
@@ -56,45 +57,51 @@ export function ProjectActionBar({
   onAction,
   multiService = false,
   placement = "panel",
+  title,
   className,
 }: ProjectActionBarProps) {
   const isLive = status === "running" || status === "degraded";
   const isHeader = placement === "header";
+  const groupTitle =
+    title ||
+    (multiService
+      ? "Affects every service in this project"
+      : "Project actions");
 
   return (
     <div
       className={cn(
-        multiService && !isHeader
-          ? "flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
-          : "flex items-center justify-end",
+        isHeader
+          ? "flex w-full flex-col items-stretch gap-2 sm:items-end md:max-w-md"
+          : "flex items-center justify-center",
         className,
       )}
     >
-      {multiService && !isHeader && (
-        <div className="min-w-0">
-          <p className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-            <Layers className="h-3 w-3" />
-            All-services actions
-          </p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            Redeploy, restart, and stop hit every service in this project — not
-            only the app selected in Workspace.
-          </p>
-        </div>
+      {isHeader && (
+        <p className="text-left text-[11px] leading-snug text-muted-foreground sm:max-w-sm sm:text-right">
+          {multiService ? (
+            <>
+              Redeploy, restart, and stop apply to{" "}
+              <span className="font-medium text-foreground/80">every service</span>
+              {" "}in this project — not only the one selected in Workspace.
+            </>
+          ) : (
+            <>Redeploy, restart, and stop control this project’s containers.</>
+          )}
+        </p>
       )}
-
       <div
         role="group"
+        title={groupTitle}
         aria-label={
           multiService
             ? "Actions for all services in this project"
             : "Project actions"
         }
         className={cn(
-          "flex flex-wrap items-center gap-2",
           isHeader
-            ? "w-full justify-stretch sm:w-auto sm:justify-end"
-            : "w-full justify-end sm:w-auto",
+            ? "grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:justify-end"
+            : "flex w-full flex-wrap items-center justify-center gap-2",
         )}
       >
         {isLive ? (
@@ -105,10 +112,7 @@ export function ProjectActionBar({
               size="sm"
               onClick={() => onAction("redeploy")}
               disabled={actionLoading}
-              className={cn(
-                ACTION_PRIMARY,
-                isHeader && "min-w-0 flex-1 sm:flex-none",
-              )}
+              className={cn(ACTION_PRIMARY, "w-full sm:w-auto")}
             >
               {currentAction === "redeploy" ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -123,10 +127,7 @@ export function ProjectActionBar({
               size="sm"
               onClick={() => onAction("restart")}
               disabled={actionLoading}
-              className={cn(
-                ACTION_SECONDARY,
-                isHeader && "min-w-0 flex-1 sm:flex-none",
-              )}
+              className={cn(ACTION_SECONDARY, "w-full sm:w-auto")}
             >
               {currentAction === "restart" ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -141,10 +142,7 @@ export function ProjectActionBar({
               size="sm"
               onClick={() => onAction("stop")}
               disabled={actionLoading}
-              className={cn(
-                ACTION_SECONDARY,
-                isHeader && "min-w-0 flex-1 sm:flex-none",
-              )}
+              className={cn(ACTION_SECONDARY, "w-full sm:w-auto")}
             >
               {currentAction === "stop" ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -163,7 +161,7 @@ export function ProjectActionBar({
             disabled={currentAction === "cancel"}
             className={cn(
               ACTION_DANGER_SOLID,
-              isHeader && "min-w-0 flex-1 sm:flex-none",
+              "col-span-2 w-full sm:col-span-1 sm:w-auto",
             )}
           >
             {currentAction === "cancel" ? (
@@ -180,10 +178,7 @@ export function ProjectActionBar({
             size="sm"
             onClick={() => onAction("deploy")}
             disabled={actionLoading}
-            className={cn(
-              ACTION_PRIMARY,
-              isHeader && "min-w-0 flex-1 sm:flex-none",
-            )}
+            className={cn(ACTION_PRIMARY, "w-full sm:w-auto")}
           >
             {currentAction === "deploy" ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -200,10 +195,7 @@ export function ProjectActionBar({
           size="sm"
           onClick={() => onAction("delete")}
           disabled={actionLoading}
-          className={cn(
-            ACTION_DANGER,
-            isHeader && "min-w-0 flex-1 sm:flex-none",
-          )}
+          className={cn(ACTION_DANGER, "w-full sm:w-auto")}
           title="Delete project"
         >
           {currentAction === "delete" ? (
