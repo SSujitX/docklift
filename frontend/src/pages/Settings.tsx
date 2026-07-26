@@ -26,6 +26,8 @@ interface GitHubStatus {
   username?: string;
   avatar_url?: string;
   name?: string;
+  app_name?: string | null;
+  app_slug?: string | null;
   error?: string;
 }
 
@@ -733,6 +735,23 @@ function SettingsContent() {
                       
                       <div className="flex-1 text-center sm:text-left space-y-1">
                         <h2 className="text-xl font-bold">GitHub Integration</h2>
+                        {githubStatus?.app_name && (
+                          <p className="text-sm text-foreground/80">
+                            App{' '}
+                            {githubStatus.app_slug ? (
+                              <a
+                                href={`https://github.com/apps/${githubStatus.app_slug}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="font-medium text-cyan-600 hover:underline dark:text-cyan-400"
+                              >
+                                {githubStatus.app_name}
+                              </a>
+                            ) : (
+                              <span className="font-medium">{githubStatus.app_name}</span>
+                            )}
+                          </p>
+                        )}
                         <p className="text-muted-foreground">
                           Connect to automatically deploy public and private repositories.
                         </p>
