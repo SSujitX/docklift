@@ -1,15 +1,21 @@
-// DNS setup reference for custom domains: the A-record target plus the three
-// record shapes people actually need, and the Cloudflare caveats behind a fold.
-import { Check, ChevronDown, Copy, Globe2 } from "lucide-react";
+// DNS setup reference: A-record target, common record shapes, short Cloudflare notes.
+import { Check, Copy, Globe2 } from "lucide-react";
 import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { copyToClipboard } from "@/lib/utils";
 import { toast } from "sonner";
 
 const RECORDS = [
-  { label: "Root domain", host: "example.com", type: "A", name: "@" },
+  { label: "Root", host: "example.com", type: "A", name: "@" },
   { label: "Subdomain", host: "app.example.com", type: "A", name: "app" },
   { label: "WWW", host: "www.example.com", type: "CNAME", name: "www" },
+] as const;
+
+const TIPS = [
+  "Cloudflare SSL: Full (strict) after HTTPS works — never Flexible.",
+  "Orange cloud: allow /.well-known/acme-challenge/ over plain HTTP.",
+  "Open ports 80 and 443 on the server firewall.",
+  "Add www only when its DNS record exists — one miss fails the cert.",
 ] as const;
 
 export function DnsGuideCard({ serverIP }: { serverIP: string }) {
@@ -25,17 +31,20 @@ export function DnsGuideCard({ serverIP }: { serverIP: string }) {
   };
 
   return (
-    <Card className="border-border/50 p-4 sm:p-6">
-      <div className="flex flex-col gap-4 sm:gap-5">
+    <Card className="overflow-hidden border-border/50">
+      {/* Highlighted Point DNS header */}
+      <div className="border-b border-brand/15 bg-gradient-to-br from-brand/10 via-brand/5 to-transparent px-4 py-4 sm:px-6 sm:py-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <h3 className="flex items-center gap-2 text-base font-bold sm:text-lg">
-              <Globe2 className="h-4 w-4 text-brand sm:h-5 sm:w-5" />
+            <h3 className="flex items-center gap-2 text-base font-bold tracking-tight sm:text-lg">
+              <span className="flex h-8 w-8 items-center justify-center rounded-xl border border-brand/20 bg-brand/15">
+                <Globe2 className="h-4 w-4 text-brand" />
+              </span>
               Point DNS at this server
             </h3>
-            <p className="mt-1 text-xs text-muted-foreground sm:text-sm">
-              Create the record before adding the domain — Let&apos;s Encrypt verifies over
-              HTTP before it issues a certificate.
+            <p className="mt-1.5 max-w-xl text-xs leading-relaxed text-muted-foreground sm:text-sm">
+              Create the DNS record first. Let&apos;s Encrypt checks HTTP before
+              issuing a certificate.
             </p>
           </div>
 
@@ -43,7 +52,7 @@ export function DnsGuideCard({ serverIP }: { serverIP: string }) {
             type="button"
             onClick={handleCopy}
             disabled={!hasIP}
-            className="group flex items-center gap-3 rounded-xl border border-border/60 bg-secondary/40 px-3 py-2 text-left transition-colors hover:border-brand/40 disabled:cursor-default disabled:opacity-70"
+            className="group flex items-center gap-3 rounded-xl border border-brand/25 bg-background/80 px-3 py-2 text-left shadow-sm transition-colors hover:border-brand/50 disabled:cursor-default disabled:opacity-70"
           >
             <span className="flex flex-col">
               <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
@@ -61,7 +70,9 @@ export function DnsGuideCard({ serverIP }: { serverIP: string }) {
               ))}
           </button>
         </div>
+      </div>
 
+      <div className="space-y-4 p-4 sm:p-6">
         <div className="grid gap-2 sm:grid-cols-3">
           {RECORDS.map((record) => (
             <div
@@ -71,15 +82,17 @@ export function DnsGuideCard({ serverIP }: { serverIP: string }) {
               <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
                 {record.label}
               </p>
-              <p className="mt-1 truncate font-mono text-xs text-foreground/90">{record.host}</p>
-              <div className="mt-2 flex flex-wrap items-center gap-1 text-[10px] font-mono">
-                <span className="rounded bg-background px-1.5 py-0.5 border border-border/50">
+              <p className="mt-1 truncate font-mono text-xs text-foreground/90">
+                {record.host}
+              </p>
+              <div className="mt-2 flex flex-wrap items-center gap-1 font-mono text-[10px]">
+                <span className="rounded border border-border/50 bg-background px-1.5 py-0.5">
                   {record.type}
                 </span>
-                <span className="rounded bg-background px-1.5 py-0.5 border border-border/50">
+                <span className="rounded border border-border/50 bg-background px-1.5 py-0.5">
                   {record.name}
                 </span>
-                <span className="truncate rounded bg-background px-1.5 py-0.5 border border-border/50">
+                <span className="truncate rounded border border-border/50 bg-background px-1.5 py-0.5">
                   {record.type === "CNAME" ? "example.com" : serverIP || "server IP"}
                 </span>
               </div>
@@ -87,31 +100,14 @@ export function DnsGuideCard({ serverIP }: { serverIP: string }) {
           ))}
         </div>
 
-        <details className="group rounded-xl border border-border/50 bg-secondary/20 [&_summary::-webkit-details-marker]:hidden">
-          <summary className="flex cursor-pointer items-center justify-between gap-2 px-3 py-2.5 text-xs font-semibold sm:text-sm">
-            Cloudflare and propagation notes
-            <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
-          </summary>
-          <ul className="space-y-2 border-t border-border/40 px-3 py-3 text-xs text-muted-foreground">
-            <li>
-              Set Cloudflare SSL mode to <strong className="text-foreground">Full (strict)</strong>{" "}
-              once HTTPS is active. Flexible causes redirect loops.
+        <ul className="space-y-1.5 rounded-xl border border-border/40 bg-secondary/15 px-3 py-3 text-xs leading-relaxed text-muted-foreground sm:text-[13px]">
+          {TIPS.map((tip) => (
+            <li key={tip} className="flex gap-2">
+              <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-brand/70" />
+              <span>{tip}</span>
             </li>
-            <li>
-              With the orange cloud on, Cloudflare must still let{" "}
-              <code className="rounded bg-background px-1 py-0.5">/.well-known/acme-challenge/</code>{" "}
-              through over plain HTTP.
-            </li>
-            <li>
-              Ports <strong className="text-foreground">80</strong> and{" "}
-              <strong className="text-foreground">443</strong> must be open on the server firewall.
-            </li>
-            <li>
-              Add <code className="rounded bg-background px-1 py-0.5">www</code> as a separate domain
-              only when its DNS record exists — one missing record fails the whole certificate.
-            </li>
-          </ul>
-        </details>
+          ))}
+        </ul>
       </div>
     </Card>
   );
