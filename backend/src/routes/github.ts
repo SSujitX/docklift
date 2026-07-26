@@ -793,9 +793,15 @@ router.get('/status', async (req: Request, res: Response) => {
     const username = await getSetting('github_username');
     const avatarUrl = await getSetting('github_avatar_url');
     const appSlug = await getSetting('github_app_slug');
+    const appName = await getSetting('github_app_name');
     
     if (!installationId) {
-      return res.json({ connected: false, username: null });
+      return res.json({
+        connected: false,
+        username: null,
+        app_name: appName || null,
+        app_slug: appSlug || null,
+      });
     }
     
     // Check if private key exists
@@ -806,6 +812,8 @@ router.get('/status', async (req: Request, res: Response) => {
         username,
         avatar_url: avatarUrl,
         installation_id: installationId,
+        app_name: appName || null,
+        app_slug: appSlug || null,
         warning: 'Private key not found',
       });
     }
@@ -815,6 +823,8 @@ router.get('/status', async (req: Request, res: Response) => {
       username,
       avatar_url: avatarUrl,
       installation_id: installationId,
+      app_name: appName || null,
+      app_slug: appSlug || null,
       installUrl: appSlug ? `https://github.com/apps/${appSlug}/installations/new` : null
     });
   } catch (error) {
