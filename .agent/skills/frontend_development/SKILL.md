@@ -39,7 +39,7 @@ wrapper, because `AppShell` already supplies the top bar, max width and padding.
 |-----------|---------|
 | `AppShell.tsx` (`app/`) | Fixed rail, mobile drawer, top bar, content `<main>` |
 | `Sidebar.tsx` | Brand, New Project, grouped nav, Settings tree, version footer |
-| `navigation.ts` | Nav groups + breadcrumbs — add new pages here once |
+| `navigation.ts` | Nav groups + breadcrumbs — add new pages here once. Each item’s `section` prefixes keep the rail selected on nested routes (`/projects/*`, `/databases/new`, `/settings`, …) |
 | `lib/settingsNav.ts` | Settings section ids/labels shared by rail tree + Settings page |
 | `AccountMenu.tsx` | Header account menu: identity, profile, sign out (theme is TopBar toggle) |
 | `SidebarStatus.tsx` | Version + upgrade prompt (star cache shared with TopBar) |
