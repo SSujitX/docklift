@@ -1212,7 +1212,17 @@ router.post('/webhook', async (req: Request, res: Response) => {
     }
 
     const repoUrl = payload.repository?.clone_url || payload.repository?.html_url;
-    const pushedBranch = payload.ref?.replace('refs/heads/', '');
+    // Normalize heads/tags so tag-pinned projects match `refs/tags/v1` → `v1`
+    const rawRef = typeof payload.ref === 'string' ? payload.ref : '';
+    let pushedRef = rawRef;
+    let pushedKind: 'branch' | 'tag' | 'other' = 'other';
+    if (rawRef.startsWith('refs/heads/')) {
+      pushedRef = rawRef.slice('refs/heads/'.length);
+      pushedKind = 'branch';
+    } else if (rawRef.startsWith('refs/tags/')) {
+      pushedRef = rawRef.slice('refs/tags/'.length);
+      pushedKind = 'tag';
+    }
     
     if (!repoUrl) {
       return res.status(200).json({ message: 'No repository URL in payload' });
@@ -1249,9 +1259,15 @@ router.post('/webhook', async (req: Request, res: Response) => {
     
     for (const project of projects) {
       
-      // Check branch match (skip if branch is set and doesn't match)
-      if (project.github_branch && project.github_branch !== pushedBranch) {
-        skipped.push(`${project.name} (branch mismatch: ${pushedBranch} != ${project.github_branch})`);
+      // Match stored pin (branch or tag name) against normalized webhook ref
+      if (project.github_branch && project.github_branch !== pushedRef) {
+        skipped.push(
+          `${project.name} (ref mismatch: ${pushedRef || rawRef} != ${project.github_branch})`,
+        );
+        continue;
+      }
+      if (!pushedRef || pushedKind === 'other') {
+        skipped.push(`${project.name} (unsupported ref: ${rawRef || 'none'})`);
         continue;
       }
       
@@ -1304,7 +1320,7 @@ router.post('/webhook', async (req: Request, res: Response) => {
       message: triggered.length > 0 ? 'Auto-deploy triggered' : 'No deployments triggered',
       triggered: triggered.map(t => t.name),
       skipped,
-      branch: pushedBranch,
+      branch: pushedRef,
       commit: payload.head_commit?.id?.substring(0, 7) || 'unknown',
     });
     
