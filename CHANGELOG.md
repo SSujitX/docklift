@@ -1,3 +1,10 @@
+## [2.1.3](https://github.com/SSujitX/docklift/compare/v2.1.2...v2.1.3) (2026-07-26)
+
+
+### Features
+
+* **terminal:** implement shell WS auth deferral during sidebar upgrade confirmation and enhance connection handling ([abccd0f](https://github.com/SSujitX/docklift/commit/abccd0ffa0430f5d58061e3672b43de89bdf1b6a))
+
 ## [2.1.2](https://github.com/SSujitX/docklift/compare/v2.1.1...v2.1.2) (2026-07-26)
 
 
