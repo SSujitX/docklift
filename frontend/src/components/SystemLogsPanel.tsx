@@ -1,7 +1,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import { LogViewer } from "@/components/LogViewer";
-import { API_URL } from "@/lib/utils";
+import { API_URL, cn } from "@/lib/utils";
 
 interface SystemLogsPanelProps {
   /** Service key accepted by GET /api/system/logs/:service. */
@@ -11,11 +11,21 @@ interface SystemLogsPanelProps {
   label?: string;
   /** Real container name, shown beside the title. */
   container?: string;
+  /** Tailwind height class for the viewer (e.g. h-full, h-[650px]). */
+  height?: string;
+  className?: string;
 }
 
 const MAX_LOG_LINES = 10000;
 
-export function SystemLogsPanel({ service, isActive, label, container }: SystemLogsPanelProps) {
+export function SystemLogsPanel({
+  service,
+  isActive,
+  label,
+  container,
+  height = "h-[650px]",
+  className,
+}: SystemLogsPanelProps) {
   const [logs, setLogs] = useState<string[]>([]);
   const [connected, setConnected] = useState(false);
   const eventSourceRef = useRef<EventSource | null>(null);
@@ -151,14 +161,16 @@ export function SystemLogsPanel({ service, isActive, label, container }: SystemL
   const containerName = container || `docklift-${service}`;
 
   return (
-    <LogViewer
-      logs={logs}
-      connected={connected}
-      title={`${title} Logs`}
-      subtitle={containerName}
-      onClear={() => setLogs([])}
-      downloadFilename={`${containerName}-logs.txt`}
-      height="h-[650px]"
-    />
+    <div className={cn("min-h-0", className)}>
+      <LogViewer
+        logs={logs}
+        connected={connected}
+        title={`${title} Logs`}
+        subtitle={containerName}
+        onClear={() => setLogs([])}
+        downloadFilename={`${containerName}-logs.txt`}
+        height={height}
+      />
+    </div>
   );
 }
