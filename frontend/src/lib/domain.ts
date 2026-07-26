@@ -15,6 +15,10 @@ const HOSTNAME_REGEX =
 
 const IPV4_REGEX = /^\d{1,3}(\.\d{1,3}){3}$/;
 
+/**
+ * Strip only scheme + credentials + port + path/trailing slash.
+ * Never strips subdomain labels (`www.`, `api.v2.`, … stay intact).
+ */
 export function normalizeDomainInput(raw: string): DomainInputResult {
   const notices: string[] = [];
   let value = (raw || "").trim();
@@ -36,11 +40,18 @@ export function normalizeDomainInput(raw: string): DomainInputResult {
     value = value.slice(atIndex + 1);
   }
 
+  // Path / query / hash / trailing slash only — host labels are never split
   const pathIndex = value.search(/[/?#]/);
   if (pathIndex !== -1) {
     const tail = value.slice(pathIndex);
     notices.push(tail === "/" ? "Removed trailing slash" : `Removed path "${tail}"`);
     value = value.slice(0, pathIndex);
+  }
+
+  // Also strip a lone trailing slash left after other cleanups
+  if (value.endsWith("/")) {
+    notices.push("Removed trailing slash");
+    value = value.replace(/\/+$/, "");
   }
 
   const portMatch = /:(\d+)$/.exec(value);
@@ -120,6 +131,28 @@ export function normalizeDomainInput(raw: string): DomainInputResult {
   }
 
   return { value, notices, error: null };
+}
+
+/**
+ * For the add-domain field: if the user pasted/typed a URL, rewrite the field
+ * to the bare hostname (scheme + trailing slash/path stripped; subdomains kept).
+ */
+export function displayHostnameFromInput(raw: string): string {
+  const trimmed = (raw || "").trim();
+  if (!trimmed) return "";
+  const looksLikeUrl = /:\/\/|^\/\//.test(trimmed) || /[/?#]/.test(trimmed);
+  if (!looksLikeUrl) return raw;
+  const { value, error } = normalizeDomainInput(trimmed);
+  if (value && !error) return value;
+  // Partial URL mid-edit — still strip a leading scheme so the field stays clean
+  const schemeMatch = /^([a-z][a-z0-9+.-]*):\/\//i.exec(trimmed);
+  if (schemeMatch) {
+    let rest = trimmed.slice(schemeMatch[0].length);
+    const pathIndex = rest.search(/[/?#]/);
+    if (pathIndex !== -1) rest = rest.slice(0, pathIndex);
+    return rest.replace(/\/+$/, "");
+  }
+  return raw;
 }
 
 // Second-level labels that sit under a two-letter ccTLD (example.co.uk,
