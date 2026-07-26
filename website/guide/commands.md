@@ -172,27 +172,37 @@ curl -s http://127.0.0.1:8080/api/health
 
 UI also shows the version in the header / footer (authenticated compare).
 
-### How versions are changed
+### How versions are changed (do not hand-edit)
 
-Versioning is automatic via [semantic-release](https://github.com/semantic-release/semantic-release). Do **not** use `npm version`, `bumpp`, or manual bumps unless you intend to break the pipeline.
+Versioning is **automatic** via [semantic-release](https://github.com/semantic-release/semantic-release).
+Do **not** use `npm version`, `bumpp`, or manual bumps unless you know you are breaking the pipeline.
 
 ```bash
-# Conventional commits on master, then:
-# GitHub → Actions → "Release & Test" → Run workflow
-git commit -m "fix(deploy): description"       # → patch
-git commit -m "feat: something *force minor*"   # → minor
-git commit -m "feat: something *force major*"   # → major
-git commit -m "chore: docs *skip release*"      # → none
+# Assume current version is 1.3.21 (root + frontend + backend stay in sync)
+
+# 1) Commit with conventional messages on master
+git commit -m "fix(deploy): description"       # → patch  → 1.3.22
+git commit -m "feat(api): description"          # → patch  → 1.3.22
+git commit -m "chore: cleanup"                  # → patch  → 1.3.22
+git commit -m "feat: something *force minor*"   # → minor  → 1.4.0
+git commit -m "feat: something *force major*"   # → major  → 2.0.0
+git commit -m "chore: docs *skip release*"      # → none   → stays 1.3.21
+
+# 2) Push, then GitHub → Actions → "Release & Test" → Run workflow
+# semantic-release bumps package.json (root/frontend/backend), CHANGELOG.md, tag + GitHub Release
+# You do NOT edit CHANGELOG.md by hand — it is generated from these commits.
 ```
 
-| Commit signal | Release |
-|---------------|---------|
-| `feat:`, `fix:`, `perf:`, `refactor:`, `chore:` … | Patch |
-| `*force minor*` in subject | Minor |
-| `*force major*` / `BREAKING CHANGE` | Major |
-| `*skip release*` in subject | None |
+| Commit signal | Release | Demo (`1.3.21` →) |
+|---------------|---------|-------------------|
+| `feat:`, `fix:`, `perf:`, `refactor:`, `docs:`, `test:`, `ci:`, `chore:` … | Patch | `1.3.22` |
+| `*force minor*` in subject | Minor | `1.4.0` |
+| `*force major*` / `BREAKING CHANGE` | Major | `2.0.0` |
+| `*skip release*` in subject | None | `1.3.21` (unchanged) |
 
-Config: `release.config.cjs` · Workflow: `.github/workflows/release.yml`
+SemVer reminder: **patch** = bug fix / small change, **minor** = new feature (forced here), **major** = breaking change.
+
+Config: [`release.config.cjs`](https://github.com/SSujitX/docklift/blob/master/release.config.cjs) · Workflow: [`.github/workflows/release.yml`](https://github.com/SSujitX/docklift/blob/master/.github/workflows/release.yml)
 
 ### After a release on a server
 
