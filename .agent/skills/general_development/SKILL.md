@@ -125,7 +125,7 @@ cd frontend; .\node_modules\.bin\tsc -b --noEmit
   1. matching `.agent/skills/*/SKILL.md`
   2. operator docs (`README.md`, `commands.md`)
   3. install/upgrade/uninstall `.sh` scripts when behavior changes
-  4. in-app docs under `frontend/src/pages/docs/components/`
+  4. public docs under `website/guide/` (VitePress → https://docklift.dev)
   Do not ship code-only updates and leave skills/docs/scripts stale.
 
 ## Troubleshooting
