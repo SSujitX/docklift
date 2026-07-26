@@ -6,18 +6,20 @@ import path from 'path';
 import { config } from '../lib/config.js';
 import {
   clearSslMeta,
+  certificateFilesExist,
   getAcmeEmail,
   getCertificateStatus,
+  getSslEvents,
   issueCertificate,
   setAcmeEmail,
 } from '../services/certs.js';
+import { checkDomainsDns, getServerPublicIp } from '../services/dnsCheck.js';
 import { reloadNginx } from '../services/nginx.js';
 import {
   PANEL_CONF_MARKER,
   buildHttpHttpsServers,
   buildPanelProxyLocation,
 } from '../services/nginxSsl.js';
-import { certificateFilesExist } from '../services/certs.js';
 import { assertHostnamesAvailable } from '../lib/domainOwnership.js';
 
 const router: Router = express.Router();
@@ -161,10 +163,57 @@ router.post('/', async (req: Request, res: Response) => {
 
   try {
     const ssl = await provisionPanelSsl(normalized, portNum);
-    res.json({ success: true, domain: normalized, port: portNum, ssl });
+    res.json({
+      success: true,
+      domain: normalized,
+      port: portNum,
+      ssl,
+      events: getSslEvents([normalized]),
+    });
   } catch (error: any) {
     console.error('Add domain error:', error);
     res.status(500).json({ error: error.message || 'Failed to add domain' });
+  }
+});
+
+// POST /api/domains/dns-check — verify panel hostnames resolve to this server
+router.post('/dns-check', async (req: Request, res: Response) => {
+  try {
+    const raw = req.body?.domains;
+    const hosts = (Array.isArray(raw) ? raw : [])
+      .map((d: unknown) => String(d || '').trim().toLowerCase())
+      .filter((d: string) => DOMAIN_REGEX.test(d))
+      .slice(0, 10);
+    if (hosts.length === 0) {
+      return res.status(400).json({ error: 'Provide at least one domain' });
+    }
+    const [checks, serverIp] = await Promise.all([
+      checkDomainsDns(hosts),
+      getServerPublicIp(),
+    ]);
+    res.json({ checks, serverIp });
+  } catch (error: any) {
+    console.error('Panel DNS check error:', error);
+    res.status(500).json({ error: error.message || 'DNS check failed' });
+  }
+});
+
+// GET /api/domains/:domain/ssl — status + Let's Encrypt activity for one hostname
+router.get('/:domain/ssl', async (req: Request, res: Response) => {
+  const domain = String(req.params.domain || '').trim().toLowerCase();
+  if (!DOMAIN_REGEX.test(domain)) {
+    return res.status(400).json({ error: 'Invalid domain format' });
+  }
+  try {
+    await fs.access(panelConfPath(domain));
+    const ssl = await getCertificateStatus(domain);
+    res.json({ ssl, events: getSslEvents([domain]) });
+  } catch (error: any) {
+    if (error.code === 'ENOENT') {
+      return res.status(404).json({ error: 'Domain configuration not found' });
+    }
+    console.error('Panel SSL status error:', error);
+    res.status(500).json({ error: 'Failed to read SSL status' });
   }
 });
 
@@ -180,7 +229,12 @@ router.post('/:domain/ssl/retry', async (req: Request, res: Response) => {
     const port = parsePanelPort(content) ?? 8080;
     await clearSslMeta(domain);
     const ssl = await provisionPanelSsl(domain, port, { force: true });
-    res.json({ success: true, domain, ssl });
+    res.json({
+      success: true,
+      domain,
+      ssl,
+      events: getSslEvents([domain]),
+    });
   } catch (error: any) {
     if (error.code === 'ENOENT') {
       return res.status(404).json({ error: 'Domain configuration not found' });
