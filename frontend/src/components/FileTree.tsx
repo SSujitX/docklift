@@ -58,7 +58,8 @@ const formatSize = (bytes: number) => {
 };
 
 function TreeItem({ item, level, onFileEdit }: TreeItemProps) {
-  const [isOpen, setIsOpen] = useState(level < 2);
+  // Folders start collapsed — expand via the chevron
+  const [isOpen, setIsOpen] = useState(false);
 
   if (item.type === "folder") {
     return (
