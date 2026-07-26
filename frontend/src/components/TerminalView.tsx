@@ -95,7 +95,7 @@ function formatVersion(v?: string) {
   return v.startsWith("v") ? v : `v${v}`;
 }
 
-export function TerminalView() {
+export function TerminalView({ className }: { className?: string }) {
   const { resolvedTheme } = useTheme();
   const [searchParams, setSearchParams] = useSearchParams();
   const [showRebootDialog, setShowRebootDialog] = useState(false);
@@ -655,19 +655,19 @@ export function TerminalView() {
           : "unknown";
 
   return (
-    <div className="flex flex-col gap-4">
-      {/* Host controls — single quiet strip, not rainbow cards */}
-      <div className="flex flex-col gap-2 border-b border-border pb-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-        <p className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+    <div className={cn("flex min-h-0 flex-col gap-2", className)}>
+      {/* Host controls — compact strip; scroll horizontally on small screens */}
+      <div className="flex shrink-0 items-center gap-2 border-b border-border/60 pb-2">
+        <p className="hidden shrink-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground sm:block">
           Host
         </p>
-        <div className="flex flex-wrap items-center gap-1">
+        <div className="-mx-1 flex min-w-0 flex-1 gap-1 overflow-x-auto px-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <Button
             variant="ghost"
             size="sm"
             disabled={hostBusy}
             onClick={() => setShowUpdateConfirm(true)}
-            className="h-8 px-2.5 text-xs font-medium text-muted-foreground hover:text-foreground"
+            className="h-8 shrink-0 px-2.5 text-xs font-medium text-muted-foreground hover:text-foreground"
           >
             Update packages
           </Button>
@@ -676,7 +676,7 @@ export function TerminalView() {
             size="sm"
             disabled={hostBusy}
             onClick={() => void openUpgradeConfirm()}
-            className="h-8 px-2.5 text-xs font-medium text-muted-foreground hover:text-foreground"
+            className="h-8 shrink-0 px-2.5 text-xs font-medium text-muted-foreground hover:text-foreground"
           >
             Upgrade Docklift
           </Button>
@@ -685,20 +685,20 @@ export function TerminalView() {
             size="sm"
             disabled={isProcessing || hostLocked}
             onClick={() => setShowPurgeDialog(true)}
-            className="h-8 px-2.5 text-xs font-medium text-muted-foreground hover:text-foreground"
+            className="h-8 shrink-0 px-2.5 text-xs font-medium text-muted-foreground hover:text-foreground"
           >
             Purge images
           </Button>
           <span
             aria-hidden
-            className="mx-1 hidden h-4 w-px bg-border sm:inline-block"
+            className="mx-0.5 hidden h-4 w-px shrink-0 bg-border sm:inline-block"
           />
           <Button
             variant="ghost"
             size="sm"
             disabled={isProcessing || hostLocked}
             onClick={() => setShowResetDialog(true)}
-            className="h-8 px-2.5 text-xs font-medium text-muted-foreground hover:text-foreground"
+            className="h-8 shrink-0 px-2.5 text-xs font-medium text-muted-foreground hover:text-foreground"
           >
             Reset stack
           </Button>
@@ -707,23 +707,22 @@ export function TerminalView() {
             size="sm"
             disabled={isProcessing || hostLocked}
             onClick={() => setShowRebootDialog(true)}
-            className="h-8 px-2.5 text-xs font-medium text-destructive hover:bg-destructive/10 hover:text-destructive"
+            className="h-8 shrink-0 px-2.5 text-xs font-medium text-destructive hover:bg-destructive/10 hover:text-destructive"
           >
             Reboot
           </Button>
         </div>
       </div>
 
-      {/* Shell frame */}
+      {/* Shell frame — fills remaining viewport; xterm FitAddon follows ResizeObserver */}
       <div
         className={cn(
-          "flex flex-col overflow-hidden border border-border bg-background",
-          isFullscreen
-            ? "fixed inset-0 z-50 m-0 h-screen w-screen rounded-none border-0"
-            : "min-h-0",
+          "flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border/60 bg-background",
+          isFullscreen &&
+            "fixed inset-0 z-50 m-0 h-screen w-screen rounded-none border-0",
         )}
       >
-        <div className="flex items-center justify-between gap-3 border-b border-border px-3 py-2">
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border/60 px-3 py-1.5 sm:py-2">
           <div className="flex min-w-0 items-baseline gap-2">
             <span className="truncate font-mono text-xs text-foreground">
               root@docklift
@@ -762,11 +761,7 @@ export function TerminalView() {
 
         <div
           ref={terminalRef}
-          className={cn(
-            "flex-1 p-2",
-            !isFullscreen &&
-              "min-h-[min(70vh,560px)] sm:min-h-[min(72vh,640px)]",
-          )}
+          className="min-h-0 flex-1 p-2"
           style={{ background: termBg }}
         />
       </div>
