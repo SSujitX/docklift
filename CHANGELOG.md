@@ -1,3 +1,5 @@
+## [2.1.1](https://github.com/SSujitX/docklift/compare/v2.1.0...v2.1.1) (2026-07-26)
+
 # [2.1.0](https://github.com/SSujitX/docklift/compare/v2.0.14...v2.1.0) (2026-07-26)
 
 
