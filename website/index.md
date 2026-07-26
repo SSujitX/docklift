@@ -51,3 +51,5 @@ curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh 
 Then open `http://SERVER_IP:8080`, paste the setup code from the installer output, and create your admin account.
 
 [Continue with Quick Start →](/guide/quick-start)
+
+<ChangelogPreview />
