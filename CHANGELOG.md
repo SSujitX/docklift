@@ -1,3 +1,11 @@
+## [2.1.2](https://github.com/SSujitX/docklift/compare/v2.1.1...v2.1.2) (2026-07-26)
+
+
+### Features
+
+* **github:** include app name and slug in status response ([bc623ac](https://github.com/SSujitX/docklift/commit/bc623ac8a91a2d8df1e5aa8863dca9319da63067))
+* **settings:** display GitHub app name and slug in integration section ([c063d4d](https://github.com/SSujitX/docklift/commit/c063d4d88ac4c0e1ec13075b3ff4b672c8fad1c2))
+
 ## [2.1.1](https://github.com/SSujitX/docklift/compare/v2.1.0...v2.1.1) (2026-07-26)
 
 # [2.1.0](https://github.com/SSujitX/docklift/compare/v2.0.14...v2.1.0) (2026-07-26)
