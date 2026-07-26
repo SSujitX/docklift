@@ -57,8 +57,8 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   },
   {
     id: "domain",
-    label: "Domains",
-    description: "Global domains and SSL",
+    label: "Domain",
+    description: "Panel hostname and HTTPS",
     icon: Globe,
   },
   {
