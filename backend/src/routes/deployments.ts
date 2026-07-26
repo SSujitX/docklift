@@ -189,11 +189,24 @@ async function failDeploymentState(
     .catch(() => {});
 }
 
-async function activateServiceDomains(projectId: string) {
+async function activateServiceDomains(
+  projectId: string,
+  opts?: {
+    /** Return false to abort mid-loop / mid-nginx write (cancel stole the lock). */
+    shouldContinue?: () => boolean | Promise<boolean>;
+  },
+) {
   const services = await prisma.service.findMany({ where: { project_id: projectId } });
   for (const svc of services) {
+    if (opts?.shouldContinue && !(await opts.shouldContinue())) {
+      throw new Error('Deployment cancelled');
+    }
     if (svc.domain && svc.container_name) {
-      await updateServiceDomain({ ...svc, status: 'running' });
+      // Keep deploy-time HTTPS; shouldContinue aborts before each write/reload/cert step.
+      await updateServiceDomain(
+        { ...svc, status: 'running' },
+        { shouldContinue: opts?.shouldContinue },
+      );
     }
   }
 }
@@ -1151,13 +1164,31 @@ async function deployProject(req: Request, res: Response) {
       if (await stopIfSuperseded()) return;
 
       success = code === 0;
+
+      const stillOwns = () => ownsProjectDeploying(projectId, deployment.id);
       
       if (success) {
+        // Re-check immediately before each side effect — cancel can finish during awaits.
+        if (!stillOwns()) {
+          await stopIfSuperseded();
+          return;
+        }
         // Managed DBs are linked over Docker DNS — proxy attach is best-effort only.
         try {
           await dockerService.connectProxyToProjectNetwork(projectId);
+          if (!stillOwns()) {
+            // Undo zombie attach if cancel won during the await
+            await dockerService.disconnectProxyFromProjectNetwork(projectId).catch(() => {});
+            await stopIfSuperseded();
+            return;
+          }
           writeLog(`🔗 Edge proxy attached to project network\n`);
         } catch (netErr: any) {
+          if (!stillOwns()) {
+            await dockerService.disconnectProxyFromProjectNetwork(projectId).catch(() => {});
+            await stopIfSuperseded();
+            return;
+          }
           if (isManagedDb) {
             writeLog(
               `⚠️ Edge proxy attach skipped/failed (OK for internal databases): ${netErr?.message || 'failed'}\n`,
@@ -1199,6 +1230,10 @@ async function deployProject(req: Request, res: Response) {
           }
         }
 
+        if (!stillOwns()) {
+          await stopIfSuperseded();
+          return;
+        }
         try {
           if (isManagedDb) {
             await reapplyDatabaseLinksForDatabase(projectId);
@@ -1210,6 +1245,14 @@ async function deployProject(req: Request, res: Response) {
           writeLog(
             `⚠️ Link re-apply warning: ${linkErr instanceof Error ? linkErr.message : String(linkErr)}\n`,
           );
+        }
+        if (!stillOwns()) {
+          // Cancel may have torn down while links re-attached — undo app-side joins
+          if (!isManagedDb) {
+            await disconnectLinkedDatabasesFromApp(projectId).catch(() => {});
+          }
+          await stopIfSuperseded();
+          return;
         }
 
         if (await stopIfSuperseded()) return;
@@ -1255,16 +1298,38 @@ async function deployProject(req: Request, res: Response) {
       if (await stopIfSuperseded()) return;
       
       if (success) {
+        if (!stillOwns()) {
+          await stopIfSuperseded();
+          return;
+        }
         await syncProjectStatusFromContainers(projectId);
         if (await stopIfSuperseded()) return;
         try {
-          await activateServiceDomains(projectId);
+          await activateServiceDomains(projectId, {
+            shouldContinue: () => stillOwns(),
+          });
+          if (!stillOwns()) {
+            await stopIfSuperseded();
+            return;
+          }
           writeLog(`🌐 Nginx domains activated\n`);
         } catch (e: any) {
+          if (
+            e?.message === 'Deployment cancelled' ||
+            !stillOwns() ||
+            (await isDeploymentCancelled(projectId, deployment.id))
+          ) {
+            await stopIfSuperseded();
+            return;
+          }
           writeLog(`⚠️ Domain activation warning: ${e?.message || 'failed'}\n`);
         }
         if (await stopIfSuperseded()) return;
       } else {
+        if (!stillOwns()) {
+          await stopIfSuperseded();
+          return;
+        }
         await prisma.project.update({
           where: { id: projectId },
           data: { status: 'error' },
