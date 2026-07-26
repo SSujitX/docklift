@@ -21,6 +21,7 @@ Push to master → Run "Release & Test" workflow → semantic-release handles ev
 5. Commits bumped files back to master: `chore(release): X.Y.Z [skip ci]`
 6. Creates git tag `vX.Y.Z`
 7. Creates GitHub Release with generated notes
+8. Docs site (`docklift.dev`) rebuilds after a successful **Release & Test** (`workflow_run` in `docs.yml` — needed because the release commit uses `[skip ci]`). That Docs run checks out the **branch tip** (not `workflow_run.head_sha`, which is pre–semantic-release). Also redeploys on pushes that touch `website/**` or `CHANGELOG.md`. Homepage preview + `/changelog` sync from root `CHANGELOG.md` at VitePress build time (`website/scripts/sync-changelog.mjs`).
 
 ## Key Files
 
@@ -58,18 +59,30 @@ type(scope): description
 
 ### Examples
 
+Assume current version is **1.3.21** (root + frontend + backend stay in sync):
+
 ```bash
-# Standard commits
-git commit -m "fix(deploy): use fetch+reset instead of git pull"
-git commit -m "feat(logs): add search functionality to log viewer"
-git commit -m "docs: update README with release instructions"
+# 1) Commit with conventional messages on master
+git commit -m "fix(deploy): description"       # → patch  → 1.3.22
+git commit -m "feat(api): description"          # → patch  → 1.3.22
+git commit -m "chore: cleanup"                  # → patch  → 1.3.22
+git commit -m "feat: something *force minor*"   # → minor  → 1.4.0
+git commit -m "feat: something *force major*"   # → major  → 2.0.0
+git commit -m "chore: docs *skip release*"      # → none   → stays 1.3.21
 
-# Force a minor release
-git commit -m "feat(api): add new endpoint *force minor*"
-
-# Skip release entirely
-git commit -m "chore: update comments *skip release*"
+# 2) Push, then GitHub → Actions → "Release & Test" → Run workflow
+# semantic-release bumps package.json (root/frontend/backend), CHANGELOG.md, tag + GitHub Release
+# You do NOT edit CHANGELOG.md by hand — it is generated from these commits.
 ```
+
+| Commit signal | Release | Demo (`1.3.21` →) |
+|---------------|---------|-------------------|
+| `feat:`, `fix:`, `perf:`, `refactor:`, `docs:`, `test:`, `ci:`, `chore:` … | Patch | `1.3.22` |
+| `*force minor*` in subject | Minor | `1.4.0` |
+| `*force major*` / `BREAKING CHANGE` | Major | `2.0.0` |
+| `*skip release*` in subject | None | `1.3.21` (unchanged) |
+
+Operator-facing copy: root [`commands.md`](../../../commands.md) §6 and website [`guide/commands.md`](../../../website/guide/commands.md).
 
 ## Server upgrade script (`upgrade.sh`)
 
@@ -104,15 +117,15 @@ Uninstall: DockLift-named/labelled resources only (incl. `dl-net-*`); **no** hos
 ## How to Release
 
 ```bash
-# 1. Commit your changes with conventional messages
+# 1. Commit with a conventional message (see Examples above for bump → version map)
 git add -A
-git commit -m "fix(deploy): description of change"
+git commit -m "fix(deploy): description of change"   # → patch
 
 # 2. Push to master
 git push origin master
 
-# 3. Go to GitHub → Actions → "Release & Test" → Run workflow
-# semantic-release does everything else automatically
+# 3. GitHub → Actions → "Release & Test" → Run workflow
+# semantic-release bumps versions, CHANGELOG.md, tag + GitHub Release
 ```
 
 ## Version Bump Strategy
