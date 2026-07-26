@@ -23,7 +23,11 @@ import type { SslInfo } from "@/components/SslStatusBadge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { authFetch } from "@/lib/auth";
-import { dnsRecordHint, normalizeDomainInput } from "@/lib/domain";
+import {
+  displayHostnameFromInput,
+  dnsRecordHint,
+  normalizeDomainInput,
+} from "@/lib/domain";
 import type { DomainDnsCheck, Service, SslEvent } from "@/lib/types";
 import { API_URL, cn, copyToClipboard } from "@/lib/utils";
 import { sslFixFor } from "./sslHelp";
@@ -403,7 +407,17 @@ export function ServiceDomainCard({
               <input
                 id={`domain-input-${service.id}`}
                 value={input}
-                onChange={(e) => setInput(e.target.value)}
+                onChange={(e) => setInput(displayHostnameFromInput(e.target.value))}
+                onPaste={(e) => {
+                  const pasted = e.clipboardData.getData("text");
+                  if (!pasted) return;
+                  const cleaned = displayHostnameFromInput(pasted);
+                  if (cleaned !== pasted) {
+                    e.preventDefault();
+                    setInput(cleaned);
+                  }
+                }}
+                onBlur={() => setInput((v) => displayHostnameFromInput(v))}
                 placeholder="app.example.com"
                 spellCheck={false}
                 autoComplete="off"
@@ -447,17 +461,11 @@ export function ServiceDomainCard({
                   </>
                 )}
               </p>
-              {parsed.notices.length > 0 && (
-                <p className="flex items-start gap-1.5 text-amber-600">
-                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                  {parsed.notices.join(" · ")}
-                </p>
-              )}
             </div>
           ) : (
             <p className="text-xs text-muted-foreground">
-              Paste a full URL if it is easier — the scheme, port and path are stripped
-              automatically.
+              Paste a URL — only <code className="font-mono">https://</code> and a trailing{" "}
+              <code className="font-mono">/</code> (or path) are removed. Subdomains stay as-is.
             </p>
           )}
         </form>
