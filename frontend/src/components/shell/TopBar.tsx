@@ -109,7 +109,7 @@ export function TopBar() {
           type="button"
           onClick={() => setPaletteOpen(true)}
           aria-label="Open command palette"
-          className="flex h-9 w-9 items-center justify-center rounded-xl border border-border/60 bg-secondary/30 text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground sm:w-auto sm:min-w-[10rem] sm:gap-2 sm:px-3"
+          className="flex h-9 w-9 items-center justify-center rounded-xl border border-border/60 bg-secondary/30 text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground sm:w-auto sm:min-w-[14rem] sm:gap-2 sm:px-3 md:min-w-[16rem] lg:min-w-[18rem]"
         >
           <Search className="h-4 w-4 shrink-0" />
           <span className="hidden flex-1 text-left text-xs font-medium sm:inline">
