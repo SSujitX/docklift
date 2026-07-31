@@ -586,8 +586,9 @@ router.get('/ip', async (req: Request, res: Response) => {
 
 /**
  * POST /api/system/purge — DockLift-scoped cleanup only.
- * Removed (do not restore without expert step-up auth): host-wide docker prune -af,
- * restarting foreign containers, swap cycling, drop_caches, journal vacuum, apt clean, /tmp wipe.
+ * Removes unused docklift-* images outside each project's keep-2 set, then
+ * clears all BuildKit cache. Never host-wide system prune / foreign images /
+ * volumes / OS maintenance.
  */
 router.post('/purge', async (req: Request, res: Response) => {
   try {
@@ -605,16 +606,106 @@ router.post('/purge', async (req: Request, res: Response) => {
       /* ignore */
     }
 
-    // Never auto-prune host Docker images from the panel — dangling layers may belong
-    // to unrelated workloads on a shared host.
-    results.push('○ Automatic Docker image cleanup is disabled (shared-host safe)');
-    results.push('○ Host maintenance (swap, cache, journal, apt, /tmp) is not available via the panel');
-    results.push('○ Foreign containers are never restarted by DockLift purge');
+    const {
+      buildKeepImageSet,
+      parseImageTagsJson,
+      pruneBuildKitAll,
+      removeUnusedDockliftImages,
+      getContainerImageRef,
+    } = await import('../lib/imageCleanup.js');
+
+    const busyDeploy = await prisma.deployment.findFirst({
+      where: { status: 'in_progress' },
+      select: { id: true, project_id: true },
+    });
+    if (busyDeploy) {
+      return res.status(409).json({
+        error:
+          'A deployment is in progress. Wait for it to finish before purging (avoids deleting in-flight images / BuildKit layers).',
+        deploymentId: busyDeploy.id,
+        projectId: busyDeploy.project_id,
+      });
+    }
+
+    const projectIds = (
+      await prisma.project.findMany({ select: { id: true } })
+    ).map((p) => p.id);
+
+    const keepSet = new Set<string>();
+    for (const projectId of projectIds) {
+      const successes = await prisma.deployment.findMany({
+        where: { project_id: projectId, status: 'success' },
+        orderBy: { created_at: 'desc' },
+        take: 2,
+        select: { image_tags: true },
+      });
+      const maps = successes.map((d) => parseImageTagsJson(d.image_tags));
+      for (const tag of buildKeepImageSet(maps)) {
+        keepSet.add(tag);
+      }
+    }
+
+    // Fail closed if a deploy started after the first busy check — do not rmi / -af.
+    const racedDeploy = await prisma.deployment.findFirst({
+      where: { status: 'in_progress' },
+      select: { id: true, project_id: true },
+    });
+    if (racedDeploy) {
+      return res.status(409).json({
+        error:
+          'A deployment started during purge preparation. Wait for it to finish before purging.',
+        deploymentId: racedDeploy.id,
+        projectId: racedDeploy.project_id,
+      });
+    }
+
+    const services = await prisma.service.findMany({
+      select: { container_name: true },
+    });
+    const inUseRefs = new Set<string>(keepSet);
+    for (const svc of services) {
+      if (!svc.container_name) continue;
+      const ref = await getContainerImageRef(svc.container_name);
+      if (ref) inUseRefs.add(ref);
+    }
+
+    const imageResult = await removeUnusedDockliftImages({
+      keepSet,
+      inUseRefs,
+    });
+    results.push(
+      `✓ Removed ${imageResult.removed.length} unused Docklift image tag(s); kept ${imageResult.kept.length}`,
+    );
+    if (imageResult.skippedInUse.length) {
+      results.push(`○ Skipped ${imageResult.skippedInUse.length} in-use tag(s)`);
+    }
+    for (const err of imageResult.errors.slice(0, 5)) {
+      results.push(`! ${err}`);
+    }
+
+    // Never wipe BuildKit under an in-flight build (race during image cleanup).
+    const busyBeforeBuildKit = await prisma.deployment.findFirst({
+      where: { status: 'in_progress' },
+      select: { id: true },
+    });
+    if (busyBeforeBuildKit) {
+      results.push(
+        '○ Skipped BuildKit wipe — a deployment is in progress (images already cleaned)',
+      );
+    } else {
+      const bk = await pruneBuildKitAll();
+      results.push(
+        bk.ok
+          ? '✓ BuildKit cache cleared (builder prune -af)'
+          : `! BuildKit prune warning: ${bk.output || 'failed'}`,
+      );
+    }
+    results.push('○ Foreign images/containers/volumes were not touched');
+    results.push('○ Host OS maintenance (swap, journal, apt, /tmp) is not available via the panel');
 
     cachedStats = null;
     lastFetch = 0;
 
-    await new Promise((resolve) => setTimeout(resolve, 500));
     try {
       const memData = await si.mem();
       memoryAfter = Math.round((memData.used / memData.total) * 100);
@@ -625,6 +716,8 @@ router.post('/purge', async (req: Request, res: Response) => {
     res.json({
       message: 'DockLift-scoped cleanup completed',
       details: results,
+      removedImages: imageResult.removed.length,
+      keptImages: imageResult.kept.length,
       memoryBefore: memoryBefore || null,
       memoryAfter: memoryAfter || null,
       memorySaved: memoryBefore && memoryAfter ? `${memoryBefore - memoryAfter}%` : null,
