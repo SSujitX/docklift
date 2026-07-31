@@ -116,9 +116,11 @@ delete them. They are removed when the project is deleted.
 docker system prune -a
 ```
 
-Product paths must **not** auto-prune Docker images (shared-host safe).
-`POST /api/system/purge` and post-deploy cleanup are no-ops for image deletion.
+Product paths may prune **only** `docklift-<project8>-*` app tags (keep-2 after success) and
+BuildKit cache (`builder prune -f` auto; `-af` on System purge). Never `docker system prune`
+and never delete foreign / managed DB upstream images from the panel.
 
-For full removal use `uninstall.sh`, which targets DockLift-owned resources
-(`com.docklift.*` labels / `dl-net-*` / core names). Prefer labeled cleanup over host-wide
-`system prune` / `builder prune`.
+Helpers: `backend/src/lib/imageCleanup.ts`.
+
+For full platform removal use `uninstall.sh`, which targets DockLift-owned resources
+(`com.docklift.*` labels / `dl-net-*` / core names).
