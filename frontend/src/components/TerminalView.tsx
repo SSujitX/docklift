@@ -772,7 +772,7 @@ export function TerminalView({ className }: { className?: string }) {
       purge: {
         title: "Confirm image purge",
         description:
-          "Enter your account password to remove dangling Docker images.",
+          "Enter your account password to remove unused Docklift images and clear BuildKit cache.",
         submit: "Purge images",
       },
     };
@@ -1245,10 +1245,11 @@ export function TerminalView({ className }: { className?: string }) {
       <Dialog open={showPurgeDialog} onOpenChange={setShowPurgeDialog}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Purge dangling images?</DialogTitle>
+            <DialogTitle>Purge unused Docklift images?</DialogTitle>
             <DialogDescription>
-              Removes untagged Docker images only. No host prune, journal wipe,
-              or restart of other workloads.
+              Removes unused Docklift images outside keep-2 and clears all
+              BuildKit cache. No host prune, journal wipe, or restart of other
+              workloads.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2 sm:gap-0">
