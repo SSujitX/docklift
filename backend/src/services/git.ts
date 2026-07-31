@@ -136,6 +136,30 @@ export async function getLastCommitMessage(projectPath: string): Promise<string 
   }
 }
 
+/** Full commit SHA at HEAD, or null if not a git checkout. */
+export async function getCommitSha(projectPath: string): Promise<string | null> {
+  try {
+    if (!fs.existsSync(path.join(projectPath, '.git'))) return null;
+    const git = simpleGit(projectPath);
+    const sha = await git.revparse(['HEAD']);
+    return sha?.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/** Hard-reset working tree to a known commit (rollback). */
+export async function resetToCommit(projectPath: string, commitSha: string): Promise<void> {
+  if (!commitSha || !/^[0-9a-f]{7,40}$/i.test(commitSha)) {
+    throw new Error('Invalid commit SHA');
+  }
+  if (!fs.existsSync(path.join(projectPath, '.git'))) {
+    throw new Error('Project path is not a git repository');
+  }
+  const git = simpleGit(projectPath);
+  await git.reset(['--hard', commitSha]);
+}
+
 // SECURITY: Remove credentials from origin remote after clone/pull
 export async function scrubOriginRemote(projectPath: string, cleanUrl: string): Promise<void> {
   if (!cleanUrl || !fs.existsSync(path.join(projectPath, '.git'))) return;
