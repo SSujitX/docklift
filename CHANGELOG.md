@@ -1,3 +1,24 @@
+## [2.1.4](https://github.com/SSujitX/docklift/compare/v2.1.3...v2.1.4) (2026-07-31)
+
+
+### Bug Fixes
+
+* **system:** clarify purge removes unused docklift images ([97852de](https://github.com/SSujitX/docklift/commit/97852de984f48dd56d1c82b74e76d825e38b51c8))
+* **terminal:** clarify purge clears BuildKit cache ([f357d9a](https://github.com/SSujitX/docklift/commit/f357d9a5fb9f519718740d6b47415f07e1de489c))
+
+
+### Features
+
+* **db:** backfill commit_sha and image_tags columns ([cdde56e](https://github.com/SSujitX/docklift/commit/cdde56e75169597f5b4b080e6fb484d5d6408779))
+* **db:** migrate deployment image_tags columns ([270a59b](https://github.com/SSujitX/docklift/commit/270a59be520b753662fb801e6706b74c8348b4b3))
+* **db:** store deploy commit sha and image tags ([8ff6f15](https://github.com/SSujitX/docklift/commit/8ff6f15ed10ff0edfbb309f59be3aa3dd32124c1))
+* **deploy:** add keep-2 image and BuildKit helpers ([404d760](https://github.com/SSujitX/docklift/commit/404d7601aabfa49d5f869b8f9402d657e311e039))
+* **deploy:** keep-2 prune and restore previous API ([d64d84c](https://github.com/SSujitX/docklift/commit/d64d84c3ce1ee9f078883c1b8a4312a658cb2207))
+* **frontend:** add deployment commit_sha and image_tags ([ed54e53](https://github.com/SSujitX/docklift/commit/ed54e534f91fdae26726c14b15138fdf93c10616))
+* **frontend:** add Restore previous on deployments ([802fb59](https://github.com/SSujitX/docklift/commit/802fb598359144304abff404f7515616c7ef9eb4))
+* **git:** expose HEAD sha and hard reset helpers ([cd91146](https://github.com/SSujitX/docklift/commit/cd91146f395cee4960a343ad8f0085741d1995d3))
+* **system:** purge unused docklift images and BuildKit ([b7a9df2](https://github.com/SSujitX/docklift/commit/b7a9df24614227e9e359a3b43c7ca96e4d8cc3d9))
+
 ## [2.1.3](https://github.com/SSujitX/docklift/compare/v2.1.2...v2.1.3) (2026-07-26)
 
 
