@@ -13,6 +13,7 @@ Redeploy, Restart, Stop, and Delete live on the dashboard list and under Workspa
 | **Restart** | Restart without rebuilding the image |
 | **Redeploy** | Rebuild from source and deploy a new version |
 | **Cancel** | Abort an in-flight build; tears containers down for a fresh start |
+| **Restore** | On Deployments history: reinstate a previous successful image set (step-up; no rebuild) |
 
 Single-service projects skip the Workspace rail and show the same actions under the project title. Do not expect per-service redeploy from Env, Domains, Storage, or Logs — deploy still rebuilds the whole project.
 
@@ -27,6 +28,20 @@ Single-service projects skip the Workspace rail and show the same actions under 
 7. Stream logs to the browser in real time
 
 Partial fleets show status **degraded**. Past success/failed history is not rewritten when you cancel.
+
+## Disk hygiene and Restore
+
+After a **successful** deploy only:
+
+1. Docklift stores `commit_sha` and per-service `image_tags` on that deployment row
+2. Keeps **at most two** successful `docklift-<project>-<service>:*` tags (current + previous); older unused tags are removed
+3. Prunes **unused** BuildKit cache (`docker builder prune -f`) so redeploys cannot unbounded-grow the root disk
+
+Failed or cancelled deploys do **not** prune images or cache needed for the last good release. Managed database upstream images (`postgres:`, etc.) are never deleted.
+
+On **Project → Deployments**, historical successful rows that still have stored image tags show **Restore**. That action requires your account password, resets git to the stored commit when present, rewrites runtime compose to those images, and runs `compose up` — it does not rebuild. If an image was already pruned, restore returns an error and you must redeploy from git.
+
+Manual full BuildKit wipe plus unused `docklift-*` image cleanup across all Docklift projects is on the [System](./system.md#purge) page (**Purge**). It never runs host-wide `docker system prune`.
 
 ## Build modes
 
