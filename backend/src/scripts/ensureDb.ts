@@ -101,6 +101,17 @@ export async function repairLegacySchema(): Promise<void> {
     );
   }
 
+  if (await tableExists('deployments')) {
+    if (!(await columnExists('deployments', 'commit_sha'))) {
+      await prisma.$executeRawUnsafe(`ALTER TABLE "deployments" ADD COLUMN "commit_sha" TEXT`);
+      console.log('[ensureDb] Added deployments.commit_sha');
+    }
+    if (!(await columnExists('deployments', 'image_tags'))) {
+      await prisma.$executeRawUnsafe(`ALTER TABLE "deployments" ADD COLUMN "image_tags" TEXT`);
+      console.log('[ensureDb] Added deployments.image_tags');
+    }
+  }
+
   if (await tableExists('env_variables')) {
     if (!(await columnExists('env_variables', 'is_secret'))) {
       await prisma.$executeRawUnsafe(
