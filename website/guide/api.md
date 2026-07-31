@@ -39,6 +39,7 @@ curl -s http://SERVER_IP:8080/api/health
 | `POST` | `/api/deployments/:projectId/stop` | Stop containers |
 | `POST` | `/api/deployments/:projectId/restart` | Restart containers |
 | `POST` | `/api/deployments/:projectId/cancel` | Cancel in-flight deploy |
+| `POST` | `/api/deployments/:projectId/rollback` | Restore previous success (step-up; streams logs) |
 | `GET` | `/api/deployments/:projectId` | Deployment info / history |
 | `GET` | `/api/deployments/:projectId/logs` | Deployment logs |
 | `GET` | `/api/deployments/:projectId/services` | Service list |
@@ -66,7 +67,7 @@ curl -s http://SERVER_IP:8080/api/health
 | `GET` | `/api/system/ip` | Server public IP |
 | `GET` | `/api/system/version` | Running version info |
 | `GET` | `/api/system/logs/:service` | Platform log stream helper |
-| `POST` | `/api/system/purge` | Docklift-scoped cleanup (step-up; not host-wide prune) |
+| `POST` | `/api/system/purge` | Unused Docklift images (keep-2) + full BuildKit wipe (step-up) |
 | `POST` | `/api/system/reset` | Restart Docklift services |
 | `POST` | `/api/system/reboot` | Reboot server (step-up) |
 | `POST` | `/api/system/execute` | Execute shell command (terminal / gated) |
