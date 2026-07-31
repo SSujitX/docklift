@@ -84,7 +84,18 @@ This guide details the lifecycle of a deployment in Docklift, from source code t
     -   Project delete / stop: after `compose down`, verify with exact labels
         `com.docker.compose.project=<alias>` (containers + networks). Never trust stderr “not found”.
         Abort delete with **409** if owned resources remain.
-    -   Post-deploy cleanup: **no** automatic Docker image prune (shared-host safe).
+    -   **Disk hygiene after successful deploy** (`runPostDeploymentPurge` + `lib/imageCleanup.ts`):
+        1. Persist `Deployment.commit_sha` + `image_tags` on success.
+        2. **Images: only 2 per service** (`docklift-<projectId8>-<service>:*`) — current + previous
+           successful; delete older unused tags. Never host-wide `system prune`; never foreign images.
+        3. **BuildKit:** `docker builder prune -f` (unused only) after success (even when no app
+           image tags). Full wipe (`-af`) is System **Purge** only.
+        4. **Failed/cancelled:** do not prune. Keep-2 runs only after the deploy row is committed
+           `success` (never during finalize before status write). Cleanup errors soft-fail.
+        5. **Restore previous:** `POST /api/deployments/:projectId/rollback` + Project → Deployments
+           **Restore** (step-up). Lock before image checks; `git reset` with HEAD restore only if
+           compose never succeeded; post-compose errors keep target git + mark success if up ok;
+           no rebuild; no prune of rolled-from tag until later keep-2.
     -   Output streams to the UI console over SSE.
 
 6.  **Verification**
