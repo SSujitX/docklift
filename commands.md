@@ -297,7 +297,14 @@ sudo fuser -k 5500/tcp
 
 ## 9. Clean / reset
 
+Prefer the dashboard **System → Purge** (step-up password) for Docklift-scoped cleanup: unused `docklift-*` app tags outside keep-2 + full BuildKit wipe. Successful deploys already keep only 2 images per service and prune unused BuildKit cache.
+
 ```bash
+# Manual equivalents (host shell) — Docklift-scoped only; never system prune on shared hosts
+docker images --format '{{.Repository}}:{{.Tag}}' | grep '^docklift-[a-f0-9]\{8\}-'
+docker builder prune -f          # unused BuildKit cache (same as post-deploy)
+docker builder prune -af         # all BuildKit cache (same as System Purge)
+
 # Stop stack (keeps volumes/data dirs)
 docker compose down
 
