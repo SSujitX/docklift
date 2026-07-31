@@ -50,6 +50,9 @@ export interface Deployment {
   status: "queued" | "in_progress" | "success" | "failed" | "pending" | "cancelled";
   trigger?: string;
   commit_message?: string;
+  commit_sha?: string | null;
+  /** Map of service name → docklift image tag; required for Restore previous */
+  image_tags?: Record<string, string> | null;
   logs: string;
   created_at: string;
   finished_at: string | null;
