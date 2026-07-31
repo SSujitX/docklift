@@ -421,7 +421,7 @@ export function SystemOverview() {
           <button
             onClick={() => setShowPurgeDialog(true)}
             disabled={purging}
-            title="Purge dangling images"
+            title="Remove unused Docklift images + clear BuildKit cache"
             className={cn(
               "inline-flex h-9 items-center gap-1.5 rounded-xl border px-2.5 text-xs font-bold transition-all active:scale-95 sm:h-10 sm:gap-2 sm:px-3.5",
               purging
@@ -836,10 +836,10 @@ export function SystemOverview() {
               <Trash2 className="h-6 w-6 text-rose-500" />
             </div>
             <DialogTitle className="text-center text-xl font-bold tracking-tight">
-              Purge dangling images
+              Purge unused Docklift images
             </DialogTitle>
             <DialogDescription className="text-center text-muted-foreground text-sm">
-              Removes only untagged Docker images. Does not modify the host OS or other containers.
+              Removes unused Docklift images outside each project&apos;s keep-2 set and clears all BuildKit cache. Does not modify the host OS or other containers.
             </DialogDescription>
           </DialogHeader>
 
@@ -847,19 +847,19 @@ export function SystemOverview() {
             <div className="p-3 rounded-xl bg-secondary/30 border border-border flex items-center gap-3">
               <CheckCircle2 className="h-4 w-4 text-emerald-500" />
               <p className="text-xs font-semibold">
-                Dangling (untagged) images only
+                Unused Docklift images + full BuildKit wipe
+              </p>
+            </div>
+            <div className="p-3 rounded-xl bg-secondary/30 border border-border flex items-center gap-3">
+              <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
+              <p className="text-xs font-semibold text-muted-foreground">
+                Keeps current + previous successful tags per project
               </p>
             </div>
             <div className="p-3 rounded-xl bg-secondary/30 border border-border flex items-center gap-3">
               <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
               <p className="text-xs font-semibold text-muted-foreground">
                 No host prune, journal, apt, or /tmp wipe
-              </p>
-            </div>
-            <div className="p-3 rounded-xl bg-secondary/30 border border-border flex items-center gap-3">
-              <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
-              <p className="text-xs font-semibold text-muted-foreground">
-                Other Docker workloads are never restarted
               </p>
             </div>
           </div>
