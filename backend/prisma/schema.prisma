@@ -67,6 +67,10 @@ model Deployment {
   status      String?
   trigger     String?   @default("manual")
   commit_message String?
+  /// Git HEAD after pull (nullable for uploads / legacy rows)
+  commit_sha  String?
+  /// Map of service name → image tag after a successful deploy (for keep-2 + rollback)
+  image_tags  Json?
   logs        String?
   created_at  DateTime? @default(now())
   finished_at DateTime?
