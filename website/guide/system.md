@@ -19,13 +19,19 @@ Use this page to spot disk pressure, memory exhaustion, and runaway processes be
 
 **Purge** is a Docklift-scoped maintenance action that requires your **account password** (step-up auth). JWT alone is not enough.
 
-Current behaviour is intentionally conservative on shared hosts:
+What it does:
 
-- Does **not** run host-wide `docker prune`
-- Does **not** restart foreign (non-Docklift) containers
-- Does **not** wipe OS caches, journals, apt caches, or `/tmp`
+- Removes unused `docklift-*` app image tags that are outside each project’s **keep-2** set (current + previous successful deploy), skipping tags still used by running containers
+- Clears **all** BuildKit cache (`docker builder prune -af`) so disk can recover after many redeploys
+- Returns **409** if any deployment is still in progress (so in-flight build tags are not deleted)
 
-Use the host shell or [Web Terminal](./terminal.md) for broader Docker cleanup when you know the host is dedicated to Docklift.
+What it never does:
+
+- Host-wide `docker system prune`
+- Delete non-`docklift-*` images (Postgres, nginx, etc.) or foreign containers
+- Wipe OS caches, journals, apt caches, or `/tmp`
+
+After every **successful** deploy, Docklift also keeps only two images per project service and prunes **unused** BuildKit cache automatically. See [Deployment](./deployment.md#disk-hygiene-and-restore).
 
 ## Control plane actions
 
