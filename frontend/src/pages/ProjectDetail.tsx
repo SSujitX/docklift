@@ -72,6 +72,7 @@ import {
   ChevronRight,
   Box,
   HardDrive,
+  Undo2,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
@@ -534,6 +535,13 @@ export default function ProjectDetail() {
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
 
+  // Restore previous (rollback) — step-up password
+  const [rollbackTarget, setRollbackTarget] = useState<Deployment | null>(null);
+  const [rollbackPassword, setRollbackPassword] = useState("");
+  const [rollbackLoading, setRollbackLoading] = useState(false);
+  /** Global latest success id (not page-local) — Restore must never offer this row. */
+  const [latestSuccessId, setLatestSuccessId] = useState<string | null>(null);
+
   // Auto-deploy state
   const [autoDeploy, setAutoDeploy] = useState(false);
   const [autoDeployLoading, setAutoDeployLoading] = useState(false);
@@ -576,7 +584,7 @@ export default function ProjectDetail() {
       const deploymentsAbort = new AbortController();
       deploymentsAbortRef.current = deploymentsAbort;
 
-      const [projectRes, filesRes, deploymentsRes, servicesRes, latestRes] =
+      const [projectRes, filesRes, deploymentsRes, servicesRes, latestRes, latestSuccessRes] =
         await Promise.all([
           authFetch(`${API_URL}/api/projects/${projectId}`),
           authFetch(`${API_URL}/api/files/${projectId}`),
@@ -591,6 +599,10 @@ export default function ProjectDetail() {
                 `${API_URL}/api/deployments/${projectId}?limit=1&offset=0`,
               )
             : Promise.resolve(null),
+          // Latest success for Restore eligibility on every history page
+          authFetch(
+            `${API_URL}/api/deployments/${projectId}?limit=1&offset=0&status=success`,
+          ),
         ]);
 
       if (!projectRes.ok) {
@@ -630,6 +642,16 @@ export default function ProjectDetail() {
 
       if (servicesRes.ok) {
         setServices(await servicesRes.json());
+      }
+
+      if (latestSuccessRes.ok) {
+        const successPayload = await latestSuccessRes.json();
+        const successList: Deployment[] = Array.isArray(successPayload)
+          ? successPayload
+          : Array.isArray(successPayload?.items)
+            ? successPayload.items
+            : [];
+        setLatestSuccessId(successList[0]?.id ?? null);
       }
 
       let latestList = deps;
@@ -1114,6 +1136,90 @@ export default function ProjectDetail() {
   };
 
   const actionDetails = getActionDetails();
+
+  const canRestoreDeployment = (d: Deployment) => {
+    if (d.status !== "success") return false;
+    if (
+      !d.image_tags ||
+      typeof d.image_tags !== "object" ||
+      Object.keys(d.image_tags).length === 0
+    ) {
+      return false;
+    }
+    // Fail closed if latest-success fetch has not resolved yet
+    if (!latestSuccessId) return false;
+    return d.id !== latestSuccessId;
+  };
+
+  const handleRollback = async () => {
+    if (!rollbackTarget || !projectId) return;
+    if (!rollbackPassword.trim()) {
+      toast.error("Enter your account password to confirm restore");
+      return;
+    }
+
+    const target = rollbackTarget;
+    setRollbackLoading(true);
+    setActionLoading(true);
+    setCurrentAction("rollback");
+    setLogs(`$ Restoring deployment ${target.id.split("-")[0]}...\n`);
+    goToProjectTab("deployments");
+
+    try {
+      const res = await authFetch(
+        `${API_URL}/api/deployments/${projectId}/rollback`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            deploymentId: target.id,
+            password: rollbackPassword,
+          }),
+        },
+      );
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => null);
+        const errMsg =
+          errorData?.error || `Server returned ${res.status} ${res.statusText}`;
+        setLogs((prev) => prev + `\n[ERROR] ${errMsg}\n`);
+        toast.error(errMsg);
+        return;
+      }
+
+      setRollbackTarget(null);
+      setRollbackPassword("");
+
+      const streamResult = await consumeProgressStream(res, (line) => {
+        setLogs((prev) => prev + line + "\n");
+      });
+
+      setTimeout(fetchProject, 1000);
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      await fetchProject();
+
+      const restored = streamResult.lines.some((l) =>
+        /ROLLBACK SUCCESSFUL/i.test(l),
+      );
+      if (!streamResult.ok || !restored) {
+        toast.error(
+          streamResult.error ||
+            "Restore failed — check deployment logs for details",
+        );
+        return;
+      }
+
+      toast.success("Previous deployment restored");
+    } catch (error) {
+      console.error(error);
+      setLogs((prev) => prev + `\n❌ Connection error: ${error}\n`);
+      toast.error("Connection error during restore");
+    } finally {
+      setRollbackLoading(false);
+      setActionLoading(false);
+      setCurrentAction(null);
+    }
+  };
 
   const openFileEditor = async (filePath: string) => {
     try {
@@ -1835,7 +1941,9 @@ export default function ProjectDetail() {
                                       ? "Stop Action"
                                       : deployment.trigger === "redeploy"
                                         ? "Manual Redeploy"
-                                        : "Manual Deployment"}
+                                        : deployment.trigger === "rollback"
+                                          ? "Restore Previous"
+                                          : "Manual Deployment"}
                               </span>
                               <div className="flex flex-wrap items-center gap-1.5">
                                 <span
@@ -1877,6 +1985,27 @@ export default function ProjectDetail() {
                                   year: "numeric",
                                 })}
                               </span>
+                              {canRestoreDeployment(deployment) && (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="mt-1 h-7 gap-1 px-2 text-[10px] font-semibold"
+                                  disabled={
+                                    actionLoading ||
+                                    rollbackLoading ||
+                                    project.status === "building"
+                                  }
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setRollbackPassword("");
+                                    setRollbackTarget(deployment);
+                                  }}
+                                >
+                                  <Undo2 className="h-3 w-3" />
+                                  Restore
+                                </Button>
+                              )}
                             </div>
                           </div>
                           <p className="text-[11px] text-muted-foreground line-clamp-1 italic hidden sm:block">
@@ -2424,6 +2553,75 @@ export default function ProjectDetail() {
                 <Loader2 className="h-4 w-4 animate-spin mr-2" />
               ) : null}
               {actionDetails.confirmText}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={!!rollbackTarget}
+        onOpenChange={(open) => {
+          if (!open && !rollbackLoading) {
+            setRollbackTarget(null);
+            setRollbackPassword("");
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Undo2 className="h-5 w-5 text-amber-600" />
+              Restore previous deployment
+            </DialogTitle>
+            <DialogDescription className="pt-2">
+              Reverts runtime containers to images from deployment{" "}
+              <span className="font-mono">
+                #{rollbackTarget?.id.split("-")[0]}
+              </span>
+              {rollbackTarget?.commit_sha
+                ? ` and resets git to ${rollbackTarget.commit_sha.slice(0, 12)}`
+                : ""}
+              . Does not rebuild. Requires your account password.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <label className="text-xs font-semibold text-muted-foreground">
+              Confirm with account password
+            </label>
+            <Input
+              type="password"
+              value={rollbackPassword}
+              onChange={(e) => setRollbackPassword(e.target.value)}
+              placeholder="Your DockLift password"
+              autoComplete="current-password"
+              disabled={rollbackLoading}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && rollbackPassword.trim()) {
+                  e.preventDefault();
+                  void handleRollback();
+                }
+              }}
+            />
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              disabled={rollbackLoading}
+              onClick={() => {
+                setRollbackTarget(null);
+                setRollbackPassword("");
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => void handleRollback()}
+              disabled={!rollbackPassword.trim() || rollbackLoading}
+              className="bg-amber-600 hover:bg-amber-700 text-white"
+            >
+              {rollbackLoading && (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              )}
+              Restore previous
             </Button>
           </DialogFooter>
         </DialogContent>
