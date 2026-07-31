@@ -13,7 +13,23 @@ import {
 } from '../services/compose.js';
 import { resolveProjectBuild } from '../services/buildResolver.js';
 import { buildServiceImage } from '../services/buildRunner.js';
-import { pullRepo, getLastCommitMessage } from '../services/git.js';
+import {
+  pullRepo,
+  getLastCommitMessage,
+  getCommitSha,
+  resetToCommit,
+} from '../services/git.js';
+import {
+  buildKeepImageSet,
+  parseImageTagsJson,
+  pruneBuildKitUnused,
+  removeUnusedDockliftImages,
+  getContainerImageRef,
+  imageExistsLocally,
+  rollbackTargetGuard,
+  type ImageTagsMap,
+} from '../lib/imageCleanup.js';
+import { requireStepUpPassword } from '../lib/stepUpAuth.js';
 import { cleanupServiceDomain, updateServiceDomain } from '../services/nginx.js';
 import {
   appendSslEvent,
@@ -220,15 +236,94 @@ function isValidDomainList(domainStr: string): boolean {
 }
 
 /**
- * Post-deploy cleanup — intentionally a no-op for host Docker state.
- * Never auto-prune Docker images/system state: dangling layers may belong
- * to unrelated workloads on a shared host. Operators reclaim space via host tools.
+ * After a successful deploy: keep current + previous successful docklift-* tags
+ * for this project, remove older unused tags, prune unused BuildKit cache.
+ * Soft-fails — never fails the deploy. Never touches non-docklift-* images.
  */
-async function runPostDeploymentPurge(): Promise<{ success: boolean; message: string }> {
-  return {
-    success: true,
-    message: '○ Skipped automatic Docker image cleanup (shared-host safe)',
-  };
+async function runPostDeploymentPurge(
+  projectId: string,
+  currentImageTags: ImageTagsMap,
+  writeLog: (text: string) => void,
+): Promise<{ success: boolean; message: string }> {
+  try {
+    // Always reclaim unused BuildKit on success — even managed-DB / no app tags.
+    const hasAppImages =
+      !!currentImageTags && Object.keys(currentImageTags).length > 0;
+
+    let removed = 0;
+    let kept = 0;
+
+    if (hasAppImages) {
+      // This deploy is already success; keep current + previous success tags.
+      const previousSuccess = await prisma.deployment.findMany({
+        where: { project_id: projectId, status: 'success' },
+        orderBy: { created_at: 'desc' },
+        take: 2,
+        select: { image_tags: true },
+      });
+      const maps = previousSuccess.map((d) => parseImageTagsJson(d.image_tags));
+      const keepSet = buildKeepImageSet(maps, currentImageTags);
+
+      const services = await prisma.service.findMany({
+        where: { project_id: projectId },
+        select: { container_name: true },
+      });
+      const inUseRefs = new Set<string>();
+      for (const svc of services) {
+        if (!svc.container_name) continue;
+        const ref = await getContainerImageRef(svc.container_name);
+        if (ref) inUseRefs.add(ref);
+      }
+      for (const tag of keepSet) inUseRefs.add(tag);
+
+      const result = await removeUnusedDockliftImages({
+        projectId,
+        keepSet,
+        inUseRefs,
+      });
+      removed = result.removed.length;
+      kept = result.kept.length;
+
+      writeLog(`   Kept ${kept} image tag(s) (current + previous)\n`);
+      if (result.removed.length) {
+        writeLog(`   Removed ${result.removed.length} older unused tag(s)\n`);
+        for (const tag of result.removed.slice(0, 8)) {
+          writeLog(`     - ${tag}\n`);
+        }
+        if (result.removed.length > 8) {
+          writeLog(`     … and ${result.removed.length - 8} more\n`);
+        }
+      } else {
+        writeLog(`   No older Docklift tags to remove\n`);
+      }
+      if (result.skippedInUse.length) {
+        writeLog(`   Skipped ${result.skippedInUse.length} in-use tag(s)\n`);
+      }
+      for (const err of result.errors) {
+        writeLog(`   ! ${err}\n`);
+      }
+    } else {
+      writeLog(`   ○ No Docklift app images to clean (image prune skipped)\n`);
+    }
+
+    const bk = await pruneBuildKitUnused();
+    writeLog(
+      bk.ok
+        ? `   BuildKit unused cache pruned\n`
+        : `   ! BuildKit prune warning: ${bk.output || 'failed'}\n`,
+    );
+
+    return {
+      success: true,
+      message: hasAppImages
+        ? `✓ Keep-2 cleanup: removed ${removed}, kept ${kept}`
+        : '✓ BuildKit unused cache pruned (no app images)',
+    };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    writeLog(`   ! Cleanup warning: ${msg}\n`);
+    return { success: false, message: `! Cleanup warning: ${msg}` };
+  }
 }
 
 // List deployments for a project
@@ -239,7 +334,14 @@ router.get('/:projectId', async (req: Request, res: Response) => {
     const limit = parseInt(req.query.limit as string) || 10;
     const offset = parseInt(req.query.offset as string) || 0;
     const withMeta = req.query.meta === '1' || req.query.meta === 'true';
-    const where = { project_id: req.params.projectId };
+    const status =
+      typeof req.query.status === 'string' && req.query.status.trim()
+        ? req.query.status.trim()
+        : undefined;
+    const where = {
+      project_id: req.params.projectId,
+      ...(status ? { status } : {}),
+    };
 
     const [deployments, total] = await Promise.all([
       prisma.deployment.findMany({
@@ -624,6 +726,25 @@ async function deployProject(req: Request, res: Response) {
       }
       if (scrubFailed) {
         throw new Error('Failed to scrub Git credentials after pull');
+      }
+    }
+
+    // Record HEAD for rollback (github/public checkouts; null for upload-only trees)
+    if (
+      (project.source_type === 'github' || project.source_type === 'public') &&
+      fs.existsSync(path.join(projectPath, '.git'))
+    ) {
+      try {
+        const sha = await getCommitSha(projectPath);
+        if (sha) {
+          await prisma.deployment.update({
+            where: { id: deployment.id },
+            data: { commit_sha: sha },
+          });
+          writeLog(`📌 Commit: ${sha.slice(0, 12)}\n`);
+        }
+      } catch {
+        /* non-fatal */
       }
     }
 
@@ -1256,12 +1377,7 @@ async function deployProject(req: Request, res: Response) {
         }
 
         if (await stopIfSuperseded()) return;
-
-        writeLog(`\n🧹 Post-deploy cleanup...\n`);
-        const purgeResult = await runPostDeploymentPurge();
-        writeLog(`   ${purgeResult.message}\n`);
-
-        if (await stopIfSuperseded()) return;
+        // Keep-2 / BuildKit prune runs only after status is committed success below.
       } else if (code !== 0) {
         writeLog(`\n${'━'.repeat(50)}\n`);
         writeLog(`❌ DEPLOY FAILED (Exit Code: ${code})\n`);
@@ -1277,6 +1393,14 @@ async function deployProject(req: Request, res: Response) {
       
       // Update logs in DB with final messages (never overwrite cancelled)
       const finalStatus = success ? 'success' : 'failed';
+      const finalImageTags: ImageTagsMap = {};
+      if (success) {
+        for (const svc of runtimeServices) {
+          if (svc.image && svc.image.startsWith('docklift-')) {
+            finalImageTags[svc.name] = svc.image;
+          }
+        }
+      }
       const persisted = await prisma.deployment.updateMany({
         where: {
           id: deployment.id,
@@ -1286,6 +1410,9 @@ async function deployProject(req: Request, res: Response) {
           status: finalStatus,
           logs: logs.join(''),
           finished_at: new Date(),
+          ...(Object.keys(finalImageTags).length > 0
+            ? { image_tags: finalImageTags }
+            : {}),
         },
       });
       if (persisted.count === 0) {
@@ -1325,6 +1452,24 @@ async function deployProject(req: Request, res: Response) {
           writeLog(`⚠️ Domain activation warning: ${e?.message || 'failed'}\n`);
         }
         if (await stopIfSuperseded()) return;
+
+        // Only prune after this row is committed success (cancel must not prune).
+        if (stillOwns() && !(await isDeploymentCancelled(projectId, deployment.id))) {
+          const currentImageTags: ImageTagsMap = {};
+          for (const svc of runtimeServices) {
+            if (svc.image && svc.image.startsWith('docklift-')) {
+              currentImageTags[svc.name] = svc.image;
+            }
+          }
+          writeLog(`\n🧹 Post-deploy cleanup...\n`);
+          const purgeResult = await runPostDeploymentPurge(
+            projectId,
+            currentImageTags,
+            writeLog,
+          );
+          writeLog(`   ${purgeResult.message}\n`);
+          if (await stopIfSuperseded()) return;
+        }
       } else {
         if (!stillOwns()) {
           await stopIfSuperseded();
@@ -1681,6 +1826,328 @@ router.post('/:projectId/restart', async (req: Request, res: Response) => {
 });
 
 // Redeploy runs the same source pull, build, and rollout pipeline as deploy.
+/**
+ * Restore a previous successful deployment's images (no rebuild).
+ * Body: { deploymentId, password } — step-up required.
+ */
+router.post('/:projectId/rollback', async (req: Request, res: Response) => {
+  const { projectId } = req.params;
+  let deploymentId: string | null = null;
+
+  try {
+    if (!(await requireStepUpPassword(req, res))) return;
+
+    const targetId =
+      typeof req.body?.deploymentId === 'string' ? req.body.deploymentId.trim() : '';
+    if (!targetId) {
+      return res.status(400).json({ error: 'deploymentId is required' });
+    }
+
+    const project = await prisma.project.findUnique({ where: { id: projectId } });
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+    if (project.project_type === 'database') {
+      return res.status(400).json({ error: 'Rollback is not supported for managed databases' });
+    }
+
+    if (isProjectCancelling(projectId) || isProjectDeploying(projectId)) {
+      return res.status(409).json({ error: 'A deployment or cancel is already in progress' });
+    }
+    const busy = await prisma.deployment.findFirst({
+      where: { project_id: projectId, status: 'in_progress' },
+      select: { id: true },
+    });
+    if (busy) {
+      return res.status(409).json({ error: 'A deployment is already running for this project' });
+    }
+
+    const latestSuccess = await prisma.deployment.findFirst({
+      where: { project_id: projectId, status: 'success' },
+      orderBy: { created_at: 'desc' },
+      select: { id: true },
+    });
+
+    const target = await prisma.deployment.findFirst({
+      where: { id: targetId, project_id: projectId },
+    });
+    if (!target) {
+      return res.status(404).json({ error: 'Target successful deployment not found' });
+    }
+
+    const imageTags = parseImageTagsJson(target.image_tags);
+    const guard = rollbackTargetGuard({
+      targetId,
+      latestSuccessId: latestSuccess?.id,
+      status: target.status ?? '',
+      imageTags,
+    });
+    if (!guard.ok) {
+      return res.status(guard.status).json({ error: guard.error });
+    }
+    if (!imageTags) {
+      return res.status(409).json({
+        error: 'This deployment has no stored image tags (pre-keep-2). Redeploy from git instead.',
+      });
+    }
+
+    const projectPath = path.join(config.deploymentsPath, projectId);
+    if (!fs.existsSync(projectPath)) {
+      return res.status(400).json({ error: 'Project files not found' });
+    }
+
+    // Acquire lock before image checks so System Purge cannot race mid-verify.
+    const rollbackRow = await prisma.deployment.create({
+      data: {
+        project_id: projectId,
+        status: 'in_progress',
+        trigger: 'rollback',
+        commit_message: target.commit_message
+          ? `Rollback: ${target.commit_message}`
+          : `Rollback to ${targetId.slice(0, 8)}`,
+        commit_sha: target.commit_sha,
+        image_tags: imageTags,
+        logs: '⏪ Starting rollback...\n',
+      },
+    });
+    deploymentId = rollbackRow.id;
+
+    if (!acquireProjectDeploying(projectId, rollbackRow.id)) {
+      await prisma.deployment.update({
+        where: { id: rollbackRow.id },
+        data: {
+          status: 'failed',
+          finished_at: new Date(),
+          logs: '❌ Another deployment is already running\n',
+        },
+      });
+      return res.status(409).json({ error: 'A deployment is already running for this project' });
+    }
+
+    for (const [svc, tag] of Object.entries(imageTags)) {
+      if (!(await imageExistsLocally(tag))) {
+        await prisma.deployment.update({
+          where: { id: rollbackRow.id },
+          data: {
+            status: 'failed',
+            finished_at: new Date(),
+            logs: `❌ Image missing for ${svc}: ${tag}\n`,
+          },
+        });
+        releaseProjectDeploying(projectId, rollbackRow.id);
+        return res.status(409).json({
+          error: `Image missing for ${svc}: ${tag}. Redeploy from git instead.`,
+        });
+      }
+    }
+
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Transfer-Encoding', 'chunked');
+
+    const logs: string[] = [];
+    const writeLog = (text: string) => {
+      try {
+        if (!res.writableEnded) res.write(text);
+      } catch {
+        /* ignore */
+      }
+      logs.push(text);
+    };
+
+    writeLog(`⏪ Restoring deployment ${targetId.slice(0, 8)}...\n`);
+
+    const previousHead =
+      target.commit_sha && fs.existsSync(path.join(projectPath, '.git'))
+        ? await getCommitSha(projectPath)
+        : null;
+    let didGitReset = false;
+    let composeUpOk = false;
+
+    try {
+      if (target.commit_sha && fs.existsSync(path.join(projectPath, '.git'))) {
+        writeLog(`📌 Resetting git to ${target.commit_sha.slice(0, 12)}...\n`);
+        await resetToCommit(projectPath, target.commit_sha);
+        didGitReset = true;
+        writeLog(`   ✅ Git reset complete\n`);
+      } else {
+        writeLog(`⚠️ No commit SHA stored — leaving working tree unchanged\n`);
+      }
+
+      const services = await prisma.service.findMany({
+        where: { project_id: projectId },
+        orderBy: { created_at: 'asc' },
+      });
+      const persistentVolumes = await prisma.persistentVolume.findMany({
+        where: { project_id: projectId },
+        orderBy: { created_at: 'asc' },
+      });
+      const envVars = await prisma.envVariable.findMany({
+        where: { project_id: projectId },
+      });
+
+      const runtimeServices = [];
+      for (const svc of services) {
+        const image = imageTags[svc.name];
+        if (!image) {
+          throw new Error(`No image tag stored for service ${svc.name}`);
+        }
+        if (!svc.container_name) {
+          throw new Error(`Service ${svc.name} has no container name`);
+        }
+        runtimeServices.push({
+          name: svc.name,
+          image,
+          internal_port: svc.internal_port || 3000,
+          port: svc.port,
+          container_name: svc.container_name,
+          volumes: persistentVolumes
+            .filter((volume) => volume.service_name === svc.name)
+            .map((volume, index) => ({
+              key: storageVolumeComposeKey(svc.name, index, volume.name),
+              name: volume.name,
+              mountPath: volume.mount_path,
+            })),
+        });
+      }
+
+      if (runtimeServices.length === 0) {
+        throw new Error('No services to restore');
+      }
+
+      const statePath = path.join(config.deploymentsPath, '.docklift', projectId);
+      const composePath = path.join(statePath, 'compose.yml');
+      fs.mkdirSync(statePath, { recursive: true });
+      const publishHostPort =
+        (project as { publish_host_port?: boolean }).publish_host_port === true;
+
+      writeLog(`📝 Rewriting runtime compose with previous images...\n`);
+      generateRuntimeCompose(
+        composePath,
+        runtimeServices,
+        envVars.map((v) => ({
+          key: v.key,
+          value: v.value,
+          is_build_arg: v.is_build_arg ?? false,
+          is_runtime: v.is_runtime ?? true,
+          service_name: v.service_name ?? '',
+        })),
+        { projectId, publishHostPort },
+      );
+
+      const composeProject = composeProjectName(project.name, projectId);
+      writeLog(`🚀 Starting containers from previous images...\n`);
+
+      await new Promise<void>((resolve, reject) => {
+        const child = runCompose(
+          ['compose', '-f', composePath, '-p', composeProject, 'up', '-d', '--remove-orphans'],
+          { cwd: projectPath },
+          {
+            onStdout: (data) => writeLog(data.toString()),
+            onStderr: (data) => writeLog(data.toString()),
+            onClose: (code) => {
+              if (code === 0) resolve();
+              else reject(new Error(`compose up exited ${code}`));
+            },
+            onError: (err) => reject(err),
+          },
+        );
+        registerBuild(projectId, child, rollbackRow.id);
+      });
+      clearBuild(projectId, rollbackRow.id);
+      composeUpOk = true;
+
+      if (!ownsProjectDeploying(projectId, rollbackRow.id)) {
+        throw new Error('Rollback cancelled');
+      }
+
+      try {
+        await dockerService.connectProxyToProjectNetwork(projectId);
+        writeLog(`🔗 Edge proxy attached\n`);
+      } catch (netErr: unknown) {
+        writeLog(
+          `⚠️ Proxy attach warning: ${netErr instanceof Error ? netErr.message : String(netErr)}\n`,
+        );
+      }
+
+      try {
+        await reapplyDatabaseLinksForApp(projectId);
+      } catch (linkErr: unknown) {
+        writeLog(
+          `⚠️ Link re-apply warning: ${linkErr instanceof Error ? linkErr.message : String(linkErr)}\n`,
+        );
+      }
+
+      await syncProjectStatusFromContainers(projectId);
+
+      writeLog(`\n✅ ROLLBACK SUCCESSFUL\n`);
+      await prisma.deployment.update({
+        where: { id: rollbackRow.id },
+        data: {
+          status: 'success',
+          logs: logs.join(''),
+          finished_at: new Date(),
+          image_tags: imageTags,
+          commit_sha: target.commit_sha,
+        },
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      // Only rewind git if compose never succeeded — otherwise containers
+      // already run previous images and HEAD must stay on the restore target.
+      if (composeUpOk) {
+        writeLog(`\n⚠️ Post-compose warning: ${msg}\n`);
+        writeLog(
+          `⚠️ Containers were updated; leaving git at restore target despite post-compose error\n`,
+        );
+        writeLog(`\n✅ ROLLBACK SUCCESSFUL\n`);
+      } else {
+        writeLog(`\n[ERROR] Rollback failed: ${msg}\n`);
+        if (didGitReset && previousHead && previousHead !== target.commit_sha) {
+          try {
+            writeLog(`📌 Restoring git HEAD to ${previousHead.slice(0, 12)}...\n`);
+            await resetToCommit(projectPath, previousHead);
+            writeLog(`   ✅ Git HEAD restored after failed rollback\n`);
+          } catch (gitErr: unknown) {
+            writeLog(
+              `   ! Failed to restore git HEAD: ${gitErr instanceof Error ? gitErr.message : String(gitErr)}\n`,
+            );
+          }
+        }
+      }
+      await prisma.deployment.update({
+        where: { id: rollbackRow.id },
+        data: {
+          status: composeUpOk ? 'success' : 'failed',
+          logs: logs.join(''),
+          finished_at: new Date(),
+          ...(composeUpOk
+            ? { image_tags: imageTags, commit_sha: target.commit_sha }
+            : {}),
+        },
+      });
+      if (!res.writableEnded) res.end();
+      return;
+    } finally {
+      clearBuild(projectId, rollbackRow.id);
+      releaseProjectDeploying(projectId, rollbackRow.id);
+    }
+
+    if (!res.writableEnded) res.end();
+  } catch (error: unknown) {
+    console.error('Rollback error:', error);
+    if (deploymentId) {
+      releaseProjectDeploying(projectId, deploymentId);
+    }
+    if (!res.headersSent) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : 'Rollback failed',
+      });
+    } else if (!res.writableEnded) {
+      res.end();
+    }
+  }
+});
+
 router.post('/:projectId/redeploy', deployProject);
 
 // Cancel build — kill tracked compose process + tear down project containers
