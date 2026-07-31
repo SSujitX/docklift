@@ -32,15 +32,20 @@ The system page shows real-time server health metrics:
 
 **DockLift-scoped only.** Requires **password step-up** (`requireStepUpPassword` / body `password`).
 
-What it does today:
-1. Password step-up audit + honest status messages (no host Docker mutation)
+What it does (step-up required):
+1. **409** if any deployment is `in_progress` before mutations (and again before image cleanup if a deploy raced in)
+2. Remove unused `docklift-*` app tags outside each project’s keep-2 set (last 2 success `image_tags` + in-use container refs)
+3. `docker builder prune -af` unless a deploy is in progress after image cleanup (skip `-af` rather than wipe live build cache)
+4. Return real counts in `details[]`
 
 What it must **never** do from the panel:
-- Automatic `docker image prune` / `docker system prune` (shared-host: may delete foreign dangling layers)
+- `docker system prune` / delete non-`docklift-*` images
 - Restart foreign containers
 - Swap cycling, `drop_caches`, journal vacuum, apt clean, `/tmp` wipe
 
-UI copy must stay honest (not “isolated host wipe”). Post-deploy cleanup is also a no-op for images.
+**Related automatic hygiene:** after successful deploy only — keep-2 project images + `builder prune -f` (unused). Failed deploy does not strip the last good release. Project → Deployments → **Restore** (step-up) pairs with keep-2.
+
+UI copy: “unused Docklift images + clear BuildKit cache” — not “dangling only” / no-op.
 
 Load averages on `/api/system/stats` come from real `os.loadavg()` — never fabricated load5/load15.
 
@@ -69,7 +74,7 @@ A full-featured xterm.js-based interactive terminal providing direct root access
 ### Features
 - **Real-time PTY**: Supports tab completion, history, colors, ncurses (htop/nano).
 - **Root Access**: Session starts in `/root` with full host privileges.
-- **Host strip UI** (`TerminalView`): quiet text actions above the shell — update packages, upgrade Docklift, purge dangling images, reset stack, reboot. No rainbow action cards; shell chrome follows light/dark theme.
+- **Host strip UI** (`TerminalView`): quiet text actions above the shell — update packages, upgrade Docklift, purge unused Docklift images + BuildKit, reset stack, reboot. No rainbow action cards; shell chrome follows light/dark theme.
 - **Upgrade / package dialogs**: Confirm first (panel goes offline; Docklift upgrade shows Now → Installing version + password on the same dialog; wrong password re-asks inline). After start, a wait dialog (Esc/overlay blocked; Dismiss only after countdown or in simulated dev) tells the operator to refresh in ~1–2 minutes. Sidebar “Upgrade now” routes to `/terminal?confirm=upgrade` (does not POST from the rail) and **defers shell WS auth** so operators are not prompted twice. Legacy `?action=upgrade` opens the same confirm, not a fake in-progress state.
 - **Resizing**: Bi-directional resize sync between frontend/backend. Resize inputs are validated (cols: 1–500, rows: 1–200) to prevent injection.
 - **Persistence**: Auto-reconnect on network drops.
