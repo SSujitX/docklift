@@ -631,12 +631,9 @@ MIT License — see [LICENSE](LICENSE)
   <b>Made with ❤️ for developers who take control</b>
 </p>
 
-<p align="center">
 ## Star History
 
 [![Star History Chart](https://api.star-history.com/chart?repos=SSujitX/docklift&type=date&legend=top-left&sealed_token=wtYZmsEzXSq-Cf0-rUNoSRbSdxJWYAyiRhCX5Q3fg0yaxkuQDmcmbuS9JjwP3q4R3lpgDMZVqPWZEEZR4XiGoiiZTT48IYx0XZkCbEwvpj5i_kS7u_fnv78EScI4feuqdJK3YPtI31a9Q0VenGhd_tDLHCXxsStByjN03ejstlJoMJzoiFx4MOJCKCj-)](https://www.star-history.com/?repos=SSujitX%2Fdocklift&type=date&legend=top-left)
-
-</p>
 
 <p align="center">
   <img src="https://api.visitorbadge.io/api/visitors?path=https%3A%2F%2Fgithub.com%2FSSujitX%2Fdocklift&countColor=%23263759" alt="Visitors">
