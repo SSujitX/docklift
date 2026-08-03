@@ -632,9 +632,15 @@ MIT License — see [LICENSE](LICENSE)
 </p>
 
 <p align="center">
-  <a href="https://www.star-history.com/#SSujitX/docklift&Date">
-    <img src="https://api.star-history.com/svg?repos=SSujitX/docklift&type=Date" width="500" alt="Star History">
-  </a>
+## Star History
+
+<a href="https://www.star-history.com/?repos=SSujitX%2Fdocklift&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=SSujitX/docklift&type=date&theme=dark&legend=top-left&sealed_token=brQFUK2zsrBlQOs2H66B9zJZrc0__K8GFgk6Nrqwahav_6GGNveKUNMrZDOCJ4ogdRpuUCbuCnn8kARRaLwX9GJ07FKkibECHomJLhStK8mcqWzRh3YPlO59KrUJRt2yOpmMBmGoPzwtpwIRz4bV8x-g1P2gxH-7xDJZ3JL7rGJDYXQFnUOGdoKv_aCU" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=SSujitX/docklift&type=date&legend=top-left&sealed_token=brQFUK2zsrBlQOs2H66B9zJZrc0__K8GFgk6Nrqwahav_6GGNveKUNMrZDOCJ4ogdRpuUCbuCnn8kARRaLwX9GJ07FKkibECHomJLhStK8mcqWzRh3YPlO59KrUJRt2yOpmMBmGoPzwtpwIRz4bV8x-g1P2gxH-7xDJZ3JL7rGJDYXQFnUOGdoKv_aCU" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=SSujitX/docklift&type=date&legend=top-left&sealed_token=brQFUK2zsrBlQOs2H66B9zJZrc0__K8GFgk6Nrqwahav_6GGNveKUNMrZDOCJ4ogdRpuUCbuCnn8kARRaLwX9GJ07FKkibECHomJLhStK8mcqWzRh3YPlO59KrUJRt2yOpmMBmGoPzwtpwIRz4bV8x-g1P2gxH-7xDJZ3JL7rGJDYXQFnUOGdoKv_aCU" />
+ </picture>
+</a>
 </p>
 
 <p align="center">
