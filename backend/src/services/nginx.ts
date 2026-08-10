@@ -8,7 +8,12 @@ import {
   buildHttpHttpsServers,
   buildServiceProxyLocation,
 } from './nginxSsl.js';
-import { appendSslEvent, certificateFilesExist, issueCertificate } from './certs.js';
+import {
+  appendSslEvent,
+  findBestExpandableCertName,
+  findCoveringCertName,
+  issueCertificate,
+} from './certs.js';
 
 export async function updateServiceDomain(
   service: any,
@@ -86,13 +91,16 @@ export async function updateServiceDomain(
     service.internal_port
   );
 
-  // 1) Write HTTP(+ACME) config so challenges can succeed
+  // 1) Write vhost before issue: keep existing HTTPS (partial OK) so adding a SAN does not
+  // downgrade HSTS hosts to HTTP-only while ACME runs.
+  const hasUsableCert =
+    !!findCoveringCertName(domainsArray) || !!findBestExpandableCertName(domainsArray);
   let content = buildHttpHttpsServers({
     comment: `Main server block for ${service.name}`,
     serverNames: mainDomainsStr,
     primaryDomain,
     proxyLocation,
-    enableHttps: certificateFilesExist(primaryDomain),
+    enableHttps: hasUsableCert,
   });
 
   try {
@@ -117,11 +125,11 @@ export async function updateServiceDomain(
       await assertContinue();
       const status = await issueCertificate(sans, { force: opts?.forceSsl === true });
       await assertContinue();
-      // 3) Rewrite with HTTPS if active
+      // 3) Rewrite with HTTPS if active (including certs still named under a previous primary)
       if (
         status.status === 'active' ||
         status.status === 'expiring' ||
-        certificateFilesExist(primaryDomain)
+        !!findCoveringCertName(sans)
       ) {
         content = buildHttpHttpsServers({
           comment: `Main server block for ${service.name}`,
@@ -213,12 +221,12 @@ export async function syncNginxConfigs() {
         console.log(`Restoring missing Nginx config for ${service.name}`);
         // Avoid hammering LE on every restart — only write/reuse existing certs
         await updateServiceDomain(service, { issueSsl: false });
-        // If cert missing, attempt issue once
-        const primary = (service.domain || '')
+        // If no covering cert (by primary folder or SAN), attempt issue once
+        const hosts = (service.domain || '')
           .split(',')
-          .map((d) => d.trim())
-          .filter(Boolean)[0];
-        if (primary && !certificateFilesExist(primary)) {
+          .map((d) => d.trim().toLowerCase())
+          .filter(Boolean);
+        if (hosts.length > 0 && !findCoveringCertName(hosts)) {
           await updateServiceDomain(service, { issueSsl: true });
         }
       }
