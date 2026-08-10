@@ -88,13 +88,16 @@ breaks gateway routing unless the proxy model is redesigned.
 ## How Routing Works
 
 1. **Domain assigned** to a service (a project can have several services, each with its own domain).
-   The `domain` field accepts a comma-separated list; the **first** entry is the primary/cert name.
+   The `domain` field accepts a comma-separated list; the **first** entry is the UI/meta primary.
+   The Let's Encrypt `live/<name>/` directory is resolved by `findCoveringCertName()` (SAN coverage),
+   not assumed to equal the first hostname — reorder must not drop HTTPS.
 2. **Config generated** at `nginx-proxy/conf.d/service-<serviceId>.conf` via `updateServiceDomain()`.
    A config is written only when the service has a domain, a container name, and status
    `running` or `starting`; otherwise an existing file is removed.
-3. **HTTP first, then HTTPS**: the initial write is an HTTP-only block that includes the ACME snippet,
-   so the challenge can succeed. After a certificate exists, the file is rewritten with the HTTPS
-   server block and an HTTP→HTTPS redirect.
+3. **HTTP/ACME first, then full HTTPS**: the initial write always includes the ACME snippet. If a
+   usable cert already exists for part of the hostname set (e.g. adding a SAN), `:443` stays up
+   (partial) without forcing an HTTP-only downgrade; after the cert covers every hostname, the
+   vhost is rewritten with HTTP→HTTPS redirect.
 4. **Reload**: `reloadNginx()` in `nginx.ts` — spawn reload, optional self-heal, then **throws** on
    failure. Callers must not treat a failed reload as success (domain PUT rolls DB back on throw).
 5. **Duplicate hostnames**: `lib/domainOwnership.ts` rejects a hostname already owned by another
@@ -109,8 +112,14 @@ breaks gateway routing unless the proxy model is redesigned.
   switches to the staging CA for testing without burning rate limits.
 - Public IP discovery for DNS checks uses **HTTPS** (`api.ipify.org`), never plaintext IP APIs.
 - `startCertRenewWatcher()` reloads the proxy after the certbot sidecar renews something.
-- Certificates live at `/etc/letsencrypt/live/<primaryDomain>/{fullchain,privkey}.pem`
-  (`nginxCertPaths()`); `resolveCertName()` maps an arbitrary hostname back to its cert directory.
+  It persists the last-seen PEM mtime under `DATA_PATH/ssl-cert-mtime` and runs a startup
+  tick, so a renew that happened while the backend was down still triggers `nginx -s reload`.
+- Certificates live at `/etc/letsencrypt/live/<certName>/{fullchain,privkey}.pem`
+  (`nginxCertPaths()`). `resolveCertName()` / `findCoveringCertName()` / `selectCertLineage()`
+  pick the healthiest covering lineage (not same-named orphan folders). Vhosts use that path so
+  HTTPS does not drop when the first hostname changes.
+- Certbot flags: `--expand` only for strict SAN supersets; shrink/replace uses `--force-renewal`
+  without `--expand` (avoids `live/*-0001` forks). Success requires PEMs to cover every requested host.
 
 ### `www` is never added implicitly
 
