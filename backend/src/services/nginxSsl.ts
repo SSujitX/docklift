@@ -1,5 +1,10 @@
 // Shared nginx vhost templates for ACME + optional HTTPS (Let's Encrypt)
-import { certificateFilesExist, nginxCertPaths } from './certs.js';
+import {
+  findBestExpandableCertName,
+  findCoveringCertName,
+  listCertDnsNames,
+  nginxCertPaths,
+} from './certs.js';
 
 const ACME_INCLUDE = 'include /etc/nginx/snippets/acme.conf;';
 
@@ -58,6 +63,14 @@ export function buildPanelProxyLocation(port: number): string {
     }`;
 }
 
+function hostnamesFromServerNames(serverNames: string, primaryDomain: string): string[] {
+  const fromServer = serverNames
+    .split(/\s+/)
+    .map((d) => d.trim().toLowerCase())
+    .filter(Boolean);
+  return fromServer.length > 0 ? fromServer : [primaryDomain.trim().toLowerCase()].filter(Boolean);
+}
+
 export function buildHttpHttpsServers(opts: {
   comment: string;
   serverNames: string;
@@ -66,10 +79,15 @@ export function buildHttpHttpsServers(opts: {
   enableHttps: boolean;
 }): string {
   const { comment, serverNames, primaryDomain, proxyLocation, enableHttps } = opts;
-  const hasCert = enableHttps && certificateFilesExist(primaryDomain);
-  const certs = nginxCertPaths(primaryDomain);
+  const hosts = hostnamesFromServerNames(serverNames, primaryDomain);
+  // Full cover → HTTPS + redirect. Partial (e.g. adding a SAN) → keep :443 on the
+  // existing lineage but leave :80 as ACME+proxy so HSTS hosts are not downgraded to HTTP-only.
+  const fullCover = enableHttps ? findCoveringCertName(hosts) : null;
+  const certName =
+    fullCover || (enableHttps ? findBestExpandableCertName(hosts) : null);
+  const certs = nginxCertPaths(certName || primaryDomain);
 
-  if (!hasCert) {
+  if (!certName) {
     return `
 # ${comment}
 # docklift-ssl: pending|http-only primary=${primaryDomain}
@@ -85,9 +103,41 @@ ${proxyLocation}
 `;
   }
 
+  if (!fullCover) {
+    // :443 only for names actually on the chosen cert — never present wrong PEMs to HSTS clients
+    const onCert = new Set(listCertDnsNames(certName));
+    const httpsNames = hosts.filter((h) => onCert.has(h)).join(' ') || primaryDomain;
+    return `
+# ${comment}
+# docklift-ssl: partial primary=${primaryDomain} cert=${certName}
+server {
+    listen 80;
+    server_name ${serverNames};
+
+    resolver 127.0.0.11 valid=30s ipv6=off;
+
+    ${ACME_INCLUDE}
+${proxyLocation}
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name ${httpsNames};
+
+    ssl_certificate ${certs.fullchain};
+    ssl_certificate_key ${certs.privkey};
+
+    resolver 127.0.0.11 valid=30s ipv6=off;
+${proxyLocation}
+}
+`;
+  }
+
   return `
 # ${comment}
-# docklift-ssl: active primary=${primaryDomain}
+# docklift-ssl: active primary=${primaryDomain} cert=${certName}
 server {
     listen 80;
     server_name ${serverNames};
