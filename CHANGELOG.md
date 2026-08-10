@@ -1,3 +1,13 @@
+## [2.1.5](https://github.com/SSujitX/docklift/compare/v2.1.4...v2.1.5) (2026-08-10)
+
+
+### Bug Fixes
+
+* **ssl:** avoid HTTPS drop on domain reorder ([dd6ca3a](https://github.com/SSujitX/docklift/commit/dd6ca3a78bd9b722786b32aa32f2a5bc16704fa6))
+* **ssl:** keep partial HTTPS while expanding SANs ([4f29711](https://github.com/SSujitX/docklift/commit/4f29711d3f1ab3e7aa75382d069defa3ff104c85))
+* **ssl:** resolve cert lineage by SAN health ([c090e78](https://github.com/SSujitX/docklift/commit/c090e78da06b09ee29b2fdb61474ee6e6032866f))
+* **ssl:** use covering cert for panel domains ([48f8f8d](https://github.com/SSujitX/docklift/commit/48f8f8d80fe5c53d8efa5c9e1231daf846c295df))
+
 ## [2.1.4](https://github.com/SSujitX/docklift/compare/v2.1.3...v2.1.4) (2026-07-31)
 
 
