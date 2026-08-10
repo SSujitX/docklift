@@ -39,7 +39,9 @@ Host ports remain optional under **Build Settings**.
 1. Docklift writes an HTTP vhost
 2. Certbot solves the ACME HTTP-01 challenge
 3. The vhost is rewritten with HTTPS plus an HTTP→HTTPS redirect
-4. Renewals run automatically (about every 12 hours)
+4. Renewals run automatically (about every 12 hours). After renew, nginx is reloaded even if the backend was down during the renew (mtime is checked again on startup).
+
+Reordering comma-separated service domains keeps HTTPS on the existing certificate when it already covers every hostname — Docklift resolves the Let's Encrypt `live/` directory by SAN, not only by the first hostname.
 
 **`www` is not added for you.** A certificate order fails entirely if one of its hostnames has no DNS record. Create the `www` DNS record first, then add `www.example.com` as an additional domain.
 
