@@ -6,7 +6,7 @@ import path from 'path';
 import { config } from '../lib/config.js';
 import {
   clearSslMeta,
-  certificateFilesExist,
+  findCoveringCertName,
   getAcmeEmail,
   getCertificateStatus,
   getSslEvents,
@@ -76,7 +76,7 @@ async function provisionPanelSsl(domain: string, port: number, opts?: { force?: 
   if (
     status.status === 'active' ||
     status.status === 'expiring' ||
-    certificateFilesExist(domain)
+    !!findCoveringCertName([domain])
   ) {
     await writePanelDomainConfig(domain, port, true);
     await reloadNginx();
