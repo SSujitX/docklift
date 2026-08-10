@@ -98,25 +98,6 @@ jobs:
         working-directory: backend
         run: bun audit --prod
 
-      # Allowlist ONLY the known react-router RSC CSRF advisory until react-router-dom ships 8.x.
-      # Any other advisory (or a different GHSA) fails CI.
-      - name: Frontend dependency audit (allowlisted advisory only)
+      - name: Frontend dependency audit (prod)
         working-directory: frontend
-        run: |
-          set -euo pipefail
-          OUT="$(bun audit --prod 2>&1 || true)"
-          echo "$OUT"
-          if echo "$OUT" | grep -qi 'No vulnerabilities found'; then
-            exit 0
-          fi
-          # Must mention the known allowlisted advisory
-          echo "$OUT" | grep -q 'GHSA-qwww-vcr4-c8h2'
-          # Reject any other GHSA id
-          OTHER="$(echo "$OUT" | grep -oE 'GHSA-[a-z0-9-]+' | sort -u | grep -v 'GHSA-qwww-vcr4-c8h2' || true)"
-          if [ -n "$OTHER" ]; then
-            echo "Unexpected frontend advisories (not allowlisted):"
-            echo "$OTHER"
-            exit 1
-          fi
-          # Must be exactly one vulnerability line summary for the known issue
-          echo "$OUT" | grep -qE '1 vulnerabilities? \(1 high\)'
+        run: bun audit --prod
