@@ -106,8 +106,9 @@ CMD ["sh", "-c", "node dist/scripts/ensureDb.js && node dist/index.js"]
 - Compose config validate
 - Regressions: `DASHBOARD_BIND` default `0.0.0.0`; proxy disconnect/setup-restore/secret preflight;
   no host image prune / `system prune -af` / default `cap_drop ALL` in product paths
-- Backend `bun audit --prod` must be clean (CI-enforced via overrides for transitive deps)
-- Frontend audit may still warn until `react-router-dom` ships a fixed 8.x (SPA does not use RSC mode)
+- Backend and frontend `bun audit --prod` must both be clean (CI-enforced; overrides pin
+  transitive fixes such as `ip-address`, `dompurify`, `nanoid`)
+- `react-router-dom` `^7.18.2` includes the GHSA-qwww-vcr4-c8h2 fix — no frontend audit allowlist
 
 ## Build Commands
 
