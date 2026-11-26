@@ -3,7 +3,7 @@ import { Router, Request, Response } from 'express';
 import fs from 'fs';
 import path from 'path';
 import { config } from '../lib/config.js';
-import { isPathInside } from '../lib/pathSecurity.js';
+import { isPathInside, touchesGitDir } from '../lib/pathSecurity.js';
 
 const router = Router();
 
@@ -43,6 +43,9 @@ router.get('/:projectId/content', (req: Request, res: Response) => {
     if (!isPathInside(projectPath, filePath)) {
       return res.status(403).json({ error: 'Access denied' });
     }
+    if (touchesGitDir(projectPath, filePath)) {
+      return res.status(403).json({ error: 'Access denied - git metadata is not accessible' });
+    }
 
     if (!fs.existsSync(filePath)) {
       return res.status(404).json({ error: 'File not found' });
@@ -53,6 +56,9 @@ router.get('/:projectId/content', (req: Request, res: Response) => {
     const realFilePath = fs.realpathSync(filePath);
     if (!isPathInside(realProjectPath, realFilePath)) {
       return res.status(403).json({ error: 'Access denied - symlink outside project' });
+    }
+    if (touchesGitDir(realProjectPath, realFilePath)) {
+      return res.status(403).json({ error: 'Access denied - git metadata is not accessible' });
     }
 
     const stat = fs.statSync(filePath);
@@ -81,6 +87,9 @@ router.put('/:projectId/content', (req: Request, res: Response) => {
     if (!isPathInside(projectPath, filePath)) {
       return res.status(403).json({ error: 'Access denied' });
     }
+    if (touchesGitDir(projectPath, filePath)) {
+      return res.status(403).json({ error: 'Access denied - git metadata is not editable' });
+    }
 
     if (!fs.existsSync(filePath)) {
       return res.status(404).json({ error: 'File not found' });
@@ -90,6 +99,9 @@ router.put('/:projectId/content', (req: Request, res: Response) => {
     const realFilePath = fs.realpathSync(filePath);
     if (!isPathInside(realProjectPath, realFilePath)) {
       return res.status(403).json({ error: 'Access denied - symlink outside project' });
+    }
+    if (touchesGitDir(realProjectPath, realFilePath)) {
+      return res.status(403).json({ error: 'Access denied - git metadata is not editable' });
     }
 
     const { content } = req.body;
