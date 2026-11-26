@@ -5,7 +5,7 @@ import { promisify } from 'util';
 import fs from 'fs';
 import fsp from 'fs/promises';
 import path from 'path';
-import archiver from 'archiver';
+import { ZipArchive } from 'archiver';
 import multer from 'multer';
 import { config } from '../lib/config.js';
 import prisma, { reconnectPrisma } from '../lib/prisma.js';
@@ -509,7 +509,7 @@ router.post('/create', async (req: Request, res: Response) => {
 
     // Create archive stream
     const output = fs.createWriteStream(backupPath);
-    const archive = archiver('zip', { zlib: { level: 9 } });
+    const archive = new ZipArchive({ zlib: { level: 9 } });
 
     // Handle archive errors
     archive.on('error', (err) => {
