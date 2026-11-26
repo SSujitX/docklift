@@ -1,3 +1,16 @@
+## [2.1.6](https://github.com/SSujitX/docklift/compare/v2.1.5...v2.1.6) (2026-11-26)
+
+
+### Bug Fixes
+
+* **deploy:** keep rollback image after stop/restart ([8b210f1](https://github.com/SSujitX/docklift/commit/8b210f1a3dff3e8b05939e2a86882c6905725311))
+* **files:** add git metadata path check ([1e5dc5c](https://github.com/SSujitX/docklift/commit/1e5dc5c8e173a96990ba1e2aa345e6ab9f9f84ad))
+* **files:** block editor access to .git ([1c4f25c](https://github.com/SSujitX/docklift/commit/1c4f25c0253696e3edd562e9a3b28765bc55fba6))
+* **github:** add setup state token validator ([a804829](https://github.com/SSujitX/docklift/commit/a8048291054597a1114823d7a5f35af310e852fc))
+* **github:** reject path-like setup state values ([6136057](https://github.com/SSujitX/docklift/commit/61360574902faba9693c31614d66167975ea7923))
+* **images:** skip untagged rows when picking keep-2 ([01e4162](https://github.com/SSujitX/docklift/commit/01e4162a9f020490a7ee960318f19460f61c9e07))
+* **purge:** keep rollback image after stop/restart ([b9e7ff3](https://github.com/SSujitX/docklift/commit/b9e7ff31a09735fe020cab7db6c3bf5b69fdec8d))
+
 ## [2.1.5](https://github.com/SSujitX/docklift/compare/v2.1.4...v2.1.5) (2026-08-10)
 
 
