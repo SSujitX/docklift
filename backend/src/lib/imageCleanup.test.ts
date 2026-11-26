@@ -4,9 +4,41 @@ import {
   dockliftImageTag,
   isDockliftAppImage,
   parseImageTagsJson,
+  pickTaggedImageMaps,
   reconstructInProgressTags,
   rollbackTargetGuard,
 } from './imageCleanup.js';
+
+describe('pickTaggedImageMaps', () => {
+  const deployA = { api: 'docklift-abcdef12-api:aaaaaaaa' };
+  const deployB = { api: 'docklift-abcdef12-api:bbbbbbbb' };
+  const deployC = { api: 'docklift-abcdef12-api:cccccccc' };
+
+  test('stop / restart rows do not use up a keep slot', () => {
+    // Newest first: deploy B, then a stop and a restart, then deploy A.
+    const rows = [
+      { image_tags: deployB },
+      { image_tags: null },
+      { image_tags: null },
+      { image_tags: deployA },
+    ];
+    expect(pickTaggedImageMaps(rows, 2)).toEqual([deployB, deployA]);
+    // The previous image stays in the keep-set, so rollback to A still works.
+    const keep = buildKeepImageSet(pickTaggedImageMaps(rows, 2));
+    expect(keep.has(deployA.api)).toBe(true);
+    expect(keep.has(deployB.api)).toBe(true);
+  });
+
+  test('still keeps only the newest two tagged deploys', () => {
+    const rows = [{ image_tags: deployC }, { image_tags: deployB }, { image_tags: deployA }];
+    expect(pickTaggedImageMaps(rows, 2)).toEqual([deployC, deployB]);
+  });
+
+  test('handles empty and untagged-only history', () => {
+    expect(pickTaggedImageMaps([], 2)).toEqual([]);
+    expect(pickTaggedImageMaps([{ image_tags: null }, { image_tags: {} }], 2)).toEqual([]);
+  });
+});
 
 describe('isDockliftAppImage', () => {
   test('accepts docklift project service tags', () => {

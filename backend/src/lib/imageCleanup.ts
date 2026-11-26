@@ -66,6 +66,29 @@ export function parseImageTagsJson(value: unknown): ImageTagsMap | null {
   return Object.keys(out).length ? out : null;
 }
 
+/**
+ * How many recent successful rows to scan for image tags. Stop / restart rows
+ * are `success` too but carry no tags, so the scan must look past them.
+ */
+export const KEEP_SCAN_ROWS = 100;
+
+/**
+ * First `limit` image-tag maps from rows ordered newest-first, skipping rows
+ * without stored tags so they never use up a keep slot.
+ */
+export function pickTaggedImageMaps(
+  rows: Array<{ image_tags: unknown }>,
+  limit = 2,
+): ImageTagsMap[] {
+  const maps: ImageTagsMap[] = [];
+  for (const row of rows) {
+    if (maps.length >= limit) break;
+    const map = parseImageTagsJson(row.image_tags);
+    if (map) maps.push(map);
+  }
+  return maps;
+}
+
 /** Pure eligibility checks for Restore previous (step-up / image existence checked separately). */
 export function rollbackTargetGuard(opts: {
   targetId: string;
