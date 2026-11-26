@@ -21,7 +21,9 @@ import {
 } from '../services/git.js';
 import {
   buildKeepImageSet,
+  KEEP_SCAN_ROWS,
   parseImageTagsJson,
+  pickTaggedImageMaps,
   pruneBuildKitUnused,
   removeUnusedDockliftImages,
   getContainerImageRef,
@@ -258,10 +260,11 @@ async function runPostDeploymentPurge(
       const previousSuccess = await prisma.deployment.findMany({
         where: { project_id: projectId, status: 'success' },
         orderBy: { created_at: 'desc' },
-        take: 2,
+        take: KEEP_SCAN_ROWS,
         select: { image_tags: true },
       });
-      const maps = previousSuccess.map((d) => parseImageTagsJson(d.image_tags));
+      // Stop / restart rows are `success` with no tags — they must not evict the rollback image.
+      const maps = pickTaggedImageMaps(previousSuccess, 2);
       const keepSet = buildKeepImageSet(maps, currentImageTags);
 
       const services = await prisma.service.findMany({
