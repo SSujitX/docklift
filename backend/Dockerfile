@@ -1,5 +1,5 @@
 # Base stage - Use Bun for faster installs
-FROM oven/bun:1.2.19-alpine AS base
+FROM oven/bun:1.4.5-alpine AS base
 
 # Dependencies stage
 FROM base AS deps
