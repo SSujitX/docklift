@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import yaml from 'js-yaml';
+import * as yaml from 'js-yaml';
 import { resolveProjectBuild } from './buildResolver.js';
 import { buildServiceImage, summarizeBuildFailure } from './buildRunner.js';
 import { generateRuntimeCompose } from './compose.js';
