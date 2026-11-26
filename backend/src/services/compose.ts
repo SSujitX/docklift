@@ -1,7 +1,7 @@
 // Docker Compose service - scans for Dockerfiles and generates docker-compose.yml
 import fs from 'fs';
 import path from 'path';
-import yaml from 'js-yaml';
+import * as yaml from 'js-yaml';
 import { projectNetworkName, shortPathHash } from '../lib/naming.js';
 import { envForService } from '../lib/envVariables.js';
 
