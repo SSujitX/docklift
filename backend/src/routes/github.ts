@@ -7,6 +7,7 @@ import prisma from '../lib/prisma.js';
 import { config } from '../lib/config.js';
 import crypto from 'crypto';
 import { INTERNAL_API_SECRET } from '../lib/authMiddleware.js';
+import { setupStateFilePath } from '../lib/githubSetupState.js';
 
 const router = Router();
 const GITHUB_API_URL = 'https://api.github.com';
@@ -41,8 +42,9 @@ function ensureGithubSetupDir(): void {
   }
 }
 
-function githubSetupStatePath(state: string): string {
-  return path.join(GITHUB_SETUP_DIR, `${state}.json`);
+/** Null when `state` is not a plain token — it arrives from a public query/cookie. */
+function githubSetupStatePath(state: string): string | null {
+  return setupStateFilePath(GITHUB_SETUP_DIR, state);
 }
 
 function pruneExpiredGithubSetupStates(): void {
@@ -73,7 +75,7 @@ async function createGithubSetupState(opts?: { returnUrl?: string }): Promise<st
   const payload: { createdAt: number; returnUrl?: string } = { createdAt: Date.now() };
   if (opts?.returnUrl) payload.returnUrl = opts.returnUrl;
   fs.writeFileSync(
-    githubSetupStatePath(state),
+    path.join(GITHUB_SETUP_DIR, `${state}.json`),
     JSON.stringify(payload),
     { mode: 0o600 }
   );
@@ -84,7 +86,7 @@ function readGithubSetupStateReturnUrl(state: string | undefined): string | null
   if (!state) return null;
   try {
     const filePath = githubSetupStatePath(state);
-    if (!fs.existsSync(filePath)) return null;
+    if (!filePath || !fs.existsSync(filePath)) return null;
     const data = JSON.parse(fs.readFileSync(filePath, 'utf8')) as { returnUrl?: string };
     return typeof data.returnUrl === 'string' && data.returnUrl ? data.returnUrl : null;
   } catch {
@@ -96,7 +98,7 @@ async function verifyGithubSetupState(state: string | undefined): Promise<boolea
   if (!state || typeof state !== 'string') return false;
   pruneExpiredGithubSetupStates();
   const filePath = githubSetupStatePath(state);
-  if (!fs.existsSync(filePath)) {
+  if (!filePath || !fs.existsSync(filePath)) {
     return legacyVerifyGithubSetupState(state);
   }
   try {
@@ -135,7 +137,7 @@ async function deleteGithubSetupStateFile(state: string | undefined): Promise<vo
   if (!state || typeof state !== 'string') return;
   try {
     const filePath = githubSetupStatePath(state);
-    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
   } catch {
     /* ignore */
   }
