@@ -23,7 +23,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: "1.2.19"
+          bun-version: "1.4.5"
 
       - name: Backend install + generate
         working-directory: backend
@@ -86,8 +86,8 @@ jobs:
           grep -q 'arm_rollback' upgrade.sh
           grep -q 'isComposeTeardownOk' backend/src/routes/projects.ts
           grep -q 'Teardown verified' backend/src/routes/deployments.ts
-          grep -q 'oven/bun:1.2.19-alpine' backend/Dockerfile
-          grep -q 'oven/bun:1.2.19-alpine' frontend/Dockerfile
+          grep -q 'oven/bun:1.4.5-alpine' backend/Dockerfile
+          grep -q 'oven/bun:1.4.5-alpine' frontend/Dockerfile
           ! grep -F 'docker image prune' backend/src/routes/deployments.ts
           ! grep -F 'docker image prune' backend/src/routes/system.ts
           ! grep -F "cap_drop: ['ALL']" backend/src/services/compose.ts
