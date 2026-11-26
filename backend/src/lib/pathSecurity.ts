@@ -11,3 +11,13 @@ export function isPathInside(base: string, candidate: string): boolean {
   const rel = path.relative(root, target);
   return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
 }
+
+/**
+ * True if `candidate` is, or sits under, a `.git` entry below `base`.
+ * Git metadata (config, hooks) is executed by git itself on the next pull,
+ * so the file editor must never read or write it.
+ */
+export function touchesGitDir(base: string, candidate: string): boolean {
+  const rel = path.relative(path.resolve(base), path.resolve(candidate));
+  return rel.split(/[\\/]+/).some((segment) => segment.toLowerCase() === '.git');
+}
