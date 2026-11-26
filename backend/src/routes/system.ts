@@ -608,7 +608,8 @@ router.post('/purge', async (req: Request, res: Response) => {
 
     const {
       buildKeepImageSet,
-      parseImageTagsJson,
+      KEEP_SCAN_ROWS,
+      pickTaggedImageMaps,
       pruneBuildKitAll,
       removeUnusedDockliftImages,
       getContainerImageRef,
@@ -636,10 +637,11 @@ router.post('/purge', async (req: Request, res: Response) => {
       const successes = await prisma.deployment.findMany({
         where: { project_id: projectId, status: 'success' },
         orderBy: { created_at: 'desc' },
-        take: 2,
+        take: KEEP_SCAN_ROWS,
         select: { image_tags: true },
       });
-      const maps = successes.map((d) => parseImageTagsJson(d.image_tags));
+      // Stop / restart rows are `success` with no tags — they must not evict the rollback image.
+      const maps = pickTaggedImageMaps(successes, 2);
       for (const tag of buildKeepImageSet(maps)) {
         keepSet.add(tag);
       }
