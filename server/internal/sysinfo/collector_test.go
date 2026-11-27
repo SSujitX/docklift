@@ -100,7 +100,7 @@ func TestStatsLinuxUsesHostFiles(t *testing.T) {
 	srv := m["server"].(map[string]any)
 	want := map[string]any{
 		"hostname": "my-vps", "platform": "linux", "distro": "Ubuntu 24.04.1 LTS", "kernel": "6.8.0-45-generic", "arch": "x64",
-		"uptimeFormatted": "2 Days, 3 Hours, 5 Mins", "serverTime": "11/27/2026, 3:04:05 PM", "cpuModel": "AMD EPYC 7B13",
+		"uptimeFormatted": "2 Days, 3 Hours, 5 Mins", "serverTime": "11/27/2026, 3:04:05 PM", "cpuModel": "AMD EPYC 7B13",
 		"cpuCores": "4 Cores @ 2.5 GHz", "ipAddress": "172.18.0.5", "location": "N/A",
 	}
 	for k, v := range want {

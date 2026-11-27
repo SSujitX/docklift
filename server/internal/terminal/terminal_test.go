@@ -415,3 +415,27 @@ func TestHelpers(t *testing.T) {
 	}
 	var _ Users = (*store.Store)(nil)
 }
+
+func TestOversizedMessageEndsSession(t *testing.T) {
+	h := newHarness(t, func(l *Limits) { l.MaxMessageBytes = 64 })
+	conn := h.dial()
+	expectMsg(t, conn, `{"type":"auth_required"}`)
+	_ = conn.WriteMessage(websocket.TextMessage, []byte(`{"type":"input","data":"`+strings.Repeat("x", 200)+`"}`))
+	_ = conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+	if _, _, err := conn.ReadMessage(); err == nil {
+		t.Fatal("an oversized frame must close the socket")
+	}
+	waitFor(t, "session removal", func() bool { return h.m.Sessions() == 0 })
+}
+
+func TestDeadPeerIsDropped(t *testing.T) {
+	h := newHarness(t, func(l *Limits) {
+		l.PingInterval = 20 * time.Millisecond
+		l.PongWait = 150 * time.Millisecond
+	})
+	conn := h.dial()
+	expectMsg(t, conn, `{"type":"auth_required"}`)
+	// The client stops reading, so it never answers a ping.
+	waitFor(t, "session removal", func() bool { return h.m.Sessions() == 0 })
+	_ = conn.Close()
+}

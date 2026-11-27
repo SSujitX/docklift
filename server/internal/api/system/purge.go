@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/moby/moby/client"
+
 	"docklift/internal/api/logs"
 	"docklift/internal/httpx"
 	"docklift/internal/store"
@@ -143,6 +145,14 @@ func (h *handlers) purge(w http.ResponseWriter, r *http.Request) {
 			inUse[ref] = true
 		}
 	}
+	// Hardening over TypeScript, which only protected the images of the
+	// services' containers: an image any container on the host was created
+	// from (running or stopped, tracked or not) is never force-removed.
+	// Without a complete container list nothing is removed (fail closed).
+	if err := h.addContainerImages(ctx, inUse); err != nil {
+		h.purgeFailed(w, err)
+		return
+	}
 
 	res, err := h.images.RemoveUnusedImages(ctx, keep, inUse)
 	if err != nil {
@@ -195,6 +205,26 @@ func (h *handlers) purge(w http.ResponseWriter, r *http.Request) {
 		body.MemorySaved = &saved
 	}
 	httpx.JSON(w, http.StatusOK, body)
+}
+
+// addContainerImages adds the image reference and image id of every
+// container on the host to inUse.
+func (h *handlers) addContainerImages(ctx context.Context, inUse map[string]bool) error {
+	if h.docker == nil {
+		return logs.ErrDockerNotConfigured
+	}
+	list, err := h.docker.ContainerList(ctx, client.ContainerListOptions{All: true})
+	if err != nil {
+		return fmt.Errorf("list containers: %w", err)
+	}
+	for _, c := range list.Items {
+		for _, ref := range []string{c.Image, c.ImageID} {
+			if ref != "" {
+				inUse[ref] = true
+			}
+		}
+	}
+	return nil
 }
 
 // purgeFailed answers like the route's catch block, with 503 when Docker is

@@ -13,6 +13,7 @@ import (
 	"github.com/moby/moby/client"
 
 	"docklift/internal/app"
+	"docklift/internal/dockerx"
 	"docklift/internal/httpx"
 	"docklift/internal/store"
 	"docklift/internal/sysinfo"
@@ -43,8 +44,9 @@ func DockerFrom(d *app.Deps) Docker {
 
 // IsDockerUnavailable reports an error meaning the daemon cannot be reached
 // (as opposed to an error answered by the daemon, such as "no such container").
+// It also recognises dockerx.ErrUnavailable from the Deps.DockerX wrapper.
 func IsDockerUnavailable(err error) bool {
-	return errors.Is(err, ErrDockerNotConfigured) || client.IsErrConnectionFailed(err)
+	return errors.Is(err, ErrDockerNotConfigured) || dockerx.IsUnavailable(err)
 }
 
 type handlers struct {

@@ -16,6 +16,7 @@ import (
 
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/go-chi/chi/v5"
+	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 
 	"docklift/internal/app"
@@ -48,16 +49,21 @@ func (f *fakeHost) UpdateSystem() error { return f.record("update-system") }
 func (f *fakeHost) Upgrade() error      { return f.record("upgrade") }
 
 type fakeDocker struct {
-	mu       sync.Mutex
-	pingErr  error
-	restarts []string
+	mu         sync.Mutex
+	pingErr    error
+	restarts   []string
+	containers []container.Summary
+	listErr    error
 }
 
 func (f *fakeDocker) ContainerInspect(context.Context, string, client.ContainerInspectOptions) (client.ContainerInspectResult, error) {
 	return client.ContainerInspectResult{}, cerrdefs.ErrNotFound.WithMessage("No such container")
 }
-func (f *fakeDocker) ContainerList(context.Context, client.ContainerListOptions) (client.ContainerListResult, error) {
-	return client.ContainerListResult{}, nil
+func (f *fakeDocker) ContainerList(_ context.Context, o client.ContainerListOptions) (client.ContainerListResult, error) {
+	if !o.All {
+		return client.ContainerListResult{}, errors.New("purge must list stopped containers too")
+	}
+	return client.ContainerListResult{Items: f.containers}, f.listErr
 }
 func (f *fakeDocker) ContainerLogs(context.Context, string, client.ContainerLogsOptions) (client.ContainerLogsResult, error) {
 	return nil, errors.New("unused")
@@ -346,8 +352,37 @@ func TestPurgeFailures(t *testing.T) {
 	e.images.removeErr = errors.New("weird")
 	expect(t, e.do(t, "POST", "/purge", map[string]any{"password": password}), 500, `{"error":"Failed to complete purge operation"}`)
 
+	// Without Options.Images the Deps.Deploy retention is used; apptest's has
+	// no Engine client, which is "Docker is not available".
 	unwired := newEnv(t, func(o *Options) { o.Images = nil })
-	expect(t, unwired.do(t, "POST", "/purge", map[string]any{"password": password}), 500, `{"error":"Failed to complete purge operation"}`)
+	expect(t, unwired.do(t, "POST", "/purge", map[string]any{"password": password}), 503, `{"error":"Docker is not available"}`)
+
+	// An incomplete container list removes nothing.
+	e = newEnv(t, nil)
+	e.docker.listErr = connectionRefused()
+	expect(t, e.do(t, "POST", "/purge", map[string]any{"password": password}), 503, `{"error":"Docker is not available"}`)
+	if e.images.gotInUse != nil || e.images.pruned {
+		t.Fatal("purge must not remove images without the container list")
+	}
+	noDocker := newEnv(t, func(o *Options) { o.Docker = nil })
+	expect(t, noDocker.do(t, "POST", "/purge", map[string]any{"password": password}), 503, `{"error":"Docker is not available"}`)
+}
+
+func TestPurgeProtectsImagesOfEveryContainer(t *testing.T) {
+	e := newEnv(t, nil)
+	e.docker.containers = []container.Summary{
+		{Image: "docklift-bbbbbbbb-web:22222222", ImageID: "sha256:feed"},
+		{Image: "", ImageID: "sha256:beef"},
+	}
+	expect(t, e.do(t, "POST", "/purge", map[string]any{"password": password}), 200, "")
+	for _, ref := range []string{"docklift-bbbbbbbb-web:22222222", "sha256:feed", "sha256:beef"} {
+		if !e.images.gotInUse[ref] {
+			t.Errorf("in-use refs %v miss %s", e.images.gotInUse, ref)
+		}
+	}
+	if e.images.gotInUse[""] {
+		t.Error("empty refs must not be recorded")
+	}
 }
 
 func TestExecuteValidation(t *testing.T) {

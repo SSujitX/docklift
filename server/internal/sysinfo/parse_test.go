@@ -201,7 +201,7 @@ func TestCPUBrandAndSpeed(t *testing.T) {
 
 func TestTimeFormats(t *testing.T) {
 	ts := time.Date(2026, 11, 27, 15, 4, 5, 678_000_000, time.UTC)
-	if got := LocaleString(ts); got != "11/27/2026, 3:04:05 PM" {
+	if got := LocaleString(ts); got != "11/27/2026, 3:04:05 PM" {
 		t.Fatalf("LocaleString = %q", got)
 	}
 	if got := ISOString(ts); got != "2026-11-27T15:04:05.678Z" {
@@ -268,5 +268,37 @@ func TestHostSourceReadsThisMachine(t *testing.T) {
 	}
 	if _, ok := h.ReadHostFile("/definitely/not/here"); ok {
 		t.Fatal("missing host file must report false")
+	}
+}
+
+func TestNodeRelease(t *testing.T) {
+	cases := []struct{ goos, kernel, want string }{
+		{"windows", "10.0.19045.6466 Build 19045.6466", "10.0.19045"},
+		{"windows", "10.0.22631", "10.0.22631"},
+		{"windows", "", ""},
+		{"linux", "6.8.0-45-generic", "6.8.0-45-generic"},
+		{"darwin", "23.1.0", "23.1.0"},
+	}
+	for _, c := range cases {
+		if got := NodeRelease(c.goos, c.kernel); got != c.want {
+			t.Errorf("NodeRelease(%q, %q) = %q, want %q", c.goos, c.kernel, got, c.want)
+		}
+	}
+}
+
+func TestBusyPercent(t *testing.T) {
+	cases := []struct {
+		prev, cur cpuSample
+		want      float64
+	}{
+		{cpuSample{}, cpuSample{busy: 25, total: 100}, 25}, // first call: since boot
+		{cpuSample{busy: 25, total: 100}, cpuSample{busy: 35, total: 120}, 50},
+		{cpuSample{busy: 25, total: 100}, cpuSample{busy: 25, total: 100}, 0}, // no time passed
+		{cpuSample{busy: 50, total: 100}, cpuSample{busy: 40, total: 110}, 0}, // counter went backwards
+	}
+	for _, c := range cases {
+		if got := busyPercent(c.prev, c.cur); got != c.want {
+			t.Errorf("busyPercent(%+v, %+v) = %v, want %v", c.prev, c.cur, got, c.want)
+		}
 	}
 }

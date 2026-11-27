@@ -337,10 +337,12 @@ func CPUSpeedFromModel(model string) float64 {
 }
 
 // LocaleString is new Date().toLocaleString() under Node's default en-US
-// ICU locale: "11/27/2026, 3:04:05 PM" in local time, with the narrow
-// no-break space ICU 72+ puts before the day period.
+// ICU locale: "11/27/2026, 3:04:05 PM" in local time. ICU 72+ formats a
+// narrow no-break space before the day period, but V8 (Node 20 and later,
+// the production image runs Node 24) replaces it with a plain space; the
+// live TypeScript backend was checked to answer with U+0020.
 func LocaleString(t time.Time) string {
-	return t.Format("1/2/2006, 3:04:05 PM")
+	return t.Format("1/2/2006, 3:04:05 PM")
 }
 
 // ISOString is Date.prototype.toISOString: UTC with milliseconds.

@@ -6,7 +6,6 @@ package terminal
 import (
 	"context"
 	"io"
-	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -107,7 +106,7 @@ func (u *upgrader) serve(w http.ResponseWriter, r *http.Request) {
 		// The upgrader already answered 400 (bad handshake).
 		return
 	}
-	u.m.Serve(conn, sessions.User{ID: claims.UserID, Email: claims.Email}, peerAddress(r))
+	u.m.Serve(conn, sessions.User{ID: claims.UserID, Email: claims.Email}, httpx.PeerIP(r))
 }
 
 // allowedOrigin is isAllowedOrigin: a request without Origin passes only
@@ -150,12 +149,3 @@ const (
 	refuseDrainTimeout = time.Second
 	refuseDrainLimit   = 64 << 10
 )
-
-// peerAddress is the socket peer (request.socket.remoteAddress).
-func peerAddress(r *http.Request) string {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return host
-}

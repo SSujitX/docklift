@@ -20,6 +20,7 @@ import (
 	"docklift/internal/api/logs"
 	"docklift/internal/app"
 	"docklift/internal/auth"
+	"docklift/internal/dockerx"
 	"docklift/internal/httpx"
 	"docklift/internal/store"
 	"docklift/internal/sysinfo"
@@ -63,8 +64,9 @@ type Docker interface {
 // Options are the dependencies of the system routes that Mount cannot take
 // from app.Deps. Zero fields take production defaults.
 type Options struct {
-	// Images is the keep-2 image retention used by POST /purge. Without it
-	// purge answers 500 "Failed to complete purge operation".
+	// Images replaces the keep-2 image retention of Deps.Deploy used by
+	// POST /purge. With neither, purge answers 500 "Failed to complete purge
+	// operation".
 	Images ImageCleanup
 	// Docker replaces Deps.Docker.
 	Docker Docker
@@ -99,8 +101,8 @@ type handlers struct {
 
 // Mount registers the /api/system routes on r, which is already scoped to
 // /api/system and wrapped in the group's authentication middleware (SSE query
-// token for GET /logs/*, session JWT otherwise). Purge needs an ImageCleanup:
-// use MountWith to provide one.
+// token for GET /logs/*, session JWT otherwise). Docker comes from
+// Deps.Docker and purge's image retention from Deps.Deploy.
 func Mount(r chi.Router, d *app.Deps) {
 	MountWith(r, d, Options{})
 }
@@ -110,6 +112,9 @@ func MountWith(r chi.Router, d *app.Deps, opts Options) {
 	h := &handlers{d: d, images: opts.Images, docker: opts.Docker, host: opts.Host, goos: opts.GOOS, shell: opts.Shell, delay: opts.SimulatedDelay}
 	if h.docker == nil && d.Docker != nil {
 		h.docker = d.Docker
+	}
+	if h.images == nil && d.Deploy != nil {
+		h.images = runtimeImages{rt: d.Deploy}
 	}
 	if h.host == nil {
 		h.host = newHost(d.Background, d.Log)
@@ -129,7 +134,7 @@ func MountWith(r chi.Router, d *app.Deps, opts Options) {
 		httpClient = &http.Client{Timeout: versionProbeTimeout}
 	}
 	h.stats = sysinfo.NewCollector(d.Background, src, d.Log, h.goos, sysinfo.Options{PublicIPURL: opts.PublicIPURL, HTTPClient: httpClient})
-	h.version = &versionChecker{current: version.Version, url: GitHubLatestReleaseURL, http: httpClient, log: d.Log, now: time.Now}
+	h.version = &versionChecker{background: d.Background, current: version.Version, url: GitHubLatestReleaseURL, http: httpClient, log: d.Log, now: time.Now}
 	if opts.GitHubURL != "" {
 		h.version.url = opts.GitHubURL
 	}
@@ -300,7 +305,9 @@ func (h *handlers) pingDocker(ctx context.Context) error {
 // restartCoreContainers is `sleep 1 && docker restart <core containers>`,
 // except that this process's own container goes last: restarting it first
 // (as the TypeScript command did) killed the restart before it reached the
-// other containers. Containers that do not exist are skipped.
+// other containers. Containers that do not exist (docklift-frontend and
+// docklift-nginx are gone since the Go backend serves the dashboard) are
+// skipped.
 func (h *handlers) restartCoreContainers() {
 	time.Sleep(resetDelay)
 	// Detached from shutdown: restarting our own container stops this process.
@@ -314,7 +321,11 @@ func (h *handlers) restartCoreContainers() {
 	}
 	order = append(order, selfContainer)
 	for _, name := range order {
-		if _, err := h.docker.ContainerRestart(ctx, name, client.ContainerRestartOptions{}); err != nil {
+		_, err := h.docker.ContainerRestart(ctx, name, client.ContainerRestartOptions{})
+		if dockerx.IsNotFound(err) {
+			continue
+		}
+		if err != nil {
 			h.d.Log.Error("Reset execution ended: restart "+name+" failed", "error", err)
 		}
 	}

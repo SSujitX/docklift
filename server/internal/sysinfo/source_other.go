@@ -14,12 +14,29 @@ import (
 // hostProcesses is Linux-only (nsenter into PID 1).
 func hostProcesses(context.Context) []Process { return nil }
 
-// defaultInterface is the first interface that is up, not a loopback and has
-// an address.
+// routeProbeAddr is a TEST-NET-1 address (RFC 5737): connecting a UDP socket
+// to it makes the OS pick the source address of the default route without
+// sending a packet.
+const routeProbeAddr = "192.0.2.1:9"
+
+// defaultInterface is the interface of the default route, like
+// systeminformation's networkInterfaceDefault (which parses the routing
+// table): the interface owning the source address the OS chooses for an
+// outbound connection. Without a default route it is the first interface
+// that is up, not a loopback and has an address.
 func defaultInterface() string {
 	ifaces, err := net.Interfaces()
 	if err != nil {
 		return ""
+	}
+	if conn, err := net.Dial("udp", routeProbeAddr); err == nil {
+		local, _ := conn.LocalAddr().(*net.UDPAddr)
+		_ = conn.Close()
+		if local != nil {
+			if name := interfaceWithIP(ifaces, local.IP); name != "" {
+				return name
+			}
+		}
 	}
 	for _, ifc := range ifaces {
 		if ifc.Flags&net.FlagUp == 0 || ifc.Flags&net.FlagLoopback != 0 {
@@ -27,6 +44,22 @@ func defaultInterface() string {
 		}
 		if addrs, err := ifc.Addrs(); err == nil && len(addrs) > 0 {
 			return ifc.Name
+		}
+	}
+	return ""
+}
+
+// interfaceWithIP is the name of the interface that has ip, "" when none.
+func interfaceWithIP(ifaces []net.Interface, ip net.IP) string {
+	for _, ifc := range ifaces {
+		addrs, err := ifc.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, a := range addrs {
+			if ipn, ok := a.(*net.IPNet); ok && ipn.IP.Equal(ip) {
+				return ifc.Name
+			}
 		}
 	}
 	return ""

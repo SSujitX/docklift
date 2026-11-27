@@ -96,6 +96,16 @@ func rawUpgrade(t *testing.T, s *server, path, origin string) string {
 	for {
 		n, err := c.Read(buf)
 		sb.Write(buf[:n])
+		// A refusal is one bare status line. Stop there: on some Windows
+		// machines (a loopback filter driver) the FIN after shutdown(SD_SEND)
+		// reaches the client only when its read deadline expires.
+		if strings.HasSuffix(sb.String(), "\r\n\r\n") {
+			_ = c.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+			if n, _ := c.Read(buf); n > 0 {
+				sb.Write(buf[:n])
+			}
+			return sb.String()
+		}
 		if err != nil {
 			if sb.Len() == 0 {
 				t.Logf("read error with no data: %v", err)

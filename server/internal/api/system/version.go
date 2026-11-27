@@ -40,11 +40,14 @@ type VersionInfo struct {
 // versionChecker caches the GitHub probe; concurrent callers share one
 // request in flight.
 type versionChecker struct {
-	current string
-	url     string
-	http    *http.Client
-	log     *slog.Logger
-	now     func() time.Time
+	// background bounds the probe, which outlives the request that started
+	// it (concurrent callers share it); it ends at server shutdown.
+	background context.Context
+	current    string
+	url        string
+	http       *http.Client
+	log        *slog.Logger
+	now        func() time.Time
 
 	mu        sync.Mutex
 	cached    *VersionInfo
@@ -132,7 +135,7 @@ func (v *versionChecker) probe(done chan struct{}) {
 // fetchLatest returns the latest release tag without its "v" prefix, or the
 // current version and false when GitHub did not answer usefully.
 func (v *versionChecker) fetchLatest() (string, bool) {
-	ctx, cancel := context.WithTimeout(context.Background(), versionProbeTimeout)
+	ctx, cancel := context.WithTimeout(v.background, versionProbeTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, v.url, nil)
 	if err != nil {

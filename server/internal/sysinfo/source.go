@@ -3,6 +3,7 @@ package sysinfo
 import (
 	"context"
 	"fmt"
+	"math"
 	"net"
 	"os"
 	"runtime"
@@ -24,6 +25,9 @@ import (
 type HostSource struct {
 	netMu   sync.Mutex
 	netLast map[string]netSample
+
+	cpuMu   sync.Mutex
+	cpuLast cpuSample
 }
 
 type netSample struct {
@@ -54,16 +58,43 @@ func (h *HostSource) CPU(ctx context.Context) (CPUInfo, error) {
 }
 
 // CurrentLoad implements Source: overall CPU busy percent since the previous
-// call (the first call measures since process start).
+// call, and since boot on the first call, like si.currentLoad (gopsutil's
+// cpu.Percent(0) would measure the first call from package init, which
+// reports the server's own startup as ~100% busy).
 func (h *HostSource) CurrentLoad(ctx context.Context) (float64, error) {
-	p, err := cpu.PercentWithContext(ctx, 0, false)
+	times, err := cpu.TimesWithContext(ctx, false)
 	if err != nil {
-		return 0, fmt.Errorf("cpu percent: %w", err)
+		return 0, fmt.Errorf("cpu times: %w", err)
 	}
-	if len(p) == 0 {
+	if len(times) == 0 {
 		return 0, nil
 	}
-	return p[0], nil
+	h.cpuMu.Lock()
+	defer h.cpuMu.Unlock()
+	cur := cpuSample{busy: cpuBusy(times[0]), total: cpuTotal(times[0])}
+	prev := h.cpuLast
+	h.cpuLast = cur
+	return busyPercent(prev, cur), nil
+}
+
+// cpuSample is a cumulative CPU time reading in seconds.
+type cpuSample struct{ busy, total float64 }
+
+// cpuTotal is every CPU state (guest time is already part of user time).
+func cpuTotal(t cpu.TimesStat) float64 {
+	return t.User + t.System + t.Idle + t.Nice + t.Iowait + t.Irq + t.Softirq + t.Steal
+}
+
+func cpuBusy(t cpu.TimesStat) float64 { return cpuTotal(t) - t.Idle - t.Iowait }
+
+// busyPercent is the busy share between two readings, clamped to 0..100;
+// 0 when no time passed.
+func busyPercent(prev, cur cpuSample) float64 {
+	total := cur.total - prev.total
+	if total <= 0 {
+		return 0
+	}
+	return math.Max(0, math.Min(100, (cur.busy-prev.busy)/total*100))
 }
 
 // cpuSensorPreference orders the sensor keys taken as "the" CPU temperature.
@@ -143,8 +174,27 @@ func (h *HostSource) OSInfo(ctx context.Context) OSInfo {
 		info.Platform = "Windows"
 	}
 	info.Hostname, _ = os.Hostname()
-	info.Kernel, _ = host.KernelVersionWithContext(ctx)
+	kernel, _ := host.KernelVersionWithContext(ctx)
+	info.Kernel = NodeRelease(runtime.GOOS, kernel)
 	return info
+}
+
+// NodeRelease is os.release() from gopsutil's kernel version: unchanged on
+// Unix (uname -r), "major.minor.build" on Windows, where gopsutil appends the
+// update revision and build ("10.0.19045.6466 Build 19045.6466").
+func NodeRelease(goos, kernel string) string {
+	if goos != "windows" {
+		return kernel
+	}
+	fields := strings.Fields(kernel)
+	if len(fields) == 0 {
+		return kernel
+	}
+	parts := strings.Split(fields[0], ".")
+	if len(parts) > 3 {
+		parts = parts[:3]
+	}
+	return strings.Join(parts, ".")
 }
 
 // LoadAvg implements Source. Node reports zeros on Windows.

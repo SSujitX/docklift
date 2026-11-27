@@ -86,6 +86,7 @@ func runShell(ctx context.Context, shell, command string) execResult {
 	cmd := exec.CommandContext(runCtx, shell, "-c", command)
 	cmd.Stdout, cmd.Stderr = stdout, stderr
 	cmd.WaitDelay = executeWaitDelay
+	killProcessGroup(cmd)
 	err := cmd.Run()
 	res := execResult{Stdout: stdout.String(), Stderr: stderr.String()}
 	switch {

@@ -91,17 +91,33 @@ func TestDockerStreamDemultiplexes(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			Stream(w, r, c, name, "200")
 		}))
-		ev := readEvents(t, srv.URL, 3)
+		// A multiplexed stream has one frame per write (stdout, stderr); a TTY
+		// container's raw stream may deliver both lines in one chunk.
+		want := 3
+		if tty {
+			want = 2
+		}
+		ev := readEvents(t, srv.URL, want)
 		srv.Close()
 		if ev[0]["type"] != "connected" || ev[0]["container"] != name {
 			t.Fatalf("tty=%v first event %v", tty, ev[0])
 		}
-		joined := ev[1]["message"].(string) + ev[2]["message"].(string)
+		joined := ""
+		for _, e := range ev[1:] {
+			msg, _ := e["message"].(string)
+			if e["type"] != "log" || msg == "" {
+				t.Fatalf("tty=%v event %v", tty, e)
+			}
+			if strings.ContainsAny(msg[:1], "\x01\x02") {
+				t.Fatalf("tty=%v multiplex header leaked: %q", tty, msg)
+			}
+			joined += msg
+		}
 		if !strings.Contains(joined, "to-stdout") || !strings.Contains(joined, "to-stderr") {
 			t.Fatalf("tty=%v log events %v", tty, ev[1:])
 		}
-		if strings.ContainsAny(ev[1]["message"].(string)[:1], "\x01\x02") {
-			t.Fatalf("tty=%v multiplex header leaked: %q", tty, ev[1]["message"])
+		if !tty && strings.Contains(ev[1]["message"].(string), "to-stderr") == strings.Contains(ev[2]["message"].(string), "to-stderr") {
+			t.Fatalf("frames were not split per write: %v", ev[1:])
 		}
 		status, isRunning, err := ContainerStatus(t.Context(), c, name)
 		if err != nil || status != "running" || !isRunning {
@@ -110,5 +126,36 @@ func TestDockerStreamDemultiplexes(t *testing.T) {
 	}
 	if status, _, err := ContainerStatus(t.Context(), c, "docklift-logs-test-missing-xyz"); err != nil || status != "not_found" {
 		t.Fatalf("missing container: %q %v", status, err)
+	}
+}
+
+// TestDockerStreamStopsOnDisconnect checks that a client going away ends the
+// handler (and with it the Docker log connection) instead of leaking it.
+func TestDockerStreamStopsOnDisconnect(t *testing.T) {
+	c := requireDocker(t)
+	name := runContainer(t, false)
+	time.Sleep(time.Second)
+	done := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer close(done)
+		Stream(w, r, c, name, "200")
+	}))
+	defer srv.Close()
+	ctx, cancel := context.WithCancel(t.Context())
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	line, _ := bufio.NewReader(resp.Body).ReadString('\n')
+	if !strings.Contains(line, `"connected"`) {
+		t.Fatalf("first line %q", line)
+	}
+	cancel()
+	_ = resp.Body.Close()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("stream handler still running after the client disconnected")
 	}
 }
