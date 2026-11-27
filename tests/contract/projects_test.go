@@ -57,6 +57,21 @@ func TestProjectCreateValidation(t *testing.T) {
 		{"two zip files", &Multipart{Fields: [][2]string{{"name", "x"}}, Files: []FilePart{{Field: "files", Filename: "a.zip", Data: okZip}, {Field: "files", Filename: "b.zip", Data: okZip}}}, 400, "Upload failed"},
 		{"multipart without name", &Multipart{Files: []FilePart{{Field: "files", Filename: "a.zip", Data: okZip}}}, 400, nameRequiredMsg},
 	}
+	if targetIsGo() {
+		// Deliberate fixes: wrong types are 400 (TS threw a 500), credentials
+		// in the URL and invalid refs are refused before any clone.
+		cases = append(cases, []struct {
+			name string
+			body any
+			code int
+			msg  string
+		}{
+			{"credentials in github url", map[string]any{"name": "x", "github_url": "https://x-access-token:t@github.com/a/b"}, 400, githubURLMsg},
+			{"non-string domain", map[string]any{"name": "x", "github_url": "https://github.com/a/b", "domain": 5}, 400, domainFormatMsg},
+			{"option-like branch", map[string]any{"name": "x", "github_url": "https://github.com/a/b", "github_branch": "--upload-pack=x"}, 400, "Invalid branch or tag name"},
+			{"non-string description", map[string]any{"name": "x", "github_url": "https://github.com/a/b", "description": 5}, 400, "description must be a string"},
+		}...)
+	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			c.Post(t, "/api/projects", tc.body).ExpectError(t, tc.code, tc.msg)
@@ -166,7 +181,13 @@ func TestProjectReadUpdate(t *testing.T) {
 			"id": id, "name": got["name"], "project_type": "worker", "internal_port": 1, "github_url": "not validated on patch",
 		}))
 		c.Patch(t, "/api/projects/"+id, map[string]any{"domain": "bad_domain"}).ExpectError(t, 400, domainFormatMsg)
-		c.Patch(t, "/api/projects/"+missingProjectID, map[string]any{"name": "x"}).ExpectError(t, 500, "Failed to update project")
+		if targetIsGo() {
+			// Deliberate fixes: a missing project is a 404, a wrong type a 400.
+			c.Patch(t, "/api/projects/"+missingProjectID, map[string]any{"name": "x"}).ExpectError(t, 404, "Project not found")
+			c.Patch(t, "/api/projects/"+id, map[string]any{"description": 5}).ExpectError(t, 400, "description must be a string")
+		} else {
+			c.Patch(t, "/api/projects/"+missingProjectID, map[string]any{"name": "x"}).ExpectError(t, 500, "Failed to update project")
+		}
 		mainInst.Anon().Patch(t, "/api/projects/"+id, map[string]any{"name": "x"}).ExpectError(t, 401, "Authentication required")
 	})
 }
@@ -253,7 +274,12 @@ func TestProjectStorage(t *testing.T) {
 			ExpectError(t, 400, "Select a valid project service")
 		t.Run("volume create without docker", func(t *testing.T) {
 			requireNoDocker(t)
-			post("/etcetera/data/").Expect(t, 500, Obj{"error": NonEmpty})
+			if targetIsGo() {
+				// Deliberate fix: an unreachable daemon is a 503.
+				post("/etcetera/data/").ExpectError(t, 503, "Docker is not available")
+			} else {
+				post("/etcetera/data/").Expect(t, 500, Obj{"error": NonEmpty})
+			}
 			// The row is rolled back when docker volume create fails.
 			c.Get(t, "/api/projects/"+id+"/storage").Expect(t, 200, Arr{})
 		})
@@ -273,14 +299,24 @@ func TestProjectAutoDeployUpload(t *testing.T) {
 func TestProjectDelete(t *testing.T) {
 	c := admin.Client()
 	t.Run("missing project", func(t *testing.T) {
-		c.Delete(t, "/api/projects/"+missingProjectID).ExpectError(t, 500, "Failed to delete project")
+		if targetIsGo() {
+			// Deliberate fix: a missing project is a 404.
+			c.Delete(t, "/api/projects/"+missingProjectID).ExpectError(t, 404, "Project not found")
+		} else {
+			c.Delete(t, "/api/projects/"+missingProjectID).ExpectError(t, 500, "Failed to delete project")
+		}
 	})
 	t.Run("teardown failure keeps the project", func(t *testing.T) {
 		requireNoDocker(t)
 		p := createProject(t, c, uniq("delete"), dockerfileApp())
 		id := p["id"].(string)
 		r := c.Delete(t, "/api/projects/"+id)
-		r.Expect(t, 409, Obj{"error": Prefix(`Cannot delete project: Docker teardown failed for "dl-delete-`)})
+		if targetIsGo() {
+			// Deliberate fix: an unreachable daemon is a 503, before any teardown.
+			r.ExpectError(t, 503, "Docker is not available")
+		} else {
+			r.Expect(t, 409, Obj{"error": Prefix(`Cannot delete project: Docker teardown failed for "dl-delete-`)})
+		}
 		c.Get(t, "/api/projects/"+id).ExpectStatus(t, 200)
 		if mainInst.Booted() {
 			if _, err := os.Stat(filepath.Join(mainInst.Dirs.Deployments, id)); err != nil {
