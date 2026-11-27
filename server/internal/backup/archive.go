@@ -297,6 +297,91 @@ func restoreDirs(zipPath, destDir string) error {
 	return nil
 }
 
+// restoreModes applies the permission bits stored in the archive to what
+// extraction wrote below destDir. safeunzip (like unzipper in 2.1.6) creates
+// every file 0666 and every directory 0755 minus the umask, so certbot's
+// private keys (privkey*.pem 0600, ACME account private_key.json 0400) and
+// its 0700 directories came back world-readable. Group/other write and the
+// setuid/setgid/sticky bits are never granted, and the owner keeps access.
+// Certificate private keys are made owner-only even when the archive stored
+// them looser (a backup of an install restored by 2.1.6). Links are never
+// followed; unsafe names are skipped.
+func restoreModes(zipPath, destDir string) error {
+	zr, err := zip.OpenReader(zipPath)
+	if err != nil && !errors.Is(err, zip.ErrInsecurePath) {
+		return err
+	}
+	defer zr.Close()
+	realDest, err := pathsec.RealPath(destDir)
+	if err != nil {
+		return err
+	}
+	type dirMode struct {
+		path string
+		perm fs.FileMode
+	}
+	var dirs []dirMode
+	for _, f := range zr.File {
+		rel := strings.TrimSuffix(strings.ReplaceAll(f.Name, `\`, "/"), "/")
+		if f.Mode()&fs.ModeSymlink != 0 || !safeRelPath(rel) {
+			continue
+		}
+		p := filepath.Join(destDir, filepath.FromSlash(rel))
+		if !pathsec.IsInside(destDir, p) {
+			continue
+		}
+		fi, err := os.Lstat(p)
+		if err != nil || fi.Mode()&fs.ModeSymlink != 0 {
+			continue
+		}
+		if real, err := pathsec.RealPath(p); err != nil || !pathsec.IsInside(realDest, real) {
+			continue
+		}
+		perm := f.Mode().Perm() &^ 0o022
+		switch {
+		case fi.IsDir():
+			// Applied children first (below): a 0500 directory would not
+			// stop root, but keep the owner able to replace its contents.
+			dirs = append(dirs, dirMode{p, perm | 0o700})
+			continue
+		case !fi.Mode().IsRegular():
+			continue
+		case isCertPrivateKey(rel):
+			perm &^= 0o077
+		}
+		if err := os.Chmod(p, perm|0o400); err != nil {
+			return err
+		}
+	}
+	for i := len(dirs) - 1; i >= 0; i-- {
+		if err := os.Chmod(dirs[i].path, dirs[i].perm); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// isCertPrivateKey reports whether the archive path (forward slashes) is a
+// private key in the letsencrypt area: a certificate key (privkey*.pem under
+// archive/ or live/) or an ACME account key (accounts/.../private_key.json).
+func isCertPrivateKey(rel string) bool {
+	sub, ok := strings.CutPrefix(rel, entryLetsEncrypt+"/")
+	return ok && isLetsEncryptKey(sub)
+}
+
+// isLetsEncryptKey is isCertPrivateKey for a path relative to the
+// letsencrypt directory.
+func isLetsEncryptKey(sub string) bool {
+	base := path.Base(sub)
+	switch {
+	case strings.HasPrefix(sub, "accounts/"):
+		return base == "private_key.json"
+	case strings.HasPrefix(sub, "archive/"), strings.HasPrefix(sub, "live/"), strings.HasPrefix(sub, "keys/"):
+		return strings.HasPrefix(base, "privkey") && strings.HasSuffix(base, ".pem") || strings.HasSuffix(base, "_key-certbot.pem")
+	}
+	return false
+}
+
 // safeLinkTarget reports whether a link entry named name (inside area) with
 // the given target may be recreated as a symlink: the target is relative and
 // stays inside the area once resolved against the link's directory.

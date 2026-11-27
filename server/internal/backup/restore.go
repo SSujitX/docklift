@@ -277,6 +277,11 @@ func (x *run) prepare(ctx context.Context) error {
 	if err := restoreDirs(x.req.ArchivePath, x.tempDir); err != nil {
 		return err
 	}
+	// The staged trees are copied into the targets with their modes
+	// (fscopy), so the archive's modes must be on them first.
+	if err := restoreModes(x.req.ArchivePath, x.tempDir); err != nil {
+		return fmt.Errorf("apply archive file modes: %w", err)
+	}
 	x.out("      + Extraction complete\n")
 	if x.links, err = archiveLinks(x.req.ArchivePath); err != nil {
 		return fmt.Errorf("read zip: %w", err)

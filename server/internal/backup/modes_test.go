@@ -95,3 +95,118 @@ func TestRestoreStagingIsPrivate(t *testing.T) {
 		t.Fatalf("restore staging directory mode %v, want 0700", seen)
 	}
 }
+
+// A restore keeps the modes stored in the archive (2.1.6 and this port
+// before restoreModes wrote every file 0644 and directory 0755, so certbot's
+// private keys came back world-readable), never grants group/other write,
+// and makes certificate private keys owner-only even when the archive
+// stored them looser.
+func TestRestoreKeepsArchiveModes(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix file modes")
+	}
+	src := newEnv(t)
+	src.seed("src")
+	le := src.paths.LetsEncryptPath
+	files := []struct {
+		rel  string
+		perm os.FileMode
+	}{
+		{"archive/src.test/privkey1.pem", 0o600},
+		{"archive/src.test/privkey2.pem", 0o644}, // restored by 2.1.6: loose in the archive
+		{"archive/src.test/fullchain1.pem", 0o644},
+		{"accounts/acme/directory/abc/private_key.json", 0o400},
+		{"accounts/acme/directory/abc/regr.json", 0o644},
+	}
+	for _, f := range files {
+		p := filepath.Join(le, filepath.FromSlash(f.rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(p, f.perm); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, d := range []string{"accounts", "archive"} {
+		if err := os.Chmod(filepath.Join(le, d), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	script := filepath.Join(src.paths.DeploymentsPath, "run.sh")
+	shared := filepath.Join(src.paths.DeploymentsPath, "shared.txt")
+	for p, perm := range map[string]os.FileMode{script: 0o755, shared: 0o666} {
+		if err := os.WriteFile(p, []byte("x"), perm); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(p, perm); err != nil {
+			t.Fatal(err)
+		}
+	}
+	archive := src.backup()
+
+	dst := newEnv(t)
+	dst.seed("dst")
+	if outcome, log := dst.restore(archive, Request{Kind: KindBackup}); outcome != OutcomeCommitted {
+		t.Fatalf("outcome %v:\n%s", outcome, log)
+	}
+	dle := dst.paths.LetsEncryptPath
+	for rel, want := range map[string]os.FileMode{
+		"archive/src.test/privkey1.pem":                0o600,
+		"archive/src.test/privkey2.pem":                0o600,
+		"archive/src.test/fullchain1.pem":              0o644,
+		"accounts/acme/directory/abc/private_key.json": 0o400,
+		"accounts/acme/directory/abc/regr.json":        0o644,
+		"accounts":                                     0o700,
+		"archive":                                      0o700,
+		"archive/src.test":                             0o755,
+	} {
+		if got := mode(t, filepath.Join(dle, filepath.FromSlash(rel))); got != want {
+			t.Errorf("letsencrypt/%s mode %v, want %v", rel, got, want)
+		}
+	}
+	if got := mode(t, filepath.Join(dst.paths.DeploymentsPath, "run.sh")); got != 0o755 {
+		t.Errorf("run.sh mode %v, want 0755", got)
+	}
+	if got := mode(t, filepath.Join(dst.paths.DeploymentsPath, "shared.txt")); got != 0o644 {
+		t.Errorf("shared.txt mode %v, want 0644 (no group/other write)", got)
+	}
+}
+
+// Boot tightens the letsencrypt private keys an earlier restore left
+// world-readable, and nothing else in that area.
+func TestTightenModesCertKeys(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix file modes")
+	}
+	e := newEnv(t)
+	le := e.paths.LetsEncryptPath
+	want := map[string]os.FileMode{
+		"archive/a.test/privkey1.pem":                  0o600,
+		"archive/a.test/cert1.pem":                     0o644,
+		"keys/0000_key-certbot.pem":                    0o600,
+		"accounts/acme/directory/abc/private_key.json": 0o600,
+		"accounts/acme/directory/abc/meta.json":        0o644,
+		"renewal/a.test.conf":                          0o644,
+	}
+	for rel := range want {
+		p := filepath.Join(le, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(p, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	TightenModes(e.paths, quiet())
+	for rel, w := range want {
+		if got := mode(t, filepath.Join(le, filepath.FromSlash(rel))); got != w {
+			t.Errorf("letsencrypt/%s mode %v, want %v", rel, got, w)
+		}
+	}
+}
