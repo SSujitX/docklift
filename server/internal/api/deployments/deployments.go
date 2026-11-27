@@ -31,12 +31,9 @@ type handlers struct {
 	svc *Service
 }
 
-// Mount registers the /api/deployments routes on r, which is already scoped
-// to /api/deployments and wrapped in the group's authentication middleware.
-// It uses the process-wide Service (For).
-func Mount(r chi.Router, d *app.Deps) { MountWith(r, d, For(d)) }
-
-// MountWith is Mount with an explicit Service (tests).
+// MountWith registers the /api/deployments routes on r, which is already
+// scoped to /api/deployments and wrapped in the group's authentication
+// middleware. svc is the process-wide Service (For) in production.
 func MountWith(r chi.Router, d *app.Deps, svc *Service) {
 	h := &handlers{d: d, svc: svc}
 	r.Get("/{projectId}", h.list)
@@ -64,13 +61,13 @@ func (h *handlers) list(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	limit := 10
 	if s, ok := queryString(q["limit"]); ok {
-		if n, ok := jsParseInt(s); ok && n != 0 {
+		if n, ok := parseIntParam(s); ok && n != 0 {
 			limit = n
 		}
 	}
 	offset := 0
 	if s, ok := queryString(q["offset"]); ok {
-		if n, ok := jsParseInt(s); ok {
+		if n, ok := parseIntParam(s); ok {
 			offset = n
 		}
 	}

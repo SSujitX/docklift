@@ -120,7 +120,7 @@ func (c parityCase) goInputs() ([]RuntimeService, []EnvVar, RuntimeComposeOption
 		rs := RuntimeService{Name: s.Name, Image: s.Image, InternalPort: s.InternalPort, Port: s.Port, ContainerName: s.ContainerName,
 			Command: s.Command, NoPortEnv: s.InjectPortEnv != nil && !*s.InjectPortEnv}
 		for _, v := range s.Volumes {
-			rs.Volumes = append(rs.Volumes, RuntimeVolume{Key: v.Key, Name: v.Name, MountPath: v.MountPath})
+			rs.Volumes = append(rs.Volumes, RuntimeVolume(v))
 		}
 		svcs = append(svcs, rs)
 	}

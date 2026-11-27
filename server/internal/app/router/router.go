@@ -92,13 +92,25 @@ func apiRouter(d *app.Deps) http.Handler {
 	}
 	group("/auth", auth.Mount, onlyUnder(setupLimiter.Middleware, "/api/auth/register", "/api/auth/setup-token"), authLimiter.Middleware)
 
+	// One GitHub App (installation token cache) and one deploy service
+	// (locks, auto-deploy queue, shutdown wait) serve every group.
+	gh := github.NewApp(d)
+	deployer := deployments.For(d)
+	deployer.SetGitHubApp(gh)
+
 	session := d.Auth.RequireSession
-	group("/projects", projects.Mount, session)
-	group("/deployments", deployments.Mount, session)
+	group("/projects", func(r chi.Router, d *app.Deps) {
+		projects.MountWith(r, d, projects.Options{GitHub: gh})
+	}, session)
+	group("/deployments", func(r chi.Router, d *app.Deps) {
+		deployments.MountWith(r, d, deployer)
+	}, session)
 	group("/databases", databases.Mount, session)
 	group("/files", files.Mount, session)
 	group("/ports", ports.Mount, session)
-	group("/github", github.Mount, githubGuard(session))
+	group("/github", func(r chi.Router, d *app.Deps) {
+		github.MountWith(r, d, github.Options{App: gh, Deployer: deployer})
+	}, githubGuard(session))
 	group("/system", system.Mount, sseOr(d.Auth, "/api/system", func(rel string) bool { return strings.HasPrefix(rel, "/logs/") }))
 	group("/domains", domains.Mount, session)
 	group("/logs", logs.Mount, sseOr(d.Auth, "/api/logs", func(rel string) bool { return strings.Contains(rel, "/stream/") }))

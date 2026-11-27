@@ -19,7 +19,6 @@
 package gitops
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
 	"errors"
@@ -27,11 +26,12 @@ import (
 	"io"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
+
+	"docklift/internal/execx"
 )
 
 // Default timeouts of one git invocation.
@@ -148,14 +148,7 @@ func (r *Runner) run(ctx context.Context, c call) (string, error) {
 		hardening = append(hardening, "-c", "protocol."+p+".allow=always")
 	}
 	args := append(hardening, c.args...)
-	cmd := exec.CommandContext(ctx, r.bin(), args...)
-	cmd.Dir = c.dir
-	cmd.Env = r.env(c)
-	cmd.WaitDelay = 5 * time.Second
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	err := cmd.Run()
+	res, err := execx.Run(ctx, execx.Cmd{Name: r.bin(), Args: args, Dir: c.dir, Env: r.env(c)})
 	if err != nil {
 		secrets := secretsOf(c.creds)
 		if ctx.Err() != nil {
@@ -163,11 +156,11 @@ func (r *Runner) run(ctx context.Context, c call) (string, error) {
 		}
 		return "", &Error{
 			Args:   redactAll(c.args, secrets),
-			Stderr: strings.TrimSpace(Redact(stderr.String(), secrets...)),
+			Stderr: strings.TrimSpace(Redact(string(res.Stderr), secrets...)),
 			Err:    err,
 		}
 	}
-	return strings.TrimSpace(stdout.String()), nil
+	return strings.TrimSpace(string(res.Stdout)), nil
 }
 
 func secretsOf(c *Credentials) []string {

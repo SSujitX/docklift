@@ -180,7 +180,7 @@ func TestTreeDepthLimit(t *testing.T) {
 	write(t, filepath.Join(deep, "leaf.txt"), "x")
 	_, body := f.do(t, "GET", "/"+projectID, "")
 	level := 0
-	var cur []any = body.([]any)
+	cur := body.([]any)
 	for {
 		var next []any
 		for _, e := range cur {

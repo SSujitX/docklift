@@ -558,7 +558,7 @@ func TestDomainFieldHelpers(t *testing.T) {
 	if got := NormalizeDomainString(" A.example.com ,b.example.com,, a.example.com"); !slices.Equal(got, []string{"a.example.com", "b.example.com"}) {
 		t.Fatal(got)
 	}
-	if got := NormalizeDomainList([]string{"X.test", "x.test", " "}); !slices.Equal(got, []string{"x.test"}) {
+	if got := NormalizeDomainString("X.test,x.test, "); !slices.Equal(got, []string{"x.test"}) {
 		t.Fatal(got)
 	}
 	if FormatDomainField(nil) != nil || *FormatDomainField([]string{"a.test", "b.test"}) != "a.test, b.test" {

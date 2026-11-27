@@ -51,7 +51,7 @@ func (h *HostSource) CPU(ctx context.Context) (CPUInfo, error) {
 		info.Brand = CPUBrand(infos[0].ModelName)
 		info.Speed = CPUSpeedFromModel(infos[0].ModelName)
 		if info.Speed == 0 && infos[0].Mhz > 0 {
-			info.Speed = ToFixed(infos[0].Mhz/1000, 2)
+			info.Speed = toFixed(infos[0].Mhz/1000, 2)
 		}
 	}
 	return info, nil

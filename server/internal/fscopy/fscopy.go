@@ -37,19 +37,6 @@ func isRestoreMetaName(name string) bool {
 	return strings.HasPrefix(name, StagingPrefix) || strings.HasPrefix(name, PrevPrefix)
 }
 
-// CopyDirContents recursively copies the contents of src into dest (created
-// if missing), overwriting existing files: Node's fs.cp(src, dest,
-// {recursive, force}). Regular files keep their permission bits, symlinks
-// are recreated as symlinks (relative targets made absolute against the
-// source, as fs.cp does without verbatimSymlinks), and sockets, FIFOs and
-// devices are refused.
-func CopyDirContents(src, dest string) error {
-	if err := os.MkdirAll(dest, 0o755); err != nil {
-		return fmt.Errorf("create %s: %w", dest, err)
-	}
-	return copyTree(src, dest)
-}
-
 // copyTree is fs.cp(src, dest, {recursive: true, force: true}).
 func copyTree(src, dest string) error {
 	srcAbs, destAbs := filepath.Clean(src), filepath.Clean(dest)

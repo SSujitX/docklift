@@ -82,7 +82,7 @@ func fsSize(ctx context.Context) []FsEntry {
 		}
 		size, used, free := float64(u.Total), float64(u.Used), float64(u.Free)
 		data = append(data, FsEntry{FS: p.Device, Type: p.Fstype, Size: size, Used: used, Available: free,
-			Use: ToFixed(100.0*used/(used+free), 2), Mount: p.Mountpoint})
+			Use: toFixed(100.0*used/(used+free), 2), Mount: p.Mountpoint})
 	}
 	return data
 }

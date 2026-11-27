@@ -4,7 +4,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
 	"syscall"
@@ -269,45 +268,5 @@ func TestMoveDoesNotHideOtherErrors(t *testing.T) {
 	}
 	if read(t, filepath.Join(target, "b.txt")) != "b" {
 		t.Error("target changed")
-	}
-}
-
-func TestCopyDirContents(t *testing.T) {
-	source, dest := dirs(t)
-	write(t, filepath.Join(source, "a", "b.txt"), "b")
-	write(t, filepath.Join(source, "top.txt"), "new")
-	write(t, filepath.Join(dest, "top.txt"), "old")
-	write(t, filepath.Join(dest, "keep.txt"), "keep")
-	if runtime.GOOS != "windows" {
-		if err := os.Chmod(filepath.Join(source, "top.txt"), 0o750); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.Symlink("a/b.txt", filepath.Join(source, "rel-link")); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := CopyDirContents(source, dest); err != nil {
-		t.Fatal(err)
-	}
-	if read(t, filepath.Join(dest, "a", "b.txt")) != "b" || read(t, filepath.Join(dest, "top.txt")) != "new" || read(t, filepath.Join(dest, "keep.txt")) != "keep" {
-		t.Error("copy content mismatch")
-	}
-	if runtime.GOOS != "windows" {
-		fi, err := os.Stat(filepath.Join(dest, "top.txt"))
-		if err != nil || fi.Mode().Perm() != 0o750 {
-			t.Errorf("mode = %v, %v", fi.Mode(), err)
-		}
-		target, err := os.Readlink(filepath.Join(dest, "rel-link"))
-		if err != nil || target != filepath.Join(source, "a", "b.txt") {
-			t.Errorf("link target = %q, %v (fs.cp resolves relative links)", target, err)
-		}
-	}
-	if err := CopyDirContents(source, filepath.Join(source, "a", "inner")); err == nil {
-		t.Error("copying into a subdirectory of itself must fail")
-	}
-	write(t, filepath.Join(dest, "clash", "x"), "x")
-	write(t, filepath.Join(source, "clash"), "file")
-	if err := CopyDirContents(source, dest); err == nil {
-		t.Error("overwriting a directory with a file must fail")
 	}
 }

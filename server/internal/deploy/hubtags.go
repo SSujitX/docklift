@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"docklift/internal/js"
 )
 
 // Docker Hub catalog limits (dockerHubTags.ts).
@@ -121,22 +123,7 @@ func (h *HubTags) fetchPage(ctx context.Context, url string) (names []string, ha
 			names = append(names, s)
 		}
 	}
-	return names, jsTruthy(data.Next), true
-}
-
-// jsTruthy is JavaScript truthiness for a JSON value.
-func jsTruthy(v any) bool {
-	switch x := v.(type) {
-	case nil:
-		return false
-	case bool:
-		return x
-	case float64:
-		return x != 0 && x == x
-	case string:
-		return x != ""
-	}
-	return true
+	return names, js.Truthy(data.Next), true
 }
 
 var (
@@ -179,7 +166,7 @@ type versionParts struct {
 
 // jsNumberOr0 is Number(s) || 0 for the digit strings of a tag.
 func jsNumberOr0(s string) float64 {
-	f, err := strconv.ParseFloat(jsTrim(s), 64)
+	f, err := strconv.ParseFloat(js.Trim(s), 64)
 	if err != nil || f != f {
 		return 0
 	}
@@ -254,7 +241,7 @@ func majorKey(tag string, p versionParts) string {
 	} else if p.alpine {
 		suffix = "-alpine"
 	}
-	return jsNumberString(p.major) + suffix
+	return js.NumberString(p.major) + suffix
 }
 
 // preferMajorLines drops minor/patch tags (16.14) when the major line tag

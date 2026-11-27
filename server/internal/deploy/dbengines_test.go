@@ -19,7 +19,7 @@ func mustEngine(t *testing.T, id string) Engine {
 
 func TestEngineCatalog(t *testing.T) {
 	// databaseEngines.test.ts
-	if len(ListEngines()) != 5 || !IsEngineID("postgres") || IsEngineID("sqlite") {
+	if len(ListEngines()) != 5 {
 		t.Fatal("catalog")
 	}
 	pg := mustEngine(t, EnginePostgres)
@@ -206,7 +206,7 @@ func TestEnginesMatchTypeScript(t *testing.T) {
 	passwords := []string{"s3cret!", "p@ss:w/rd?#[]", "ünï 🚀", "a b+c%d", "~*'()-_.!", "&=;,$"}
 	for i, id := range EngineIDs {
 		for j, pw := range passwords {
-			var tag any = []any{"15-alpine", "8.4", "11.4", "latest", "8", nil, "nope", "postgres:19", " 7 "}[(i+j)%9]
+			tag := []any{"15-alpine", "8.4", "11.4", "latest", "8", nil, "nope", "postgres:19", " 7 "}[(i+j)%9]
 			in = append(in, engineParityInput{Engine: id, Host: "dl_x_aaaaaaaa_db", User: "user" + string([]rune(pw)[:1]), Pass: pw, DB: "db/" + pw,
 				Image: []string{"postgres:18", "postgres:16-alpine", "latest", "x:17.2", ""}[j%5], Tag: tag,
 				Marker: []string{"[managed:" + id + "]", "[managed:" + id + "|img:1]", "Dockerfile"}[j%3]})

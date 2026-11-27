@@ -47,7 +47,9 @@ type ptyShell struct {
 // killGrace is how long a hung-up shell gets to exit before SIGKILL.
 const killGrace = 2 * time.Second
 
-// StartShell starts /bin/bash in /root on a new PTY of the given size.
+// StartShell starts /bin/bash in /root on a new PTY of the given size. It
+// uses os/exec directly rather than execx: pty.Start needs the *exec.Cmd,
+// and the interactive shell's lifetime is managed by Close, not a context.
 func StartShell(cols, rows int) (Shell, error) {
 	cmd := exec.Command(shellCommand)
 	cmd.Dir = shellDir

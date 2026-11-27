@@ -30,6 +30,7 @@ import (
 	"docklift/internal/certs"
 	"docklift/internal/dnscheck"
 	"docklift/internal/httpx"
+	"docklift/internal/js"
 	"docklift/internal/nginx"
 )
 
@@ -176,7 +177,7 @@ func (h *handlers) putEmail(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, struct {
 		Success bool   `json:"success"`
 		Email   string `json:"email"`
-	}{true, strings.ToLower(certs.TrimJS(email))})
+	}{true, strings.ToLower(js.Trim(email))})
 }
 
 type listedDomain struct {
@@ -210,7 +211,7 @@ func parsePort(v httpx.Value) (int, bool) {
 	var digits string
 	switch x := v.Raw().(type) {
 	case string:
-		digits = certs.TrimJS(x)
+		digits = js.Trim(x)
 	case json.Number:
 		f, err := x.Float64()
 		if err != nil || f != math.Trunc(f) || f < 1 || f > 65535 {

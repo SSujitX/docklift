@@ -28,6 +28,7 @@ import (
 	"docklift/internal/dockerx"
 	"docklift/internal/execx"
 	"docklift/internal/httpx"
+	"docklift/internal/js"
 	"docklift/internal/store"
 )
 
@@ -118,7 +119,7 @@ func (h *handlers) create(w http.ResponseWriter, r *http.Request) {
 	body := httpx.BodyFrom(r)
 	name := ""
 	if s, ok := body.Get("name").String(); ok {
-		name = jsTrim(s)
+		name = js.Trim(s)
 	}
 	if name == "" || httpx.UTF16Len(name) > 120 {
 		httpx.Error(w, http.StatusBadRequest, "Name is required (max 120 characters)")
@@ -437,7 +438,7 @@ func (h *handlers) createLink(w http.ResponseWriter, r *http.Request) {
 	body := httpx.BodyFrom(r)
 	appProjectID := ""
 	if s, ok := body.Get("app_project_id").String(); ok {
-		appProjectID = jsTrim(s)
+		appProjectID = js.Trim(s)
 	}
 	if appProjectID == "" {
 		httpx.Error(w, http.StatusBadRequest, "app_project_id is required")
@@ -455,7 +456,7 @@ func (h *handlers) createLink(w http.ResponseWriter, r *http.Request) {
 
 	serviceName := ""
 	if s, ok := body.Get("service_name").String(); ok {
-		serviceName = jsTrim(s)
+		serviceName = js.Trim(s)
 	}
 	if serviceName != "" && !hasService(appProject.Services, serviceName) {
 		httpx.Error(w, http.StatusBadRequest, fmt.Sprintf(`Service "%s" not found on that project`, serviceName))
@@ -463,8 +464,8 @@ func (h *handlers) createLink(w http.ResponseWriter, r *http.Request) {
 	}
 
 	envKey := engine.DefaultEnvKey
-	if s, ok := body.Get("env_key").String(); ok && jsTrim(s) != "" {
-		envKey = jsTrim(s)
+	if s, ok := body.Get("env_key").String(); ok && js.Trim(s) != "" {
+		envKey = js.Trim(s)
 	}
 	if !envKeyRe.MatchString(envKey) || len(envKey) > 64 {
 		httpx.Error(w, http.StatusBadRequest, "Invalid env_key")
@@ -583,15 +584,3 @@ func (h *handlers) fail(w http.ResponseWriter, msg string, err error) {
 	h.d.Log.Error(msg, slog.Any("error", err))
 	httpx.Error(w, http.StatusInternalServerError, msg)
 }
-
-// jsWhitespace reports whether r is removed by String.prototype.trim.
-func jsWhitespace(r rune) bool {
-	switch r {
-	case '\t', '\n', '\v', '\f', '\r', ' ', 0x00a0, 0x1680, 0x2028, 0x2029, 0x202f, 0x205f, 0x3000, 0xfeff:
-		return true
-	}
-	return r >= 0x2000 && r <= 0x200a
-}
-
-// jsTrim is String.prototype.trim.
-func jsTrim(s string) string { return strings.TrimFunc(s, jsWhitespace) }

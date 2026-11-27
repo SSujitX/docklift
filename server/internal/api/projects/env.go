@@ -9,6 +9,7 @@ import (
 
 	"docklift/internal/deploy"
 	"docklift/internal/httpx"
+	"docklift/internal/js"
 	"docklift/internal/store"
 )
 
@@ -53,23 +54,12 @@ func (h *handlers) checkScope(w http.ResponseWriter, r *http.Request, projectID,
 	return true
 }
 
-// envValue is normalizeEnvValue(v). Non-strings are converted with String()
-// here: deploy.NormalizeEnvValue does not know json.Number.
-func envValue(v val) string {
-	if v.nullish() {
-		return ""
-	}
-	return deploy.NormalizeEnvValue(v.jsString(), true)
-}
+// envValue is normalizeEnvValue(v).
+func envValue(v val) string { return deploy.NormalizeEnvValue(v.v, v.defined) }
 
 // envScope is normalizeEnvServiceName(v): null or undefined is the shared
 // scope, anything else String(v).trim().
-func envScope(v val) string {
-	if v.nullish() {
-		return deploy.SharedEnvService
-	}
-	return jsTrim(v.jsString())
-}
+func envScope(v val) string { return deploy.NormalizeEnvServiceName(v.v, v.defined) }
 
 // flag is `v ?? def` for a boolean column: undefined and null take def, a
 // boolean is kept, anything else is a client error (Prisma rejected it).
@@ -91,7 +81,7 @@ func (h *handlers) listEnv(w http.ResponseWriter, r *http.Request) {
 	id := param(r, "id")
 	f := store.EnvFilter{ProjectID: &id}
 	if q := r.URL.Query()["service"]; len(q) == 1 {
-		scope := jsTrim(q[0])
+		scope := js.Trim(q[0])
 		f.ServiceName = &scope
 	}
 	rows, err := h.d.Store.ListEnvVariables(r.Context(), f, store.OrderServiceKey)
@@ -159,7 +149,7 @@ func parseDotenv(content string) ([]envPair, string, bool) {
 	var out []envPair
 	seen := map[string]bool{}
 	for _, line := range strings.Split(content, "\n") {
-		trimmed := jsTrim(line)
+		trimmed := js.Trim(line)
 		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
 			continue
 		}
@@ -167,7 +157,7 @@ func parseDotenv(content string) ([]envPair, string, bool) {
 		if !found {
 			continue
 		}
-		key := jsTrim(k)
+		key := js.Trim(k)
 		if !deploy.IsValidEnvKey(key) {
 			return nil, key, false
 		}

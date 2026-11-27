@@ -406,6 +406,65 @@ func TestRequireStepUpPassword(t *testing.T) {
 	}
 }
 
+// stepUp runs RequireStepUpPassword for f.user from remote with body.
+func (f *fixture) stepUp(t *testing.T, remote, password string) (bool, *httptest.ResponseRecorder) {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"password":"`+password+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = remote
+	rec := httptest.NewRecorder()
+	var ok bool
+	httpx.ParseBody(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var err error
+		ok, err = f.svc.RequireStepUpPassword(w, r.WithContext(WithUser(r.Context(), User{UserID: f.user.ID})))
+		if err != nil {
+			t.Fatal(err)
+		}
+	})).ServeHTTP(rec, req)
+	return ok, rec
+}
+
+func TestStepUpPasswordGuessesAreLimited(t *testing.T) {
+	f := newFixture(t)
+	now := time.Now()
+	f.svc.now = func() time.Time { return now }
+	const client, other = "198.51.100.7:4000", "198.51.100.8:4000"
+
+	for i := 0; i < StepUpFailureLimit; i++ {
+		if ok, rec := f.stepUp(t, client, "wrong"); ok || rec.Code != 403 {
+			t.Fatalf("guess %d: %v %d %s", i+1, ok, rec.Code, rec.Body.String())
+		}
+	}
+	// Further attempts are refused without comparing, even the right password.
+	for _, pw := range []string{"wrong", "password123"} {
+		ok, rec := f.stepUp(t, client, pw)
+		if ok || rec.Code != 429 || rec.Header().Get("Retry-After") != "900" ||
+			strings.TrimSpace(rec.Body.String()) != `{"error":"Too many failed password attempts. Try again later.","requirePassword":true}` {
+			t.Fatalf("throttled %q: %v %d %v %s", pw, ok, rec.Code, rec.Header(), rec.Body.String())
+		}
+	}
+	// Another client of the same user is counted separately.
+	if ok, _ := f.stepUp(t, other, "password123"); !ok {
+		t.Fatal("other client must not be throttled")
+	}
+	// The window ends 15 minutes after the first failure.
+	now = now.Add(StepUpFailureWindow)
+	if ok, _ := f.stepUp(t, client, "password123"); !ok {
+		t.Fatal("window over: the right password must pass")
+	}
+	// A success resets the count.
+	for i := 0; i < StepUpFailureLimit-1; i++ {
+		f.stepUp(t, client, "wrong")
+	}
+	f.stepUp(t, client, "password123")
+	for i := 0; i < StepUpFailureLimit-1; i++ {
+		f.stepUp(t, client, "wrong")
+	}
+	if ok, _ := f.stepUp(t, client, "password123"); !ok {
+		t.Fatal("success must reset the failure count")
+	}
+}
+
 // Ports of backend/src/lib/setupRestoreAuth.test.ts.
 
 func TestValidateSetupTokenDoesNotConsume(t *testing.T) {
@@ -461,7 +520,9 @@ func TestBootstrapClaimLifecycle(t *testing.T) {
 	if again, _ := b.EnsureSecret(); again != secret {
 		t.Error("EnsureSecret must reuse the file")
 	}
-	if !b.VerifySecret(secret) || !b.VerifySecret(secret) || b.VerifySecret(secret[:63]) || b.VerifySecret("") {
+	// Verifying twice proves verification does not consume the secret.
+	first, second := b.VerifySecret(secret), b.VerifySecret(secret)
+	if !first || !second || b.VerifySecret(secret[:63]) || b.VerifySecret("") {
 		t.Error("VerifySecret")
 	}
 	claim := b.TryClaim()

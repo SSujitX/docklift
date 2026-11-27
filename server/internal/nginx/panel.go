@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"docklift/internal/certs"
+	"docklift/internal/js"
 	"docklift/internal/store"
 )
 
@@ -250,11 +251,9 @@ func (s *Service) panelHostnames() map[string]bool {
 	return hosts
 }
 
-// NormalizeDomainList trims and lowercases hostnames, dropping empties and
-// duplicates (domainOwnership.ts normalizeDomainList for an array).
-func NormalizeDomainList(parts []string) []string { return certs.CleanHosts(parts) }
-
-// NormalizeDomainString is NormalizeDomainList over a comma-separated string.
+// NormalizeDomainString trims and lowercases the hostnames of a
+// comma-separated string, dropping empties and duplicates
+// (domainOwnership.ts normalizeDomainList).
 func NormalizeDomainString(s string) []string { return certs.CleanHosts(strings.Split(s, ",")) }
 
 // FormatDomainField joins hostnames for the services.domain column; nil when
@@ -271,7 +270,7 @@ func FormatDomainField(hosts []string) *string {
 // otherwise every non-empty comma-separated entry must match DOMAIN_REGEX.
 func ValidDomainList(s string) bool {
 	for _, d := range strings.Split(s, ",") {
-		if d = certs.TrimJS(d); d != "" && !certs.IsValidHostname(d) {
+		if d = js.Trim(d); d != "" && !certs.IsValidHostname(d) {
 			return false
 		}
 	}

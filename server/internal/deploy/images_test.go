@@ -126,14 +126,6 @@ func TestImageTagsJSOrder(t *testing.T) {
 	}
 }
 
-func TestReconstructInProgressTags(t *testing.T) {
-	pid, did := "abcdef12-9999-4000-8000-000000000001", "deadbeef-1111-4000-8000-000000000002"
-	m := ReconstructInProgressTags(pid, did, []string{"api", "", "web"})
-	if api, _ := m.Get("api"); api != DockliftImageTag(pid, "api", did) || !IsDockliftAppImage(api) || m.Len() != 2 {
-		t.Fatalf("%+v", m)
-	}
-}
-
 func TestRollbackTargetGuard(t *testing.T) {
 	tg := tags("api", "docklift-abcdef12-api:oldold01")
 	cases := []struct {

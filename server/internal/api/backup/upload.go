@@ -1,10 +1,8 @@
 package backup
 
 import (
-	"bytes"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -249,29 +247,7 @@ func (h *handlers) storeUpload(part io.Reader, dir string) (*uploadedFile, strin
 
 // withFields puts the multipart text fields on the request as its parsed
 // body (multer filled req.body), so the step-up check reads the password
-// from the form. The fields are re-encoded as JSON and run through
-// httpx.ParseBody, the only exported way to build an httpx.Body.
+// from the form.
 func withFields(r *http.Request, fields map[string]any) *http.Request {
-	raw, err := json.Marshal(fields)
-	if err != nil {
-		return r
-	}
-	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, "/", bytes.NewReader(raw))
-	if err != nil {
-		return r
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.ContentLength = int64(len(raw))
-	parsed := httpx.Body{}
-	httpx.ParseBody(http.HandlerFunc(func(_ http.ResponseWriter, pr *http.Request) {
-		parsed = httpx.BodyFrom(pr)
-	})).ServeHTTP(discardWriter{h: http.Header{}}, req)
-	return r.WithContext(httpx.WithBody(r.Context(), parsed))
+	return r.WithContext(httpx.WithBody(r.Context(), httpx.NewBody(fields)))
 }
-
-// discardWriter is the response writer of withFields (nothing is sent).
-type discardWriter struct{ h http.Header }
-
-func (d discardWriter) Header() http.Header       { return d.h }
-func (discardWriter) Write(p []byte) (int, error) { return len(p), nil }
-func (discardWriter) WriteHeader(int)             {}

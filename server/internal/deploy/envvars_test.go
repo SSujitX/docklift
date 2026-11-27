@@ -1,6 +1,7 @@
 package deploy
 
 import (
+	"encoding/json"
 	"reflect"
 	"strings"
 	"testing"
@@ -69,6 +70,9 @@ func TestNormalizeEnvValue(t *testing.T) {
 		{`""x""`, true, `"x"`},
 		{string(rune(0xfeff)) + " bom" + string(rune(0xa0)), true, "bom"},
 		{float64(42), true, "42"},
+		{json.Number("8080"), true, "8080"},
+		{json.Number("1.50"), true, "1.5"},
+		{json.Number("1e21"), true, "1e+21"},
 		{1.5e21, true, "1.5e+21"},
 		{1e-7, true, "1e-7"},
 		{true, true, "true"},
@@ -79,6 +83,9 @@ func TestNormalizeEnvValue(t *testing.T) {
 		if got := NormalizeEnvValue(c.v, c.present); got != c.want {
 			t.Errorf("NormalizeEnvValue(%#v) = %q, want %q", c.v, got, c.want)
 		}
+	}
+	if NormalizeEnvServiceName(json.Number("7"), true) != "7" {
+		t.Error("NormalizeEnvServiceName must print numbers as JavaScript does")
 	}
 	if NormalizeEnvServiceName(nil, true) != "" || NormalizeEnvServiceName(" api ", true) != "api" || NormalizeEnvServiceName(nil, false) != "" {
 		t.Error("NormalizeEnvServiceName")
@@ -97,25 +104,5 @@ func TestEnvVarsFromStoreDefaults(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %+v", got)
-	}
-}
-
-func TestJSHelpers(t *testing.T) {
-	if got := jsSlice("ab🚀cd", 3); got != "ab�" {
-		t.Errorf("jsSlice split pair %q", got)
-	}
-	if got := jsSlice("ab🚀cd", 4); got != "ab🚀" {
-		t.Errorf("jsSlice %q", got)
-	}
-	if got := jsSlice("abc", 10); got != "abc" {
-		t.Errorf("jsSlice %q", got)
-	}
-	for f, want := range map[float64]string{0: "0", -0.5: "-0.5", 100: "100", 1e21: "1e+21", 1.25e-7: "1.25e-7", 123456789012: "123456789012"} {
-		if got := jsNumberString(f); got != want {
-			t.Errorf("jsNumberString(%v) = %q", f, got)
-		}
-	}
-	if !jsTruthy("x") || jsTruthy("") || jsTruthy(nil) || jsTruthy(float64(0)) || !jsTruthy(map[string]any{}) || jsTruthy(false) {
-		t.Error("jsTruthy")
 	}
 }

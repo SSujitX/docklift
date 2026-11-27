@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"docklift/internal/js"
 )
 
 // Managed database engine ids.
@@ -144,12 +146,6 @@ var engines = map[string]Engine{
 	}),
 }
 
-// IsEngineID reports whether id names a managed engine.
-func IsEngineID(id string) bool {
-	_, ok := engines[id]
-	return ok
-}
-
 // GetEngine returns a copy of the engine definition.
 func GetEngine(id string) (Engine, bool) {
 	e, ok := engines[id]
@@ -257,24 +253,10 @@ func EngineRuntimeEnv(e Engine, c Credentials) []EnvPair {
 	return nil
 }
 
-// encodeURIComponent escapes like JavaScript's encodeURIComponent.
-func encodeURIComponent(s string) string {
-	var b strings.Builder
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || strings.IndexByte("-_.!~*'()", c) >= 0 {
-			b.WriteByte(c)
-			continue
-		}
-		fmt.Fprintf(&b, "%%%02X", c)
-	}
-	return b.String()
-}
-
 // BuildConnectionURL is the URL apps on a shared Docker network use; host
 // is the database container name (Docker DNS).
 func BuildConnectionURL(e Engine, host string, c Credentials) (string, error) {
-	user, pass, dbName := encodeURIComponent(c.Username), encodeURIComponent(c.Password), encodeURIComponent(c.Database)
+	user, pass, dbName := js.EncodeURIComponent(c.Username), js.EncodeURIComponent(c.Password), js.EncodeURIComponent(c.Database)
 	port := strconv.Itoa(e.Port)
 	switch e.ID {
 	case EnginePostgres:
@@ -381,7 +363,7 @@ func ResolveEngineImage(e Engine, tag *string, allowedTags []string) (ResolvedIm
 	if tag == nil || *tag == "" {
 		return ResolvedImage{Image: e.ImageRepo + ":" + recommended, Tag: recommended}, nil
 	}
-	bare := jsTrim(*tag)
+	bare := js.Trim(*tag)
 	bare = strings.TrimPrefix(bare, e.ImageRepo+":")
 	if !slices.Contains(catalog, bare) && !MatchesEngineTagPattern(e.ID, bare) {
 		sample := strings.Join(catalog[:min(12, len(catalog))], ", ")

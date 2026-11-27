@@ -18,19 +18,18 @@ import (
 // fixture is a source installation with an archive and a target
 // installation with different content.
 type fixture struct {
-	src, dst         *env
-	archive          string
-	srcProject       *store.Project
-	srcDeploy        map[string]string
-	srcNginx         map[string]string
-	srcLE            map[string]string
-	dstDeploy        map[string]string
-	dstNginx         map[string]string
-	dstLE            map[string]string
-	dstKey           string
-	links            bool
-	dstAdmins        []string
-	dstPreRestoreKey string
+	src, dst   *env
+	archive    string
+	srcProject *store.Project
+	srcDeploy  map[string]string
+	srcNginx   map[string]string
+	srcLE      map[string]string
+	dstDeploy  map[string]string
+	dstNginx   map[string]string
+	dstLE      map[string]string
+	dstKey     string
+	links      bool
+	dstAdmins  []string
 }
 
 func newFixture(t *testing.T) *fixture {

@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"docklift/internal/js"
 )
 
 // HostOS is readHostOSInfo: the host's /etc/os-release mounted at /host/os-release.
@@ -62,8 +64,8 @@ func ParseCPUInfo(content string) HostCPU {
 			c.Model = afterColon(line)
 		}
 		if strings.Contains(strings.ToLower(line), "cpu mhz") {
-			if mhz := ParseFloat(afterColon(line)); mhz > 0 {
-				c.Speed = RoundHalfUp(mhz/100) / 10
+			if mhz := js.ParseFloat(afterColon(line)); mhz > 0 {
+				c.Speed = js.RoundHalfUp(mhz/100) / 10
 			}
 		}
 		if strings.HasPrefix(line, "processor") {
@@ -87,7 +89,7 @@ func ParseMemInfo(content string) HostMem {
 		if len(parts) < 2 || parts[0] == "" || parts[1] == "" {
 			continue
 		}
-		kb := ParseInt(strings.Split(strings.TrimSpace(parts[1]), " ")[0])
+		kb := js.ParseInt(strings.Split(strings.TrimSpace(parts[1]), " ")[0])
 		values[parts[0]] = kb * 1024
 	}
 	orZero := func(k string) float64 {
@@ -110,8 +112,8 @@ func ParseMemInfo(content string) HostMem {
 type Process struct {
 	PID  int    `json:"pid"`
 	Name string `json:"name"`
-	CPU  Num    `json:"cpu"`
-	Mem  Num    `json:"mem"`
+	CPU  js.Num `json:"cpu"`
+	Mem  js.Num `json:"mem"`
 	User string `json:"user"`
 }
 
@@ -136,7 +138,7 @@ func ParsePSAux(out string) []Process {
 			continue
 		}
 		parts := whitespace.Split(line, -1)
-		pid := ParseInt(field(parts, 1))
+		pid := js.ParseInt(field(parts, 1))
 		name := ""
 		if len(parts) > 10 {
 			name = strings.Join(parts[10:], " ")
@@ -144,8 +146,8 @@ func ParsePSAux(out string) []Process {
 		if math.IsNaN(pid) || name == "" {
 			continue
 		}
-		procs = append(procs, Process{PID: int(pid), Name: Substring(name, 50),
-			CPU: Num(ParseFloat(field(parts, 2))), Mem: Num(ParseFloat(field(parts, 3))), User: parts[0]})
+		procs = append(procs, Process{PID: int(pid), Name: js.Substring(name, 50),
+			CPU: js.Num(js.ParseFloat(field(parts, 2))), Mem: js.Num(js.ParseFloat(field(parts, 3))), User: parts[0]})
 	}
 	return procs
 }
@@ -172,7 +174,7 @@ func ParseTop(out string) []Process {
 			continue
 		}
 		parts := whitespace.Split(line, -1)
-		pid := ParseInt(parts[0])
+		pid := js.ParseInt(parts[0])
 		if math.IsNaN(pid) {
 			continue
 		}
@@ -183,8 +185,8 @@ func ParseTop(out string) []Process {
 		if name == "top" {
 			continue
 		}
-		procs = append(procs, Process{PID: int(pid), Name: name, CPU: Num(ParseFloat(field(parts, 8))),
-			Mem: Num(ParseFloat(field(parts, 9))), User: field(parts, 1)})
+		procs = append(procs, Process{PID: int(pid), Name: name, CPU: js.Num(js.ParseFloat(field(parts, 8))),
+			Mem: js.Num(js.ParseFloat(field(parts, 9))), User: field(parts, 1)})
 	}
 	return procs
 }
@@ -251,9 +253,9 @@ func ParseDF(out string) []FsEntry {
 		if !(strings.HasPrefix(fs, "/") || mount == "/" || strings.Index(fs, "/") > 0 || strings.Index(fs, ":") == 1 || !isLinuxTmpFs(fsType)) {
 			continue
 		}
-		size := ParseInt(m[3]) * 1024
-		used := ParseInt(m[4]) * 1024
-		available := ParseInt(m[5]) * 1024
+		size := js.ParseInt(m[3]) * 1024
+		used := js.ParseInt(m[4]) * 1024
+		available := js.ParseInt(m[5]) * 1024
 		dup := false
 		for _, d := range data {
 			if d.FS == fs && d.Type == fsType && d.Mount == mount {
@@ -265,7 +267,7 @@ func ParseDF(out string) []FsEntry {
 			continue
 		}
 		data = append(data, FsEntry{FS: fs, Type: fsType, Size: size, Used: used, Available: available,
-			Use: ToFixed(100.0*(used/(used+available)), 2), Mount: mount})
+			Use: toFixed(100.0*(used/(used+available)), 2), Mount: mount})
 	}
 	return data
 }
@@ -277,9 +279,9 @@ func FormatUptime(seconds float64) string {
 	minutes := math.Floor(math.Mod(seconds, 3600) / 60)
 	plural := func(n float64, unit string) string {
 		if n > 1 {
-			return fmt.Sprintf("%s %ss", FormatNumber(n), unit)
+			return fmt.Sprintf("%s %ss", js.NumberString(n), unit)
 		}
-		return fmt.Sprintf("%s %s", FormatNumber(n), unit)
+		return fmt.Sprintf("%s %s", js.NumberString(n), unit)
 	}
 	var parts []string
 	if days > 0 {
@@ -329,7 +331,7 @@ func CPUSpeedFromModel(model string) float64 {
 	if !ok {
 		return 0
 	}
-	v := ParseFloat(strings.TrimSpace(after))
+	v := js.ParseFloat(strings.TrimSpace(after))
 	if math.IsNaN(v) {
 		return 0
 	}
@@ -363,4 +365,9 @@ func NodeArch(goarch string) string {
 		return "mipsel"
 	}
 	return goarch
+}
+
+// toFixed is parseFloat(x.toFixed(digits)).
+func toFixed(x float64, digits int) float64 {
+	return js.ParseFloat(js.ToFixed(x, digits))
 }

@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+
+	"docklift/internal/js"
 )
 
 // Builders and build types.
@@ -68,7 +70,7 @@ var ErrPathEscape = errors.New("Build paths must stay inside the project directo
 // ResolveProjectPath resolves a user-controlled relative path inside
 // projectPath; absolute paths and ".." segments are rejected.
 func ResolveProjectPath(projectPath, relativeValue string) (string, error) {
-	rel := strings.ReplaceAll(jsTrim(relativeValue), "\\", "/")
+	rel := strings.ReplaceAll(js.Trim(relativeValue), "\\", "/")
 	if relativeValue == "" {
 		rel = "."
 	}
@@ -178,7 +180,7 @@ func ResolveProjectBuild(projectPath string, s BuildSettings) (*ResolvedBuild, e
 		if s.DockerfilePath != nil && *s.DockerfilePath != "" {
 			configured = *s.DockerfilePath
 		}
-		dockerfile, err := ResolveProjectPath(basePath, jsTrim(configured))
+		dockerfile, err := ResolveProjectPath(basePath, js.Trim(configured))
 		if err != nil {
 			return nil, err
 		}

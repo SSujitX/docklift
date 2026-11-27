@@ -274,6 +274,18 @@ func TestSeeded(t *testing.T) {
 			rb(seedGHMain, seedDepOldTagged).ExpectError(t, 404, "Target successful deployment not found")
 			t.Run("missing image", func(t *testing.T) {
 				requireNoDocker(t)
+				if targetIsGo() {
+					// Deliberate fix 9: an unreachable daemon is reported as such,
+					// before a rollback row is created, instead of every image
+					// reading as missing.
+					before := lastDeployment(t, c, seedApp)
+					rb(seedApp, seedDepOldTagged).ExpectError(t, 503, "Docker is not available")
+					if after := lastDeployment(t, c, seedApp); after["id"] != before["id"] {
+						t.Fatalf("a refused rollback must not create a deployment row: %v", after)
+					}
+					rb(seedApp, seedDepOldTagged).ExpectError(t, 503, "Docker is not available")
+					return
+				}
 				rb(seedApp, seedDepOldTagged).ExpectError(t, 409, "Image missing for app: docklift-5eed0000-app:5eed0000. Redeploy from git instead.")
 				row := lastDeployment(t, c, seedApp)
 				match(t, "rollback row", deploymentRow(Obj{"project_id": seedApp, "status": "failed", "trigger": "rollback", "commit_message": "Rollback: seed deployment 301",
@@ -284,7 +296,13 @@ func TestSeeded(t *testing.T) {
 		}},
 		{"purge without docker", func(t *testing.T) {
 			requireNoDocker(t)
-			c.Post(t, "/api/system/purge", map[string]any{"password": seedAdminPassword}).ExpectError(t, 500, "Failed to complete purge operation")
+			r := c.Post(t, "/api/system/purge", map[string]any{"password": seedAdminPassword})
+			if targetIsGo() {
+				// Deliberate fix 9 (see TestSystemDangerousEndpointsRequireStepUp).
+				r.ExpectError(t, 503, "Docker is not available")
+				return
+			}
+			r.ExpectError(t, 500, "Failed to complete purge operation")
 		}},
 		{"project reads resync status from docker", func(t *testing.T) {
 			requireNoDocker(t)

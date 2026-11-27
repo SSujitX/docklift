@@ -22,6 +22,7 @@ import (
 	"docklift/internal/auth"
 	"docklift/internal/dockerx"
 	"docklift/internal/httpx"
+	"docklift/internal/js"
 	"docklift/internal/store"
 	"docklift/internal/sysinfo"
 	"docklift/internal/version"
@@ -413,11 +414,10 @@ func (h *handlers) execute(w http.ResponseWriter, r *http.Request) {
 		httpx.JSON(w, http.StatusOK, executeBody{Output: "", Error: &msg})
 		return
 	}
-	if !auth.ComparePassword(user.Password, password) {
-		httpx.JSON(w, http.StatusForbidden, passwordRequiredBody{Error: "Invalid password", RequirePassword: true})
+	if !h.d.Auth.VerifyStepUpPassword(w, r, user.ID, user.Password, password) {
 		return
 	}
-	h.d.Log.Info(fmt.Sprintf("[TERMINAL] User %q executed: %s", user.Email, sysinfo.Substring(command, 200)))
+	h.d.Log.Info(fmt.Sprintf("[TERMINAL] User %q executed: %s", user.Email, js.Substring(command, 200)))
 
 	res := runShell(r.Context(), h.shell, command)
 	if res.Failed {

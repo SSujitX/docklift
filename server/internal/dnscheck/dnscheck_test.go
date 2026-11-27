@@ -253,10 +253,3 @@ func TestCheckDomainsSequentialOrder(t *testing.T) {
 		t.Fatal("empty input")
 	}
 }
-
-func TestJSTrim(t *testing.T) {
-	in := string(rune(0xfeff)) + string(rune(0xa0)) + " x.test" + string(rune(0x3000)) + "\n"
-	if got := jsTrim(in); got != "x.test" {
-		t.Fatalf("%q", got)
-	}
-}

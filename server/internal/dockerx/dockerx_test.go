@@ -39,12 +39,6 @@ func TestIsAlreadyConnectedError(t *testing.T) {
 	}
 }
 
-func TestShouldReconnectProxyAfterFailedTeardown(t *testing.T) {
-	if !ShouldReconnectProxyAfterFailedTeardown(false) || ShouldReconnectProxyAfterFailedTeardown(true) {
-		t.Fatal("reconnect only when teardown failed")
-	}
-}
-
 func TestEnsureNetwork(t *testing.T) {
 	e := &fakeEngine{networkInspect: func(string) error { return nil }}
 	if err := newTestDocker(e, nil).EnsureNetwork(context.Background()); err != nil {
@@ -68,7 +62,7 @@ func TestEnsureNetwork(t *testing.T) {
 	if err := newTestDocker(e, nil).EnsureNetwork(context.Background()); !errors.Is(err, errBoom) {
 		t.Fatalf("err = %v", err)
 	}
-	var nilEngine *Docker = New(nil, "n", "p", nil)
+	nilEngine := New(nil, "n", "p", nil)
 	if err := nilEngine.EnsureNetwork(context.Background()); !IsUnavailable(err) {
 		t.Fatalf("nil engine: %v", err)
 	}
@@ -233,32 +227,6 @@ func TestContainerLogsDemux(t *testing.T) {
 	e.logs = nil
 	if got := d.ContainerLogs(context.Background(), "c", 5); got != "" {
 		t.Fatalf("error must give empty logs, got %q", got)
-	}
-}
-
-func TestToFixed(t *testing.T) {
-	cases := []struct {
-		v      float64
-		digits int
-		want   string
-	}{
-		{0, 2, "0.00"},
-		{0.125, 2, "0.13"}, // exact tie: JS rounds up, Go's 'f' would give 0.12
-		{0.375, 2, "0.38"},
-		{1.005, 2, "1.00"}, // 1.005 is 1.00499999... in binary
-		{12.3456, 2, "12.35"},
-		{-0.001, 2, "-0.00"},
-		{-1.125, 2, "-1.13"},
-		{2.5, 0, "3"},
-		{123.4, 0, "123"},
-		{0.5, 2, "0.50"},
-		{0.0001, 2, "0.00"},
-		{1e21, 2, "1e+21"},
-	}
-	for _, c := range cases {
-		if got := ToFixed(c.v, c.digits); got != c.want {
-			t.Errorf("ToFixed(%v, %d) = %q, want %q", c.v, c.digits, got, c.want)
-		}
 	}
 }
 

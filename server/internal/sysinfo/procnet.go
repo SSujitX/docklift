@@ -2,6 +2,8 @@ package sysinfo
 
 import (
 	"strings"
+
+	"docklift/internal/js"
 )
 
 // ParseDefaultRoute returns the interface of the default route in
@@ -45,7 +47,7 @@ func ParseNvidiaSMI(out string) *GPUController {
 		return nil
 	}
 	num := func(s string) float64 {
-		v := ParseFloat(strings.TrimSpace(s))
+		v := js.ParseFloat(strings.TrimSpace(s))
 		if v != v {
 			return 0
 		}
@@ -61,7 +63,7 @@ func ParseProcUptime(content string) (float64, bool) {
 	if len(f) == 0 {
 		return 0, false
 	}
-	v := ParseFloat(f[0])
+	v := js.ParseFloat(f[0])
 	if v != v {
 		return 0, false
 	}

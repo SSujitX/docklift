@@ -181,3 +181,74 @@ func (l *RateLimiter) Middleware(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
+
+// FailureLimitConfig configures a FailureLimiter.
+type FailureLimitConfig struct {
+	// Window is how long failures are remembered, from the first failure.
+	Window time.Duration
+	// Limit is how many failures a key may make in one window; the next
+	// attempt is refused until the window ends.
+	Limit int
+	// MaxKeys caps how many keys are tracked (default
+	// DefaultRateLimitMaxKeys); at the cap the oldest window is forgotten.
+	MaxKeys int
+	// Now is the clock (default time.Now).
+	Now func() time.Time
+}
+
+// FailureLimiter counts failed attempts (password guesses) per key in a
+// fixed window that starts at the key's first failure. Unlike RateLimiter
+// it counts only what the caller reports as a failure, and a success
+// forgets the key. Expired keys are dropped on every call and at most
+// MaxKeys are tracked, so memory stays bounded without a sweeper.
+type FailureLimiter struct {
+	limit int
+	rl    *RateLimiter
+}
+
+// NewFailureLimiter returns an empty limiter.
+func NewFailureLimiter(cfg FailureLimitConfig) *FailureLimiter {
+	now := cfg.Now
+	if now == nil {
+		now = time.Now
+	}
+	return &FailureLimiter{limit: cfg.Limit, rl: newRateLimiter(RateLimitConfig{Window: cfg.Window, Limit: cfg.Limit, MaxKeys: cfg.MaxKeys}, now)}
+}
+
+// RetryAfter reports how long key must wait before its next attempt: zero
+// while it has failed fewer than Limit times in the current window.
+func (f *FailureLimiter) RetryAfter(key string) time.Duration {
+	l := f.rl
+	now := l.now()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.evictExpired(now)
+	e, ok := l.clients[key]
+	if !ok {
+		return 0
+	}
+	c := e.Value.(*rateClient)
+	if c.hits < f.limit {
+		return 0
+	}
+	return c.resetAt.Sub(now)
+}
+
+// Fail records one failed attempt by key.
+func (f *FailureLimiter) Fail(key string) { f.rl.hit(key) }
+
+// Reset forgets key's failures (after a successful attempt).
+func (f *FailureLimiter) Reset(key string) {
+	l := f.rl
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if e, ok := l.clients[key]; ok {
+		l.remove(e)
+	}
+}
+
+// RetryAfterSeconds is d as a Retry-After header value: whole seconds,
+// rounded up, at least 1.
+func RetryAfterSeconds(d time.Duration) string {
+	return strconv.Itoa(max(int(math.Ceil(d.Seconds())), 1))
+}

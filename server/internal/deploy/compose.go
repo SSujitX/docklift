@@ -11,6 +11,8 @@ import (
 	"unicode/utf8"
 
 	"gopkg.in/yaml.v3"
+
+	"docklift/internal/js"
 )
 
 // ScannedService is a Dockerfile found by ScanDockerfiles. Paths are
@@ -47,7 +49,7 @@ func detectPortFromDockerfile(path string) int {
 			return int(f)
 		}
 	}
-	lower := jsLower(content)
+	lower := js.Lower(content)
 	has := func(words ...string) bool {
 		for _, w := range words {
 			if strings.Contains(lower, w) {
@@ -279,7 +281,7 @@ func RenderRuntimeCompose(services []RuntimeService, envVars []EnvVar, opts Runt
 			def.Content = append(def.Content, plain("mem_limit"), quoted(opts.MemLimit))
 		}
 		if opts.CPUs != nil {
-			def.Content = append(def.Content, plain("cpus"), quoted(jsNumberString(*opts.CPUs)))
+			def.Content = append(def.Content, plain("cpus"), quoted(js.NumberString(*opts.CPUs)))
 		}
 		if len(svc.Command) > 0 {
 			cmd := sequence()

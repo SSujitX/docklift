@@ -15,8 +15,8 @@ import (
 	"docklift/internal/app"
 	"docklift/internal/dockerx"
 	"docklift/internal/httpx"
+	"docklift/internal/js"
 	"docklift/internal/store"
-	"docklift/internal/sysinfo"
 )
 
 // Docker is the part of the Engine API client these routes use;
@@ -166,9 +166,9 @@ func (h *handlers) fail(w http.ResponseWriter, msg string, err error) {
 // Tail is `parseInt(req.query.tail) || 200` as the decimal string dockerode
 // sent; negative values pass through (the daemon reads them as "all").
 func Tail(r *http.Request) string {
-	n := sysinfo.ParseInt(r.URL.Query().Get("tail"))
+	n := js.ParseInt(r.URL.Query().Get("tail"))
 	if math.IsNaN(n) || n == 0 {
 		return "200"
 	}
-	return sysinfo.FormatNumber(n)
+	return js.NumberString(n)
 }

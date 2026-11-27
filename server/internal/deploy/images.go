@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"docklift/internal/db"
+	"docklift/internal/js"
 	"docklift/internal/store"
 )
 
@@ -153,7 +154,7 @@ func ParseImageTags(raw *db.JSON) (ImageTags, bool) {
 }
 
 // ProjectID8 is the first 8 characters of the project id (dashes kept).
-func ProjectID8(projectID string) string { return jsSlice(projectID, 8) }
+func ProjectID8(projectID string) string { return js.Slice(projectID, 8) }
 
 // DockliftImageRepo is docklift-<project8>-<service slug>.
 func DockliftImageRepo(projectID, serviceName string) string {
@@ -163,7 +164,7 @@ func DockliftImageRepo(projectID, serviceName string) string {
 // DockliftImageTag is the tag of a service image built by a deployment:
 // docklift-<project8>-<service slug>:<deployment8>.
 func DockliftImageTag(projectID, serviceName, deploymentID string) string {
-	return DockliftImageRepo(projectID, serviceName) + ":" + jsSlice(deploymentID, 8)
+	return DockliftImageRepo(projectID, serviceName) + ":" + js.Slice(deploymentID, 8)
 }
 
 var dockliftAppImageRe = regexp.MustCompile(`(?i)^docklift-[a-f0-9]{8}-[a-z0-9][a-z0-9_-]*$`)
@@ -208,18 +209,6 @@ func PickTaggedImageMaps(rows []*db.JSON, limit int) []ImageTags {
 		}
 	}
 	return maps
-}
-
-// ReconstructInProgressTags builds the tags an in-progress deploy produces
-// (its image_tags are only stored once compose succeeds).
-func ReconstructInProgressTags(projectID, deploymentID string, serviceNames []string) ImageTags {
-	var m ImageTags
-	for _, name := range serviceNames {
-		if name != "" {
-			m.Set(name, DockliftImageTag(projectID, name, deploymentID))
-		}
-	}
-	return m
 }
 
 // RollbackGuard is the verdict of RollbackTargetGuard: OK, or the HTTP

@@ -35,17 +35,39 @@ type Service struct {
 	bootstrap *Bootstrap
 	log       *slog.Logger
 	now       func() time.Time
+	// stepUpFailures counts wrong step-up passwords per user and client.
+	stepUpFailures *httpx.FailureLimiter
 }
+
+// Step-up password guessing limit: StepUpFailureLimit wrong passwords per
+// user and client address within StepUpFailureWindow, then 429 until the
+// window (started by the first failure) ends. A correct password resets it.
+const (
+	StepUpFailureLimit  = 10
+	StepUpFailureWindow = 15 * time.Minute
+	// stepUpMaxKeys bounds the user/client pairs tracked at once.
+	stepUpMaxKeys = 10_000
+)
+
+// MsgTooManyPasswordAttempts is the error of a throttled step-up check.
+const MsgTooManyPasswordAttempts = "Too many failed password attempts. Try again later."
 
 // New returns the auth service.
 func New(st *store.Store, secrets Secrets, dataPath string, log *slog.Logger) *Service {
-	return &Service{
+	s := &Service{
 		store:     st,
 		secrets:   secrets,
 		bootstrap: NewBootstrap(dataPath, log),
 		log:       log,
 		now:       time.Now,
 	}
+	s.stepUpFailures = httpx.NewFailureLimiter(httpx.FailureLimitConfig{
+		Window:  StepUpFailureWindow,
+		Limit:   StepUpFailureLimit,
+		MaxKeys: stepUpMaxKeys,
+		Now:     func() time.Time { return s.now() },
+	})
+	return s
 }
 
 // Secrets returns the signing and internal secrets.
@@ -246,11 +268,32 @@ func (s *Service) RequireStepUpPassword(w http.ResponseWriter, r *http.Request) 
 		httpx.JSON(w, http.StatusForbidden, stepUpBody{Error: "Unable to verify password", RequirePassword: true})
 		return false, nil
 	}
-	if !ComparePassword(dbUser.Password, password) {
-		httpx.JSON(w, http.StatusForbidden, stepUpBody{Error: "Invalid password", RequirePassword: true})
-		return false, nil
+	return s.VerifyStepUpPassword(w, r, u.UserID, dbUser.Password, password), nil
+}
+
+// VerifyStepUpPassword compares a re-entered account password with the
+// user's bcrypt hash, limiting guesses (a stolen session token must not
+// allow unlimited attempts at the password). It writes the refusal itself
+// and returns false: 429 with Retry-After once the user has failed
+// StepUpFailureLimit times from this client within StepUpFailureWindow
+// (the hash is not even compared), else 403 "Invalid password" on a
+// mismatch. A match resets the count. This throttle is not in the
+// TypeScript backend (owner-approved security fix).
+func (s *Service) VerifyStepUpPassword(w http.ResponseWriter, r *http.Request, userID, hash, password string) bool {
+	key := userID + " " + httpx.RateLimitKey(httpx.ClientIP(r))
+	if wait := s.stepUpFailures.RetryAfter(key); wait > 0 {
+		s.log.Warn("[SECURITY] Step-up password attempts throttled", "userId", userID, "ip", httpx.ClientIP(r))
+		w.Header().Set("Retry-After", httpx.RetryAfterSeconds(wait))
+		httpx.JSON(w, http.StatusTooManyRequests, stepUpBody{Error: MsgTooManyPasswordAttempts, RequirePassword: true})
+		return false
 	}
-	return true, nil
+	if !ComparePassword(hash, password) {
+		s.stepUpFailures.Fail(key)
+		httpx.JSON(w, http.StatusForbidden, stepUpBody{Error: "Invalid password", RequirePassword: true})
+		return false
+	}
+	s.stepUpFailures.Reset(key)
+	return true
 }
 
 type stepUpBody struct {

@@ -17,6 +17,8 @@ import (
 	"sort"
 	"sync"
 	"time"
+
+	"docklift/internal/js"
 )
 
 // Host files the TypeScript backend read from the bind-mounted host root.
@@ -129,19 +131,19 @@ type Stats struct {
 
 // CPUStats is Stats.cpu.
 type CPUStats struct {
-	Usage       Num      `json:"usage"`
+	Usage       js.Num   `json:"usage"`
 	Cores       int      `json:"cores"`
 	Model       string   `json:"model"`
-	Speed       Num      `json:"speed"`
+	Speed       js.Num   `json:"speed"`
 	Temperature *float64 `json:"temperature"`
 }
 
 // MemStats is Stats.memory.
 type MemStats struct {
-	Total       Num `json:"total"`
-	Used        Num `json:"used"`
-	Free        Num `json:"free"`
-	UsedPercent Num `json:"usedPercent"`
+	Total       js.Num `json:"total"`
+	Used        js.Num `json:"used"`
+	Free        js.Num `json:"free"`
+	UsedPercent js.Num `json:"usedPercent"`
 }
 
 // GPUStats is Stats.gpu.
@@ -158,17 +160,17 @@ type GPUStats struct {
 type Disk struct {
 	Mount       string `json:"mount"`
 	Type        string `json:"type"`
-	Total       Num    `json:"total"`
-	Used        Num    `json:"used"`
-	UsedPercent Num    `json:"usedPercent"`
+	Total       js.Num `json:"total"`
+	Used        js.Num `json:"used"`
+	UsedPercent js.Num `json:"usedPercent"`
 }
 
 // Network is Stats.network.
 type Network struct {
-	BytesReceived Num `json:"bytesReceived"`
-	BytesSent     Num `json:"bytesSent"`
-	RxSpeed       Num `json:"rxSpeed"`
-	TxSpeed       Num `json:"txSpeed"`
+	BytesReceived js.Num `json:"bytesReceived"`
+	BytesSent     js.Num `json:"bytesSent"`
+	RxSpeed       js.Num `json:"rxSpeed"`
+	TxSpeed       js.Num `json:"txSpeed"`
 }
 
 // Server is Stats.server.
@@ -178,7 +180,7 @@ type Server struct {
 	Distro            string  `json:"distro"`
 	Kernel            string  `json:"kernel"`
 	Arch              string  `json:"arch"`
-	Uptime            Num     `json:"uptime"`
+	Uptime            js.Num  `json:"uptime"`
 	UptimeFormatted   string  `json:"uptimeFormatted"`
 	ServerTime        string  `json:"serverTime"`
 	CPUModel          string  `json:"cpuModel"`
@@ -192,21 +194,21 @@ type Server struct {
 
 // LoadAvg is Stats.server.loadAvg.
 type LoadAvg struct {
-	Load1  Num `json:"load1"`
-	Load5  Num `json:"load5"`
-	Load15 Num `json:"load15"`
+	Load1  js.Num `json:"load1"`
+	Load5  js.Num `json:"load5"`
+	Load15 js.Num `json:"load15"`
 }
 
 // Swap is Stats.server.swap.
 type Swap struct {
-	Total Num `json:"total"`
-	Used  Num `json:"used"`
+	Total js.Num `json:"total"`
+	Used  js.Num `json:"used"`
 }
 
 // Quick is the /api/system/quick response.
 type Quick struct {
-	CPU       Num    `json:"cpu"`
-	Memory    Num    `json:"memory"`
+	CPU       js.Num `json:"cpu"`
+	Memory    js.Num `json:"memory"`
 	Timestamp string `json:"timestamp"`
 }
 
@@ -360,12 +362,12 @@ func (c *Collector) Stats(ctx context.Context) (*Stats, error) {
 	}
 	for _, d := range c.src.FsSize(ctx) {
 		if d.Size > minDiskBytes {
-			s.Disk = append(s.Disk, Disk{Mount: d.Mount, Type: d.Type, Total: Num(d.Size), Used: Num(d.Used), UsedPercent: Num(ToFixed(d.Use, 1))})
+			s.Disk = append(s.Disk, Disk{Mount: d.Mount, Type: d.Type, Total: js.Num(d.Size), Used: js.Num(d.Used), UsedPercent: js.Num(toFixed(d.Use, 1))})
 		}
 	}
 	if nets := c.src.NetworkStats(ctx); len(nets) > 0 {
 		n := nets[0]
-		s.Network = Network{BytesReceived: Num(n.RxBytes), BytesSent: Num(n.TxBytes), RxSpeed: Num(orZero(n.RxSec)), TxSpeed: Num(orZero(n.TxSec))}
+		s.Network = Network{BytesReceived: js.Num(n.RxBytes), BytesSent: js.Num(n.TxBytes), RxSpeed: js.Num(orZero(n.RxSec)), TxSpeed: js.Num(orZero(n.TxSec))}
 	}
 	if len(linuxProcs) > 0 {
 		s.Processes = linuxProcs
@@ -398,8 +400,8 @@ func (c *Collector) Stats(ctx context.Context) (*Stats, error) {
 			model = hostCPU.Model
 		}
 	}
-	s.CPU = CPUStats{Usage: Num(ToFixed(load, 1)), Cores: cores, Model: model, Speed: Num(speed), Temperature: cpuTemp}
-	s.Memory = MemStats{Total: Num(memTotal), Used: Num(memUsed), Free: Num(memFree), UsedPercent: Num(ToFixed(memUsed/memTotal*100, 1))}
+	s.CPU = CPUStats{Usage: js.Num(toFixed(load, 1)), Cores: cores, Model: model, Speed: js.Num(speed), Temperature: cpuTemp}
+	s.Memory = MemStats{Total: js.Num(memTotal), Used: js.Num(memUsed), Free: js.Num(memFree), UsedPercent: js.Num(toFixed(memUsed/memTotal*100, 1))}
 
 	loads := c.src.LoadAvg(ctx)
 	c.ipMu.Lock()
@@ -420,13 +422,13 @@ func (c *Collector) Stats(ctx context.Context) (*Stats, error) {
 		Distro:            osInfo.Distro,
 		Kernel:            osInfo.Kernel,
 		Arch:              osInfo.Arch,
-		Uptime:            Num(uptime),
+		Uptime:            js.Num(uptime),
 		UptimeFormatted:   FormatUptime(uptime),
 		ServerTime:        LocaleString(now),
 		CPUModel:          model,
-		CPUCores:          fmt.Sprintf("%d Cores @ %s GHz", cores, FormatNumber(speed)),
-		LoadAvg:           LoadAvg{Load1: Num(ToFixed(loads[0], 2)), Load5: Num(ToFixed(loads[1], 2)), Load15: Num(ToFixed(loads[2], 2))},
-		Swap:              Swap{Total: Num(memData.SwapTotal), Used: Num(memData.SwapUsed)},
+		CPUCores:          fmt.Sprintf("%d Cores @ %s GHz", cores, js.NumberString(speed)),
+		LoadAvg:           LoadAvg{Load1: js.Num(toFixed(loads[0], 2)), Load5: js.Num(toFixed(loads[1], 2)), Load15: js.Num(toFixed(loads[2], 2))},
+		Swap:              Swap{Total: js.Num(memData.SwapTotal), Used: js.Num(memData.SwapUsed)},
 		IPAddress:         ip,
 		Location:          location,
 		ActiveConnections: conns,
@@ -466,7 +468,7 @@ func topProcesses(list []RawProcess) []Process {
 	}
 	out := make([]Process, 0, len(filtered))
 	for _, p := range filtered {
-		out = append(out, Process{PID: p.PID, Name: p.Name, CPU: Num(ToFixed(p.CPU, 1)), Mem: Num(ToFixed(p.Mem, 1)), User: p.User})
+		out = append(out, Process{PID: p.PID, Name: p.Name, CPU: js.Num(toFixed(p.CPU, 1)), Mem: js.Num(toFixed(p.Mem, 1)), User: p.User})
 	}
 	return out
 }
@@ -481,7 +483,7 @@ func (c *Collector) Quick(ctx context.Context) (*Quick, error) {
 	if err != nil {
 		return nil, fmt.Errorf("memory: %w", err)
 	}
-	return &Quick{CPU: Num(ToFixed(load, 1)), Memory: Num(ToFixed(m.Used/m.Total*100, 1)), Timestamp: ISOString(c.now())}, nil
+	return &Quick{CPU: js.Num(toFixed(load, 1)), Memory: js.Num(toFixed(m.Used/m.Total*100, 1)), Timestamp: ISOString(c.now())}, nil
 }
 
 // MemoryPercent is Math.round(used / total * 100) of si.mem() (purge
@@ -491,7 +493,7 @@ func (c *Collector) MemoryPercent(ctx context.Context) (float64, error) {
 	if err != nil {
 		return 0, err
 	}
-	return RoundHalfUp(m.Used / m.Total * 100), nil
+	return js.RoundHalfUp(m.Used / m.Total * 100), nil
 }
 
 // refreshConnections starts a background count of established connections

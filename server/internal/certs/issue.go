@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"docklift/internal/dnscheck"
+	"docklift/internal/js"
 )
 
 var (
@@ -56,7 +57,7 @@ func SummarizeCertbotError(stdout, stderr string) string {
 	raw := strings.Split(output, "\n")
 	lines := make([]string, len(raw))
 	for i, l := range raw {
-		lines[i] = TrimJS(l)
+		lines[i] = js.Trim(l)
 	}
 
 	for i := range lines {
@@ -64,13 +65,13 @@ func SummarizeCertbotError(stdout, stderr string) string {
 		if m == nil {
 			continue
 		}
-		domain := TrimJS(m[1])
+		domain := js.Trim(m[1])
 		if domain == "" {
 			continue
 		}
 		for j := i + 1; j < min(len(lines), i+8); j++ {
 			if d := detailLine.FindStringSubmatch(lines[j]); d != nil {
-				if detail := TrimJS(d[1]); detail != "" {
+				if detail := js.Trim(d[1]); detail != "" {
 					return truncate(domain+": "+detail, maxSummary)
 				}
 			}

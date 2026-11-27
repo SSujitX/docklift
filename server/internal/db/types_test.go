@@ -89,10 +89,6 @@ func TestJSONColumn(t *testing.T) {
 	if _, err := JSON("{").Value(); err == nil {
 		t.Error("invalid JSON must be rejected on write")
 	}
-	v, err := MarshalJSONValue(map[string]string{"a": "b"})
-	if err != nil || string(v) != `{"a":"b"}` {
-		t.Errorf("MarshalJSONValue = %s, %v", v, err)
-	}
 }
 
 func TestNewID(t *testing.T) {

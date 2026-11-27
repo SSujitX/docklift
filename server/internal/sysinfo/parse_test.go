@@ -1,7 +1,6 @@
 package sysinfo
 
 import (
-	"encoding/json"
 	"math"
 	"testing"
 	"time"
@@ -24,54 +23,12 @@ func TestToFixed(t *testing.T) {
 		{45.6789, 2, 45.68},
 	}
 	for _, c := range cases {
-		if got := ToFixed(c.x, c.digits); got != c.want {
-			t.Errorf("ToFixed(%v, %d) = %v, want %v", c.x, c.digits, got, c.want)
+		if got := toFixed(c.x, c.digits); got != c.want {
+			t.Errorf("toFixed(%v, %d) = %v, want %v", c.x, c.digits, got, c.want)
 		}
 	}
-	if !math.IsNaN(ToFixed(math.NaN(), 1)) {
+	if !math.IsNaN(toFixed(math.NaN(), 1)) {
 		t.Error("NaN must stay NaN")
-	}
-}
-
-func TestParseFloatAndInt(t *testing.T) {
-	floats := map[string]float64{"3.20GHz": 3.2, "  2400.000": 2400, "-1.5e3x": -1500, ".5": 0.5, "Infinity": math.Inf(1)}
-	for in, want := range floats {
-		if got := ParseFloat(in); got != want {
-			t.Errorf("ParseFloat(%q) = %v, want %v", in, got, want)
-		}
-	}
-	for _, in := range []string{"", "abc", "-", "."} {
-		if !math.IsNaN(ParseFloat(in)) {
-			t.Errorf("ParseFloat(%q) must be NaN", in)
-		}
-	}
-	ints := map[string]float64{"16318412": 16318412, " 42 kB": 42, "-7": -7, "0x1A": 26, "12.9": 12, "77abc": 77}
-	for in, want := range ints {
-		if got := ParseInt(in); got != want {
-			t.Errorf("ParseInt(%q) = %v, want %v", in, got, want)
-		}
-	}
-	if !math.IsNaN(ParseInt("kB")) {
-		t.Error("ParseInt without digits must be NaN")
-	}
-}
-
-func TestSubstringCountsUTF16Units(t *testing.T) {
-	if got := Substring("abcdef", 3); got != "abc" {
-		t.Fatalf("got %q", got)
-	}
-	if got := Substring("a😀b", 2); got != "a" { // the emoji is two units
-		t.Fatalf("got %q", got)
-	}
-	if got := Substring("short", 50); got != "short" {
-		t.Fatalf("got %q", got)
-	}
-}
-
-func TestNumJSON(t *testing.T) {
-	b, _ := json.Marshal([]Num{Num(math.NaN()), Num(math.Inf(1)), 12, 1.5, 16710533120})
-	if string(b) != "[null,null,12,1.5,16710533120]" {
-		t.Fatalf("got %s", b)
 	}
 }
 

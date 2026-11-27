@@ -26,6 +26,7 @@ import (
 	"docklift/internal/deploy"
 	"docklift/internal/dockerx"
 	"docklift/internal/httpx"
+	"docklift/internal/js"
 	"docklift/internal/store"
 )
 
@@ -64,7 +65,7 @@ var domainRe = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-
 // entry must match domainRe; the empty string is valid.
 func validDomainList(s string) bool {
 	for _, d := range strings.Split(s, ",") {
-		if d = jsTrim(d); d != "" && !domainRe.MatchString(d) {
+		if d = js.Trim(d); d != "" && !domainRe.MatchString(d) {
 			return false
 		}
 	}
@@ -77,15 +78,10 @@ type handlers struct {
 	github GitHubApp
 }
 
-// Mount registers the /api/projects routes on r, which is already scoped to
-// /api/projects and wrapped in the group's authentication middleware.
-// Private GitHub repositories are cloned anonymously; use MountWith to pass
-// the GitHub App.
-func Mount(r chi.Router, d *app.Deps) {
-	MountWith(r, d, Options{})
-}
-
-// MountWith is Mount with optional collaborators.
+// MountWith registers the /api/projects routes on r, which is already
+// scoped to /api/projects and wrapped in the group's authentication
+// middleware. Without o.GitHub, private GitHub repositories are cloned
+// anonymously.
 func MountWith(r chi.Router, d *app.Deps, o Options) {
 	h := &handlers{d: d, svc: NewService(d), github: o.GitHub}
 	r.Get("/", h.list)

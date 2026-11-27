@@ -8,7 +8,7 @@ import (
 	"time"
 	"unicode/utf16"
 
-	"docklift/internal/dockerx"
+	"docklift/internal/js"
 )
 
 // validFilename is isValidBackupFilename: letters, digits, dots, hyphens and
@@ -81,7 +81,7 @@ func FormatBytes(n int64) string {
 	v := float64(n)
 	i := int(math.Floor(math.Log(v) / math.Log(1024)))
 	i = max(0, min(i, len(byteUnits)-1))
-	fixed := dockerx.ToFixed(v/math.Pow(1024, float64(i)), 2)
+	fixed := js.ToFixed(v/math.Pow(1024, float64(i)), 2)
 	f, err := strconv.ParseFloat(fixed, 64)
 	if err != nil {
 		return fixed + " " + byteUnits[i]

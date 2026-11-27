@@ -309,3 +309,21 @@ func TestParseBodyReadDeadline(t *testing.T) {
 		t.Fatalf("stalled body: status %d", resp.StatusCode)
 	}
 }
+
+func TestNewBody(t *testing.T) {
+	b := NewBody(map[string]any{"password": "pw", "tags": []any{"a", "b"}})
+	if !b.Defined || len(b.Raw) != 0 {
+		t.Fatalf("NewBody = %+v", b)
+	}
+	if s, ok := b.Get("password").String(); !ok || s != "pw" {
+		t.Errorf("password = %q, %v", s, ok)
+	}
+	if b.Get("missing").Defined() || !b.Get("tags").Truthy() {
+		t.Error("property access")
+	}
+	ctx := WithBody(t.Context(), b)
+	req := httptest.NewRequest(http.MethodPost, "/", nil).WithContext(ctx)
+	if got, _ := BodyFrom(req).Get("password").String(); got != "pw" {
+		t.Errorf("BodyFrom = %q", got)
+	}
+}

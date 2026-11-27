@@ -236,7 +236,7 @@ func TestDeployments(t *testing.T) {
 	ctx := context.Background()
 	s := newStore(t)
 	p := mustProject(t, s, "app", ProjectCreate{})
-	tags, _ := db.MarshalJSONValue(map[string]string{"web": "img:1"})
+	tags := db.JSON(`{"web":"img:1"}`)
 	ok, _ := s.CreateDeployment(ctx, DeploymentCreate{ProjectID: p.ID, Status: Ptr("success"), ImageTags: &tags})
 	if *ok.Trigger != "manual" {
 		t.Errorf("trigger default = %q", *ok.Trigger)

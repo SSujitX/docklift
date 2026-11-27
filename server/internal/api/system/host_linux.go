@@ -3,15 +3,33 @@
 package system
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"log/slog"
-	"os/exec"
 	"time"
+
+	"docklift/internal/execx"
 )
 
 // linuxHost runs the host actions with exec (no shell built from input).
+// Host command lines of system.ts. They are constants: nothing from a
+// request ever reaches them.
+var (
+	rebootCommand = []string{"reboot", "-f"}
+	// nsenter --target 1 with every namespace runs the command on the host.
+	updateSystemCommand = []string{"nsenter", "--target", "1", "--mount", "--uts", "--ipc", "--net", "--pid", "--",
+		"sh", "-c", "apt update -y && DEBIAN_FRONTEND=noninteractive apt upgrade -y && apt autoremove -y"}
+	upgradeCommand = []string{"nsenter", "--target", "1", "--mount", "--uts", "--ipc", "--net", "--pid", "--",
+		"sh", "-c", "cd /opt/docklift && (systemd-run --unit=docklift-upgrade-$(date +%s) --scope bash upgrade.sh > /dev/null 2>&1 || nohup bash upgrade.sh > /dev/null 2>&1) &"}
+)
+
+const (
+	rebootDelay         = time.Second
+	updateSystemTimeout = 15 * time.Minute
+	// upgradeTimeout is short: the command detaches immediately.
+	upgradeTimeout = 5 * time.Second
+)
+
 type linuxHost struct {
 	background context.Context
 	log        *slog.Logger
@@ -28,12 +46,8 @@ func (h *linuxHost) detached(timeout time.Duration) (context.Context, context.Ca
 }
 
 func (h *linuxHost) run(ctx context.Context, argv []string) (string, string, error) {
-	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	cmd.WaitDelay = 5 * time.Second
-	err := cmd.Run()
-	return stdout.String(), stderr.String(), err
+	stdout, stderr, _, err := execx.Output(ctx, execx.Cmd{Name: argv[0], Args: argv[1:]})
+	return stdout, stderr, err
 }
 
 func (h *linuxHost) Reboot() error {

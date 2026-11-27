@@ -21,6 +21,7 @@ import (
 	"docklift/internal/app"
 	"docklift/internal/githubapp"
 	"docklift/internal/httpx"
+	"docklift/internal/js"
 )
 
 // Cookie carrying the setup-state nonce through the GitHub round trip.
@@ -55,11 +56,8 @@ type handlers struct {
 	cooldown *cooldown
 }
 
-// Mount registers the /api/github routes with no deploy service wired
-// (MountWith with zero Options).
-func Mount(r chi.Router, d *app.Deps) { MountWith(r, d, Options{}) }
-
-// NewApp returns the GitHub App for d using the real GitHub API.
+// NewApp returns the GitHub App for d using the real GitHub API. Create one
+// per process and share it (installation token cache).
 func NewApp(d *app.Deps) *githubapp.App {
 	return githubapp.New(githubapp.Config{
 		AppID:          d.Config.GitHubAppID,
@@ -131,7 +129,7 @@ func (h *handlers) setStateCookie(w http.ResponseWriter, r *http.Request, state 
 	if requestProto(r) == "https" {
 		secure = "; Secure"
 	}
-	w.Header().Add("Set-Cookie", stateCookie+"="+encodeURIComponent(state)+"; Path=/; HttpOnly; SameSite=Lax; Max-Age=3600"+secure)
+	w.Header().Add("Set-Cookie", stateCookie+"="+js.EncodeURIComponent(state)+"; Path=/; HttpOnly; SameSite=Lax; Max-Age=3600"+secure)
 }
 
 func clearStateCookie(w http.ResponseWriter) {
@@ -263,7 +261,7 @@ func (h *handlers) manifest(w http.ResponseWriter, r *http.Request) {
 		Manifest  string `json:"manifest"`
 		Action    string `json:"action"`
 		ServerURL string `json:"serverUrl"`
-	}{string(encoded), "https://github.com/settings/apps/new?state=" + encodeURIComponent(state), serverURL})
+	}{string(encoded), "https://github.com/settings/apps/new?state=" + js.EncodeURIComponent(state), serverURL})
 }
 
 // GET /manifest/callback (public) — exchange the manifest code for the new
@@ -291,7 +289,7 @@ func (h *handlers) manifestCallback(w http.ResponseWriter, r *http.Request) {
 	code := queryCast(r, "code")
 	if code == "" {
 		if inst := queryCast(r, "installation_id"); inst != "" {
-			redirect(w, r, "/api/github/setup?installation_id="+encodeURIComponent(inst))
+			redirect(w, r, "/api/github/setup?installation_id="+js.EncodeURIComponent(inst))
 			return
 		}
 		redirect(w, r, h.frontendError("no_code"))

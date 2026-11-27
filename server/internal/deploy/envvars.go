@@ -3,6 +3,7 @@ package deploy
 import (
 	"regexp"
 
+	"docklift/internal/js"
 	"docklift/internal/store"
 )
 
@@ -26,7 +27,7 @@ func NormalizeEnvValue(value any, present bool) string {
 	if !present || value == nil {
 		return ""
 	}
-	v := jsTrim(jsString(value))
+	v := js.Trim(js.String(value))
 	if n := len(v); n >= 2 {
 		if (v[0] == '"' && v[n-1] == '"') || (v[0] == '\'' && v[n-1] == '\'') {
 			v = v[1 : n-1]
@@ -41,7 +42,7 @@ func NormalizeEnvServiceName(name any, present bool) string {
 	if !present || name == nil {
 		return SharedEnvService
 	}
-	return jsTrim(jsString(name))
+	return js.Trim(js.String(name))
 }
 
 // EnvVar is an env variable as the build and compose code consume it.

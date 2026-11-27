@@ -10,6 +10,7 @@ import (
 	"docklift/internal/deploy"
 	"docklift/internal/execx"
 	"docklift/internal/httpx"
+	"docklift/internal/js"
 	"docklift/internal/store"
 )
 
@@ -33,7 +34,7 @@ func validateMountPath(v val) (string, error) {
 	if v.truthy() {
 		s = v.jsString()
 	}
-	mount := strings.TrimRight(jsTrim(s), "/")
+	mount := strings.TrimRight(js.Trim(s), "/")
 	if mount == "" {
 		mount = "/"
 	}
@@ -56,7 +57,7 @@ func trimmedString(v val) string {
 	if !v.truthy() {
 		return ""
 	}
-	return jsTrim(v.jsString())
+	return js.Trim(v.jsString())
 }
 
 // GET /:id/build/detect — resolve Auto/Dockerfile/Railpack without building.

@@ -12,15 +12,15 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"os"
 	"path/filepath"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
-	"unicode"
 
 	"github.com/golang-jwt/jwt/v5"
+
+	"docklift/internal/js"
 )
 
 // Settings keys used by the GitHub integration.
@@ -152,24 +152,6 @@ func (a *App) AppID(ctx context.Context) (string, bool, error) {
 	return a.cfg.AppID, a.cfg.AppID != "", nil
 }
 
-// jsParseInt is parseInt(s, 10); ok is false where JavaScript yields NaN.
-func jsParseInt(s string) (int64, bool) {
-	s = strings.TrimLeftFunc(s, unicode.IsSpace)
-	sign := ""
-	if strings.HasPrefix(s, "-") || strings.HasPrefix(s, "+") {
-		sign, s = s[:1], s[1:]
-	}
-	end := 0
-	for end < len(s) && s[end] >= '0' && s[end] <= '9' {
-		end++
-	}
-	if end == 0 {
-		return 0, false
-	}
-	n, err := strconv.ParseInt(strings.TrimPrefix(sign, "+")+s[:end], 10, 64)
-	return n, err == nil
-}
-
 // JWT is createJwtToken: an RS256 App JWT valid for ten minutes (issued a
 // minute in the past to tolerate clock drift).
 func (a *App) JWT(ctx context.Context) (string, error) {
@@ -192,8 +174,9 @@ func (a *App) JWT(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("parse GitHub App private key: %w", err)
 	}
 	now := a.now().Unix()
+	// iss is parseInt(appId); NaN (and Infinity) serialize as null.
 	claims := jwt.MapClaims{"iat": now - 60, "exp": now + 600, "iss": nil}
-	if iss, ok := jsParseInt(appID); ok {
+	if iss := js.ParseInt10(appID); !math.IsNaN(iss) && !math.IsInf(iss, 0) {
 		claims["iss"] = iss
 	}
 	signed, err := jwt.NewWithClaims(jwt.SigningMethodRS256, claims).SignedString(key)

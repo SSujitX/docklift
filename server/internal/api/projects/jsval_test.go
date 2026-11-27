@@ -2,7 +2,6 @@ package projects
 
 import (
 	"encoding/json"
-	"math"
 	"strings"
 	"testing"
 )
@@ -27,30 +26,11 @@ func TestClampPort(t *testing.T) {
 	}
 }
 
-func TestParseInt10(t *testing.T) {
-	if !math.IsNaN(parseInt10("x1")) || !math.IsNaN(parseInt10("-")) {
-		t.Fatal("want NaN")
-	}
-	if got := parseInt10("\u00a0 42abc"); got != 42 {
-		t.Fatalf("got %v", got)
-	}
-}
-
-func TestJSString(t *testing.T) {
-	cases := []struct {
-		in   any
-		want string
-	}{
-		{nil, "null"}, {"s", "s"}, {true, "true"}, {json.Number("1.50"), "1.5"}, {json.Number("1e-7"), "1e-7"},
-		{json.Number("0.000001"), "0.000001"}, {json.Number("-0"), "0"}, {[]any{"a", nil, json.Number("2")}, "a,,2"},
-		{map[string]any{}, "[object Object]"},
-	}
-	for _, c := range cases {
-		if got := jsString(c.in); got != c.want {
-			t.Errorf("jsString(%#v) = %q, want %q", c.in, got, c.want)
-		}
-	}
+func TestValString(t *testing.T) {
 	if got := (val{}).jsString(); got != "undefined" {
+		t.Fatal(got)
+	}
+	if got := (val{v: json.Number("8080"), defined: true}).jsString(); got != "8080" {
 		t.Fatal(got)
 	}
 }

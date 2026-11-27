@@ -111,7 +111,8 @@ func TestBackupSetupTokenPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := do(t, h, "POST", "/api/backup/restore-upload", map[string]string{"X-Setup-Token": token})
-	if r.code != 404 {
+	// The route's own "no file" answer proves the guard let the request through.
+	if r.code != 400 || r.errorMsg() != "No backup file uploaded" {
 		t.Errorf("valid setup token must pass the guard to the backup routes: %d %s", r.code, r.body)
 	}
 	if _, err := os.Stat(d.Auth.Bootstrap().SetupTokenPath()); err != nil {

@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
-	"os/exec"
 	"time"
+
+	"docklift/internal/execx"
 )
 
 // ExecResult is the outcome of a program that ran to completion.
@@ -28,8 +28,8 @@ type Runner interface {
 // the heap without bound; the tail beyond the cap is dropped.
 const maxCapturedOutput = 1 << 20
 
-// ExecRunner runs programs with os/exec. Timeout (when > 0) bounds each run
-// on top of the caller's context.
+// ExecRunner runs programs with execx.Run (process-tree kill on cancel).
+// Timeout (when > 0) bounds each run on top of the caller's context.
 type ExecRunner struct {
 	Timeout time.Duration
 }
@@ -37,32 +37,22 @@ type ExecRunner struct {
 // Run implements Runner.
 func (r ExecRunner) Run(ctx context.Context, name string, args ...string) (ExecResult, error) {
 	if r.Timeout > 0 {
+		// A context deadline rather than execx's Timeout, so a timed-out run
+		// reports context.DeadlineExceeded.
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, r.Timeout)
 		defer cancel()
 	}
-	cmd := exec.CommandContext(ctx, name, args...)
 	stdout := &cappedBuffer{limit: maxCapturedOutput}
 	stderr := &cappedBuffer{limit: maxCapturedOutput}
-	cmd.Stdout = stdout
-	cmd.Stderr = stderr
-	cmd.WaitDelay = 5 * time.Second
-	err := cmd.Run()
-	res := ExecResult{Stdout: stdout.String(), Stderr: stderr.String()}
-	if err == nil {
-		return res, nil
+	res, err := execx.Run(ctx, execx.Cmd{Name: name, Args: args, Stdout: stdout, Stderr: stderr})
+	out := ExecResult{ExitCode: res.ExitCode, Stdout: stdout.String(), Stderr: stderr.String()}
+	var exitErr *execx.ExitError
+	if err == nil || errors.As(err, &exitErr) {
+		return out, nil
 	}
-	if ctxErr := ctx.Err(); ctxErr != nil {
-		res.ExitCode = -1
-		return res, fmt.Errorf("%s: %w", name, ctxErr)
-	}
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) && exitErr.ExitCode() >= 0 {
-		res.ExitCode = exitErr.ExitCode()
-		return res, nil
-	}
-	res.ExitCode = -1
-	return res, err
+	out.ExitCode = -1
+	return out, err
 }
 
 type cappedBuffer struct {

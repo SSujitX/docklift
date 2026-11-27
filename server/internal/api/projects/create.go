@@ -19,6 +19,7 @@ import (
 	"docklift/internal/deploy"
 	"docklift/internal/gitops"
 	"docklift/internal/httpx"
+	"docklift/internal/js"
 	"docklift/internal/safeunzip"
 	"docklift/internal/store"
 )
@@ -224,7 +225,7 @@ func (h *handlers) create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	nameVal, _ := b.get("name").str()
-	name := jsTrim(nameVal)
+	name := js.Trim(nameVal)
 	if name == "" || httpx.UTF16Len(name) > 120 {
 		httpx.Error(w, http.StatusBadRequest, msgNameRequired)
 		return
@@ -236,14 +237,14 @@ func (h *handlers) create(w http.ResponseWriter, r *http.Request) {
 		source = st
 	case upload != "":
 		source = "upload"
-	case githubURLIsStr && jsTrim(githubURLVal) != "":
+	case githubURLIsStr && js.Trim(githubURLVal) != "":
 		source = "github"
 	}
 	if source == "" {
 		httpx.Error(w, http.StatusBadRequest, msgSourceRequired)
 		return
 	}
-	githubURL := jsTrim(githubURLVal)
+	githubURL := js.Trim(githubURLVal)
 	if source == "github" {
 		if githubURL == "" || !validGithubRepoURL(githubURL) || h.d.Git.ValidateURL(githubURL) != nil {
 			httpx.Error(w, http.StatusBadRequest, msgGithubURL)

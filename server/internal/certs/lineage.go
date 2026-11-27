@@ -7,6 +7,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"docklift/internal/js"
 )
 
 // readLeaf parses the first certificate of live/<certName>/fullchain.pem (the
@@ -49,7 +51,7 @@ func (s *Service) ListCertDNSNames(certName string) []string {
 	}
 	names := make([]string, 0, len(cert.DNSNames)+1)
 	add := func(n string) {
-		n = strings.ToLower(TrimJS(n))
+		n = strings.ToLower(js.Trim(n))
 		if n != "" && !slices.Contains(names, n) {
 			names = append(names, n)
 		}

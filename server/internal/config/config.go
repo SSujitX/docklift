@@ -6,10 +6,12 @@ package config
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
-	"unicode"
+
+	"docklift/internal/js"
 )
 
 // DefaultDatabaseURL is used when DATABASE_URL is unset; it is the fallback
@@ -184,46 +186,15 @@ func DatabasePathFromURL(url string) (string, error) {
 // digits is rejected (NaN in JS, which made the Node server fail to listen).
 // Without radix10 a 0x prefix selects hexadecimal, as parseInt(s) does.
 func parseInt(name, s string, radix10 bool) (int, error) {
-	t := strings.TrimLeftFunc(s, func(r rune) bool { return unicode.IsSpace(r) || r == 0xfeff })
-	neg := false
-	if t != "" && (t[0] == '+' || t[0] == '-') {
-		neg = t[0] == '-'
-		t = t[1:]
+	n := js.ParseInt(s)
+	if radix10 {
+		n = js.ParseInt10(s)
 	}
-	base := 10
-	if !radix10 && len(t) >= 2 && t[0] == '0' && (t[1] == 'x' || t[1] == 'X') {
-		base = 16
-		t = t[2:]
-	}
-	n, digits := 0, 0
-	for _, r := range t {
-		d := digitValue(r)
-		if d < 0 || d >= base {
-			break
-		}
-		n = n*base + d
-		digits++
-		if n > 1<<31 {
-			return 0, fmt.Errorf("%s=%q is out of range", name, s)
-		}
-	}
-	if digits == 0 {
-		return 0, fmt.Errorf("%s=%q is not a number", name, s)
-	}
-	if neg {
-		n = -n
-	}
-	return n, nil
-}
-
-func digitValue(r rune) int {
 	switch {
-	case r >= '0' && r <= '9':
-		return int(r - '0')
-	case r >= 'a' && r <= 'z':
-		return int(r-'a') + 10
-	case r >= 'A' && r <= 'Z':
-		return int(r-'A') + 10
+	case math.IsNaN(n):
+		return 0, fmt.Errorf("%s=%q is not a number", name, s)
+	case math.Abs(n) > 1<<31:
+		return 0, fmt.Errorf("%s=%q is out of range", name, s)
 	}
-	return -1
+	return int(n), nil
 }

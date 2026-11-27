@@ -402,6 +402,19 @@ func TestExecuteValidation(t *testing.T) {
 	}
 }
 
+func TestExecutePasswordGuessesAreLimited(t *testing.T) {
+	e := newEnv(t, func(o *Options) { o.Shell = "/definitely/not/a/shell" })
+	wrong := map[string]any{"command": "id", "password": "wrong"}
+	for i := 0; i < auth.StepUpFailureLimit; i++ {
+		expect(t, e.do(t, "POST", "/execute", wrong), 403, `{"error":"Invalid password","requirePassword":true}`)
+	}
+	// Execute and the other step-up routes share one counter.
+	expect(t, e.do(t, "POST", "/execute", map[string]any{"command": "id", "password": password}), 429,
+		`{"error":"Too many failed password attempts. Try again later.","requirePassword":true}`)
+	expect(t, e.do(t, "POST", "/reboot", map[string]any{"password": password}), 429,
+		`{"error":"Too many failed password attempts. Try again later.","requirePassword":true}`)
+}
+
 func TestExecuteRunsShell(t *testing.T) {
 	bash, err := exec.LookPath("bash")
 	if err != nil {

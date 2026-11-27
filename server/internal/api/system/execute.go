@@ -4,9 +4,10 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"os/exec"
 	"sync"
 	"time"
+
+	"docklift/internal/execx"
 )
 
 // Limits of child_process.exec in POST /execute.
@@ -14,9 +15,6 @@ const (
 	executeShell     = "/bin/bash"
 	executeTimeout   = 30 * time.Second
 	executeMaxBuffer = 1024 * 1024
-	// executeWaitDelay bounds how long a killed command's lingering children
-	// may keep its output pipes open.
-	executeWaitDelay = 5 * time.Second
 )
 
 // cappedBuffer is one output stream limited to executeMaxBuffer bytes; the
@@ -83,19 +81,19 @@ func runShell(ctx context.Context, shell, command string) execResult {
 	stdout := &cappedBuffer{name: "stdout", overflow: ov}
 	stderr := &cappedBuffer{name: "stderr", overflow: ov}
 
-	cmd := exec.CommandContext(runCtx, shell, "-c", command)
-	cmd.Stdout, cmd.Stderr = stdout, stderr
-	cmd.WaitDelay = executeWaitDelay
-	killProcessGroup(cmd)
-	err := cmd.Run()
+	// execx stops the whole process group on timeout or overflow, so
+	// `sleep 600 &` or a pipeline started by the command cannot outlive the
+	// 30-second limit (Node's exec only killed the shell).
+	_, err := execx.Run(runCtx, execx.Cmd{Name: shell, Args: []string{"-c", command}, Stdout: stdout, Stderr: stderr})
 	res := execResult{Stdout: stdout.String(), Stderr: stderr.String()}
+	var startErr *execx.StartError
 	switch {
 	case ov.stream != "":
 		res.Failed, res.Message = true, ov.stream+" maxBuffer length exceeded"
 	case err == nil:
-	case cmd.ProcessState == nil && !errors.Is(ctx.Err(), context.DeadlineExceeded):
+	case errors.As(err, &startErr):
 		// The process never started (no such shell).
-		res.Failed, res.Message = true, err.Error()
+		res.Failed, res.Message = true, startErr.Err.Error()
 	default:
 		res.Failed, res.Message = true, "Command failed: "+command+"\n"+res.Stderr
 	}

@@ -30,6 +30,7 @@ import (
 	"docklift/internal/app/apptest"
 	"docklift/internal/githubapp"
 	"docklift/internal/httpx"
+	"docklift/internal/js"
 	"docklift/internal/store"
 )
 
@@ -702,8 +703,8 @@ func TestHelpers(t *testing.T) {
 			t.Errorf("encodeURL(%q) = %q, want %q", tc.in, got, tc.want)
 		}
 	}
-	if got := encodeURIComponent("a b&c/~*"); got != "a%20b%26c%2F~*" {
-		t.Errorf("encodeURIComponent = %q", got)
+	if got := js.EncodeURIComponent("a b&c/~*"); got != "a%20b%26c%2F~*" {
+		t.Errorf("js.EncodeURIComponent = %q", got)
 	}
 	if got := formEncode("a b&c~*"); got != "a+b%26c%7E*" {
 		t.Errorf("formEncode = %q", got)

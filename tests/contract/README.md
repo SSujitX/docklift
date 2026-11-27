@@ -1,8 +1,11 @@
 # Docklift HTTP contract tests
 
 Black-box tests of the Docklift HTTP + WebSocket API. They define "correct" for the
-Go rewrite: the suite passes against the TypeScript backend (`backend/`) and must
-pass unchanged against the Go backend (`server/`). It is its own Go module
+Go rewrite: the suite passes against the TypeScript backend (`backend/`) and against the
+Go backend (`server/`). The only expectations that differ by target are the deliberate
+behaviour fixes of the Go port; they branch on `targetIsGo()` (`quirks_test.go`) and keep the
+TypeScript expectation for `DOCKLIFT_TARGET=ts`. Go-only tests (`TestTrustedProxies`,
+`TestStepUpPasswordThrottle`) skip against TypeScript. It is its own Go module
 (`docklift/tests/contract`, standard library + `gorilla/websocket`).
 
 Every route is listed in [ROUTES.md](ROUTES.md) with its auth rule, TS source line and covering test.
@@ -35,7 +38,9 @@ receive exactly the same environment.
 ### Against the Go backend
 
 ```sh
-DOCKLIFT_TARGET=go DOCKLIFT_GO_BIN=../../server/docklift go test ./...
+bin="$(mktemp -d)/docklift"   # add .exe on Windows
+(cd ../../server && go build -o "$bin" ./cmd/docklift)
+DOCKLIFT_TARGET=go DOCKLIFT_GO_BIN="$bin" go test ./...
 ```
 
 The binary is started with no arguments (default `serve` subcommand), with the same
@@ -59,7 +64,9 @@ DOCKLIFT_BASE_URL=https://panel.example.com DOCKLIFT_ADMIN_EMAIL=... DOCKLIFT_AD
 - Every client sends its own `X-Forwarded-For` so rate-limit buckets do not collide. Behind a
   reverse proxy that appends the real IP, all clients share one bucket; the rate-limit tests
   and repeated runs within 15 minutes can then hit 429s. The terminal brute-force counter
-  (20 failures / 15 min per socket IP + user) also accumulates across runs on a remote server.
+  (20 failures / 15 min per socket IP + user) also accumulates across runs on a remote server,
+  and so does the Go step-up password limit (10 failures / 15 min per user + client address;
+  `TestStepUpPasswordThrottle` needs a booted instance and skips against a remote server).
 
 ## Docker
 

@@ -172,15 +172,6 @@ func (j *JSON) Scan(src any) error {
 	return nil
 }
 
-// MarshalJSONValue encodes v for a Json column.
-func MarshalJSONValue(v any) (JSON, error) {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return nil, fmt.Errorf("encode json column: %w", err)
-	}
-	return JSON(b), nil
-}
-
 // NewID returns a random RFC 9562 version 4 UUID in canonical form, the
 // format Prisma's @default(uuid()) generates.
 func NewID() string { return uuid.NewV4().String() }

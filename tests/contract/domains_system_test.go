@@ -192,6 +192,34 @@ func TestSystemDangerousEndpointsRequireStepUp(t *testing.T) {
 	})
 }
 
+// TestStepUpPasswordThrottle covers the Go-only brute-force limit on
+// step-up passwords (owner-approved security fix; TypeScript allowed
+// unlimited guesses to anyone holding a session token): 10 wrong passwords
+// per user and client address in 15 minutes, then 429 with Retry-After.
+func TestStepUpPasswordThrottle(t *testing.T) {
+	if !targetIsGo() {
+		t.Skip("Go-only security fix: the TypeScript backend has no step-up throttle")
+	}
+	// Clients behind one proxy address would share (and exhaust) the counter.
+	requireBoot(t)
+	c := admin.Client()
+	rollback := "/api/deployments/" + "00000000-0000-4000-8000-000000000000" + "/rollback"
+	for i := 0; i < 10; i++ {
+		c.Post(t, rollback, map[string]any{"password": "wrong-password"}).Expect(t, 403, Obj{"error": "Invalid password", "requirePassword": true})
+	}
+	throttled := Obj{"error": "Too many failed password attempts. Try again later.", "requirePassword": true}
+	// The limit holds even for the right password, and across step-up routes.
+	r := c.Post(t, rollback, map[string]any{"password": admin.Password})
+	r.Expect(t, 429, throttled)
+	if got := r.Header.Get("Retry-After"); got == "" || got == "0" {
+		t.Fatalf("Retry-After = %q", got)
+	}
+	c.Post(t, "/api/system/execute", map[string]any{"command": "true", "password": admin.Password}).Expect(t, 429, throttled)
+	// Another client address of the same user is counted separately; the
+	// guard passes and the route answers for the missing deploymentId.
+	admin.Client().Post(t, rollback, map[string]any{"password": admin.Password}).ExpectError(t, 400, "deploymentId is required")
+}
+
 func TestSystemExecute(t *testing.T) {
 	c := admin.Client()
 	c.Post(t, "/api/system/execute", map[string]any{}).ExpectError(t, 400, "Command is required")

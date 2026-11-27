@@ -22,6 +22,7 @@ import (
 
 	"docklift/internal/config"
 	"docklift/internal/dnscheck"
+	"docklift/internal/js"
 	"docklift/internal/store"
 )
 
@@ -213,7 +214,7 @@ func IsValidCertName(name string) bool {
 }
 
 // NormalizeHost trims (as JavaScript's String.prototype.trim) and lowercases.
-func NormalizeHost(s string) string { return strings.ToLower(TrimJS(s)) }
+func NormalizeHost(s string) string { return strings.ToLower(js.Trim(s)) }
 
 // CleanHosts normalises hostnames, dropping empties and duplicates while
 // keeping first-seen order (the first is the UI/meta primary).
@@ -231,18 +232,6 @@ func CleanHosts(hosts []string) []string {
 	return out
 }
 
-// TrimJS trims like JavaScript's String.prototype.trim (Unicode white space
-// and the BOM).
-func TrimJS(s string) string {
-	return strings.TrimFunc(s, func(r rune) bool {
-		switch r {
-		case '\t', '\n', '\v', '\f', '\r', ' ', 0x00a0, 0x1680, 0x2028, 0x2029, 0x202f, 0x205f, 0x3000, 0xfeff:
-			return true
-		}
-		return r >= 0x2000 && r <= 0x200a
-	})
-}
-
 // isoMillis formats like Date.prototype.toISOString.
 func isoMillis(t time.Time) string { return t.UTC().Format("2006-01-02T15:04:05.000Z") }
 
@@ -256,10 +245,10 @@ func (s *Service) GetAcmeEmail(ctx context.Context) (string, error) {
 		return "", err
 	}
 	if ok && strings.Contains(v, "@") {
-		return TrimJS(v), nil
+		return js.Trim(v), nil
 	}
 	if strings.Contains(s.cfg.CertbotEmail, "@") {
-		return TrimJS(s.cfg.CertbotEmail), nil
+		return js.Trim(s.cfg.CertbotEmail), nil
 	}
 	u, err := s.store.OldestUser(ctx)
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
@@ -277,7 +266,7 @@ func (s *Service) SetAcmeEmail(ctx context.Context, email string) error {
 	if email == "" || !strings.Contains(email, "@") {
 		return ErrInvalidEmail
 	}
-	return s.store.SetSetting(ctx, acmeEmailKey, strings.ToLower(TrimJS(email)))
+	return s.store.SetSetting(ctx, acmeEmailKey, strings.ToLower(js.Trim(email)))
 }
 
 type meta struct {

@@ -145,12 +145,16 @@ func (l *Lifecycle) Run(ctx context.Context, phase Phase) error {
 	return errors.Join(errs...)
 }
 
+// ShutdownHooks returns the shutdown hooks in run order.
+func (l *Lifecycle) ShutdownHooks() []ShutdownHook {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return append([]ShutdownHook(nil), l.shutdown...)
+}
+
 // Shutdown runs the shutdown hooks in order.
 func (l *Lifecycle) Shutdown(ctx context.Context) {
-	l.mu.Lock()
-	hooks := append([]ShutdownHook(nil), l.shutdown...)
-	l.mu.Unlock()
-	for _, h := range hooks {
+	for _, h := range l.ShutdownHooks() {
 		h.Run(ctx)
 	}
 }

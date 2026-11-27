@@ -15,7 +15,7 @@ import (
 )
 
 // Express/WHATWG behaviour the GitHub routes depend on: req.query values,
-// cookies, URL origins and serialisation, encodeURIComponent and
+// cookies, URL origins and serialisation, js.EncodeURIComponent and
 // res.redirect.
 
 // queryString is `typeof req.query[key] === 'string' ? req.query[key] : undefined`:
@@ -85,23 +85,6 @@ func isHex(c byte) bool {
 }
 
 const upperHex = "0123456789ABCDEF"
-
-// encodeURIComponent keeps A-Z a-z 0-9 - _ . ! ~ * ' ( ) and escapes the
-// rest as UTF-8 %XX.
-func encodeURIComponent(s string) string {
-	var b strings.Builder
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if isAlnum(c) || strings.IndexByte("-_.!~*'()", c) >= 0 {
-			b.WriteByte(c)
-			continue
-		}
-		b.WriteByte('%')
-		b.WriteByte(upperHex[c>>4])
-		b.WriteByte(upperHex[c&15])
-	}
-	return b.String()
-}
 
 func isAlnum(c byte) bool {
 	return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')

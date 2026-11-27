@@ -1,13 +1,11 @@
 package deploy
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"slices"
 	"strings"
 	"testing"
-	"time"
 
 	"docklift/internal/store"
 )
@@ -213,41 +211,3 @@ func TestEnsureDBOnAppNetworkRequiresContainer(t *testing.T) {
 		t.Fatalf("err %v", err)
 	}
 }
-
-func TestDeployLog(t *testing.T) {
-	r, _ := newTestRuntime(t)
-	ctx := context.Background()
-	p := mustProject(t, r, store.ProjectCreate{Name: "a"})
-	d := mustDeployment(t, r, store.DeploymentCreate{ProjectID: p.ID, Status: strp(StatusInProgress)})
-	var client bytes.Buffer
-	l := NewDeployLog(ctx, r.Store, d.ID, &client)
-	now := time.Unix(1000, 0)
-	l.now = func() time.Time { return now }
-	l.lastSync = now
-	l.WriteString("one\n")
-	if row, _ := r.Store.GetDeployment(ctx, d.ID); row.Logs != nil {
-		t.Fatal("synced before the interval")
-	}
-	now = now.Add(DeployLogSyncInterval)
-	if _, err := l.Write([]byte("two\n")); err != nil {
-		t.Fatal(err)
-	}
-	if row, _ := r.Store.GetDeployment(ctx, d.ID); deref(row.Logs) != "one\ntwo\n" {
-		t.Fatalf("logs %q", deref(row.Logs))
-	}
-	l.WriteString("three\n")
-	l.Sync()
-	if row, _ := r.Store.GetDeployment(ctx, d.ID); deref(row.Logs) != "one\ntwo\nthree\n" || l.String() != "one\ntwo\nthree\n" || client.String() != l.String() {
-		t.Fatalf("logs %q client %q", deref(row.Logs), client.String())
-	}
-	// A failing client never fails the log.
-	l2 := NewDeployLog(ctx, nil, "", failingWriter{})
-	if n, err := l2.Write([]byte("x")); n != 1 || err != nil || l2.String() != "x" {
-		t.Fatal("failing client")
-	}
-	l2.Sync()
-}
-
-type failingWriter struct{}
-
-func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("client gone") }

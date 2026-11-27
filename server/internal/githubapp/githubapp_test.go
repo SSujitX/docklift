@@ -258,19 +258,6 @@ func TestPrivateKeyFileFallback(t *testing.T) {
 	}
 }
 
-func TestJSParseInt(t *testing.T) {
-	for _, tc := range []struct {
-		in   string
-		want int64
-		ok   bool
-	}{{"123", 123, true}, {" 42abc", 42, true}, {"-7", -7, true}, {"+8", 8, true}, {"abc", 0, false}, {"", 0, false}} {
-		got, ok := jsParseInt(tc.in)
-		if got != tc.want || ok != tc.ok {
-			t.Errorf("jsParseInt(%q) = %d, %v", tc.in, got, ok)
-		}
-	}
-}
-
 // fakeGitHub is an httptest GitHub API.
 type fakeGitHub struct {
 	*httptest.Server

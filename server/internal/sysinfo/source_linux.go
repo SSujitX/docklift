@@ -3,14 +3,16 @@
 package sysinfo
 
 import (
-	"bytes"
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"os"
 	"os/exec"
 	"strings"
 	"time"
+
+	"docklift/internal/execx"
 )
 
 const (
@@ -28,17 +30,9 @@ var topBatch = []string{"top", "-b", "-n", "1", "-w", "512", "-o", "%CPU"}
 func run(ctx context.Context, timeout time.Duration, env []string, argv ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
-	if env != nil {
-		cmd.Env = append(os.Environ(), env...)
-	}
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	err := cmd.Run()
-	if ctx.Err() != nil {
-		return out.String(), ctx.Err()
-	}
-	return out.String(), err
+	// A short kill grace keeps the timed-out nsenter -> top fallback prompt.
+	res, err := execx.Run(ctx, execx.Cmd{Name: argv[0], Args: argv[1:], ExtraEnv: env, Stderr: io.Discard, KillGrace: 100 * time.Millisecond})
+	return string(res.Stdout), err
 }
 
 // hostProcesses is getHostProcesses with its fallback: the host process

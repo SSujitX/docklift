@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"docklift/internal/js"
 	"docklift/internal/sysinfo"
 )
 
@@ -65,7 +66,7 @@ func IsNewerVersion(latest, current string) bool {
 			if i == 3 {
 				break
 			}
-			if n := sysinfo.ParseInt(p); !math.IsNaN(n) {
+			if n := js.ParseInt(p); !math.IsNaN(n) {
 				out[i] = n
 			}
 		}

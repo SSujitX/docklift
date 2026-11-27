@@ -120,8 +120,7 @@ func serve(ctx context.Context, log *slog.Logger) (err error) {
 		Background:  background,
 		Lifecycle:   app.NewLifecycle(),
 	}
-	registerStartupHooks(d)
-	handler := router.New(d)
+	handler := newHandler(d)
 
 	// Re-seal critical restore state from disk before accepting traffic.
 	d.Maintenance.LoadCriticalOnBoot()
@@ -175,6 +174,13 @@ func serve(ctx context.Context, log *slog.Logger) (err error) {
 		log.Info("🛑 Signal received — shutting down gracefully...")
 		return shutdown(srv, d, cancelBackground, nil)
 	}
+}
+
+// newHandler registers the service-layer startup hooks, then builds the
+// router, whose route groups add their own startup and shutdown hooks.
+func newHandler(d *app.Deps) http.Handler {
+	registerStartupHooks(d)
+	return router.New(d)
 }
 
 // registerStartupHooks wires the service-layer steps of index.ts main():

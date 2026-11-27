@@ -16,6 +16,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"docklift/internal/js"
 )
 
 // Status classifies a hostname's DNS.
@@ -256,7 +258,7 @@ func isNotFound(err error) bool {
 // CheckDomain classifies hostname's DNS against this server's public IP. The
 // public-IP discovery and both lookups run concurrently.
 func (c *Checker) CheckDomain(ctx context.Context, hostname string) Check {
-	domain := strings.ToLower(jsTrim(hostname))
+	domain := strings.ToLower(js.Trim(hostname))
 	var (
 		wg       sync.WaitGroup
 		serverIP *string
@@ -315,15 +317,4 @@ func contains(list []string, s string) bool {
 		}
 	}
 	return false
-}
-
-// jsTrim trims like String.prototype.trim (Unicode white space plus BOM).
-func jsTrim(s string) string {
-	return strings.TrimFunc(s, func(r rune) bool {
-		switch r {
-		case '\t', '\n', '\v', '\f', '\r', ' ', 0x00a0, 0x1680, 0x2028, 0x2029, 0x202f, 0x205f, 0x3000, 0xfeff:
-			return true
-		}
-		return r >= 0x2000 && r <= 0x200a
-	})
 }

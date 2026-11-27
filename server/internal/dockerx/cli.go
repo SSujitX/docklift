@@ -157,13 +157,6 @@ func IsComposeTeardownOK(runErr error, probe func() ComposeResources) bool {
 	return probe().Gone()
 }
 
-// ShouldReconnectProxyAfterFailedTeardown is true when a stop/cancel
-// teardown failed: containers may still run, so the proxy must be
-// reattached for domains to keep working.
-func ShouldReconnectProxyAfterFailedTeardown(teardownSucceeded bool) bool {
-	return !teardownSucceeded
-}
-
 // DownResult is the outcome of one ComposeDown.
 type DownResult struct {
 	// OK is IsComposeTeardownOK for this run.

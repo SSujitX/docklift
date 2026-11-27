@@ -18,6 +18,8 @@ import (
 	"encoding/hex"
 	"regexp"
 	"strings"
+
+	"docklift/internal/js"
 )
 
 const (
@@ -38,7 +40,7 @@ func DockerSlug(input string, maxLen int) string {
 	if input == "" {
 		input = "app"
 	}
-	slug := nonSlugRe.ReplaceAllString(jsLower(input), "-")
+	slug := nonSlugRe.ReplaceAllString(js.Lower(input), "-")
 	slug = edgeDashRe.ReplaceAllString(slug, "")
 	if len(slug) > maxLen {
 		slug = slug[:maxLen] // ASCII only at this point
@@ -55,7 +57,7 @@ func Slug(input string) string { return DockerSlug(input, slugMax) }
 
 // ShortProjectID is the project id without dashes, first 8 characters.
 func ShortProjectID(projectID string) string {
-	return jsSlice(strings.ReplaceAll(projectID, "-", ""), 8)
+	return js.Slice(strings.ReplaceAll(projectID, "-", ""), 8)
 }
 
 // ComposeProjectName is the `docker compose -p` name: dl-<slug>-<id8>.
@@ -73,7 +75,7 @@ func ProjectNetworkName(projectID string) string {
 // dl_<slug>_<id8>_<service slug with "_">, at most 63 characters.
 func ServiceContainerName(projectName, projectID, serviceName string) string {
 	svc := strings.ReplaceAll(DockerSlug(serviceName, serviceMax), "-", "_")
-	return jsSlice("dl_"+Slug(projectName)+"_"+ShortProjectID(projectID)+"_"+svc, 63)
+	return js.Slice("dl_"+Slug(projectName)+"_"+ShortProjectID(projectID)+"_"+svc, 63)
 }
 
 // ComposeProjectAliases are every compose project name this project may
@@ -119,4 +121,4 @@ func VolumeLabels(projectName, projectID string, extra ...string) []string {
 	}, extra...)
 }
 
-func itoa(n int) string { return jsNumberString(float64(n)) }
+func itoa(n int) string { return js.NumberString(float64(n)) }

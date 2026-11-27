@@ -159,14 +159,27 @@ func (s *Service) runDeploy(run *Run, p *store.Project, l *deployLog, opts Deplo
 	}
 }
 
-// ensureTerminal marks the row failed if it is still in_progress (a path
-// that lost the lock without the cancel updating the row, or a panic).
+// ensureTerminal forces a row that is still in_progress to a terminal
+// status (a path that lost the lock before the cancel updated the row, or a
+// panic): cancelled while a cancel of the project is running or the
+// deployment was marked cancelled, otherwise failed. Without this, a
+// pipeline that loses its lock to a cancel could finish first and record
+// the cancelled deploy as failed.
 func (s *Service) ensureTerminal(id string, l *deployLog) {
+	ctx := s.dbCtx()
+	d, err := s.store.GetDeployment(ctx, id)
+	if err != nil || strVal(d.Status) != deploy.StatusInProgress {
+		return
+	}
+	status := deploy.StatusFailed
+	if t := s.rt.Tracker; t.IsMarkedCancelled(id) || t.IsCancelling(d.ProjectID) {
+		status = deploy.StatusCancelled
+	}
 	inProgress := deploy.StatusInProgress
 	now := db.Now()
 	logs := l.final()
-	_, _ = s.store.UpdateDeployments(s.dbCtx(), store.DeploymentFilter{ID: &id, Status: &inProgress}, store.DeploymentUpdate{
-		Status: store.Some(store.Ptr(deploy.StatusFailed)), FinishedAt: store.Some(&now), Logs: store.Some(&logs),
+	_, _ = s.store.UpdateDeployments(ctx, store.DeploymentFilter{ID: &id, Status: &inProgress}, store.DeploymentUpdate{
+		Status: store.Some(&status), FinishedAt: store.Some(&now), Logs: store.Some(&logs),
 	})
 }
 

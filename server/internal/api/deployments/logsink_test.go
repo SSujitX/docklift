@@ -2,6 +2,7 @@ package deployments
 
 import (
 	"encoding/json"
+	"math"
 	"strings"
 	"testing"
 )
@@ -72,7 +73,7 @@ func TestClientStreamNeverBlocks(t *testing.T) {
 	}
 }
 
-func TestJSParseInt(t *testing.T) {
+func TestParseIntParam(t *testing.T) {
 	cases := []struct {
 		in   string
 		want int
@@ -80,26 +81,12 @@ func TestJSParseInt(t *testing.T) {
 	}{
 		{"10", 10, true}, {"  7px", 7, true}, {"-3", -3, true}, {"+4", 4, true},
 		{"abc", 0, false}, {"", 0, false}, {"-x", 0, false}, {"1e3", 1, true},
+		{"99999999999", math.MaxInt32, true}, {"-99999999999", math.MinInt32, true},
 	}
 	for _, tc := range cases {
-		got, ok := jsParseInt(tc.in)
+		got, ok := parseIntParam(tc.in)
 		if got != tc.want || ok != tc.ok {
-			t.Errorf("jsParseInt(%q) = %d, %v", tc.in, got, ok)
-		}
-	}
-}
-
-func TestJSString(t *testing.T) {
-	cases := []struct {
-		in   any
-		want string
-	}{
-		{nil, "null"}, {"a.b", "a.b"}, {true, "true"}, {json.Number("7"), "7"}, {json.Number("1.50"), "1.5"},
-		{[]any{"a", nil, json.Number("2")}, "a,,2"}, {map[string]any{}, "[object Object]"},
-	}
-	for _, tc := range cases {
-		if got := jsString(tc.in); got != tc.want {
-			t.Errorf("jsString(%v) = %q, want %q", tc.in, got, tc.want)
+			t.Errorf("parseIntParam(%q) = %d, %v", tc.in, got, ok)
 		}
 	}
 }

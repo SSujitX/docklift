@@ -11,6 +11,7 @@ import (
 	"docklift/internal/certs"
 	"docklift/internal/dnscheck"
 	"docklift/internal/httpx"
+	"docklift/internal/js"
 	"docklift/internal/nginx"
 	"docklift/internal/store"
 )
@@ -79,7 +80,7 @@ func (h *handlers) dnsCheck(w http.ResponseWriter, r *http.Request) {
 	var candidates []string
 	if arr, ok := httpx.BodyFrom(r).Get("domains").Raw().([]any); ok {
 		for _, v := range arr[:min(maxDNSChecks, len(arr))] {
-			candidates = append(candidates, jsString(v))
+			candidates = append(candidates, js.String(v))
 		}
 	} else {
 		candidates = nginx.DomainList(svc.Domain)

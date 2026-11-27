@@ -9,7 +9,6 @@ import (
 	"errors"
 	"io"
 	"log/slog"
-	"math"
 	"mime"
 	"net/http"
 	"net/url"
@@ -17,6 +16,8 @@ import (
 	"time"
 	"unicode/utf16"
 	"unicode/utf8"
+
+	"docklift/internal/js"
 )
 
 // MaxBodyBytes is the express.json / express.urlencoded limit ('10mb').
@@ -48,6 +49,14 @@ func BodyFrom(r *http.Request) Body {
 // that parse bodies themselves).
 func WithBody(ctx context.Context, b Body) context.Context {
 	return context.WithValue(ctx, bodyKey{}, b)
+}
+
+// NewBody returns a defined body holding v, for bodies a handler parses
+// itself (multipart text fields, as multer filled req.body). v must be a
+// decoded JSON value: nil, bool, json.Number, string, []any or
+// map[string]any. Raw is empty.
+func NewBody(v any) Body {
+	return Body{Defined: true, value: v}
 }
 
 // Value returns the whole body as a JS value.
@@ -320,24 +329,7 @@ func (v Value) Get(key string) Value {
 }
 
 // Truthy is JavaScript truthiness.
-func (v Value) Truthy() bool {
-	if !v.defined {
-		return false
-	}
-	switch x := v.v.(type) {
-	case nil:
-		return false
-	case bool:
-		return x
-	case string:
-		return x != ""
-	case json.Number:
-		f, err := x.Float64()
-		return err != nil || (f != 0 && !math.IsNaN(f))
-	default:
-		return true
-	}
-}
+func (v Value) Truthy() bool { return v.defined && js.Truthy(v.v) }
 
 // String returns the value when typeof v === 'string'.
 func (v Value) String() (string, bool) {
