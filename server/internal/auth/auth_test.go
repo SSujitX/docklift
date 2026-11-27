@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -111,9 +112,11 @@ func TestVerifyEdgeCases(t *testing.T) {
 		token string
 		want  error
 	}{
-		{"HS384 accepted", rawToken(t, hs("HS384"), base(), "s"), nil},
-		{"HS512 accepted", rawToken(t, hs("HS512"), base(), "s"), nil},
+		{"HS256 accepted", rawToken(t, hs("HS256"), base(), "s"), nil},
+		{"HS384 rejected", rawToken(t, hs("HS384"), base(), "s"), ErrInvalidToken},
+		{"HS512 rejected", rawToken(t, hs("HS512"), base(), "s"), ErrInvalidToken},
 		{"alg none rejected", rawToken(t, hs("none"), base(), "s"), ErrInvalidToken},
+		{"HS256 wrong secret", rawToken(t, hs("HS256"), base(), "other"), ErrInvalidToken},
 		{"no exp is valid", rawToken(t, hs("HS256"), with("exp", nil), "s"), nil},
 		{"exp string", rawToken(t, hs("HS256"), with("exp", "soon"), "s"), ErrInvalidToken},
 		{"nbf future", rawToken(t, hs("HS256"), with("nbf", now.Unix()+10), "s"), ErrTokenNotActive},
@@ -479,6 +482,67 @@ func TestBootstrapClaimLifecycle(t *testing.T) {
 	b.FinalizeClaim(claim)
 	if _, err := os.Stat(claim); !os.IsNotExist(err) || b.ReadSecret() != "" {
 		t.Error("finalize must drop the claim")
+	}
+}
+
+func TestAbortClaimWinsOverRecreatedSecret(t *testing.T) {
+	b := NewBootstrap(t.TempDir(), quiet())
+	secret, err := b.EnsureSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
+	claim := b.TryClaim()
+	// GET /status during the registration sees no user and re-creates a secret.
+	if recreated, err := b.EnsureSecret(); err != nil || recreated == secret {
+		t.Fatalf("recreated %q %v", recreated, err)
+	}
+	b.AbortClaim(claim)
+	if b.ReadSecret() != secret {
+		t.Error("the operator's secret must be restored after a failed registration")
+	}
+	if _, err := os.Stat(claim); !os.IsNotExist(err) {
+		t.Error("the claim file must be gone")
+	}
+}
+
+func TestEnsureTokenFileConcurrent(t *testing.T) {
+	b := NewBootstrap(t.TempDir(), quiet())
+	const n = 32
+	tokens := make([]string, n)
+	var wg sync.WaitGroup
+	for i := range n {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			tok, err := b.EnsureSetupToken()
+			if err != nil {
+				t.Error(err)
+			}
+			tokens[i] = tok
+		}()
+	}
+	wg.Wait()
+	for i, tok := range tokens {
+		if len(tok) != 64 || tok != tokens[0] {
+			t.Fatalf("caller %d got %q, caller 0 got %q: concurrent callers must agree", i, tok, tokens[0])
+		}
+	}
+	if !b.ValidateSetupToken(tokens[0]) {
+		t.Error("the returned token must be the stored one")
+	}
+}
+
+func TestEnsureTokenFileReplacesEmptyFile(t *testing.T) {
+	b := NewBootstrap(t.TempDir(), quiet())
+	if err := os.WriteFile(b.SecretPath(), []byte("  \n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	secret, err := b.EnsureSecret()
+	if err != nil || len(secret) != 64 || b.ReadSecret() != secret {
+		t.Fatalf("empty secret file must be replaced: %q %v (stored %q)", secret, err, b.ReadSecret())
+	}
+	if b.VerifySecret("") || VerifySecretAt(filepath.Join(t.TempDir(), "missing"), "") {
+		t.Error("empty values never verify")
 	}
 }
 

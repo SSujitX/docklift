@@ -7,14 +7,16 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
+	"log/slog"
 	"math"
 	"mime"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 	"unicode/utf16"
+	"unicode/utf8"
 )
 
 // MaxBodyBytes is the express.json / express.urlencoded limit ('10mb').
@@ -63,9 +65,22 @@ func (b Body) Get(key string) Value {
 }
 
 // ParseBody is express.json({limit: '10mb'}) followed by
-// express.urlencoded({extended: true, limit: '10mb'}). Any parse failure
-// (malformed JSON, oversize body, unsupported encoding or charset) ends the
-// request with the Express error-handler response, as body-parser errors did.
+// express.urlencoded({extended: true, limit: '10mb'}). Parse failures are the
+// client's mistake and end the request with a 4xx JSON error (Express sent
+// every body-parser error to its 500 handler; deliberate fix):
+//
+//	malformed JSON (or a JSON primitive, refused in strict mode)  400 {"error":"Invalid JSON body"}
+//	body over MaxBodyBytes (before or after decompression)        413 {"error":"Request body too large"}
+//	more than 1000 urlencoded parameters                          413 {"error":"Too many parameters"}
+//	charset other than utf-8                                      415 {"error":"Unsupported charset"}
+//	Content-Encoding other than identity/gzip/deflate             415 {"error":"Unsupported content encoding"}
+//	corrupt compressed body or a failed read                      400 {"error":"Invalid request body"}
+//
+// The rest of a rejected body is drained (up to maxDrainBytes) before the
+// response, as body-parser did, so clients that are still uploading receive
+// the error instead of a connection reset. Reading a parsed body is bounded
+// by BodyReadTimeout so a client trickling bytes cannot hold a request open
+// indefinitely (the server sets no global ReadTimeout because of uploads).
 func ParseBody(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !hasBody(r) {
@@ -77,28 +92,96 @@ func ParseBody(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		if cs := strings.ToLower(params["charset"]); cs != "" && cs != "utf-8" {
-			InternalError(w, r, fmt.Errorf("unsupported charset %q", cs))
-			return
-		}
-		raw, err := readLimited(r)
+		rc := http.NewResponseController(w)
+		// Unsupported by test recorders; the deadline is best effort there.
+		_ = rc.SetReadDeadline(time.Now().Add(bodyReadTimeout))
+		body, raw, err := readBody(r, mediaType, params)
 		if err != nil {
-			InternalError(w, r, err)
+			if rejectBody(w, r, err) {
+				_ = rc.SetReadDeadline(time.Time{})
+			}
 			return
 		}
-		var body Body
-		if mediaType == "application/json" {
-			body, err = parseJSONBody(raw)
-		} else {
-			body, err = parseURLEncodedBody(raw)
-		}
-		if err != nil {
-			InternalError(w, r, err)
-			return
-		}
+		_ = rc.SetReadDeadline(time.Time{})
 		r.Body = io.NopCloser(bytes.NewReader(raw))
 		next.ServeHTTP(w, r.WithContext(WithBody(r.Context(), body)))
 	})
+}
+
+// BodyError is a request body the server refuses; Status and Message are
+// the response.
+type BodyError struct {
+	Status  int
+	Message string
+	// Err is the underlying cause (logged at debug level, never sent).
+	Err error
+}
+
+func (e *BodyError) Error() string {
+	if e.Err != nil {
+		return e.Message + ": " + e.Err.Error()
+	}
+	return e.Message
+}
+
+func (e *BodyError) Unwrap() error { return e.Err }
+
+// Body error messages.
+const (
+	MsgInvalidJSON         = "Invalid JSON body"
+	MsgBodyTooLarge        = "Request body too large"
+	MsgTooManyParameters   = "Too many parameters"
+	MsgUnsupportedCharset  = "Unsupported charset"
+	MsgUnsupportedEncoding = "Unsupported content encoding"
+	MsgInvalidBody         = "Invalid request body"
+)
+
+var errBodyTooLarge = &BodyError{Status: http.StatusRequestEntityTooLarge, Message: MsgBodyTooLarge}
+
+// maxDrainBytes bounds how much of a rejected body is read and discarded.
+const maxDrainBytes = 64 << 20
+
+// BodyReadTimeout bounds reading (and draining) a JSON or urlencoded body.
+const BodyReadTimeout = 5 * time.Minute
+
+// bodyReadTimeout is BodyReadTimeout (shortened by tests).
+var bodyReadTimeout = BodyReadTimeout
+
+// rejectBody drains what is left of the request body and answers err. It
+// reports whether the body was read to the end; when it was not (a stalled
+// or failed read, or more than maxDrainBytes left) the connection is closed
+// after the response instead of being reused, and the caller must leave the
+// read deadline in place so the server does not wait on the remainder.
+func rejectBody(w http.ResponseWriter, r *http.Request, err error) bool {
+	var be *BodyError
+	if !errors.As(err, &be) {
+		be = &BodyError{Status: http.StatusBadRequest, Message: MsgInvalidBody, Err: err}
+	}
+	slog.Debug("request body rejected", "method", r.Method, "path", r.URL.Path, "status", be.Status, "error", be.Error())
+	_, drainErr := io.CopyN(io.Discard, r.Body, maxDrainBytes)
+	drained := errors.Is(drainErr, io.EOF)
+	if !drained {
+		w.Header().Set("Connection", "close")
+	}
+	Error(w, be.Status, be.Message)
+	return drained
+}
+
+func readBody(r *http.Request, mediaType string, params map[string]string) (Body, []byte, error) {
+	if cs := strings.ToLower(params["charset"]); cs != "" && cs != "utf-8" {
+		return Body{}, nil, &BodyError{Status: http.StatusUnsupportedMediaType, Message: MsgUnsupportedCharset}
+	}
+	raw, err := readLimited(r)
+	if err != nil {
+		return Body{}, nil, err
+	}
+	var body Body
+	if mediaType == "application/json" {
+		body, err = parseJSONBody(raw)
+	} else {
+		body, err = parseURLEncodedBody(raw)
+	}
+	return body, raw, err
 }
 
 // hasBody mirrors type-is hasBody: a Transfer-Encoding or Content-Length
@@ -106,8 +189,6 @@ func ParseBody(next http.Handler) http.Handler {
 func hasBody(r *http.Request) bool {
 	return len(r.TransferEncoding) > 0 || r.ContentLength != 0 || r.Header.Get("Content-Length") != ""
 }
-
-var errBodyTooLarge = errors.New("request entity too large")
 
 func readLimited(r *http.Request) ([]byte, error) {
 	var src io.Reader = r.Body
@@ -119,28 +200,36 @@ func readLimited(r *http.Request) ([]byte, error) {
 	case "gzip":
 		zr, err := gzip.NewReader(r.Body)
 		if err != nil {
-			return nil, fmt.Errorf("gzip body: %w", err)
+			return nil, &BodyError{Status: http.StatusBadRequest, Message: MsgInvalidBody, Err: err}
 		}
 		defer zr.Close()
 		src = zr
 	case "deflate":
 		zr, err := zlib.NewReader(r.Body)
 		if err != nil {
-			return nil, fmt.Errorf("deflate body: %w", err)
+			return nil, &BodyError{Status: http.StatusBadRequest, Message: MsgInvalidBody, Err: err}
 		}
 		defer zr.Close()
 		src = zr
 	default:
-		return nil, fmt.Errorf("unsupported content encoding %q", enc)
+		return nil, &BodyError{Status: http.StatusUnsupportedMediaType, Message: MsgUnsupportedEncoding}
 	}
 	raw, err := io.ReadAll(io.LimitReader(src, MaxBodyBytes+1))
 	if err != nil {
-		return nil, fmt.Errorf("read body: %w", err)
+		var mbe *http.MaxBytesError
+		if errors.As(err, &mbe) {
+			return nil, errBodyTooLarge
+		}
+		return nil, &BodyError{Status: http.StatusBadRequest, Message: MsgInvalidBody, Err: err}
 	}
 	if len(raw) > MaxBodyBytes {
 		return nil, errBodyTooLarge
 	}
 	return raw, nil
+}
+
+func invalidJSON(err error) error {
+	return &BodyError{Status: http.StatusBadRequest, Message: MsgInvalidJSON, Err: err}
 }
 
 func parseJSONBody(raw []byte) (Body, error) {
@@ -150,44 +239,56 @@ func parseJSONBody(raw []byte) (Body, error) {
 	// body-parser strict mode: only objects and arrays are accepted.
 	first := bytes.TrimLeft(raw, " \t\n\r")
 	if len(first) == 0 || (first[0] != '{' && first[0] != '[') {
-		return Body{}, errors.New("invalid JSON body: strict mode accepts only objects and arrays")
+		return Body{}, invalidJSON(errors.New("strict mode accepts only objects and arrays"))
 	}
 	if !json.Valid(raw) {
-		return Body{}, errors.New("invalid JSON body")
+		return Body{}, invalidJSON(nil)
 	}
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.UseNumber()
 	var v any
 	if err := dec.Decode(&v); err != nil {
-		return Body{}, fmt.Errorf("invalid JSON body: %w", err)
+		return Body{}, invalidJSON(err)
 	}
 	return Body{Defined: true, Raw: raw, value: v}, nil
 }
 
 // parseURLEncodedBody parses a form body into an object of strings (repeated
-// keys become arrays, as in qs). Bracket nesting (`a[b]=c`) is kept as a
-// literal key.
+// keys become arrays, as in qs). Decoding is as lenient as qs: `+` is a
+// space and a part whose percent-encoding is invalid is kept as sent.
+// Bracket nesting (`a[b]=c`) is kept as a literal key.
 func parseURLEncodedBody(raw []byte) (Body, error) {
-	if strings.Count(string(raw), "&")+1 > maxURLEncodedParams {
-		return Body{}, errors.New("too many parameters")
+	parts := strings.Split(string(raw), "&")
+	if len(parts) > maxURLEncodedParams {
+		return Body{}, &BodyError{Status: http.StatusRequestEntityTooLarge, Message: MsgTooManyParameters}
 	}
-	values, err := url.ParseQuery(string(raw))
-	if err != nil {
-		return Body{}, fmt.Errorf("invalid urlencoded body: %w", err)
-	}
-	obj := make(map[string]any, len(values))
-	for k, vs := range values {
-		if len(vs) == 1 {
-			obj[k] = vs[0]
+	obj := map[string]any{}
+	for _, part := range parts {
+		if part == "" {
 			continue
 		}
-		arr := make([]any, len(vs))
-		for i, s := range vs {
-			arr[i] = s
+		k, v, _ := strings.Cut(part, "=")
+		key, val := qsDecode(k), qsDecode(v)
+		switch prev := obj[key].(type) {
+		case nil:
+			obj[key] = val
+		case string:
+			obj[key] = []any{prev, val}
+		case []any:
+			obj[key] = append(prev, val)
 		}
-		obj[k] = arr
 	}
 	return Body{Defined: true, value: obj}, nil
+}
+
+// qsDecode is qs's default decoder: `+` to space, then decodeURIComponent,
+// falling back to the undecoded string.
+func qsDecode(s string) string {
+	s = strings.ReplaceAll(s, "+", " ")
+	if decoded, err := url.PathUnescape(s); err == nil && utf8.ValidString(decoded) {
+		return decoded
+	}
+	return s
 }
 
 // Value is a request value with JavaScript semantics: it distinguishes

@@ -1,14 +1,17 @@
 package httpx
 
 import (
+	"bufio"
 	"bytes"
 	"compress/gzip"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 // bodyServer echoes what ParseBody produced, through a real HTTP server so
@@ -66,19 +69,25 @@ func TestParseBody(t *testing.T) {
 		body        string
 		wantStatus  int
 		wantDefined bool
-		wantValue   string
+		wantValue   string // the parsed value, or the error message for 4xx
 	}{
 		{"object", "application/json", `{"a":1,"b":"<x>"}`, 200, true, `{"a":1,"b":"<x>"}`},
 		{"charset param", "application/json; charset=UTF-8", `{"a":true}`, 200, true, `{"a":true}`},
 		{"array", "application/json", `[1,2]`, 200, true, `[1,2]`},
 		{"empty json body is {}", "application/json", ``, 200, true, `{}`},
 		{"leading whitespace", "application/json", " \n {\"a\":null}", 200, true, `{"a":null}`},
-		{"strict rejects primitives", "application/json", `"str"`, 500, false, ``},
-		{"strict rejects null", "application/json", `null`, 500, false, ``},
-		{"malformed", "application/json", `{"a":`, 500, false, ``},
-		{"trailing garbage", "application/json", `{} x`, 500, false, ``},
-		{"latin1 charset", "application/json; charset=latin1", `{}`, 500, false, ``},
+		{"strict rejects primitives", "application/json", `"str"`, 400, false, MsgInvalidJSON},
+		{"strict rejects null", "application/json", `null`, 400, false, MsgInvalidJSON},
+		{"whitespace only", "application/json", "  \n", 400, false, MsgInvalidJSON},
+		{"malformed", "application/json", `{"a":`, 400, false, MsgInvalidJSON},
+		{"trailing garbage", "application/json", `{} x`, 400, false, MsgInvalidJSON},
+		{"two documents", "application/json", `{}{}`, 400, false, MsgInvalidJSON},
+		{"latin1 charset", "application/json; charset=latin1", `{}`, 415, false, MsgUnsupportedCharset},
 		{"urlencoded", "application/x-www-form-urlencoded", `email=a%40b.c&tag=1&tag=2`, 200, true, `{"email":"a@b.c","tag":["1","2"]}`},
+		{"urlencoded plus and three repeats", "application/x-www-form-urlencoded", `n=a+b&t=1&t=2&t=3`, 200, true, `{"n":"a b","t":["1","2","3"]}`},
+		{"urlencoded bad escapes kept like qs", "application/x-www-form-urlencoded", `a=%zz&b=100%&c=%E2%82%AC&d=%ff`, 200, true, `{"a":"%zz","b":"100%","c":"€","d":"%ff"}`},
+		{"urlencoded empty parts and bare keys", "application/x-www-form-urlencoded", `&&flag&x=`, 200, true, `{"flag":"","x":""}`},
+		{"urlencoded semicolons are not separators", "application/x-www-form-urlencoded", `a=1;b=2`, 200, true, `{"a":"1;b=2"}`},
 		{"text/plain untouched", "text/plain", `{"a":1}`, 200, false, `null`},
 		{"no content type", "", `{"a":1}`, 200, false, `null`},
 		{"vendor json untouched", "application/vnd.api+json", `{"a":1}`, 200, false, `null`},
@@ -89,9 +98,9 @@ func TestParseBody(t *testing.T) {
 			t.Errorf("%s: status=%d defined=%v error=%q", c.name, e.status, e.Defined, e.Error)
 			continue
 		}
-		if c.wantStatus == 500 {
-			if e.Error != InternalErrorMessage {
-				t.Errorf("%s: error body %q", c.name, e.Error)
+		if c.wantStatus != 200 {
+			if e.Error != c.wantValue {
+				t.Errorf("%s: error body %q, want %q", c.name, e.Error, c.wantValue)
 			}
 			continue
 		}
@@ -159,8 +168,19 @@ func TestParseBodyLimitsAndEncodings(t *testing.T) {
 		}
 		rec := httptest.NewRecorder()
 		ParseBody(ok).ServeHTTP(rec, req)
-		if rec.Code != 500 {
-			t.Errorf("oversize body (chunked=%v) status %d", chunked, rec.Code)
+		if rec.Code != 413 || rec.Body.String() != `{"error":"Request body too large"}` {
+			t.Errorf("oversize body (chunked=%v): %d %s", chunked, rec.Code, rec.Body)
+		}
+	}
+	// Over a real connection the client gets the 413 rather than a reset,
+	// even while it is still sending (the rest of the body is drained).
+	for _, ct := range []string{"application/json", "application/x-www-form-urlencoded"} {
+		over := strings.Repeat("a", MaxBodyBytes+1024*1024)
+		if e := post(t, srv, ct, strings.NewReader(over), nil); e.status != 413 || e.Error != MsgBodyTooLarge {
+			t.Errorf("%s over the limit: %d %q", ct, e.status, e.Error)
+		}
+		if e := post(t, srv, ct, io.MultiReader(strings.NewReader(over)), func(r *http.Request) { r.ContentLength = -1 }); e.status != 413 {
+			t.Errorf("%s chunked over the limit: %d %q", ct, e.status, e.Error)
 		}
 	}
 	var gz bytes.Buffer
@@ -171,12 +191,29 @@ func TestParseBodyLimitsAndEncodings(t *testing.T) {
 	if e.status != 200 || !e.Defined {
 		t.Errorf("gzip body: %+v", e)
 	}
-	if e := post(t, srv, "application/json", strings.NewReader(`{}`), func(r *http.Request) { r.Header.Set("Content-Encoding", "br") }); e.status != 500 {
-		t.Errorf("unsupported encoding status %d", e.status)
+	if e := post(t, srv, "application/json", strings.NewReader(`{}`), func(r *http.Request) { r.Header.Set("Content-Encoding", "br") }); e.status != 415 || e.Error != MsgUnsupportedEncoding {
+		t.Errorf("unsupported encoding: %d %q", e.status, e.Error)
+	}
+	if e := post(t, srv, "application/json", strings.NewReader(`not gzip`), func(r *http.Request) { r.Header.Set("Content-Encoding", "gzip") }); e.status != 400 || e.Error != MsgInvalidBody {
+		t.Errorf("corrupt gzip: %d %q", e.status, e.Error)
+	}
+	// A compression bomb is cut off at the limit after decompression.
+	var bomb bytes.Buffer
+	bw := gzip.NewWriter(&bomb)
+	_, _ = bw.Write([]byte(`{"a":"`))
+	_, _ = bw.Write(bytes.Repeat([]byte("x"), MaxBodyBytes+1))
+	_, _ = bw.Write([]byte(`"}`))
+	_ = bw.Close()
+	if e := post(t, srv, "application/json", &bomb, func(r *http.Request) { r.Header.Set("Content-Encoding", "gzip") }); e.status != 413 || e.Error != MsgBodyTooLarge {
+		t.Errorf("gzip bomb: %d %q", e.status, e.Error)
 	}
 	many := strings.TrimSuffix(strings.Repeat("a=1&", 1001), "&")
-	if e := post(t, srv, "application/x-www-form-urlencoded", strings.NewReader(many), nil); e.status != 500 {
-		t.Errorf("parameter limit status %d", e.status)
+	if e := post(t, srv, "application/x-www-form-urlencoded", strings.NewReader(many), nil); e.status != 413 || e.Error != MsgTooManyParameters {
+		t.Errorf("parameter limit: %d %q", e.status, e.Error)
+	}
+	limit := strings.TrimSuffix(strings.Repeat("a=1&", 1000), "&")
+	if e := post(t, srv, "application/x-www-form-urlencoded", strings.NewReader(limit), nil); e.status != 200 {
+		t.Errorf("1000 parameters are allowed: %d %q", e.status, e.Error)
 	}
 }
 
@@ -245,5 +282,30 @@ func TestJSONEncoding(t *testing.T) {
 	JSON(rec, http.StatusOK, func() {})
 	if rec.Code != 500 || !strings.Contains(rec.Body.String(), InternalErrorMessage) {
 		t.Errorf("unencodable value: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestParseBodyReadDeadline(t *testing.T) {
+	old := bodyReadTimeout
+	bodyReadTimeout = 200 * time.Millisecond
+	t.Cleanup(func() { bodyReadTimeout = old })
+	srv := bodyServer(t)
+	conn, err := net.Dial("tcp", srv.Listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	// Announce a body and then stall: the server must give up on its own.
+	if _, err := io.WriteString(conn, "POST / HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\nContent-Length: 100\r\n\r\n{\"a\":"); err != nil {
+		t.Fatal(err)
+	}
+	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	resp, err := http.ReadResponse(bufio.NewReader(conn), nil)
+	if err != nil {
+		t.Fatalf("no response to a stalled body: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 400 {
+		t.Fatalf("stalled body: status %d", resp.StatusCode)
 	}
 }

@@ -1,6 +1,7 @@
 package httpx
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -13,14 +14,31 @@ var ok = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { JSON(w,
 
 func TestSecurityHeaders(t *testing.T) {
 	cases := []struct {
-		proto string
-		hsts  bool
-	}{{"", false}, {"https", true}, {"http", false}, {"https, http", false}}
+		proto   string
+		trusted bool
+		tls     bool
+		hsts    bool
+	}{
+		{"", true, false, false},
+		{"https", true, false, true},
+		{"http", true, false, false},
+		{"https, http", true, false, false},
+		{"http", true, true, false},
+		{"", true, true, true},
+		// From a peer that is not a trusted proxy only the connection counts.
+		{"https", false, false, false},
+		{"http", false, true, true},
+		{"", false, true, true},
+	}
 	for _, c := range cases {
 		req := httptest.NewRequest(http.MethodGet, "/api/health", nil)
 		if c.proto != "" {
 			req.Header.Set("X-Forwarded-Proto", c.proto)
 		}
+		if c.tls {
+			req.TLS = &tls.ConnectionState{}
+		}
+		req = req.WithContext(WithPeerTrusted(req.Context(), c.trusted))
 		rec := httptest.NewRecorder()
 		SecurityHeaders(ok).ServeHTTP(rec, req)
 		h := rec.Header()
@@ -30,7 +48,7 @@ func TestSecurityHeaders(t *testing.T) {
 			t.Errorf("proto %q: missing security headers %v", c.proto, h)
 		}
 		if got := h.Get("Strict-Transport-Security") != ""; got != c.hsts {
-			t.Errorf("proto %q: HSTS = %v, want %v", c.proto, got, c.hsts)
+			t.Errorf("proto %q trusted=%v tls=%v: HSTS = %v, want %v", c.proto, c.trusted, c.tls, got, c.hsts)
 		}
 	}
 }
@@ -43,25 +61,32 @@ func TestIsTrustedOrigin(t *testing.T) {
 		headers map[string]string
 		allow   []string
 		want    bool
+		// untrusted serves the request as from a peer that is not a trusted proxy.
+		untrusted bool
 	}{
-		{"same origin", "http://panel.example.com:8080", "panel.example.com:8080", nil, nil, true},
-		{"case-insensitive host", "http://PANEL.example.com:8080", "panel.example.com:8080", nil, nil, true},
-		{"explicit default port", "http://panel.example.com:80", "panel.example.com", nil, nil, true},
-		{"deployed app port", "http://panel.example.com:5500", "panel.example.com:8080", nil, nil, false},
-		{"other host", "http://evil.example", "panel.example.com", nil, nil, false},
-		{"forwarded host and proto", "https://panel.example.com", "backend:8000", map[string]string{"X-Forwarded-Host": "panel.example.com", "X-Forwarded-Proto": "https"}, nil, true},
-		{"first forwarded value", "https://a.example", "backend", map[string]string{"X-Forwarded-Host": "a.example, b.example", "X-Forwarded-Proto": "https, http"}, nil, true},
-		{"tls stripped, both default ports", "https://panel.example.com", "panel.example.com", nil, nil, true},
-		{"tls stripped, non-default port", "https://panel.example.com:8443", "panel.example.com:8443", nil, nil, false},
-		{"allowlist exact", "http://localhost:3600", "localhost:8000", nil, []string{" http://localhost:3600 "}, true},
-		{"allowlist scheme is deliberate", "https://localhost:3600", "localhost:8000", nil, []string{"http://localhost:3600"}, false},
-		{"not http", "file:///etc/passwd", "x", nil, nil, false},
-		{"null origin", "null", "x", nil, nil, false},
-		{"garbage", "::::", "x", nil, nil, false},
-		{"ipv6", "http://[::1]:8000", "[::1]:8000", nil, nil, true},
+		{"same origin", "http://panel.example.com:8080", "panel.example.com:8080", nil, nil, true, false},
+		{"case-insensitive host", "http://PANEL.example.com:8080", "panel.example.com:8080", nil, nil, true, false},
+		{"explicit default port", "http://panel.example.com:80", "panel.example.com", nil, nil, true, false},
+		{"deployed app port", "http://panel.example.com:5500", "panel.example.com:8080", nil, nil, false, false},
+		{"other host", "http://evil.example", "panel.example.com", nil, nil, false, false},
+		{"forwarded host and proto", "https://panel.example.com", "backend:8000", map[string]string{"X-Forwarded-Host": "panel.example.com", "X-Forwarded-Proto": "https"}, nil, true, false},
+		{"first forwarded value", "https://a.example", "backend", map[string]string{"X-Forwarded-Host": "a.example, b.example", "X-Forwarded-Proto": "https, http"}, nil, true, false},
+		{"tls stripped, both default ports", "https://panel.example.com", "panel.example.com", nil, nil, true, false},
+		{"tls stripped, non-default port", "https://panel.example.com:8443", "panel.example.com:8443", nil, nil, false, false},
+		{"allowlist exact", "http://localhost:3600", "localhost:8000", nil, []string{" http://localhost:3600 "}, true, false},
+		{"allowlist scheme is deliberate", "https://localhost:3600", "localhost:8000", nil, []string{"http://localhost:3600"}, false, false},
+		{"not http", "file:///etc/passwd", "x", nil, nil, false, false},
+		{"null origin", "null", "x", nil, nil, false, false},
+		{"garbage", "::::", "x", nil, nil, false, false},
+		{"ipv6", "http://[::1]:8000", "[::1]:8000", nil, nil, true, false},
+		{"untrusted peer: forwarded host ignored", "https://panel.example.com", "backend:8000", map[string]string{"X-Forwarded-Host": "panel.example.com", "X-Forwarded-Proto": "https"}, nil, false, true},
+		{"untrusted peer: Host still compared", "http://panel.example.com:8080", "panel.example.com:8080", map[string]string{"X-Forwarded-Host": "evil.example"}, nil, true, true},
+		{"untrusted peer: forwarded proto ignored", "https://panel.example.com:8443", "panel.example.com:8443", map[string]string{"X-Forwarded-Proto": "https"}, nil, false, true},
+		{"trusted peer: forwarded proto used", "https://panel.example.com:8443", "panel.example.com:8443", map[string]string{"X-Forwarded-Proto": "https"}, nil, true, false},
 	}
 	for _, c := range cases {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req = req.WithContext(WithPeerTrusted(req.Context(), !c.untrusted))
 		req.Host = c.host
 		for k, v := range c.headers {
 			req.Header.Set(k, v)
@@ -120,35 +145,6 @@ func TestCORS(t *testing.T) {
 	}
 }
 
-func TestClientIPTrustProxyOne(t *testing.T) {
-	cases := []struct {
-		remote, xff, want string
-	}{
-		{"10.0.0.2:5555", "", "10.0.0.2"},
-		{"10.0.0.2:5555", "203.0.113.7", "203.0.113.7"},
-		{"10.0.0.2:5555", "1.1.1.1, 203.0.113.7", "203.0.113.7"},
-		{"10.0.0.2:5555", "1.1.1.1,   203.0.113.7  ", "203.0.113.7"},
-		{"10.0.0.2:5555", "1.1.1.1, ,", "1.1.1.1"},
-		{"[2001:db8::1]:443", "", "2001:db8::1"},
-	}
-	for _, c := range cases {
-		req := httptest.NewRequest(http.MethodGet, "/", nil)
-		req.RemoteAddr = c.remote
-		if c.xff != "" {
-			req.Header.Set("X-Forwarded-For", c.xff)
-		}
-		if got := ClientIP(req); got != c.want {
-			t.Errorf("ClientIP(remote=%s, xff=%q) = %q, want %q", c.remote, c.xff, got, c.want)
-		}
-	}
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.Header.Add("X-Forwarded-For", "1.1.1.1")
-	req.Header.Add("X-Forwarded-For", "2.2.2.2")
-	if got := ClientIP(req); got != "2.2.2.2" {
-		t.Errorf("repeated header = %q", got)
-	}
-}
-
 func TestRateLimitKey(t *testing.T) {
 	cases := map[string]string{
 		"203.0.113.7":                 "203.0.113.7",
@@ -168,9 +164,8 @@ func TestRateLimitKey(t *testing.T) {
 
 func TestRateLimiter(t *testing.T) {
 	now := time.Unix(1_800_000_000, 0)
-	l := &RateLimiter{cfg: RateLimitConfig{Window: 15 * time.Minute, Limit: 2, Message: "Too many attempts, please try again later",
-		Skip: func(r *http.Request) bool { return r.URL.Path == "/skip" }},
-		now: func() time.Time { return now }, clients: map[string]*rateClient{}}
+	l := newRateLimiter(RateLimitConfig{Window: 15 * time.Minute, Limit: 2, Message: "Too many attempts, please try again later",
+		Skip: func(r *http.Request) bool { return r.URL.Path == "/skip" }}, func() time.Time { return now })
 	h := l.Middleware(ok)
 	hit := func(path, ip string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodPost, path, nil)

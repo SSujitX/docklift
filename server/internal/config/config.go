@@ -63,6 +63,10 @@ type Config struct {
 	NginxProxyContainer string
 	// TerminalAllowNoOrigin is TERMINAL_ALLOW_NO_ORIGIN == "true".
 	TerminalAllowNoOrigin bool
+	// TrustedProxies is TRUSTED_PROXIES (default DefaultTrustedProxies): the
+	// socket peers whose X-Forwarded-For/-Proto/-Host headers are believed.
+	// New in the Go backend; the TypeScript one trusted every peer.
+	TrustedProxies ProxyTrust
 
 	// JWTSecret and InternalAPISecret are JWT_SECRET and INTERNAL_API_SECRET.
 	// Empty means "use or generate DATA_PATH/.secrets".
@@ -110,6 +114,9 @@ func FromEnv(getenv func(string) string) (*Config, error) {
 		c.CORSOrigins = strings.Split(v, ",")
 	}
 
+	if c.TrustedProxies, err = ParseTrustedProxies(or("TRUSTED_PROXIES", DefaultTrustedProxies)); err != nil {
+		return nil, err
+	}
 	if c.Port, err = parseInt("PORT", or("PORT", "8000"), false); err != nil {
 		return nil, err
 	}

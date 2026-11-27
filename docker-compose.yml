@@ -39,6 +39,8 @@ services:
       - INTERNAL_API_SECRET=${INTERNAL_API_SECRET:-}
       # Comma-separated browser origins if dashboard is not same-host as API
       - CORS_ORIGIN=${CORS_ORIGIN:-}
+      # Peers whose X-Forwarded-* headers are trusted (empty = loopback + docklift_network without its gateway)
+      - TRUSTED_PROXIES=${TRUSTED_PROXIES:-}
       - DOCKLIFT_FRONTEND_URL=${DOCKLIFT_FRONTEND_URL:-http://localhost:8080}
       - CERTBOT_EMAIL=${CERTBOT_EMAIL:-}
       - CERTBOT_STAGING=${CERTBOT_STAGING:-false}

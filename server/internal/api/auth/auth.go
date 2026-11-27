@@ -111,16 +111,19 @@ func (h *handlers) register(w http.ResponseWriter, r *http.Request) {
 	const failMsg = "Registration failed"
 	ctx := r.Context()
 	body := httpx.BodyFrom(r)
-	if !body.Defined {
-		h.fail(w, failMsg, errors.New("request body is undefined"))
-		return
-	}
-	name, email, password := body.Get("name"), body.Get("email"), body.Get("password")
-	if !name.Truthy() || !email.Truthy() || !password.Truthy() {
+	nameV, emailV, passwordV := body.Get("name"), body.Get("email"), body.Get("password")
+	if !nameV.Truthy() || !emailV.Truthy() || !passwordV.Truthy() {
 		httpx.Error(w, http.StatusBadRequest, "Name, email, and password are required")
 		return
 	}
-	if n, ok := password.Length(); ok && n < 8 {
+	name, nameOK := nameV.String()
+	email, emailOK := emailV.String()
+	password, passwordOK := passwordV.String()
+	if !nameOK || !emailOK || !passwordOK {
+		httpx.Error(w, http.StatusBadRequest, "Name, email, and password must be strings")
+		return
+	}
+	if httpx.UTF16Len(password) < 8 {
 		httpx.Error(w, http.StatusBadRequest, "Password must be at least 8 characters")
 		return
 	}
@@ -174,7 +177,7 @@ func (h *handlers) register(w http.ResponseWriter, r *http.Request) {
 
 // createFirstAdmin re-checks that no user exists (after the claim) and inserts
 // the admin. A non-zero status means "setup already complete".
-func (h *handlers) createFirstAdmin(r *http.Request, nameV, emailV, passwordV httpx.Value) (*store.User, int, error) {
+func (h *handlers) createFirstAdmin(r *http.Request, name, email, password string) (*store.User, int, error) {
 	ctx := r.Context()
 	count, err := h.d.Store.CountUsers(ctx)
 	if err != nil {
@@ -182,12 +185,6 @@ func (h *handlers) createFirstAdmin(r *http.Request, nameV, emailV, passwordV ht
 	}
 	if count > 0 {
 		return nil, http.StatusForbidden, nil
-	}
-	name, nameOK := nameV.String()
-	email, emailOK := emailV.String()
-	password, passwordOK := passwordV.String()
-	if !nameOK || !emailOK || !passwordOK {
-		return nil, 0, errors.New("name, email and password must be strings")
 	}
 	hash, err := authsvc.HashPassword(password)
 	if err != nil {
@@ -204,18 +201,15 @@ func (h *handlers) createFirstAdmin(r *http.Request, nameV, emailV, passwordV ht
 func (h *handlers) login(w http.ResponseWriter, r *http.Request) {
 	const failMsg = "Login failed"
 	body := httpx.BodyFrom(r)
-	if !body.Defined {
-		h.fail(w, failMsg, errors.New("request body is undefined"))
-		return
-	}
 	emailV, passwordV := body.Get("email"), body.Get("password")
 	if !emailV.Truthy() || !passwordV.Truthy() {
 		httpx.Error(w, http.StatusBadRequest, "Email and password are required")
 		return
 	}
-	email, ok := emailV.String()
-	if !ok {
-		h.fail(w, failMsg, errors.New("email must be a string"))
+	email, emailOK := emailV.String()
+	password, passwordOK := passwordV.String()
+	if !emailOK || !passwordOK {
+		httpx.Error(w, http.StatusBadRequest, "Email and password must be strings")
 		return
 	}
 	user, err := h.d.Store.GetUserByEmail(r.Context(), strings.ToLower(email))
@@ -224,13 +218,8 @@ func (h *handlers) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if user == nil {
-		authsvc.EqualizeLoginTiming(email)
+		authsvc.EqualizeLoginTiming(password)
 		httpx.Error(w, http.StatusUnauthorized, "Invalid email or password")
-		return
-	}
-	password, ok := passwordV.String()
-	if !ok {
-		h.fail(w, failMsg, errors.New("password must be a string"))
 		return
 	}
 	if !authsvc.ComparePassword(user.Password, password) {
@@ -274,10 +263,6 @@ func (h *handlers) me(w http.ResponseWriter, r *http.Request) {
 func (h *handlers) profile(w http.ResponseWriter, r *http.Request) {
 	const failMsg = "Failed to update profile"
 	body := httpx.BodyFrom(r)
-	if !body.Defined {
-		h.fail(w, failMsg, errors.New("request body is undefined"))
-		return
-	}
 	nameV, emailV := body.Get("name"), body.Get("email")
 	if !nameV.Truthy() || !emailV.Truthy() {
 		httpx.Error(w, http.StatusBadRequest, "Name and email are required")
@@ -286,7 +271,7 @@ func (h *handlers) profile(w http.ResponseWriter, r *http.Request) {
 	name, nameOK := nameV.String()
 	email, emailOK := emailV.String()
 	if !nameOK || !emailOK {
-		h.fail(w, failMsg, errors.New("name and email must be strings"))
+		httpx.Error(w, http.StatusBadRequest, "Name and email must be strings")
 		return
 	}
 	authUser, _ := authsvc.UserFrom(r.Context())
@@ -313,16 +298,18 @@ func (h *handlers) changePassword(w http.ResponseWriter, r *http.Request) {
 	const failMsg = "Failed to change password"
 	ctx := r.Context()
 	body := httpx.BodyFrom(r)
-	if !body.Defined {
-		h.fail(w, failMsg, errors.New("request body is undefined"))
-		return
-	}
 	currentV, nextV := body.Get("currentPassword"), body.Get("newPassword")
 	if !currentV.Truthy() || !nextV.Truthy() {
 		httpx.Error(w, http.StatusBadRequest, "Current and new passwords are required")
 		return
 	}
-	if n, ok := nextV.Length(); ok && n < 8 {
+	current, currentOK := currentV.String()
+	next, nextOK := nextV.String()
+	if !currentOK || !nextOK {
+		httpx.Error(w, http.StatusBadRequest, "Current and new passwords must be strings")
+		return
+	}
+	if httpx.UTF16Len(next) < 8 {
 		httpx.Error(w, http.StatusBadRequest, "New password must be at least 8 characters")
 		return
 	}
@@ -336,18 +323,8 @@ func (h *handlers) changePassword(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, failMsg, err)
 		return
 	}
-	current, ok := currentV.String()
-	if !ok {
-		h.fail(w, failMsg, errors.New("currentPassword must be a string"))
-		return
-	}
 	if !authsvc.ComparePassword(user.Password, current) {
 		httpx.Error(w, http.StatusBadRequest, "Invalid current password")
-		return
-	}
-	next, ok := nextV.String()
-	if !ok {
-		h.fail(w, failMsg, errors.New("newPassword must be a string"))
 		return
 	}
 	hash, err := authsvc.HashPassword(next)

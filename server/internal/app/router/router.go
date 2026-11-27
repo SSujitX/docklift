@@ -40,7 +40,10 @@ const (
 // New returns the root handler. Limiter sweepers stop when d.Background ends.
 func New(d *app.Deps) http.Handler {
 	root := chi.NewRouter()
-	root.Use(httpx.Recover, httpx.HeadAsGet)
+	// Peer trust is decided first: everything below (terminal origin check,
+	// HSTS, CORS, rate limits) reads forwarded headers only from trusted proxies.
+	trust := httpx.NewTrustedProxies(d.Config.TrustedProxies.Trusted, d.Config.TrustedProxies.Excluded)
+	root.Use(httpx.Recover, trust.Middleware, httpx.HeadAsGet)
 	root.NotFound(httpx.NotFound)
 	root.MethodNotAllowed(httpx.NotFound)
 

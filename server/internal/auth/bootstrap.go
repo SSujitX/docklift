@@ -2,7 +2,6 @@ package auth
 
 import (
 	"context"
-	"crypto/subtle"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -81,17 +80,14 @@ func (b *Bootstrap) TryClaim() string {
 	return claim
 }
 
-// VerifySecretAt compares provided with the trimmed content of path in
-// constant time; empty values never match.
+// VerifySecretAt compares provided with the trimmed content of path without
+// leaking content or length through timing; empty values never match.
 func VerifySecretAt(path, provided string) bool {
-	if provided == "" {
-		return false
-	}
 	expected := readTrimmed(path)
-	if expected == "" || len(provided) != len(expected) {
+	if provided == "" || expected == "" {
 		return false
 	}
-	return subtle.ConstantTimeCompare([]byte(provided), []byte(expected)) == 1
+	return secureEqual(provided, expected)
 }
 
 // FinalizeClaim drops the claim file after a successful registration.
@@ -100,11 +96,12 @@ func (b *Bootstrap) FinalizeClaim(claim string) {
 }
 
 // AbortClaim puts the secret back when registration fails after the claim.
+// The claimed secret is the one the operator holds, so it also replaces a
+// secret that GET /status re-created while the claim was out (that one was
+// never shown to anybody); otherwise a failed registration would lock the
+// operator out until the next restart.
 func (b *Bootstrap) AbortClaim(claim string) {
 	if _, err := os.Stat(claim); err != nil {
-		return
-	}
-	if _, err := os.Stat(b.SecretPath()); err == nil {
 		return
 	}
 	if err := os.Rename(claim, b.SecretPath()); err != nil {
@@ -241,25 +238,75 @@ func SetupTokenAuthorized(ctx context.Context) bool {
 	return ok
 }
 
+// tokenFileWait is how long ensureTokenFile waits for a token file another
+// request is creating (it exists but is still empty) before replacing it.
+const (
+	tokenFileWait = 500 * time.Millisecond
+	tokenFilePoll = 10 * time.Millisecond
+)
+
+// ensureTokenFile returns the token stored at path, creating it when absent.
+// Creation is exclusive (O_EXCL), so concurrent callers (two GET /status or
+// GET /setup-token on a fresh install) agree on one token instead of the
+// last writer silently invalidating the value the first one returned. A file
+// that stays empty (a crash between create and write) is replaced.
 func ensureTokenFile(dir, path string) (string, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", fmt.Errorf("create data directory: %w", err)
 	}
-	raw, err := os.ReadFile(path)
-	if err == nil {
-		return strings.TrimSpace(string(raw)), nil
-	}
-	if !errors.Is(err, fs.ErrNotExist) {
-		return "", fmt.Errorf("read %s: %w", filepath.Base(path), err)
+	name := filepath.Base(path)
+	deadline := time.Now().Add(tokenFileWait)
+	for time.Now().Before(deadline) {
+		raw, err := os.ReadFile(path)
+		switch {
+		case err == nil:
+			if token := strings.TrimSpace(string(raw)); token != "" {
+				return token, nil
+			}
+		case errors.Is(err, fs.ErrNotExist):
+			token, created, err := createTokenFile(path)
+			if err != nil {
+				return "", fmt.Errorf("write %s: %w", name, err)
+			}
+			if created {
+				return token, nil
+			}
+			continue
+		default:
+			return "", fmt.Errorf("read %s: %w", name, err)
+		}
+		time.Sleep(tokenFilePoll)
 	}
 	token, err := randomHex(32)
 	if err != nil {
 		return "", err
 	}
 	if err := os.WriteFile(path, []byte(token), 0o600); err != nil {
-		return "", fmt.Errorf("write %s: %w", filepath.Base(path), err)
+		return "", fmt.Errorf("write %s: %w", name, err)
 	}
 	return token, nil
+}
+
+// createTokenFile writes a new random token to path unless the file already
+// exists (created is then false).
+func createTokenFile(path string) (token string, created bool, err error) {
+	token, err = randomHex(32)
+	if err != nil {
+		return "", false, err
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if errors.Is(err, fs.ErrExist) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	_, werr := f.WriteString(token)
+	if err := errors.Join(werr, f.Close()); err != nil {
+		_ = os.Remove(path)
+		return "", false, err
+	}
+	return token, true, nil
 }
 
 func readTrimmed(path string) string {

@@ -9,8 +9,9 @@ import (
 )
 
 // SecurityHeaders sets the headers of the first middleware in index.ts. HSTS
-// is sent only when the request is HTTPS: the raw X-Forwarded-Proto header
-// equals "https", or there is no such header and the connection uses TLS.
+// is sent only when the request is HTTPS: from a trusted proxy, the raw
+// X-Forwarded-Proto header equals "https" (or, without that header, the
+// connection uses TLS); from any other peer, the connection uses TLS.
 func SecurityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
@@ -19,9 +20,11 @@ func SecurityHeaders(next http.Handler) http.Handler {
 		h.Set("X-XSS-Protection", "1; mode=block")
 		h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		h.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
-		proto := strings.Join(r.Header.Values("X-Forwarded-Proto"), ", ")
-		if proto == "" {
-			proto = RequestProtocol(r)
+		proto := connProtocol(r)
+		if PeerTrusted(r) {
+			if raw := strings.Join(r.Header.Values("X-Forwarded-Proto"), ", "); raw != "" {
+				proto = raw
+			}
 		}
 		if proto == "https" {
 			h.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")

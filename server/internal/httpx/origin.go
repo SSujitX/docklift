@@ -59,26 +59,18 @@ func NormalizeOrigin(value string) string {
 	return o.Scheme + "//" + o.Hostname + ":" + o.Port
 }
 
-func firstHeader(h http.Header, name string) string {
-	values := h.Values(name)
-	if len(values) == 0 {
-		return ""
-	}
-	v, _, _ := strings.Cut(strings.Join(values, ", "), ",")
-	return strings.TrimSpace(v)
-}
-
-// RequestOrigin is the origin the browser addressed, reconstructed from
-// X-Forwarded-Host/Host and X-Forwarded-Proto (first values).
+// RequestOrigin is the origin the browser addressed: the host is the first
+// X-Forwarded-Host value from a trusted proxy, else Host; the scheme is the
+// first X-Forwarded-Proto value from a trusted proxy, else fallbackProto.
 func RequestOrigin(r *http.Request, fallbackProto string) *Origin {
-	host := firstHeader(r.Header, "X-Forwarded-Host")
+	host := forwardedHeader(r, "X-Forwarded-Host")
 	if host == "" {
 		host = strings.TrimSpace(strings.SplitN(r.Host, ",", 2)[0])
 	}
 	if host == "" {
 		return nil
 	}
-	proto := firstHeader(r.Header, "X-Forwarded-Proto")
+	proto := forwardedHeader(r, "X-Forwarded-Proto")
 	if proto == "" {
 		proto = fallbackProto
 	}
@@ -117,20 +109,4 @@ func IsTrustedOrigin(origin string, r *http.Request, fallbackProto string, allow
 		}
 	}
 	return sameOrigin(parsed, RequestOrigin(r, fallbackProto))
-}
-
-// RequestProtocol is Express req.protocol with trust proxy = 1: the first
-// X-Forwarded-Proto value, else "https" for TLS connections, else "http".
-func RequestProtocol(r *http.Request) string {
-	if v := r.Header.Values("X-Forwarded-Proto"); len(v) > 0 {
-		joined := strings.Join(v, ", ")
-		if joined != "" {
-			first, _, _ := strings.Cut(joined, ",")
-			return strings.TrimSpace(first)
-		}
-	}
-	if r.TLS != nil {
-		return "https"
-	}
-	return "http"
 }

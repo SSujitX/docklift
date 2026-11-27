@@ -102,14 +102,16 @@ const (
 	userIDInvalid                    // another truthy type (a database lookup would fail)
 )
 
+// parser accepts HS256 only: every token Docklift issues (TS or Go) is HS256,
+// so other HMAC variants are refused rather than verified with the same key.
 var parser = jwt.NewParser(
-	jwt.WithValidMethods([]string{"HS256", "HS384", "HS512"}),
+	jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}),
 	jwt.WithoutClaimsValidation(),
 	jwt.WithJSONNumber(),
 )
 
-// verify checks a token like jsonwebtoken.verify(token, secret): HMAC
-// algorithms only, signature first, then `nbf` (NotBeforeError) and `exp`
+// verify checks a token like jsonwebtoken.verify(token, secret) restricted
+// to HS256: signature first, then `nbf` (NotBeforeError) and `exp`
 // (TokenExpiredError when now >= exp, whole seconds).
 func verify(secret, token string, now time.Time) (*Claims, error) {
 	parsed, err := parser.Parse(token, func(*jwt.Token) (any, error) { return []byte(secret), nil })

@@ -1,9 +1,9 @@
 package httpx
 
 import (
+	"container/list"
 	"context"
 	"math"
-	"net"
 	"net/http"
 	"net/netip"
 	"strconv"
@@ -11,46 +11,6 @@ import (
 	"sync"
 	"time"
 )
-
-// ClientIP is Express req.ip with `trust proxy` = 1: the socket peer is
-// trusted as one proxy hop, so the address is the last X-Forwarded-For entry
-// when the header is present, otherwise the socket peer address.
-func ClientIP(r *http.Request) string {
-	if xff := forwardedFor(strings.Join(r.Header.Values("X-Forwarded-For"), ", ")); len(xff) > 0 {
-		return xff[0]
-	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return host
-}
-
-// forwardedFor parses X-Forwarded-For like the `forwarded` package: entries
-// are returned from last to first, trimmed of spaces, empty ones skipped.
-func forwardedFor(header string) []string {
-	var list []string
-	end, start := len(header), len(header)
-	for i := len(header) - 1; i >= 0; i-- {
-		switch header[i] {
-		case ' ':
-			if start == end {
-				start, end = i, i
-			}
-		case ',':
-			if start != end {
-				list = append(list, header[start:end])
-			}
-			start, end = i, i
-		default:
-			start = i
-		}
-	}
-	if start != end {
-		list = append(list, header[start:end])
-	}
-	return list
-}
 
 // RateLimitKey is express-rate-limit's ipKeyGenerator with ipv6Subnet 56:
 // IPv4 (and IPv4-mapped IPv6) addresses are keyed as-is, other IPv6
@@ -85,6 +45,9 @@ func isIPv4Compatible(addr netip.Addr) bool {
 	return true
 }
 
+// DefaultRateLimitMaxKeys bounds the clients one RateLimiter tracks.
+const DefaultRateLimitMaxKeys = 50_000
+
 // RateLimitConfig configures a RateLimiter.
 type RateLimitConfig struct {
 	Window time.Duration
@@ -93,31 +56,50 @@ type RateLimitConfig struct {
 	Message string
 	// Skip exempts requests from counting.
 	Skip func(*http.Request) bool
+	// MaxKeys caps how many client keys are tracked at once (default
+	// DefaultRateLimitMaxKeys). When a new key arrives at the cap, the key
+	// whose window started first is forgotten.
+	MaxKeys int
 }
 
 type rateClient struct {
+	key     string
 	hits    int
 	resetAt time.Time
 }
 
 // RateLimiter is express-rate-limit with the default MemoryStore and
 // standardHeaders: true (draft-6 RateLimit-* headers, no legacy headers):
-// a fixed window per client key starting at its first hit; requests over the
-// limit get 429 with Retry-After and the configured message.
+// a fixed window per client key (RateLimitKey of ClientIP) starting at its
+// first hit; requests over the limit get 429 with Retry-After and the
+// configured message.
+//
+// Memory is bounded: clients are kept in window-start order (every window
+// has the same length, so that is also expiry order), expired clients are
+// dropped from the front on every hit and by a periodic sweep, and at most
+// MaxKeys clients are tracked.
 type RateLimiter struct {
 	cfg RateLimitConfig
 	now func() time.Time
 
 	mu      sync.Mutex
-	clients map[string]*rateClient
+	clients map[string]*list.Element // of *rateClient
+	order   *list.List               // oldest window first
 }
 
-// NewRateLimiter returns a limiter whose expired entries are swept every
-// window until ctx is done.
+// NewRateLimiter returns a limiter whose expired entries are also swept
+// every window until ctx is done.
 func NewRateLimiter(ctx context.Context, cfg RateLimitConfig) *RateLimiter {
-	l := &RateLimiter{cfg: cfg, now: time.Now, clients: map[string]*rateClient{}}
+	l := newRateLimiter(cfg, time.Now)
 	go l.sweep(ctx)
 	return l
+}
+
+func newRateLimiter(cfg RateLimitConfig, now func() time.Time) *RateLimiter {
+	if cfg.MaxKeys <= 0 {
+		cfg.MaxKeys = DefaultRateLimitMaxKeys
+	}
+	return &RateLimiter{cfg: cfg, now: now, clients: map[string]*list.Element{}, order: list.New()}
 }
 
 func (l *RateLimiter) sweep(ctx context.Context) {
@@ -128,16 +110,33 @@ func (l *RateLimiter) sweep(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			now := l.now()
 			l.mu.Lock()
-			for k, c := range l.clients {
-				if !c.resetAt.After(now) {
-					delete(l.clients, k)
-				}
-			}
+			l.evictExpired(l.now())
 			l.mu.Unlock()
 		}
 	}
+}
+
+// evictExpired drops clients whose window has ended. l.mu must be held.
+func (l *RateLimiter) evictExpired(now time.Time) {
+	for e := l.order.Front(); e != nil; e = l.order.Front() {
+		c := e.Value.(*rateClient)
+		if c.resetAt.After(now) {
+			return
+		}
+		l.remove(e)
+	}
+}
+
+func (l *RateLimiter) remove(e *list.Element) {
+	delete(l.clients, l.order.Remove(e).(*rateClient).key)
+}
+
+// size is the number of tracked clients.
+func (l *RateLimiter) size() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return len(l.clients)
 }
 
 // hit counts one request for key and returns the hit count and window reset.
@@ -145,15 +144,16 @@ func (l *RateLimiter) hit(key string) (int, time.Time) {
 	now := l.now()
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	c, ok := l.clients[key]
+	l.evictExpired(now)
+	e, ok := l.clients[key]
 	if !ok {
-		c = &rateClient{}
-		l.clients[key] = c
+		for len(l.clients) >= l.cfg.MaxKeys {
+			l.remove(l.order.Front())
+		}
+		e = l.order.PushBack(&rateClient{key: key, resetAt: now.Add(l.cfg.Window)})
+		l.clients[key] = e
 	}
-	if !c.resetAt.After(now) {
-		c.hits = 0
-		c.resetAt = now.Add(l.cfg.Window)
-	}
+	c := e.Value.(*rateClient)
 	c.hits++
 	return c.hits, c.resetAt
 }

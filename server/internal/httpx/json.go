@@ -1,7 +1,8 @@
 // Package httpx holds the HTTP plumbing shared by every route group: JSON
 // responses, request-body parsing with Express semantics, and the middleware
 // stack of backend/src/index.ts (security headers, CORS, body limits, rate
-// limits, maintenance gate, panic recovery, trust-proxy=1 client address).
+// limits, maintenance gate, panic recovery) and the trusted-proxy model that
+// decides when X-Forwarded-* headers are believed (proxy.go).
 package httpx
 
 import (

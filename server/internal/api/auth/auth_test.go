@@ -116,9 +116,13 @@ func TestConcurrentRegistrationOnlyOneWins(t *testing.T) {
 
 func TestFailedRegistrationRestoresClaim(t *testing.T) {
 	d, h, secret := setup(t)
-	r := call(t, h, "POST", "/api/auth/register", `{"name":["x"],"email":"a@b.c","password":"password123"}`, map[string]string{"X-Bootstrap-Secret": secret})
+	// Make the insert after the claim fail.
+	if _, err := d.DB.Writer().ExecContext(t.Context(), `CREATE TRIGGER fail_user_insert BEFORE INSERT ON users BEGIN SELECT RAISE(ABORT, 'boom'); END`); err != nil {
+		t.Fatal(err)
+	}
+	r := call(t, h, "POST", "/api/auth/register", `{"name":"x","email":"a@b.c","password":"password123"}`, map[string]string{"X-Bootstrap-Secret": secret})
 	if r.code != 500 || r.body["error"] != "Registration failed" {
-		t.Fatalf("non-string name: %d %v", r.code, r.body)
+		t.Fatalf("failed insert: %d %v", r.code, r.body)
 	}
 	if d.Auth.Bootstrap().ReadSecret() != secret {
 		t.Error("a failed registration must put the bootstrap secret back")
@@ -175,10 +179,56 @@ func TestSessionRoutes(t *testing.T) {
 	if r := call(t, h, "PATCH", "/api/auth/profile", `{"name":"I","email":"i@x"}`, internal); r.code != 500 || r.body["error"] != "Failed to update profile" {
 		t.Errorf("profile for the internal caller (no user row): %d %v", r.code, r.body)
 	}
-	if r := call(t, h, "PATCH", "/api/auth/profile", `{"name":"Ada","email":5}`, bearer); r.code != 500 {
-		t.Errorf("non-string email: %d", r.code)
+}
+
+// TestClientMistakesAre400 covers deliberate fix 3: wrong-typed or missing
+// fields (and a missing body) are 400s with a clear message, never 500.
+func TestClientMistakesAre400(t *testing.T) {
+	d, h, secret := setup(t)
+	_, token := apptest.CreateAdmin(t, d, "ada@example.com", "password123")
+	bearer := map[string]string{"Authorization": "Bearer " + token}
+	bootstrap := map[string]string{"X-Bootstrap-Secret": secret}
+	cases := []struct {
+		name, method, path, body string
+		headers                  map[string]string
+		code                     int
+		err                      string
+	}{
+		{"login number email", "POST", "/api/auth/login", `{"email":42,"password":"x"}`, nil, 400, "Email and password must be strings"},
+		{"login object password", "POST", "/api/auth/login", `{"email":"ada@example.com","password":{"$gt":""}}`, nil, 400, "Email and password must be strings"},
+		{"login array email", "POST", "/api/auth/login", `{"email":["ada@example.com"],"password":"password123"}`, nil, 400, "Email and password must be strings"},
+		{"login no body", "POST", "/api/auth/login", "", nil, 400, "Email and password are required"},
+		{"login array body", "POST", "/api/auth/login", `[1]`, nil, 400, "Email and password are required"},
+		{"register no body", "POST", "/api/auth/register", "", bootstrap, 400, "Name, email, and password are required"},
+		{"register number name", "POST", "/api/auth/register", `{"name":1,"email":"a@b.c","password":"password123"}`, bootstrap, 400, "Name, email, and password must be strings"},
+		{"register array password", "POST", "/api/auth/register", `{"name":"A","email":"a@b.c","password":["a","b","c","d","e","f","g","h"]}`, bootstrap, 400, "Name, email, and password must be strings"},
+		{"register bool email", "POST", "/api/auth/register", `{"name":"A","email":true,"password":"password123"}`, bootstrap, 400, "Name, email, and password must be strings"},
+		{"register short password counts UTF-16 units", "POST", "/api/auth/register", `{"name":"A","email":"a@b.c","password":"😀😀😀"}`, bootstrap, 400, "Password must be at least 8 characters"},
+		{"profile number email", "PATCH", "/api/auth/profile", `{"name":"Ada","email":5}`, bearer, 400, "Name and email must be strings"},
+		{"profile no body", "PATCH", "/api/auth/profile", "", bearer, 400, "Name and email are required"},
+		{"change-password array", "POST", "/api/auth/change-password", `{"currentPassword":"password123","newPassword":["a","b","c","d","e","f","g","h"]}`, bearer, 400, "Current and new passwords must be strings"},
+		{"change-password number current", "POST", "/api/auth/change-password", `{"currentPassword":12345678,"newPassword":"password456"}`, bearer, 400, "Current and new passwords must be strings"},
+		{"change-password no body", "POST", "/api/auth/change-password", "", bearer, 400, "Current and new passwords are required"},
+		{"malformed JSON", "POST", "/api/auth/login", `{"email":`, nil, 400, "Invalid JSON body"},
 	}
-	if r := call(t, h, "POST", "/api/auth/change-password", `{"currentPassword":"password123","newPassword":["a","b","c","d","e","f","g","h"]}`, bearer); r.code != 500 || r.body["error"] != "Failed to change password" {
-		t.Errorf("array newPassword passes the length check and then fails like bcrypt.hash: %d %v", r.code, r.body)
+	for _, c := range cases {
+		req := httptest.NewRequest(c.method, c.path, strings.NewReader(c.body))
+		if c.body != "" {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		for k, v := range c.headers {
+			req.Header.Set(k, v)
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		var out map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &out)
+		if rec.Code != c.code || out["error"] != c.err {
+			t.Errorf("%s: %d %v, want %d %q", c.name, rec.Code, out, c.code, c.err)
+		}
+	}
+	// The bootstrap secret survives rejected registrations.
+	if d.Auth.Bootstrap().ReadSecret() != secret {
+		t.Error("a rejected registration must not consume the bootstrap secret")
 	}
 }
