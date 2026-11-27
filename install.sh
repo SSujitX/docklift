@@ -3,13 +3,45 @@ set -e
 
 # Colors & Vars
 RED='\033[0;31m'; GREEN='\033[0;32m'; CYAN='\033[0;36m'; YELLOW='\033[0;33m'; BOLD='\033[1m'; DIM='\033[2m'; NC='\033[0m'
-START_TIME=$(date +%s); INSTALL_DIR="/opt/docklift"
+START_TIME=$(date +%s); INSTALL_DIR="${DOCKLIFT_INSTALL_DIR:-/opt/docklift}"
+# Containers of the 2.1.x layout that the Go backend replaces (it now owns :8080).
+OBSOLETE_CONTAINERS="docklift-frontend docklift-nginx"
+HEALTH_TIMEOUT=180
 
 format_time() {
     local s=$1 h=0 m=0
     # `((…))` returns exit 1 when the value is 0 — must not trip `set -e`
     ((h = s / 3600, m = (s % 3600) / 60, s = s % 60)) || true
-    [ $h -gt 0 ] && printf "%dh %dm %ds" $h $m $s || ([ $m -gt 0 ] && printf "%dm %ds" $m $s || printf "%ds" $s)
+    if [ "$h" -gt 0 ]; then printf "%dh %dm %ds" "$h" "$m" "$s"
+    elif [ "$m" -gt 0 ]; then printf "%dm %ds" "$m" "$s"
+    else printf "%ds" "$s"
+    fi
+}
+
+# Probe the API inside the backend container (busybox wget; no host curl/port assumptions)
+health_ok() {
+    docker exec docklift-backend wget -q -O /dev/null http://127.0.0.1:8000/api/health >/dev/null 2>&1
+}
+
+# Every service of docker-compose.yml must be running.
+stack_running() {
+    local want have svc
+    want=$(docker compose config --services 2>/dev/null) || return 1
+    have=$(docker compose ps --status running --services 2>/dev/null) || return 1
+    for svc in $want; do
+        printf '%s\n' "$have" | grep -qx "$svc" || return 1
+    done
+}
+
+wait_healthy() {
+    local deadline=$(( $(date +%s) + HEALTH_TIMEOUT ))
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        if health_ok && stack_running; then
+            return 0
+        fi
+        sleep 3
+    done
+    return 1
 }
 
 print_access_info() {
@@ -39,7 +71,7 @@ print_access_info() {
         echo -e "  ${DIM}Open the dashboard, paste this code, and create your admin account.${NC}"
     else
         echo -e "\n  ${YELLOW}Setup code:${NC} not ready yet — run:"
-        echo -e "  ${DIM}  docker logs docklift-backend | grep -A8 \"Fresh install\"${NC}"
+        echo -e "  ${DIM}  docker logs docklift-backend 2>&1 | grep -A8 \"Fresh install\"${NC}"
         echo -e "  ${DIM}  # or: cat $INSTALL_DIR/data/.bootstrap-secret${NC}"
     fi
     echo -e "\n  ${DIM}HTTP on a public IP is convenient for first setup — not encrypted.${NC}"
@@ -117,23 +149,29 @@ else
 fi
 
 # Step 1: Requirements
-printf "  ${CYAN}[1/5]${NC} Checking requirements..."
+echo -ne "  ${CYAN}[1/5]${NC} Checking requirements..."
 for cmd in docker git; do
-    if ! command -v $cmd &>/dev/null; then
-        printf " Installing $cmd..."
+    if ! command -v "$cmd" &>/dev/null; then
+        echo -n " Installing $cmd..."
         if [ "$cmd" = "docker" ]; then curl -fsSL https://get.docker.com | sh -s -- --quiet >/dev/null 2>&1
-        else apt-get update -qq && apt-get install -y -qq git >/dev/null 2>&1 || yum install -y git >/dev/null 2>&1 || apk add --no-cache git >/dev/null 2>&1; fi
+        else { apt-get update -qq && apt-get install -y -qq git; } >/dev/null 2>&1 || yum install -y git >/dev/null 2>&1 || apk add --no-cache git >/dev/null 2>&1; fi
     fi
 done
+if ! docker compose version >/dev/null 2>&1; then
+    echo -e " ${RED}failed${NC}"
+    echo -e "  ${RED}The Docker Compose plugin (docker compose) is required.${NC}"
+    echo -e "  ${DIM}Install docker-compose-plugin from Docker's repository, then retry.${NC}"
+    exit 1
+fi
 echo -e " ${GREEN}done${NC}"
 
 # Step 2: Resolve tag BEFORE stopping any running stack, then fetch/checkout
 FETCH_ST=$(date +%s)
-printf "  ${CYAN}[2/5]${NC} Fetching code..."
+echo -ne "  ${CYAN}[2/5]${NC} Fetching code..."
 
 CREATED_INSTALL_DIR=0
 # CI copies the local workspace — skip GitHub resolve/checkout (offline-safe).
-if [ "$DOCKLIFT_CI_LOCAL" = "true" ]; then
+if [ "${DOCKLIFT_CI_LOCAL:-}" = "true" ]; then
     mkdir -p "$INSTALL_DIR" && cp -r . "$INSTALL_DIR/" && cd "$INSTALL_DIR"
     TARGET_TAG="local"
 else
@@ -167,6 +205,8 @@ else
                 "Release tag not available locally after fetch: ${TARGET_TAG}" \
                 "Running stack left untouched."
         fi
+        # Uses the compose file of the installed version, so a 2.1.x stack
+        # (frontend + nginx gateway included) is stopped and removed whole.
         docker compose down 2>/dev/null || true
         if ! git checkout -q "$TARGET_TAG" 2>/tmp/docklift-install-git.err \
             && ! git checkout -q "tags/${TARGET_TAG}" 2>/tmp/docklift-install-git.err; then
@@ -197,12 +237,14 @@ else
     fi
 fi
 
-echo -e " ${GREEN}done${NC} ${DIM}($(format_time $(($(date +%s) - FETCH_ST))))$NC"
-VERSION=$(grep -o '"version": *"[^"]*"' "$INSTALL_DIR/backend/package.json" 2>/dev/null | head -1 | cut -d'"' -f4 || echo "1.0.0")
+echo -e " ${GREEN}done${NC} ${DIM}($(format_time $(($(date +%s) - FETCH_ST))))${NC}"
+# Root package.json is the single source of the release version
+VERSION=$(grep -o '"version": *"[^"]*"' "$INSTALL_DIR/package.json" 2>/dev/null | head -1 | cut -d'"' -f4 || true)
+VERSION=${VERSION:-unknown}
 echo -e "        ${DIM}➞ Version: $VERSION ${CYAN}($TARGET_TAG)${NC}"
 
 # Step 3-5: Setup & Build (keep repo default.conf — do not overwrite secure catch-all)
-printf "  ${CYAN}[3/5]${NC} Creating directories... "
+echo -ne "  ${CYAN}[3/5]${NC} Creating directories... "
 mkdir -p \
   "$INSTALL_DIR/data" \
   "$INSTALL_DIR/deployments" \
@@ -213,27 +255,36 @@ mkdir -p \
   "$INSTALL_DIR/nginx-proxy/certbot/conf"
 echo -e "${GREEN}done${NC}"
 
-printf "  ${CYAN}[4/5]${NC} Cleaning network... " && (docker network rm docklift_network 2>/dev/null || true) && echo -e "${GREEN}done${NC}"
+echo -ne "  ${CYAN}[4/5]${NC} Cleaning network... " && (docker network rm docklift_network 2>/dev/null || true) && echo -e "${GREEN}done${NC}"
 
 BUILD_ST=$(date +%s); echo -e "\n  ${CYAN}[5/5]${NC} Building containers...\n        ${DIM}This may take a few minutes...${NC}"
 
 cd "$INSTALL_DIR"
+# Leftovers of a 2.1.x layout would hold :8080 and the container names
+for c in $OBSOLETE_CONTAINERS; do
+    docker rm -f "$c" >/dev/null 2>&1 || true
+done
 LOG=$(mktemp)
 if ! docker compose up -d --build --remove-orphans > "$LOG" 2>&1; then
     echo -e "\n  ${RED}Build failed!${NC}"; cat "$LOG"; rm "$LOG"; exit 1
 fi
-rm "$LOG"; sleep 5
+rm "$LOG"
 
 # Results
-TOTAL_TIME=$(($(date +%s) - START_TIME)); BUILD_TIME=$(($(date +%s) - BUILD_ST))
-RUNNING=$(docker compose ps --format "{{.Name}}" 2>/dev/null | grep -c "docklift" || true)
-RUNNING=${RUNNING:-0}
+if ! wait_healthy; then
+    echo -e "\n  ${RED}Error: Docklift did not become healthy within ${HEALTH_TIMEOUT}s${NC}"
+    docker compose ps 2>&1 || true
+    docker logs --tail 50 docklift-backend 2>&1 || true
+    echo -e "\n  ${DIM}Run: cd $INSTALL_DIR && docker compose logs${NC}\n"
+    exit 1
+fi
+# The 2.1.x dashboard image is not used by the new layout
+docker rmi docklift-frontend docklift-frontend:pre-upgrade >/dev/null 2>&1 || true
 
-if [ "$RUNNING" -gt 0 ]; then
-    echo -e "\n  ${GREEN}${BOLD}Installation Complete!${NC}\n  ${DIM}Build: $(format_time $BUILD_TIME) | Total: $(format_time $TOTAL_TIME)${NC}\n"
-    if [ "$CI" != "true" ]; then
-        print_access_info
-    else echo -e "  ${DIM}Version: $VERSION | Build: $(format_time $BUILD_TIME)${NC}\n"
-    fi
-else echo -e "  ${RED}Error: Containers not running${NC}\n  ${DIM}Run: cd $INSTALL_DIR && docker compose logs${NC}\n"
+TOTAL_TIME=$(($(date +%s) - START_TIME)); BUILD_TIME=$(($(date +%s) - BUILD_ST))
+echo -e "\n  ${GREEN}${BOLD}Installation Complete!${NC}\n  ${DIM}Build: $(format_time $BUILD_TIME) | Total: $(format_time $TOTAL_TIME)${NC}\n"
+if [ "${CI:-}" != "true" ]; then
+    print_access_info
+else
+    echo -e "  ${DIM}Version: $VERSION | Build: $(format_time $BUILD_TIME)${NC}\n"
 fi

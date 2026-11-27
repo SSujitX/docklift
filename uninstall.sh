@@ -10,7 +10,7 @@ BOLD='\033[1m'
 DIM='\033[2m'
 NC='\033[0m'
 
-INSTALL_DIR="/opt/docklift"
+INSTALL_DIR="${DOCKLIFT_INSTALL_DIR:-/opt/docklift}"
 
 # DockLift names every resource `docklift*`, `dl_*` (containers) or `dl-*` (compose
 # projects, and the images/volumes compose derives from them). Anything that matches
@@ -75,7 +75,7 @@ count() {
 
 # Step 1: let compose tear down the core stack it owns
 if [ -f "$INSTALL_DIR/docker-compose.yml" ]; then
-    printf "${CYAN}[1/6]${NC} Stopping the DockLift stack... "
+    echo -ne "${CYAN}[1/6]${NC} Stopping the DockLift stack... "
     (cd "$INSTALL_DIR" && docker compose down --volumes --remove-orphans --rmi all) >/dev/null 2>&1 || true
     echo -e "${GREEN}done${NC}"
 else
@@ -83,20 +83,24 @@ else
 fi
 
 # Step 2: containers (core stack leftovers + every deployed project)
-printf "${CYAN}[2/6]${NC} Removing containers... "
+echo -ne "${CYAN}[2/6]${NC} Removing containers... "
 CONTAINERS=$(docklift_containers)
 if [ -n "$CONTAINERS" ]; then
-    docker stop $CONTAINERS >/dev/null 2>&1 || true
-    docker rm -f -v $CONTAINERS >/dev/null 2>&1 || true
+    mapfile -t IDS <<<"$CONTAINERS"
+    docker stop "${IDS[@]}" >/dev/null 2>&1 || true
+    docker rm -f -v "${IDS[@]}" >/dev/null 2>&1 || true
     echo -e "${GREEN}removed $(count "$CONTAINERS")${NC}"
 else
     echo -e "${DIM}none found${NC}"
 fi
 
 # Step 3: images - DockLift's own builds, then the base images if nothing else needs them
-printf "${CYAN}[3/6]${NC} Removing images... "
+echo -ne "${CYAN}[3/6]${NC} Removing images... "
 IMAGES=$(docklift_images)
-[ -n "$IMAGES" ] && docker rmi -f $IMAGES >/dev/null 2>&1 || true
+if [ -n "$IMAGES" ]; then
+    mapfile -t IDS <<<"$IMAGES"
+    docker rmi -f "${IDS[@]}" >/dev/null 2>&1 || true
+fi
 KEPT=""
 for img in "${BASE_IMAGES[@]}"; do
     if docker image inspect "$img" >/dev/null 2>&1; then
@@ -107,20 +111,26 @@ echo -e "${GREEN}removed $(count "$IMAGES") DockLift image(s)${NC}"
 [ -n "$KEPT" ] && echo -e "        ${DIM}kept in use by other containers:$KEPT${NC}"
 
 # Step 4: volumes and networks
-printf "${CYAN}[4/6]${NC} Removing volumes and networks... "
+echo -ne "${CYAN}[4/6]${NC} Removing volumes and networks... "
 VOLUMES=$(docklift_volumes)
-[ -n "$VOLUMES" ] && docker volume rm -f $VOLUMES >/dev/null 2>&1 || true
+if [ -n "$VOLUMES" ]; then
+    mapfile -t IDS <<<"$VOLUMES"
+    docker volume rm -f "${IDS[@]}" >/dev/null 2>&1 || true
+fi
 NETWORKS=$(docklift_networks)
-[ -n "$NETWORKS" ] && docker network rm $NETWORKS >/dev/null 2>&1 || true
+if [ -n "$NETWORKS" ]; then
+    mapfile -t IDS <<<"$NETWORKS"
+    docker network rm "${IDS[@]}" >/dev/null 2>&1 || true
+fi
 echo -e "${GREEN}$(count "$VOLUMES") volume(s), $(count "$NETWORKS") network(s)${NC}"
 
 # Step 5: skip host image cleanup — step 3 already removed DockLift-owned images.
 # Never run host-wide prune (shared Docker hosts).
-printf "${CYAN}[5/6]${NC} Skipping host image cleanup... "
+echo -ne "${CYAN}[5/6]${NC} Skipping host image cleanup... "
 echo -e "${GREEN}ok${NC}"
 
 # Step 6: installation directory (database, deployments, backups, certificates)
-printf "${CYAN}[6/6]${NC} Removing $INSTALL_DIR... "
+echo -ne "${CYAN}[6/6]${NC} Removing $INSTALL_DIR... "
 rm -rf "$INSTALL_DIR"
 echo -e "${GREEN}done${NC}"
 
@@ -131,10 +141,10 @@ LEFT_V=$(docklift_volumes)
 LEFT_N=$(docklift_networks)
 if [ -n "$LEFT_C$LEFT_I$LEFT_V$LEFT_N" ] || [ -e "$INSTALL_DIR" ]; then
     echo -e "\n${RED}${BOLD}⚠ Some resources could not be removed:${NC}"
-    [ -n "$LEFT_C" ] && echo -e "  containers: $(echo $LEFT_C | tr '\n' ' ')"
-    [ -n "$LEFT_I" ] && echo -e "  images:     $(echo $LEFT_I | tr '\n' ' ')"
-    [ -n "$LEFT_V" ] && echo -e "  volumes:    $(echo $LEFT_V | tr '\n' ' ')"
-    [ -n "$LEFT_N" ] && echo -e "  networks:   $(echo $LEFT_N | tr '\n' ' ')"
+    [ -n "$LEFT_C" ] && echo -e "  containers: $(tr '\n' ' ' <<<"$LEFT_C")"
+    [ -n "$LEFT_I" ] && echo -e "  images:     $(tr '\n' ' ' <<<"$LEFT_I")"
+    [ -n "$LEFT_V" ] && echo -e "  volumes:    $(tr '\n' ' ' <<<"$LEFT_V")"
+    [ -n "$LEFT_N" ] && echo -e "  networks:   $(tr '\n' ' ' <<<"$LEFT_N")"
     [ -e "$INSTALL_DIR" ] && echo -e "  directory:  $INSTALL_DIR"
     exit 1
 fi
