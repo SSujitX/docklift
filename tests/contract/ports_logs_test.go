@@ -34,8 +34,14 @@ func TestPorts(t *testing.T) {
 	c.Delete(t, "/api/ports/abc").ExpectError(t, 400, "Invalid port")
 	c.Delete(t, "/api/ports/"+fmt.Sprint(portRangeEnd)).Expect(t, 200, Obj{"status": "deleted"})
 	c.Delete(t, "/api/ports/99999").Expect(t, 200, Obj{"status": "deleted"})
-	// parseInt semantics: a numeric prefix is accepted.
-	c.Delete(t, "/api/ports/77abc").Expect(t, 200, Obj{"status": "deleted"})
+	// TS parseInt accepts a numeric prefix; Go parses the port strictly (deliberate fix).
+	if targetIsGo() {
+		for _, bad := range []string{"77abc", "-1", "1.5"} {
+			c.Delete(t, "/api/ports/"+bad).ExpectError(t, 400, "Invalid port")
+		}
+	} else {
+		c.Delete(t, "/api/ports/77abc").Expect(t, 200, Obj{"status": "deleted"})
+	}
 	mainInst.Anon().Get(t, "/api/ports").ExpectError(t, 401, "Authentication required")
 
 	t.Run("deploy claims a pool port", func(t *testing.T) {
@@ -73,6 +79,11 @@ func TestContainerLogs(t *testing.T) {
 	id, cname := p["id"].(string), svc["container_name"].(string)
 	t.Run("containers", func(t *testing.T) {
 		requireNoDocker(t)
+		if targetIsGo() {
+			// Deliberate fix 9: an unreachable daemon is a 503, not "not_found" containers.
+			c.Get(t, "/api/logs/"+id+"/containers").ExpectError(t, 503, "Docker is not available")
+			return
+		}
 		c.Get(t, "/api/logs/"+id+"/containers").Expect(t, 200, Arr{Obj{
 			"id": svc["id"], "name": "app", "container_name": cname, "port": nil, "internal_port": 8080, "dockerfile_path": "Dockerfile",
 			"status": "not_found", "running": false,

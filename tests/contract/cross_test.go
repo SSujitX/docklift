@@ -164,6 +164,20 @@ func TestCORS(t *testing.T) {
 
 func TestUnknownAPIPath(t *testing.T) {
 	c := mainInst.Anon()
+	if targetIsGo() {
+		// Deliberate fix 2: unknown /api paths get a JSON 404.
+		for _, m := range []string{"GET", "POST", "DELETE"} {
+			r := c.Do(t, m, "/api/no-such-thing", nil)
+			r.ExpectError(t, 404, "Not found")
+			if ct := r.Header.Get("Content-Type"); ct != "application/json; charset=utf-8" {
+				t.Fatalf("%s 404 Content-Type = %q", m, ct)
+			}
+		}
+		c.Get(t, "/api/projects/x/y/z").ExpectError(t, 401, "Authentication required")
+		admin.Client().Get(t, "/api/projects/x/y/z").ExpectError(t, 404, "Not found")
+		admin.Client().Do(t, "PUT", "/api/auth/me", map[string]any{}).ExpectError(t, 404, "Not found")
+		return
+	}
 	r := c.Get(t, "/api/no-such-thing")
 	r.ExpectStatus(t, 404)
 	if ct := r.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
@@ -188,10 +202,19 @@ func TestUnknownAPIPath(t *testing.T) {
 	r.ExpectStatus(t, 404)
 }
 
+// TestRequestBodies covers body parsing. The Go backend answers client
+// mistakes with 4xx (deliberate fix 1); TS sent them to its 500 handler.
 func TestRequestBodies(t *testing.T) {
 	c := mainInst.Anon()
-	t.Run("malformed JSON hits the generic error handler", func(t *testing.T) {
-		c.Post(t, "/api/auth/login", RawBody{"application/json", []byte(`{"email":`)}).ExpectError(t, 500, "Something went wrong!")
+	t.Run("malformed JSON", func(t *testing.T) {
+		for _, raw := range []string{`{"email":`, `{} trailing`, `"just a string"`, `null`} {
+			r := c.Post(t, "/api/auth/login", RawBody{"application/json", []byte(raw)})
+			if targetIsGo() {
+				r.ExpectError(t, 400, "Invalid JSON body")
+			} else {
+				r.ExpectError(t, 500, "Something went wrong!")
+			}
+		}
 	})
 	t.Run("urlencoded body is parsed", func(t *testing.T) {
 		c.Post(t, "/api/auth/login", url.Values{"email": {admin.Email}, "password": {"wrong-password"}}).
@@ -200,19 +223,33 @@ func TestRequestBodies(t *testing.T) {
 			Expect(t, 200, Obj{"message": "Login successful", "token": JWT, "user": Obj{"id": admin.UserID, "name": admin.Name, "email": admin.Email, "role": "admin"}})
 	})
 	t.Run("unparsed content type leaves body undefined", func(t *testing.T) {
-		c.Post(t, "/api/auth/login", RawBody{"text/plain", []byte("email=a@b.c&password=x")}).ExpectError(t, 500, "Login failed")
+		r := c.Post(t, "/api/auth/login", RawBody{"text/plain", []byte("email=a@b.c&password=x")})
+		if targetIsGo() {
+			// Deliberate fix 3: a missing body is a missing field, not a crash.
+			r.ExpectError(t, 400, "Email and password are required")
+		} else {
+			r.ExpectError(t, 500, "Login failed")
+		}
 	})
 	t.Run("JSON under the 10mb limit is accepted", func(t *testing.T) {
 		big := strings.Repeat("a", 9*1024*1024)
 		c.Post(t, "/api/auth/login", map[string]any{"email": big + "@x.test", "password": "x"}).ExpectError(t, 401, "Invalid email or password")
 	})
+	tooLarge := func(t *testing.T, r *Resp) {
+		t.Helper()
+		if targetIsGo() {
+			r.ExpectError(t, 413, "Request body too large")
+		} else {
+			r.ExpectError(t, 500, "Something went wrong!")
+		}
+	}
 	t.Run("JSON over the 10mb limit", func(t *testing.T) {
 		big := strings.Repeat("a", 11*1024*1024)
-		c.Post(t, "/api/auth/login", RawBody{"application/json", []byte(fmt.Sprintf(`{"email":"%s"}`, big))}).ExpectError(t, 500, "Something went wrong!")
+		tooLarge(t, c.Post(t, "/api/auth/login", RawBody{"application/json", []byte(fmt.Sprintf(`{"email":"%s"}`, big))}))
 	})
 	t.Run("urlencoded over the 10mb limit", func(t *testing.T) {
 		big := strings.Repeat("a", 11*1024*1024)
-		c.Post(t, "/api/auth/login", RawBody{"application/x-www-form-urlencoded", []byte("email=" + big)}).ExpectError(t, 500, "Something went wrong!")
+		tooLarge(t, c.Post(t, "/api/auth/login", RawBody{"application/x-www-form-urlencoded", []byte("email=" + big)}))
 	})
 }
 
@@ -232,4 +269,95 @@ func Test401Shapes(t *testing.T) {
 	sse := admin.Client().Post(t, "/api/auth/sse-token", nil).Obj(t)["token"].(string)
 	c.Get(t, "/api/projects?token="+sse).ExpectError(t, 401, "Authentication required")
 	c.Get(t, "/api/system/stats?token="+sse).ExpectError(t, 401, "Authentication required")
+}
+
+// TestTrustedProxies covers deliberate fix 11 (Go only: Express ran with
+// trust proxy = 1 and believed X-Forwarded-* from every peer). The instance
+// trusts loopback except 127.0.0.1, which stands in for the Docker network
+// gateway a client of the published dashboard port appears as: requests from
+// 127.0.0.1 are "direct" and their forwarded headers must be ignored, while
+// ::1 plays the trusted docklift-nginx-proxy.
+func TestTrustedProxies(t *testing.T) {
+	if !targetIsGo() {
+		t.Skip("the TS backend trusts X-Forwarded-* from every peer (trust proxy = 1)")
+	}
+	inst := dedicatedInstance(t, BootOptions{Name: "proxytrust", ExtraEnv: map[string]string{
+		"TRUSTED_PROXIES": "127.0.0.0/8,::1,!127.0.0.1",
+	}})
+	remaining := func(t *testing.T, c *Client) string {
+		t.Helper()
+		return c.Post(t, "/api/auth/login", map[string]any{}).Header.Get("RateLimit-Remaining")
+	}
+
+	t.Run("spoofed X-Forwarded-For shares the peer's bucket", func(t *testing.T) {
+		// Every Anon client sends its own X-Forwarded-For; all of them are 127.0.0.1 here.
+		for i, want := range []string{"99", "98", "97"} {
+			if got := remaining(t, inst.Anon()); got != want {
+				t.Fatalf("request %d with a fresh spoofed address: RateLimit-Remaining = %s, want %s", i+1, got, want)
+			}
+		}
+		for _, xff := range []string{"::1", "127.0.0.2", "garbage", "198.51.100.7, 203.0.113.9", ""} {
+			c := inst.Anon().With("X-Forwarded-For", xff)
+			if got := remaining(t, c); got == "99" {
+				t.Fatalf("X-Forwarded-For %q opened a fresh bucket", xff)
+			}
+		}
+	})
+
+	t.Run("spoofed X-Forwarded-Proto does not enable HSTS", func(t *testing.T) {
+		r := inst.Anon().Get(t, "/api/health", "X-Forwarded-Proto", "https")
+		r.ExpectStatus(t, 200)
+		assertSecurityHeaders(t, r)
+		if got := r.Header.Get("Strict-Transport-Security"); got != "" {
+			t.Fatalf("HSTS from an untrusted peer = %q", got)
+		}
+	})
+
+	t.Run("spoofed X-Forwarded-Host does not make an origin same-origin", func(t *testing.T) {
+		c := inst.Anon()
+		r := c.Get(t, "/api/health", "Origin", "https://evil.contract.test", "X-Forwarded-Host", "evil.contract.test", "X-Forwarded-Proto", "https")
+		if got := r.Header.Get("Access-Control-Allow-Origin"); got != "" {
+			t.Fatalf("forged forwarded host was trusted: Access-Control-Allow-Origin = %q", got)
+		}
+		// The real Host still counts.
+		r = c.Get(t, "/api/health", "Origin", inst.BaseURL, "X-Forwarded-Host", "evil.contract.test")
+		if got := r.Header.Get("Access-Control-Allow-Origin"); got != inst.BaseURL {
+			t.Fatalf("same-origin request: Access-Control-Allow-Origin = %q", got)
+		}
+	})
+
+	t.Run("a trusted proxy peer is believed (IPv6 loopback)", func(t *testing.T) {
+		u, err := url.Parse(inst.BaseURL)
+		if err != nil {
+			t.Fatal(err)
+		}
+		v6 := &Instance{Name: inst.Name + "-v6", BaseURL: "http://[::1]:" + u.Port()}
+		if _, err := v6.Anon().raw("GET", "/api/health", nil, nil); err != nil {
+			t.Skipf("IPv6 loopback unavailable: %v", err)
+		}
+		for i := 0; i < 3; i++ {
+			if got := remaining(t, v6.Anon()); got != "99" {
+				t.Fatalf("proxied client %d: RateLimit-Remaining = %s, want its own bucket (99)", i+1, got)
+			}
+		}
+		c := v6.Anon()
+		remaining(t, c)
+		if got := remaining(t, c); got != "98" {
+			t.Fatalf("same proxied client twice: RateLimit-Remaining = %s, want 98", got)
+		}
+		r := v6.Anon().Get(t, "/api/health", "X-Forwarded-Proto", "https")
+		if got := r.Header.Get("Strict-Transport-Security"); got != "max-age=31536000; includeSubDomains" {
+			t.Fatalf("HSTS behind a trusted https proxy = %q", got)
+		}
+		r = v6.Anon().Get(t, "/api/health", "Origin", "https://panel.contract.test", "X-Forwarded-Host", "panel.contract.test", "X-Forwarded-Proto", "https")
+		if got := r.Header.Get("Access-Control-Allow-Origin"); got != "https://panel.contract.test" {
+			t.Fatalf("forwarded host from a trusted proxy: Access-Control-Allow-Origin = %q", got)
+		}
+		// A malformed forwarded address falls back to the proxy's own address.
+		bad := v6.Anon().With("X-Forwarded-For", "not-an-ip")
+		first, second := remaining(t, bad), remaining(t, v6.Anon().With("X-Forwarded-For", "also bad"))
+		if first == "" || second == "" || first == second {
+			t.Fatalf("malformed X-Forwarded-For must key on the proxy address: %s then %s", first, second)
+		}
+	})
 }

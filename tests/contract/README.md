@@ -121,6 +121,9 @@ NGINX_PROXY_CONTAINER=docklift-contract-nginx-proxy
 TERMINAL_ALLOW_NO_ORIGIN=
 ```
 
+`TRUSTED_PROXIES` (read only by the Go backend) is stripped too, so its default applies:
+loopback is a trusted proxy and the per-client `X-Forwarded-For` addresses are honoured.
+
 ## Instances
 
 | Name | Booted | Purpose |
@@ -130,6 +133,7 @@ TERMINAL_ALLOW_NO_ORIGIN=
 | `seeded` | `TestSeeded`, `TestACMEEmailDefaultsToAdmin` | `testdata/seed.db.gz` + known `.secrets`: webhook HMAC with a known secret, configured GitHub App, managed DB links, rollback guards |
 | `critical` | `TestCriticalRestoreGate` | data dir carrying a `.restore-critical` seal |
 | `restore` | `TestAuthenticatedRestore` | a committed restore (server exits, harness restarts it) |
+| `proxytrust` | `TestTrustedProxies` (Go only) | `TRUSTED_PROXIES=127.0.0.0/8,::1,!127.0.0.1`: forwarded headers from 127.0.0.1 are ignored, from `::1` honoured |
 
 Processes are killed as a tree (`taskkill /T /F` on Windows, process group on Unix). On any
 failure every instance's server log is printed at the end of the run.

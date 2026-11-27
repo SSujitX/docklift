@@ -155,6 +155,22 @@ func TestSystemDangerousEndpointsRequireStepUp(t *testing.T) {
 			mainInst.As(sse).Post(t, path, map[string]any{"password": admin.Password}).ExpectError(t, 401, "Invalid token for this endpoint")
 		})
 	}
+	t.Run("reset without docker", func(t *testing.T) {
+		// Safe to run: the harness points DOCKER_HOST at a closed port.
+		requireBoot(t)
+		requireNoDocker(t)
+		r := c.Post(t, "/api/system/reset", map[string]any{"password": admin.Password})
+		switch {
+		case runtime.GOOS == "windows":
+			r.Expect(t, 200, Obj{"message": "Dev Mode: Simulated Service Reset complete."})
+		case targetIsGo():
+			// Deliberate fix 9: TypeScript reported success and the detached
+			// `docker restart` failed silently.
+			r.ExpectError(t, 503, "Docker is not available")
+		default:
+			r.Expect(t, 200, Obj{"message": "Services reset command sent successfully (Restarting in 1s)"})
+		}
+	})
 }
 
 func TestSystemExecute(t *testing.T) {

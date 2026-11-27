@@ -53,8 +53,17 @@ func TestLogin(t *testing.T) {
 	c.Post(t, "/api/auth/login", map[string]any{"email": "", "password": "x"}).ExpectError(t, 400, "Email and password are required")
 	c.Post(t, "/api/auth/login", map[string]any{"email": "nobody@contract.test", "password": "whatever1"}).ExpectError(t, 401, "Invalid email or password")
 	c.Post(t, "/api/auth/login", map[string]any{"email": admin.Email, "password": "wrong-password"}).ExpectError(t, 401, "Invalid email or password")
-	// Non-string email reaches .toLowerCase() and fails inside the handler.
-	c.Post(t, "/api/auth/login", map[string]any{"email": 42, "password": "x"}).ExpectError(t, 500, "Login failed")
+	if targetIsGo() {
+		// Deliberate fix 3: wrong-typed fields are a 400, never a 500.
+		c.Post(t, "/api/auth/login", map[string]any{"email": 42, "password": "x"}).ExpectError(t, 400, "Email and password must be strings")
+		c.Post(t, "/api/auth/login", map[string]any{"email": admin.Email, "password": map[string]any{"$ne": ""}}).ExpectError(t, 400, "Email and password must be strings")
+		c.Post(t, "/api/auth/login", map[string]any{"email": []string{admin.Email}, "password": admin.Password}).ExpectError(t, 400, "Email and password must be strings")
+	} else {
+		// Non-string email reaches .toLowerCase() and fails inside the handler;
+		// a non-string password makes bcrypt.compare throw.
+		c.Post(t, "/api/auth/login", map[string]any{"email": 42, "password": "x"}).ExpectError(t, 500, "Login failed")
+		c.Post(t, "/api/auth/login", map[string]any{"email": admin.Email, "password": map[string]any{"$ne": ""}}).ExpectError(t, 500, "Login failed")
+	}
 
 	r := c.Post(t, "/api/auth/login", map[string]any{"email": "CONTRACT-ADMIN@Contract.Test", "password": admin.Password})
 	got := r.Expect(t, 200, Obj{"message": "Login successful", "token": JWT, "user": userObj}).(map[string]any)

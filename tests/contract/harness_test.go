@@ -42,6 +42,9 @@ var serverEnvKeys = []string{
 	"DOCKLIFT_GITHUB_CLIENT_ID", "DOCKLIFT_GITHUB_CLIENT_SECRET", "DOCKLIFT_GITHUB_PRIVATE_KEY_PATH",
 	"PORT_RANGE_START", "PORT_RANGE_END", "CERTBOT_CONTAINER", "CERTBOT_EMAIL", "CERTBOT_STAGING",
 	"NGINX_PROXY_CONTAINER", "TERMINAL_ALLOW_NO_ORIGIN",
+	// Read only by the Go backend (trusted-proxy model); stripped so the
+	// default (loopback trusted) applies unless a test sets it.
+	"TRUSTED_PROXIES",
 }
 
 type config struct {
