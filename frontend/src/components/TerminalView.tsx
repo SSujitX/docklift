@@ -555,7 +555,17 @@ export function TerminalView({ className }: { className?: string }) {
             term.write(msg.data);
           }
 
-          if (msg.type === "exit") {
+          if (msg.type === "exit" && msg.reason === "auth_timeout") {
+            // The server gave up waiting for the password: close the dialog so a late
+            // submit cannot be sent to a closed socket, and say why the session ended.
+            cancelPasswordPrompt();
+            term.writeln("");
+            term.writeln("  \x1b[1;33m⚠ Password prompt timed out — the shell was not opened\x1b[0m");
+            toast.error("Terminal sign-in timed out", {
+              description: "The password was not entered in time. Reconnect to try again.",
+            });
+            setConnected(false);
+          } else if (msg.type === "exit") {
             term.writeln("");
             term.writeln("  \x1b[1;33m⚠ Shell session ended\x1b[0m");
             setConnected(false);

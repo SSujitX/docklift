@@ -138,10 +138,52 @@
   /* Tailwind v3 defaults for rings without an explicit colour (v4 uses currentColor). */
   --default-ring-color: rgb(59 130 246 / 0.5);
 
+  /*
+    Tailwind v4 makes the line-height of text-xs/sm/base/... a unitless ratio, so a child with an
+    arbitrary size (text-[10px]) inside a text-sm parent now scales it. v3 used absolute rem values
+    that children inherited unchanged. Restore those values.
+  */
+  --text-xs--line-height: 1rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base--line-height: 1.5rem;
+  --text-lg--line-height: 1.75rem;
+  --text-xl--line-height: 1.75rem;
+  --text-2xl--line-height: 2rem;
+  --text-3xl--line-height: 2.25rem;
+  --text-4xl--line-height: 2.5rem;
+
   --font-sans: Inter, system-ui, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
+
+
+/*
+  Tailwind v4 changed space-x/space-y from `> :not([hidden]) ~ :not([hidden])` (margin on every
+  child but the first, hidden children ignored) to `> :not(:last-child)` (margin on every child but
+  the last). That differs when the following siblings are hidden (inactive Radix tab panels leave a
+  trailing 24px) and when a child is inline (a <label> above an input loses its gap). Re-declare the
+  v3 selectors, and cancel the v4 margin it would otherwise add on top.
+*/
+@utility space-y-* {
+  & > :not([hidden]) ~ :not([hidden]) {
+    margin-block-start: calc(var(--spacing) * --value(number));
+    margin-block-end: 0;
+  }
+  & > :not([hidden]):not([class*='mb-']):not([class*='my-']) {
+    margin-block-end: 0;
+  }
+}
+
+@utility space-x-* {
+  & > :not([hidden]) ~ :not([hidden]) {
+    margin-inline-start: calc(var(--spacing) * --value(number));
+    margin-inline-end: 0;
+  }
+  & > :not([hidden]):not([class*='mr-']):not([class*='mx-']):not([class*='me-']) {
+    margin-inline-end: 0;
+  }
+}
 /*
   The default border color has changed to `currentcolor` in Tailwind CSS v4,
   so we've added these compatibility styles to make sure everything still

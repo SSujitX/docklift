@@ -22,7 +22,7 @@ const ACTION_SECONDARY =
 
 /** Quiet danger (Delete) — visible border + tint, not ghost-grey. */
 const ACTION_DANGER =
-  `${ACTION} border-destructive/45 bg-destructive/10 text-destructive hover:bg-destructive/18 hover:border-destructive/60 hover:text-destructive`;
+  `${ACTION} border-destructive/45 bg-destructive/10 text-destructive hover:border-destructive/60 hover:text-destructive`;
 
 /** Solid danger (Cancel Build) — must read clearly while a build is running. */
 const ACTION_DANGER_SOLID =

@@ -5,9 +5,7 @@ import { SystemLogsPanel } from "@/components/SystemLogsPanel";
 import {
   ScrollText,
   Server,
-  Globe,
   Shield,
-  Network,
   LockKeyhole,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -24,28 +22,12 @@ const SERVICES = [
     container: "docklift-backend",
   },
   {
-    id: "frontend",
-    label: "Frontend",
-    short: "UI",
-    icon: Globe,
-    description: "Vite SPA dashboard",
-    container: "docklift-frontend",
-  },
-  {
     id: "proxy",
     label: "Public Proxy",
     short: "Proxy",
     icon: Shield,
     description: "Domains + HTTPS :80/:443",
     container: "docklift-nginx-proxy",
-  },
-  {
-    id: "nginx",
-    label: "Dashboard Gateway",
-    short: "Gate",
-    icon: Network,
-    description: "Panel on :8080",
-    container: "docklift-nginx",
   },
   {
     id: "certbot",

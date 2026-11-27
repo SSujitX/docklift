@@ -223,7 +223,7 @@ export function CommandPalette() {
                     onClick={command.run}
                     className={cn(
                       "flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors",
-                      isSelected ? "bg-brand/12" : "hover:bg-secondary/60",
+                      !isSelected && "hover:bg-secondary/60",
                     )}
                   >
                     <command.icon

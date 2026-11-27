@@ -54,7 +54,7 @@ function SettingsTree({
         className={cn(
           "group relative flex h-10 items-center justify-center rounded-xl text-sm font-medium transition-colors",
           parentActive
-            ? "bg-brand/12 text-sidebar-foreground"
+            ? "text-sidebar-foreground"
             : "text-sidebar-muted hover:bg-sidebar-accent/70 hover:text-sidebar-foreground",
         )}
       >
@@ -77,7 +77,7 @@ function SettingsTree({
         className={cn(
           "group relative flex items-center rounded-xl text-sm font-medium transition-colors",
           parentActive
-            ? "bg-brand/12 text-sidebar-foreground"
+            ? "text-sidebar-foreground"
             : "text-sidebar-muted hover:bg-sidebar-accent/70 hover:text-sidebar-foreground",
         )}
       >
@@ -278,7 +278,7 @@ export function Sidebar({
                 "group relative flex items-center rounded-xl text-sm font-medium transition-colors",
                 isCollapsed ? "h-10 justify-center" : "gap-2.5 px-2.5 py-2",
                 active
-                  ? "bg-brand/12 text-sidebar-foreground"
+                  ? "text-sidebar-foreground"
                   : "text-sidebar-muted hover:bg-sidebar-accent/70 hover:text-sidebar-foreground",
               );
               const icon = (

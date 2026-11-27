@@ -42,7 +42,7 @@ export function DnsGuideCard({ serverIP }: { serverIP: string }) {
               </span>
               Point DNS at this server
             </h3>
-            <p className="mt-1.5 max-w-xl text-xs leading-relaxed text-muted-foreground sm:text-sm">
+            <p className="mt-1.5 max-w-xl text-xs leading-relaxed text-muted-foreground sm:text-sm sm:leading-5">
               Create the DNS record first. Let&apos;s Encrypt checks HTTP before
               issuing a certificate.
             </p>

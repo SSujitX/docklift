@@ -96,7 +96,7 @@ const PROJECT_ACTION_PRIMARY =
 
 /** Shared width for every project tab — matches shell content, no per-tab max-w. */
 const PROJECT_TAB_PANEL =
-  "w-full space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-400";
+  "w-full space-y-6 animate-in fade-in slide-in-from-bottom-2";
 
 const MAX_LOG_LINES = 10000;
 

@@ -44,9 +44,9 @@ const Toaster = ({ ...props }: ToasterProps) => {
         classNames: {
           toast:
             "group toast docklift-toast group-[.toaster]:pointer-events-auto " +
-            "group-[.toaster]:w-[min(100vw-1.5rem,26rem)] " +
-            "group-[.toaster]:rounded-2xl group-[.toaster]:border group-[.toaster]:p-4 " +
-            "group-[.toaster]:gap-3 group-[.toaster]:font-sans " +
+            "group-[.toaster]:w-[min(100vw-1.5rem,26rem)]! " +
+            "group-[.toaster]:rounded-2xl! group-[.toaster]:border group-[.toaster]:p-4 " +
+            "group-[.toaster]:gap-3! group-[.toaster]:font-sans " +
             "group-[.toaster]:bg-background group-[.toaster]:text-foreground " +
             "group-[.toaster]:border-border/70 " +
             "group-[.toaster]:shadow-[0_12px_40px_-12px_rgba(0,0,0,0.35)] " +
