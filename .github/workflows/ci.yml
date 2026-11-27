@@ -77,8 +77,6 @@ jobs:
 
       - name: Contract tests
         working-directory: tests/contract
-        env:
-          DOCKLIFT_TARGET: go
         run: DOCKLIFT_GO_BIN="$RUNNER_TEMP/docklift" go test -count=1 ./...
 
   frontend:
@@ -99,6 +97,9 @@ jobs:
 
       - name: Typecheck
         run: bunx tsc -p tsconfig.app.json --noEmit
+
+      - name: Test
+        run: bun test
 
       - name: Build
         run: bunx vite build
@@ -205,6 +206,5 @@ jobs:
       - name: Docker-gated contract tests
         working-directory: tests/contract
         env:
-          DOCKLIFT_TARGET: go
           DOCKLIFT_DOCKER: "1"
         run: DOCKLIFT_GO_BIN="$RUNNER_TEMP/docklift" go test -count=1 ./...

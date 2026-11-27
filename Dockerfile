@@ -2,7 +2,7 @@
 # terminal and the embedded dashboard on PORT (8000).
 #
 #   docker build -t docklift-backend .
-#   docker build --build-arg VERSION=2.2.0 -t docklift-backend .
+#   docker build --build-arg VERSION=3.0.0 -t docklift-backend .
 #
 # VERSION defaults to the "version" of the root package.json, the single
 # source of truth that semantic-release bumps.
@@ -78,7 +78,7 @@ RUN set -eu; \
 COPY --from=server /out/docklift /usr/local/bin/docklift
 
 # The working directory is where .env/.env.local and the default
-# ./github-app.pem are looked up, as /app was for the Node backend.
+# ./github-app.pem are looked up.
 WORKDIR /app
 RUN mkdir -p /app/data /deployments /nginx-conf
 
@@ -95,6 +95,6 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
     CMD wget -q -O /dev/null "http://127.0.0.1:${PORT:-8000}/api/health" || exit 1
 
-# serve runs ensureDb (migrations) before listening.
+# serve applies the database migrations before listening.
 ENTRYPOINT ["/usr/local/bin/docklift"]
 CMD ["serve"]

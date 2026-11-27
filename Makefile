@@ -2,7 +2,7 @@
 #
 #   make build      dashboard + Go binary with the dashboard embedded -> bin/docklift
 #   make test       go vet + go test (server), go vet (contract suite)
-#   make contract   contract suite against the Go binary (DOCKLIFT_TARGET=go)
+#   make contract   contract suite against the Go binary
 #   make frontend   bun install, typecheck, vite build, audit
 #   make lint       gofmt, go vet, bash -n + shellcheck, actionlint, compose config
 #   make vuln       govulncheck
@@ -54,7 +54,7 @@ test:
 	cd tests/contract && go vet ./...
 
 contract: server
-	cd tests/contract && DOCKLIFT_TARGET=go DOCKLIFT_GO_BIN="$(BIN)" go test -count=1 ./...
+	cd tests/contract && DOCKLIFT_GO_BIN="$(BIN)" go test -count=1 ./...
 
 lint:
 	@unformatted=$$(gofmt -l server tests/contract); \
