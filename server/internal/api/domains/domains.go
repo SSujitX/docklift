@@ -1,16 +1,404 @@
-// Package domains serves /api/domains (the port of backend/src/routes/domains.ts).
+// Package domains serves /api/domains: panel (dashboard) custom domains with
+// their Let's Encrypt certificates, DNS checks, SSL status and activity, and
+// the ACME account email (the port of backend/src/routes/domains.ts).
 //
-// The route handlers are owned by the agent porting backend/src/routes/domains.ts; until then Mount
-// registers no routes and every request under /api/domains answers 404 after the
-// group's authentication middleware, which the router applies.
+// Every hostname from the URL or the body is trimmed, lowercased and checked
+// against the hostname grammar before it reaches the nginx and certs
+// services, which validate again before touching a file or running a
+// program. Provisioning (writing the conf, reloading nginx, certbot) runs on
+// a context derived from the server's background context: like the Express
+// handlers it keeps going when the client disconnects, and stops on
+// shutdown.
 package domains
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
+	"log/slog"
+	"math"
+	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
 	"github.com/go-chi/chi/v5"
 
 	"docklift/internal/app"
+	"docklift/internal/certs"
+	"docklift/internal/dnscheck"
+	"docklift/internal/httpx"
+	"docklift/internal/nginx"
 )
 
-// Mount registers the /api/domains routes on r, which is already scoped to /api/domains and
-// wrapped in the group's authentication middleware.
-func Mount(r chi.Router, d *app.Deps) {}
+// maxDNSCheckHosts is how many hostnames one DNS check looks at.
+const maxDNSCheckHosts = 10
+
+// maxEmailLength is the longest address the ACME email setting accepts
+// (RFC 5321 forward-path limit).
+const maxEmailLength = 254
+
+const (
+	msgInvalidFormat = "Invalid domain format"
+	msgNotFound      = "Domain configuration not found"
+)
+
+type handlers struct {
+	d *app.Deps
+
+	mu    sync.Mutex
+	locks map[string]*domainLock
+}
+
+// domainLock is a reference-counted mutex so the map holds only domains with
+// an operation in flight.
+type domainLock struct {
+	sync.Mutex
+	refs int
+}
+
+// Mount registers the /api/domains routes on r, which is already scoped to
+// /api/domains and wrapped in the group's authentication middleware.
+func Mount(r chi.Router, d *app.Deps) {
+	h := &handlers{d: d, locks: map[string]*domainLock{}}
+	r.Get("/ssl/email", h.getEmail)
+	r.Put("/ssl/email", h.putEmail)
+	r.Get("/", h.list)
+	r.Post("/", h.add)
+	r.Post("/dns-check", h.dnsCheck)
+	r.Get("/{domain}/ssl", h.sslStatus)
+	r.Post("/{domain}/ssl/retry", h.sslRetry)
+	r.Delete("/{domain}", h.remove)
+}
+
+// lock serialises the mutating operations on one domain (conf write, reload,
+// certificate run) and returns the unlock function.
+func (h *handlers) lock(domain string) func() {
+	h.mu.Lock()
+	m, ok := h.locks[domain]
+	if !ok {
+		m = &domainLock{}
+		h.locks[domain] = m
+	}
+	m.refs++
+	h.mu.Unlock()
+	m.Lock()
+	return func() {
+		m.Unlock()
+		h.mu.Lock()
+		if m.refs--; m.refs == 0 {
+			delete(h.locks, domain)
+		}
+		h.mu.Unlock()
+	}
+}
+
+// opContext is the context of a provisioning step: cancelled on server
+// shutdown, not when the client goes away.
+func (h *handlers) opContext() (context.Context, context.CancelFunc) {
+	return context.WithCancel(h.d.Background)
+}
+
+// domainParam is the :domain path parameter, decoded once (as Express
+// req.params) and normalised like the TypeScript handlers.
+func domainParam(r *http.Request) string {
+	raw := chi.URLParam(r, "domain")
+	if r.URL.RawPath != "" {
+		if decoded, err := url.PathUnescape(raw); err == nil {
+			raw = decoded
+		}
+	}
+	return certs.NormalizeHost(raw)
+}
+
+// report is the SSL status with its health fields, as returned to the API.
+func (h *handlers) report(ctx context.Context, domain string) (certs.Report, error) {
+	return h.d.Edge.Certs.GetCertificateReport(ctx, domain)
+}
+
+func reportOf(st certs.CertificateStatus) certs.Report {
+	return certs.Report{CertificateStatus: st, Health: certs.HealthOf(st, time.Now())}
+}
+
+func (h *handlers) fail(w http.ResponseWriter, msg string, err error) {
+	h.d.Log.Error(msg, slog.Any("error", err))
+	httpx.Error(w, http.StatusInternalServerError, msg)
+}
+
+// failProvision answers a failed provisioning step: nginx reload errors keep
+// their message (the dashboard shows it), anything else is logged and
+// answered generically so file system paths never leave the server.
+func (h *handlers) failProvision(w http.ResponseWriter, msg string, err error) {
+	var re *nginx.ReloadError
+	if errors.As(err, &re) {
+		h.d.Log.Error(msg, slog.Any("error", err))
+		httpx.Error(w, http.StatusInternalServerError, re.Error())
+		return
+	}
+	h.fail(w, msg, err)
+}
+
+// GET /ssl/email — the ACME account email.
+func (h *handlers) getEmail(w http.ResponseWriter, r *http.Request) {
+	email, err := h.d.Edge.Certs.GetAcmeEmail(r.Context())
+	if err != nil {
+		email = ""
+	}
+	httpx.JSON(w, http.StatusOK, struct {
+		Email string `json:"email"`
+	}{email})
+}
+
+// PUT /ssl/email — save the ACME account email.
+func (h *handlers) putEmail(w http.ResponseWriter, r *http.Request) {
+	v := httpx.BodyFrom(r).Get("email")
+	if v.Defined() && !v.IsNull() {
+		if _, ok := v.String(); !ok {
+			httpx.Error(w, http.StatusBadRequest, "Email must be a string")
+			return
+		}
+	}
+	email, _ := v.String()
+	if len(email) > maxEmailLength || strings.ContainsAny(email, "\x00\r\n") {
+		httpx.Error(w, http.StatusBadRequest, certs.ErrInvalidEmail.Error())
+		return
+	}
+	if err := h.d.Edge.Certs.SetAcmeEmail(r.Context(), email); err != nil {
+		if errors.Is(err, certs.ErrInvalidEmail) {
+			httpx.Error(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		h.fail(w, "Failed to save ACME email", err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, struct {
+		Success bool   `json:"success"`
+		Email   string `json:"email"`
+	}{true, strings.ToLower(certs.TrimJS(email))})
+}
+
+type listedDomain struct {
+	Domain string       `json:"domain"`
+	Port   int          `json:"port"`
+	SSL    certs.Report `json:"ssl"`
+}
+
+// GET / — panel domains with their SSL status.
+func (h *handlers) list(w http.ResponseWriter, r *http.Request) {
+	domains, err := h.d.Edge.Nginx.ListPanelDomains()
+	if err != nil {
+		h.fail(w, "Failed to list domains", err)
+		return
+	}
+	out := make([]listedDomain, 0, len(domains))
+	for _, p := range domains {
+		ssl, err := h.report(r.Context(), p.Domain)
+		if err != nil {
+			h.fail(w, "Failed to list domains", err)
+			return
+		}
+		out = append(out, listedDomain{Domain: p.Domain, Port: p.Port, SSL: ssl})
+	}
+	httpx.JSON(w, http.StatusOK, out)
+}
+
+// parsePort is parsePanelPortInput: String(value ?? ”).trim() must be
+// decimal digits within 1..65535. Booleans, arrays and objects never are.
+func parsePort(v httpx.Value) (int, bool) {
+	var digits string
+	switch x := v.Raw().(type) {
+	case string:
+		digits = certs.TrimJS(x)
+	case json.Number:
+		f, err := x.Float64()
+		if err != nil || f != math.Trunc(f) || f < 1 || f > 65535 {
+			return 0, false
+		}
+		return int(f), true
+	default:
+		return 0, false
+	}
+	for _, c := range digits {
+		if c < '0' || c > '9' {
+			return 0, false
+		}
+	}
+	n, err := strconv.Atoi(digits)
+	if err != nil || n < 1 || n > 65535 {
+		return 0, false
+	}
+	return n, true
+}
+
+type provisionBody struct {
+	Success bool          `json:"success"`
+	Domain  string        `json:"domain"`
+	Port    *int          `json:"port,omitempty"`
+	SSL     certs.Report  `json:"ssl"`
+	Events  []certs.Event `json:"events"`
+}
+
+// events returns the activity of a hostname as a non-nil slice.
+func (h *handlers) events(domain string) []certs.Event {
+	ev := h.d.Edge.Certs.GetSSLEvents([]string{domain})
+	if ev == nil {
+		return []certs.Event{}
+	}
+	return ev
+}
+
+// POST / — add a panel domain and issue its certificate.
+func (h *handlers) add(w http.ResponseWriter, r *http.Request) {
+	body := httpx.BodyFrom(r)
+	domainVal := body.Get("domain")
+	domain, isString := domainVal.String()
+	if domainVal.Defined() && !domainVal.IsNull() && !isString {
+		domain = "?"
+	}
+	domain = certs.NormalizeHost(domain)
+	port, portOK := parsePort(body.Get("port"))
+	if domain == "" || !portOK {
+		httpx.Error(w, http.StatusBadRequest, "Invalid domain or port")
+		return
+	}
+	if !certs.IsValidHostname(domain) {
+		httpx.Error(w, http.StatusBadRequest, msgInvalidFormat)
+		return
+	}
+
+	ctx, cancel := h.opContext()
+	defer cancel()
+	unlock := h.lock(domain)
+	defer unlock()
+
+	if err := h.d.Edge.Nginx.AssertHostnamesAvailable(ctx, []string{domain}, ""); err != nil {
+		var conflict *nginx.ConflictError
+		if errors.As(err, &conflict) {
+			httpx.Error(w, http.StatusConflict, conflict.Message)
+			return
+		}
+		h.fail(w, "Failed to add domain", err)
+		return
+	}
+	st, err := h.d.Edge.Nginx.ProvisionPanelSSL(ctx, domain, port, false)
+	if err != nil {
+		h.failProvision(w, "Failed to add domain", err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, provisionBody{Success: true, Domain: domain, Port: &port, SSL: reportOf(st), Events: h.events(domain)})
+}
+
+// POST /dns-check — do panel hostnames resolve to this server?
+func (h *handlers) dnsCheck(w http.ResponseWriter, r *http.Request) {
+	hosts := []string{}
+	if items, ok := httpx.BodyFrom(r).Get("domains").Raw().([]any); ok {
+		for _, item := range items {
+			s, ok := item.(string)
+			if !ok {
+				continue
+			}
+			if host := certs.NormalizeHost(s); certs.IsValidHostname(host) {
+				hosts = append(hosts, host)
+			}
+		}
+	}
+	if len(hosts) == 0 {
+		httpx.Error(w, http.StatusBadRequest, "Provide at least one domain")
+		return
+	}
+	hosts = hosts[:min(len(hosts), maxDNSCheckHosts)]
+	ctx := r.Context()
+	// The public IP is resolved first: the per-host checks compare against the
+	// cached value, which concurrent lookups would not see yet.
+	serverIP := h.d.Edge.DNS.GetServerPublicIP(ctx)
+	results := h.d.Edge.DNS.CheckDomains(ctx, hosts)
+	httpx.JSON(w, http.StatusOK, struct {
+		Checks   []dnscheck.Check `json:"checks"`
+		ServerIP *string          `json:"serverIp"`
+	}{results, serverIP})
+}
+
+// validDomainParam reads :domain and answers 400 for a malformed hostname.
+func validDomainParam(w http.ResponseWriter, r *http.Request) (string, bool) {
+	domain := domainParam(r)
+	if !certs.IsValidHostname(domain) {
+		httpx.Error(w, http.StatusBadRequest, msgInvalidFormat)
+		return "", false
+	}
+	return domain, true
+}
+
+// GET /:domain/ssl — status and Let's Encrypt activity of one hostname.
+func (h *handlers) sslStatus(w http.ResponseWriter, r *http.Request) {
+	domain, ok := validDomainParam(w, r)
+	if !ok {
+		return
+	}
+	exists, err := h.d.Edge.Nginx.PanelDomainExists(domain)
+	if err != nil {
+		h.fail(w, "Failed to read SSL status", err)
+		return
+	}
+	if !exists {
+		httpx.Error(w, http.StatusNotFound, msgNotFound)
+		return
+	}
+	ssl, err := h.report(r.Context(), domain)
+	if err != nil {
+		h.fail(w, "Failed to read SSL status", err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, struct {
+		SSL    certs.Report  `json:"ssl"`
+		Events []certs.Event `json:"events"`
+	}{ssl, h.events(domain)})
+}
+
+// POST /:domain/ssl/retry — re-issue the certificate of a panel domain.
+func (h *handlers) sslRetry(w http.ResponseWriter, r *http.Request) {
+	domain, ok := validDomainParam(w, r)
+	if !ok {
+		return
+	}
+	ctx, cancel := h.opContext()
+	defer cancel()
+	unlock := h.lock(domain)
+	defer unlock()
+
+	st, err := h.d.Edge.Nginx.RetryPanelSSL(ctx, domain)
+	if err != nil {
+		if errors.Is(err, nginx.ErrPanelDomainNotFound) {
+			httpx.Error(w, http.StatusNotFound, msgNotFound)
+			return
+		}
+		h.failProvision(w, "SSL retry failed", err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, provisionBody{Success: true, Domain: domain, SSL: reportOf(st), Events: h.events(domain)})
+}
+
+// DELETE /:domain — remove a panel domain.
+func (h *handlers) remove(w http.ResponseWriter, r *http.Request) {
+	domain, ok := validDomainParam(w, r)
+	if !ok {
+		return
+	}
+	ctx, cancel := h.opContext()
+	defer cancel()
+	unlock := h.lock(domain)
+	defer unlock()
+
+	if err := h.d.Edge.Nginx.DeletePanelDomain(ctx, domain); err != nil {
+		if errors.Is(err, nginx.ErrPanelDomainNotFound) {
+			httpx.Error(w, http.StatusNotFound, msgNotFound)
+			return
+		}
+		h.fail(w, "Failed to delete domain", err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, struct {
+		Success bool `json:"success"`
+	}{true})
+}
