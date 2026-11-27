@@ -96,6 +96,7 @@ func (u *upgrader) serve(w http.ResponseWriter, r *http.Request) {
 		refuse(w, "HTTP/1.1 401 Unauthorized\r\n\r\n")
 		return
 	}
+	// Terminal tokens are single-use: a second upgrade with the same token is 401.
 	claims, ok := u.d.Auth.VerifyPurposeToken(r.Context(), token, auth.PurposeTerminal)
 	if !ok {
 		refuse(w, "HTTP/1.1 401 Unauthorized\r\n\r\n")
@@ -106,7 +107,10 @@ func (u *upgrader) serve(w http.ResponseWriter, r *http.Request) {
 		// The upgrader already answered 400 (bad handshake).
 		return
 	}
-	u.m.Serve(conn, sessions.User{ID: claims.UserID, Email: claims.Email}, httpx.PeerIP(r))
+	// The session ends when the user's password changes.
+	ctx, stop := u.d.Auth.BindSession(r.Context(), claims)
+	defer stop()
+	u.m.Serve(ctx, conn, sessions.User{ID: claims.UserID, Email: claims.Email}, httpx.PeerIP(r))
 }
 
 // allowedOrigin is isAllowedOrigin: a request without Origin passes only

@@ -151,6 +151,10 @@ func createPreRestore(ctx context.Context, d *db.DB, paths Paths) error {
 		removeSnapshot(tmp)
 		return fmt.Errorf("copy current database: %w", err)
 	}
+	if err := os.Chmod(tmp, privateFile); err != nil {
+		removeSnapshot(tmp)
+		return err
+	}
 	if err := syncFile(tmp); err != nil {
 		removeSnapshot(tmp)
 		return err

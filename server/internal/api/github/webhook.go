@@ -21,6 +21,12 @@ import (
 // pushes within this window.
 const deployCooldown = 10 * time.Second
 
+// webhookBody reads webhook payloads. GitHub caps deliveries at 25 MB, but a
+// push payload lists at most 20 commits and is a few kilobytes in practice;
+// the 10 MB of express.json in github.ts is kept, from the budget shared by
+// unauthenticated routes so anonymous posts cannot starve the dashboard.
+var webhookBody = httpx.BodyOptions{Limit: httpx.MaxBodyBytes, Budget: httpx.PublicBodyBudget, ReadTimeout: time.Minute}
+
 // cooldown is the recentDeploys map of github.ts.
 type cooldown struct {
 	mu   sync.Mutex
@@ -113,12 +119,23 @@ func (h *handlers) webhook(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusUnauthorized, "Missing webhook signature")
 		return
 	}
-	body := httpx.BodyFrom(r)
-	// The HMAC covers the exact bytes GitHub sent. Only JSON bodies keep
-	// them; any other body cannot carry a valid signature.
-	if body.Raw == nil || !validSignature(body.Raw, signature, secret) {
+	// The HMAC covers the exact bytes GitHub sent. The body is read only
+	// now that the request claims a signature, with the budget of
+	// unauthenticated routes, and decoded only once the signature matches.
+	// Only JSON bodies are read; any other body cannot carry a valid signature.
+	raw, release, ok := httpx.ReadJSONBody(w, r, webhookBody)
+	if !ok {
+		return
+	}
+	defer release()
+	if raw == nil || !validSignature(raw, signature, secret) {
 		h.d.Log.Warn("[Webhook] Signature verification failed")
 		httpx.Error(w, http.StatusUnauthorized, "Invalid signature")
+		return
+	}
+	body, err := httpx.DecodeJSONBody(raw)
+	if err != nil {
+		httpx.WriteBodyError(w, r, err)
 		return
 	}
 

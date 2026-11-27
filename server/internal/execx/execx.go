@@ -39,6 +39,7 @@ type Cmd struct {
 	// Dir is the working directory ("" = current directory).
 	Dir string
 	// Env replaces the environment when non-nil. Nil inherits os.Environ().
+	// Either way the backend's secrets are removed (IsSensitiveEnv).
 	Env []string
 	// ExtraEnv entries ("KEY=VALUE") are appended to the inherited or given
 	// environment; a later entry wins over an earlier one with the same key.
@@ -121,13 +122,14 @@ func Run(ctx context.Context, c Cmd) (Result, error) {
 	}
 	cmd := exec.CommandContext(runCtx, c.Name, c.Args...)
 	cmd.Dir = c.Dir
-	if c.Env != nil || len(c.ExtraEnv) > 0 {
-		env := c.Env
-		if env == nil {
-			env = os.Environ()
-		}
-		cmd.Env = append(append([]string(nil), env...), c.ExtraEnv...)
+	// The base environment never carries the backend's secrets (see
+	// IsSensitiveEnv); ExtraEnv is what the caller deliberately passes (a
+	// project's build variables may use any name) and is kept as given.
+	env := Environ()
+	if c.Env != nil {
+		env = FilterEnv(c.Env)
 	}
+	cmd.Env = append(env, c.ExtraEnv...)
 	cmd.Stdin = c.Stdin
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = c.Stdout

@@ -86,6 +86,8 @@ type harness struct {
 	shells []*fakeShell
 	sizes  [][2]int
 	err    error
+	// ctx is the session context of the next connection.
+	ctx context.Context
 }
 
 func newHarness(t *testing.T, mutate func(*Limits)) *harness {
@@ -97,7 +99,7 @@ func newHarness(t *testing.T, mutate func(*Limits)) *harness {
 	if mutate != nil {
 		mutate(&limits)
 	}
-	h := &harness{t: t, user: User{ID: u.ID, Email: u.Email}}
+	h := &harness{t: t, user: User{ID: u.ID, Email: u.Email}, ctx: context.Background()}
 	h.m = NewManager(quiet, d.Store, h.start, limits)
 	up := websocket.Upgrader{}
 	h.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -105,7 +107,10 @@ func newHarness(t *testing.T, mutate func(*Limits)) *harness {
 		if err != nil {
 			return
 		}
-		h.m.Serve(conn, h.user, "203.0.113.7")
+		h.mu.Lock()
+		ctx := h.ctx
+		h.mu.Unlock()
+		h.m.Serve(ctx, conn, h.user, "203.0.113.7")
 	}))
 	t.Cleanup(func() {
 		h.m.CloseAll(context.Background())
@@ -331,6 +336,55 @@ func TestIdleTimeout(t *testing.T) {
 	case <-sh.closed:
 	case <-time.After(5 * time.Second):
 		t.Fatal("idle shell was not killed")
+	}
+}
+
+// A session that never passes the password step is closed after AuthTimeout.
+func TestAuthTimeout(t *testing.T) {
+	h := newHarness(t, func(l *Limits) { l.AuthTimeout = time.Second })
+	conn := h.dial()
+	expectMsg(t, conn, `{"type":"auth_required"}`)
+	expectMsg(t, conn, `{"type":"exit","code":-1,"reason":"auth_timeout"}`)
+	expectClosed(t, conn)
+	waitFor(t, "session removed", func() bool { return h.m.Sessions() == 0 })
+
+	// An authenticated session is not affected by the deadline.
+	conn = h.dial()
+	expectMsg(t, conn, `{"type":"auth_required"}`)
+	send(t, conn, map[string]any{"type": "auth", "password": password})
+	expectMsg(t, conn, `{"type":"auth_success"}`)
+	time.Sleep(1200 * time.Millisecond)
+	send(t, conn, map[string]any{"type": "input", "data": "ls\n"})
+	select {
+	case in := <-h.shell(0).input:
+		if in != "ls\n" {
+			t.Fatalf("input = %q", in)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("authenticated session closed by the auth deadline")
+	}
+}
+
+// Ending the session context (auth.BindSession after a password change)
+// kills the shell and closes the socket.
+func TestSessionContextRevokes(t *testing.T) {
+	h := newHarness(t, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	h.mu.Lock()
+	h.ctx = ctx
+	h.mu.Unlock()
+	conn := h.dial()
+	expectMsg(t, conn, `{"type":"auth_required"}`)
+	send(t, conn, map[string]any{"type": "auth", "password": password})
+	expectMsg(t, conn, `{"type":"auth_success"}`)
+	sh := h.shell(0)
+	cancel()
+	expectMsg(t, conn, `{"type":"exit","code":-1,"reason":"session_revoked"}`)
+	expectClosed(t, conn)
+	select {
+	case <-sh.closed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("shell of a revoked session still running")
 	}
 }
 

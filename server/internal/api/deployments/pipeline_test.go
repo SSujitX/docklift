@@ -245,7 +245,12 @@ func TestCancelDuringBuild(t *testing.T) {
 		t.Fatalf("status = %s", strVal(d.Status))
 	}
 	mustContain(t, "row logs", strVal(d.Logs), "\n❌ Deployment cancelled\n")
-	mustContain(t, "client", out.String(), "\n❌ Error: ")
+	// The killed build returns context.Canceled; the client is told the
+	// deployment was cancelled, not the raw Go error (seen on a real daemon).
+	mustContain(t, "client", out.String(), "\n❌ Error: Deployment cancelled\n")
+	if strings.Contains(out.String(), "context canceled") {
+		t.Fatalf("client sees the raw context error:\n%s", out.String())
+	}
 	if e.docker.called("compose up") != 0 {
 		t.Fatal("compose up ran after cancel")
 	}
@@ -382,6 +387,42 @@ func TestGitHubPullUsesTokenAndScrubs(t *testing.T) {
 	}
 }
 
+// A legacy http:// row still deploys: the URL is normalised to https, the
+// origin is reset to the stored repository before the pull, and the token
+// is bound to that origin (a checkout whose origin was pointed elsewhere
+// never receives it).
+func TestGitHubLegacyHTTPURLNormalisedAndOriginPinned(t *testing.T) {
+	e := setup(t)
+	e.s.SetGitHubApp(fakeGitHub{token: "ghs_tokenvalue123"})
+	e.git.origin = "https://evil.test/acme/app.git"
+	p := e.project(t, "gh", store.ProjectCreate{SourceType: store.Ptr("github"), GithubURL: store.Ptr("http://github.com/acme/app.git")}, dockerfileApp)
+	run, out := e.start(t, p)
+	waitRun(t, run)
+	if run.Status() != deploy.StatusSuccess {
+		t.Fatalf("status = %s\n%s", run.Status(), out.String())
+	}
+	const want = "https://github.com/acme/app.git"
+	if e.git.pullOrigin != want || e.git.pullExpected != want {
+		t.Fatalf("pull origin = %q, expected origin = %q", e.git.pullOrigin, e.git.pullExpected)
+	}
+	if e.git.pullCreds == nil {
+		t.Fatal("legacy http row got no token")
+	}
+}
+
+// A github_url that is not https://github.com/<owner>/<repo> (e.g. a path
+// that merely contains "github.com/") never gets a token.
+func TestGitHubTokenOnlyForGitHubHost(t *testing.T) {
+	e := setup(t)
+	e.s.SetGitHubApp(fakeGitHub{token: "ghs_tokenvalue123"})
+	p := e.project(t, "gh", store.ProjectCreate{SourceType: store.Ptr("github"), GithubURL: store.Ptr("https://evil.test/github.com/acme/app.git")}, dockerfileApp)
+	run, out := e.start(t, p)
+	waitRun(t, run)
+	if e.git.pullCreds != nil {
+		t.Fatalf("token sent for a non-GitHub URL\n%s", out.String())
+	}
+}
+
 func TestGitHubScrubFailureFailsDeploy(t *testing.T) {
 	e := setup(t)
 	e.s.SetGitHubApp(fakeGitHub{token: "ghs_tokenvalue123"})
@@ -471,6 +512,44 @@ func TestStopAndRestart(t *testing.T) {
 	mustContain(t, "restart", out.String(), "🔄 RESTARTING PROJECT", "✅ RESTART SUCCESSFUL!")
 	if restart.Status() != deploy.StatusSuccess {
 		t.Fatalf("restart row = %s", restart.Status())
+	}
+}
+
+func TestComposeNeverRunsInCheckout(t *testing.T) {
+	e := setup(t)
+	p := e.project(t, "web", store.ProjectCreate{}, dockerfileApp)
+	ctx := context.Background()
+	run, _ := e.start(t, p)
+	waitRun(t, run)
+	stop, err := e.s.Stop(ctx, p.ID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitRun(t, stop)
+	restart, err := e.s.Restart(ctx, p.ID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitRun(t, restart)
+
+	want, err := e.s.rt.ComposeWorkDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.docker.mu.Lock()
+	dirs := append([]string(nil), e.docker.dirs...)
+	e.docker.mu.Unlock()
+	// up + legacy alias down, two aliases per stop, restart.
+	if len(dirs) < 4 {
+		t.Fatalf("compose calls = %v", dirs)
+	}
+	for _, d := range dirs {
+		if d != want {
+			t.Fatalf("compose ran in %q, want %q (calls %v)", d, want, dirs)
+		}
+	}
+	if entries, err := os.ReadDir(want); err != nil || len(entries) != 0 {
+		t.Fatalf("compose working dir must stay empty: %v %v", entries, err)
 	}
 }
 

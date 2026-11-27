@@ -17,7 +17,7 @@ func TestRegisteredLifecycleHooks(t *testing.T) {
 
 	want := map[app.Phase][]string{
 		app.PhaseDockerNetwork: {"docker-network", "backup-restore-recovery"},
-		app.PhaseAfterListen:   {"nginx-sync"},
+		app.PhaseAfterListen:   {"proxy-reattach", "nginx-sync"},
 		app.PhaseRecovery:      {"deployment-recovery"},
 		app.PhaseWatchers:      {"cert-renew-watcher"},
 	}

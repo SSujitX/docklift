@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/moby/moby/api/types/image"
+
 	"docklift/internal/deploy"
 	"docklift/internal/execx"
 	"docklift/internal/store"
@@ -50,6 +52,19 @@ func TestDeleteProject(t *testing.T) {
 	f := newFixture(t, Options{})
 	ctx := context.Background()
 	p, _, _, conf := deletable(t, f)
+	dockliftTag := deploy.DockliftImageTag(p.ID, "app", "abcdef12")
+	otherProject := deploy.DockliftImageTag("ffffffff-0000", "app", "abcdef12")
+	f.engine.images = []image.Summary{
+		{ID: "sha256:1", RepoTags: []string{dockliftTag}},
+		{ID: "sha256:2", RepoTags: []string{"postgres:16-alpine", "docklift-backend:latest"}},
+		{ID: "sha256:3", RepoTags: []string{otherProject}},
+	}
+	// A repository compose file and .env in the checkout must never be read.
+	for _, name := range []string{"docker-compose.yml", ".env"} {
+		if err := os.WriteFile(filepath.Join(f.d.Deploy.ProjectPath(p.ID), name), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
 	f.d.Store.CreateEnvVariable(ctx, store.EnvCreate{ProjectID: p.ID, Key: "A", Value: "1"})
 
 	f.do("DELETE", "/"+p.ID, nil).expect(t, 200)
@@ -65,8 +80,8 @@ func TestDeleteProject(t *testing.T) {
 	primary := deploy.ComposeProjectName(p.Name, p.ID)
 	args := f.run.Args()
 	want := []string{
-		"compose -f " + f.d.Deploy.ComposePath(p.ID) + " -p " + primary + " down --remove-orphans --rmi all",
-		"compose -p " + p.ID + " down --remove-orphans --rmi all",
+		"compose -f " + f.d.Deploy.ComposePath(p.ID) + " -p " + primary + " down --remove-orphans --volumes",
+		"compose -p " + p.ID + " down --remove-orphans --volumes",
 		"volume rm -f dl-vol",
 	}
 	for _, w := range want {
@@ -74,10 +89,17 @@ func TestDeleteProject(t *testing.T) {
 			t.Errorf("missing docker call %q in %v", w, args)
 		}
 	}
+	workDir, err := f.d.Deploy.ComposeWorkDir()
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, c := range f.run.Cmds() {
-		if c.Args[0] == "compose" && c.Dir != f.d.Deploy.ProjectPath(p.ID) {
-			t.Errorf("compose ran in %s", c.Dir)
+		if c.Args[0] == "compose" && (c.Dir != workDir || slices.Contains(c.Args, "--rmi")) {
+			t.Errorf("compose ran in %s with %v", c.Dir, c.Args)
 		}
+	}
+	if entries, err := os.ReadDir(workDir); err != nil || len(entries) != 0 {
+		t.Fatalf("compose working dir must stay empty: %v %v", entries, err)
 	}
 	net := deploy.ProjectNetworkName(p.ID)
 	calls := strings.Join(f.engine.Calls(), "\n")
@@ -85,6 +107,10 @@ func TestDeleteProject(t *testing.T) {
 		if !strings.Contains(calls, w) {
 			t.Errorf("missing engine call %q in\n%s", w, calls)
 		}
+	}
+	// Only this project's Docklift-built tags are removed.
+	if !strings.Contains(calls, "image rm "+dockliftTag) || strings.Count(calls, "image rm ") != 1 {
+		t.Errorf("image cleanup must remove exactly %s:\n%s", dockliftTag, calls)
 	}
 	// The lock is released.
 	if f.d.Deploy.Tracker.IsDeploying(p.ID) {
@@ -214,8 +240,8 @@ func TestDeleteMissingCheckout(t *testing.T) {
 		if c.Args[0] != "compose" {
 			continue
 		}
-		if c.Dir != f.d.Config.DeploymentsPath {
-			t.Fatalf("compose must run in the deployments dir, ran in %s", c.Dir)
+		if want, _ := f.d.Deploy.ComposeWorkDir(); c.Dir != want {
+			t.Fatalf("compose must run in the compose working dir, ran in %s", c.Dir)
 		}
 		if slices.Contains(c.Args, "-f") {
 			t.Fatal("no runtime compose file exists")

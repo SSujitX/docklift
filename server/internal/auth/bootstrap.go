@@ -172,10 +172,12 @@ type UserCounter interface {
 }
 
 // LogIfNeeded is logBootstrapIfNeeded: with an admin present it removes
-// leftover claim files; on a fresh install (or an unreadable database) it
-// recovers stale claims, ensures the secret and prints it to stdout.
+// leftover claim files and a leftover setup token; on a fresh install (or an
+// unreadable database) it recovers stale claims, ensures the secret and
+// prints it to stdout.
 func (b *Bootstrap) LogIfNeeded(ctx context.Context, users UserCounter) error {
 	if n, err := users.CountUsers(ctx); err == nil && n > 0 {
+		b.ConsumeSetupToken()
 		if entries, err := os.ReadDir(b.dataPath); err == nil {
 			for _, e := range entries {
 				if strings.HasPrefix(e.Name(), claimPrefix) {
@@ -220,8 +222,14 @@ func (b *Bootstrap) ValidateSetupToken(provided string) bool {
 // ConsumeSetupRestoreSecrets deletes the setup token and the bootstrap secret
 // after a successful fresh-install restore.
 func (b *Bootstrap) ConsumeSetupRestoreSecrets() {
-	removeIfExists(b.SetupTokenPath())
+	b.ConsumeSetupToken()
 	b.ConsumeSecret()
+}
+
+// ConsumeSetupToken deletes the setup token (first admin registered, or an
+// install that already has users). TS left it on disk after registration.
+func (b *Bootstrap) ConsumeSetupToken() {
+	removeIfExists(b.SetupTokenPath())
 }
 
 type setupTokenKey struct{}

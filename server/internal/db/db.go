@@ -39,7 +39,7 @@ func Open(ctx context.Context, path string) (*DB, error) {
 	if strings.ContainsRune(path, '?') {
 		return nil, fmt.Errorf("database path %q must not contain '?'", path)
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, fmt.Errorf("create database directory: %w", err)
 	}
 	d := &DB{path: path}
@@ -50,6 +50,9 @@ func Open(ctx context.Context, path string) (*DB, error) {
 }
 
 func (d *DB) open(ctx context.Context) error {
+	if err := makePrivate(d.path); err != nil {
+		return err
+	}
 	common := fmt.Sprintf("_pragma=busy_timeout(%d)&_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)", busyTimeoutMS)
 	writer, err := sql.Open("sqlite", d.path+"?"+common+"&_txlock=immediate")
 	if err != nil {
@@ -130,6 +133,34 @@ func (d *DB) Reopen(ctx context.Context) error {
 	d.mu.Unlock()
 	if err := d.open(ctx); err != nil {
 		return errors.Join(err, closeErr)
+	}
+	return nil
+}
+
+// fileMode is the mode of the database and its -wal/-shm files: the
+// database holds password hashes, tokens and environment secrets.
+const fileMode os.FileMode = 0o600
+
+// makePrivate creates the database file 0600 when it is missing (SQLite
+// gives its -wal and -shm files the mode of the database file) and tightens
+// an existing database and its -wal/-shm files to 0600 (best effort: a file
+// this process does not own keeps its mode; the backup boot hook logs it).
+func makePrivate(path string) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, fileMode)
+	switch {
+	case err == nil:
+		if err := f.Close(); err != nil {
+			return fmt.Errorf("create database file: %w", err)
+		}
+	case !errors.Is(err, os.ErrExist):
+		return fmt.Errorf("create database file: %w", err)
+	}
+	for _, p := range []string{path, path + "-wal", path + "-shm"} {
+		fi, err := os.Lstat(p)
+		if err != nil || !fi.Mode().IsRegular() || fi.Mode().Perm() == fileMode {
+			continue
+		}
+		_ = os.Chmod(p, fileMode)
 	}
 	return nil
 }

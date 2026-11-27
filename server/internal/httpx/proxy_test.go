@@ -23,29 +23,30 @@ func defaultTrust(t *testing.T) *TrustedProxies {
 func TestTrustedProxiesTrusts(t *testing.T) {
 	trust := defaultTrust(t)
 	cases := map[string]bool{
-		"127.0.0.1":               true,
-		"127.10.20.30":            true,
-		"::1":                     true,
-		"::ffff:127.0.0.1":        true,
-		"172.28.0.2":              true, // docklift-nginx-proxy on docklift_network
-		"172.28.255.254":          true,
-		"172.28.0.1":              false, // gateway: userland proxy / hairpin NAT for published ports
-		"::ffff:172.28.0.1":       false,
-		"fd12:3456:789a::5":       true,
-		"fd12:3456:789a::1":       false, // IPv6 gateway
-		"fd12:3456:789a:1::5":     false, // outside the /64
-		"172.29.0.2":              false,
-		"10.0.0.1":                false,
-		"192.168.1.10":            false,
-		"203.0.113.7":             false,
-		"2001:db8::1":             false,
-		"fe80::1%eth0":            false,
-		"fd12:3456:789a::5%eth0":  true, // zones are ignored
-		"::ffff:203.0.113.7":      false,
-		"0.0.0.0":                 false,
-		"::":                      false,
-		"255.255.255.255":         false,
-		"fd12:3456:789a::ffff:ff": true,
+		"127.0.0.1":                      true,
+		"127.10.20.30":                   true,
+		"::1":                            true,
+		"::ffff:127.0.0.1":               true,
+		"172.28.0.2":                     false, // another container on docklift_network (a deployed app)
+		"172.28.255.254":                 true,  // docklift-nginx-proxy's fixed address
+		"172.28.0.1":                     false, // gateway: userland proxy / hairpin NAT for published ports
+		"::ffff:172.28.0.1":              false,
+		"fd12:3456:789a::5":              false,
+		"fd12:3456:789a::ffff:fffe":      true,
+		"fd12:3456:789a::1":              false, // IPv6 gateway
+		"fd12:3456:789a:1::5":            false, // outside the /64
+		"172.29.0.2":                     false,
+		"10.0.0.1":                       false,
+		"192.168.1.10":                   false,
+		"203.0.113.7":                    false,
+		"2001:db8::1":                    false,
+		"fe80::1%eth0":                   false,
+		"fd12:3456:789a::ffff:fffe%eth0": true, // zones are ignored
+		"::ffff:203.0.113.7":             false,
+		"0.0.0.0":                        false,
+		"::":                             false,
+		"255.255.255.255":                false,
+		"fd12:3456:789a::ffff:ff":        false,
 	}
 	for s, want := range cases {
 		if got := trust.Trusts(netip.MustParseAddr(s)); got != want {
@@ -88,20 +89,21 @@ func TestClientIP(t *testing.T) {
 		{"gateway peer spoofing", "172.28.0.1:40000", []string{"198.51.100.1"}, "172.28.0.1"},
 		{"IPv6 gateway peer spoofing", "[fd12:3456:789a::1]:40000", []string{"198.51.100.1"}, "fd12:3456:789a::1"},
 		{"mapped gateway peer spoofing", "[::ffff:172.28.0.1]:40000", []string{"198.51.100.1"}, "::ffff:172.28.0.1"},
-		{"proxy peer", "172.28.0.3:40000", []string{"203.0.113.7"}, "203.0.113.7"},
-		{"proxy peer, one hop only", "172.28.0.3:40000", []string{"198.51.100.1, 203.0.113.7"}, "203.0.113.7"},
-		{"proxy peer, spaces", "172.28.0.3:40000", []string{"1.1.1.1,   203.0.113.7  "}, "203.0.113.7"},
-		{"proxy peer, trailing empty entries", "172.28.0.3:40000", []string{"1.1.1.1, ,"}, "1.1.1.1"},
-		{"proxy peer, repeated header", "172.28.0.3:40000", []string{"1.1.1.1", "2.2.2.2"}, "2.2.2.2"},
-		{"IPv6 proxy peer", "[fd12:3456:789a::3]:40000", []string{"2001:db8::5"}, "2001:db8::5"},
-		{"proxy peer, IPv6 client normalised", "172.28.0.3:40000", []string{"2001:DB8:0::5"}, "2001:db8::5"},
-		{"proxy peer, entry with port", "172.28.0.3:40000", []string{"203.0.113.7:4711"}, "203.0.113.7"},
-		{"proxy peer, bracketed IPv6 with port", "172.28.0.3:40000", []string{"[2001:db8::1]:80"}, "2001:db8::1"},
-		{"proxy peer, malformed entry", "172.28.0.3:40000", []string{"not-an-ip"}, "172.28.0.3"},
-		{"proxy peer, malformed last entry", "172.28.0.3:40000", []string{"203.0.113.7, 999.1.1.1"}, "172.28.0.3"},
-		{"proxy peer, zone in entry", "172.28.0.3:40000", []string{"fe80::1%eth0"}, "172.28.0.3"},
-		{"proxy peer, injected text", "172.28.0.3:40000", []string{"203.0.113.7 level=ERROR msg=pwned"}, "172.28.0.3"},
-		{"proxy peer, empty header", "172.28.0.3:40000", []string{""}, "172.28.0.3"},
+		{"proxy peer", "172.28.255.254:40000", []string{"203.0.113.7"}, "203.0.113.7"},
+		{"deployed app on docklift_network spoofing", "172.28.0.3:40000", []string{"203.0.113.7"}, "172.28.0.3"},
+		{"proxy peer, one hop only", "172.28.255.254:40000", []string{"198.51.100.1, 203.0.113.7"}, "203.0.113.7"},
+		{"proxy peer, spaces", "172.28.255.254:40000", []string{"1.1.1.1,   203.0.113.7  "}, "203.0.113.7"},
+		{"proxy peer, trailing empty entries", "172.28.255.254:40000", []string{"1.1.1.1, ,"}, "1.1.1.1"},
+		{"proxy peer, repeated header", "172.28.255.254:40000", []string{"1.1.1.1", "2.2.2.2"}, "2.2.2.2"},
+		{"IPv6 proxy peer", "[fd12:3456:789a::ffff:fffe]:40000", []string{"2001:db8::5"}, "2001:db8::5"},
+		{"proxy peer, IPv6 client normalised", "172.28.255.254:40000", []string{"2001:DB8:0::5"}, "2001:db8::5"},
+		{"proxy peer, entry with port", "172.28.255.254:40000", []string{"203.0.113.7:4711"}, "203.0.113.7"},
+		{"proxy peer, bracketed IPv6 with port", "172.28.255.254:40000", []string{"[2001:db8::1]:80"}, "2001:db8::1"},
+		{"proxy peer, malformed entry", "172.28.255.254:40000", []string{"not-an-ip"}, "172.28.255.254"},
+		{"proxy peer, malformed last entry", "172.28.255.254:40000", []string{"203.0.113.7, 999.1.1.1"}, "172.28.255.254"},
+		{"proxy peer, zone in entry", "172.28.255.254:40000", []string{"fe80::1%eth0"}, "172.28.255.254"},
+		{"proxy peer, injected text", "172.28.255.254:40000", []string{"203.0.113.7 level=ERROR msg=pwned"}, "172.28.255.254"},
+		{"proxy peer, empty header", "172.28.255.254:40000", []string{""}, "172.28.255.254"},
 		{"loopback peer", "127.0.0.1:40000", []string{"203.0.113.7"}, "203.0.113.7"},
 		{"IPv6 loopback peer", "[::1]:40000", []string{"203.0.113.7"}, "203.0.113.7"},
 		{"unparseable RemoteAddr", "garbage", []string{"203.0.113.7"}, "garbage"},
@@ -137,9 +139,9 @@ func TestForwardedProtoAndHost(t *testing.T) {
 		proto        string
 		origin       string
 	}{
-		{"proxy peer", "172.28.0.3:1", http.Header{"X-Forwarded-Proto": {"https"}, "X-Forwarded-Host": {"panel.example.com"}}, "https", "https://panel.example.com:443"},
-		{"proxy peer, first values", "172.28.0.3:1", http.Header{"X-Forwarded-Proto": {"https, http"}, "X-Forwarded-Host": {"a.example, b.example"}}, "https", "https://a.example:443"},
-		{"proxy peer, empty proto", "172.28.0.3:1", http.Header{"X-Forwarded-Proto": {""}}, "http", "http://docklift:8000"},
+		{"proxy peer", "172.28.255.254:1", http.Header{"X-Forwarded-Proto": {"https"}, "X-Forwarded-Host": {"panel.example.com"}}, "https", "https://panel.example.com:443"},
+		{"proxy peer, first values", "172.28.255.254:1", http.Header{"X-Forwarded-Proto": {"https, http"}, "X-Forwarded-Host": {"a.example, b.example"}}, "https", "https://a.example:443"},
+		{"proxy peer, empty proto", "172.28.255.254:1", http.Header{"X-Forwarded-Proto": {""}}, "http", "http://docklift:8000"},
 		{"direct client spoofing", "203.0.113.9:1", http.Header{"X-Forwarded-Proto": {"https"}, "X-Forwarded-Host": {"panel.example.com"}}, "http", "http://docklift:8000"},
 		{"gateway spoofing", "172.28.0.1:1", http.Header{"X-Forwarded-Proto": {"https"}, "X-Forwarded-Host": {"evil.example"}}, "http", "http://docklift:8000"},
 		{"IPv6 direct client spoofing", "[2001:db8::9]:1", http.Header{"X-Forwarded-Proto": {"https"}, "X-Forwarded-Host": {"evil.example"}}, "http", "http://docklift:8000"},
@@ -187,7 +189,7 @@ func TestRateLimiterIgnoresSpoofedForwardedFor(t *testing.T) {
 	}
 	// Through the real proxy each forwarded client has its own bucket.
 	for i := 1; i <= 5; i++ {
-		if code := hit("172.28.0.3:1", fmt.Sprintf("198.51.100.%d", i)); code != 200 {
+		if code := hit("172.28.255.254:1", fmt.Sprintf("198.51.100.%d", i)); code != 200 {
 			t.Fatalf("proxied client %d: %d", i, code)
 		}
 	}

@@ -257,7 +257,7 @@ func (x *run) prepare(ctx context.Context) error {
 	if err := os.RemoveAll(x.tempDir); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(x.tempDir, 0o755); err != nil {
+	if err := mkPrivateDir(x.tempDir); err != nil {
 		return err
 	}
 	if err := x.stage(StageExtract); err != nil {
@@ -572,18 +572,19 @@ func (x *run) reconcile(ctx context.Context) bool {
 			continue
 		}
 		x.out("      > Redeploying " + p.Name + " (" + p.ID + ")...\n")
-		// Current backups carry DockLift's runtime compose; older ones fall
-		// back to the source-root compose file.
+		// Only the compose file Docklift generated is ever started. TS fell
+		// back to the repository's own docker-compose.yml, which let a
+		// repository start any service (privileged, host mounts) with the
+		// daemon's root rights; such projects are left for a redeploy.
 		composeFile := deploy.RuntimeComposePath(dpl, p.ID)
-		if !exists(composeFile) {
-			composeFile = filepath.Join(projectPath, "docker-compose.yml")
-		}
 		if !exists(composeFile) {
 			x.out("        ! Skipped (No DockLift runtime compose; deploy manually)\n")
 			continue
 		}
 		project := deploy.ComposeProjectName(p.Name, p.ID)
-		if err := x.startProject(ctx, p.ID, composeFile, project, projectPath); err != nil {
+		// Compose runs in the runtime compose directory, never the checkout,
+		// so no file of the repository (.env, overrides) is read.
+		if err := x.startProject(ctx, p.ID, composeFile, project, filepath.Dir(composeFile)); err != nil {
 			failures++
 			x.out("        [ERROR] Failed: " + firstLine(err.Error()) + "\n")
 			continue

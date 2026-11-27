@@ -167,6 +167,8 @@ func (h *handlers) register(w http.ResponseWriter, r *http.Request) {
 	}
 	bs.FinalizeClaim(claim)
 	bs.ConsumeSecret()
+	// The fresh-install restore token must not outlive the fresh install.
+	bs.ConsumeSetupToken()
 	token, err := h.d.Auth.IssueSession(user)
 	if err != nil {
 		h.fail(w, failMsg, err)
@@ -338,6 +340,8 @@ func (h *handlers) changePassword(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, failMsg, err)
 		return
 	}
+	// Open log streams and terminal sessions authenticated before the change end now.
+	h.d.Auth.RevokeUser(user.ID)
 	token, err := h.d.Auth.IssueSession(updated)
 	if err != nil {
 		h.fail(w, failMsg, err)

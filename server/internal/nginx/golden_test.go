@@ -186,7 +186,7 @@ func TestGoldenFiles(t *testing.T) {
 					t.Fatal("TS golden lacks the old upstream")
 				}
 				got := renderGo(t, e, c)
-				if !strings.Contains(got, "set $dashboard docklift-backend;\n        proxy_pass http://$dashboard:8000;") || strings.Contains(got, "docklift-nginx") {
+				if !strings.Contains(got, "set $dashboard docklift-backend.docklift_network;\n        proxy_pass http://$dashboard:8000;") || strings.Contains(got, "docklift-nginx") {
 					t.Fatalf("new upstream missing:\n%s", got)
 				}
 				if p, ok := ParsePanelPort(got); !ok || p != 8080 {

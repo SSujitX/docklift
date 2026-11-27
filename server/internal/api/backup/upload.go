@@ -118,7 +118,7 @@ func (h *handlers) parseMultipart(r *http.Request, boundary string) (_ *uploaded
 		return nil, nil, badUpload(msgNoBoundary)
 	}
 	uploads := h.paths.UploadsDir()
-	if err := os.MkdirAll(uploads, 0o755); err != nil {
+	if err := os.MkdirAll(uploads, 0o700); err != nil {
 		return nil, nil, &uploadError{status: http.StatusInternalServerError, msg: "Failed to upload backup", cause: err}
 	}
 	mr := multipart.NewReader(r.Body, boundary)
@@ -228,7 +228,7 @@ func (h *handlers) storeUpload(part io.Reader, dir string) (*uploadedFile, strin
 	name := fmt.Sprintf("restore-%d-%s.zip", h.now().UnixMilli(), hex.EncodeToString(suffix))
 	final := filepath.Join(dir, name)
 	partial := final + ".partial"
-	out, err := os.OpenFile(partial, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	out, err := os.OpenFile(partial, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return nil, "", &uploadError{status: http.StatusInternalServerError, msg: "Failed to upload backup", cause: err}
 	}

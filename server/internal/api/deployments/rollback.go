@@ -178,10 +178,14 @@ func (s *Service) rollback(p *store.Project, id string, target *store.Deployment
 			return err
 		}
 		l.line("🚀 Starting containers from previous images...\n")
+		composeDir, err := s.rt.ComposeWorkDir()
+		if err != nil {
+			return err
+		}
 		var res struct{ code int }
 		err = s.process(pid, id, func(pctx context.Context) error {
 			r, err := s.docker.Compose(pctx, dockerx.ComposeCmd{
-				Project: deploy.ComposeProjectName(p.Name, pid), Files: []string{composePath}, Dir: projectPath,
+				Project: deploy.ComposeProjectName(p.Name, pid), Files: []string{composePath}, Dir: composeDir,
 				Args: []string{"up", "-d", "--remove-orphans"}, Output: l,
 			})
 			res.code = r.ExitCode

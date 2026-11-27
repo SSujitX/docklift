@@ -10,6 +10,7 @@ package github
 
 import (
 	"context"
+	"crypto/subtle"
 	"errors"
 	"net/http"
 	"regexp"
@@ -136,28 +137,33 @@ func clearStateCookie(w http.ResponseWriter) {
 	w.Header().Add("Set-Cookie", stateCookie+"=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0")
 }
 
-// stateInputs returns the state from the query (only when it is a single
-// string) and from the cookie.
-func stateInputs(r *http.Request) (fromQuery, fromCookie string, err error) {
-	fromQuery, _ = queryString(r, "state")
-	fromCookie, err = readCookie(r, stateCookie)
-	return fromQuery, fromCookie, err
+// requireState checks the CSRF nonce of a GitHub return (manifest callback
+// and /setup): the `state` query parameter GitHub echoes back must be
+// present, equal (constant time) to the HttpOnly cookie set in the browser
+// that started the flow, and name a valid unexpired state. It returns that
+// state. TS (requireGithubSetupState) accepted the query OR the cookie, so a
+// link carrying an attacker's own state, or the victim's cookie alone,
+// passed: a login-CSRF that could bind an attacker's App or installation.
+func (h *handlers) requireState(r *http.Request) (string, bool, error) {
+	fromQuery, _ := queryString(r, "state")
+	fromCookie, err := readCookie(r, stateCookie)
+	if err != nil {
+		return "", false, err
+	}
+	if fromQuery == "" || fromCookie == "" || subtle.ConstantTimeCompare([]byte(fromQuery), []byte(fromCookie)) != 1 {
+		return "", false, nil
+	}
+	ok, err := h.app.States().Verify(r.Context(), fromQuery)
+	if err != nil || !ok {
+		return "", false, err
+	}
+	return fromQuery, true, nil
 }
 
-// requireState is requireGithubSetupState: the nonce from the query
-// (manifest flow) or the HttpOnly cookie (install redirect) must be valid.
-func (h *handlers) requireState(r *http.Request) (bool, error) {
-	fromQuery, fromCookie, err := stateInputs(r)
-	if err != nil {
-		return false, err
-	}
-	for _, s := range []string{fromQuery, fromCookie} {
-		ok, err := h.app.States().Verify(r.Context(), s)
-		if err != nil || ok {
-			return ok, err
-		}
-	}
-	return false, nil
+// withState appends the state nonce to a GitHub install URL; GitHub passes
+// it back to the setup URL.
+func withState(installURL, state string) string {
+	return installURL + "?state=" + js.EncodeURIComponent(state)
 }
 
 func (h *handlers) frontendError(code string) string {
@@ -238,13 +244,18 @@ func (h *handlers) manifest(w http.ResponseWriter, r *http.Request) {
 	// GitHub rejects redirect_url values with a query string; the CSRF nonce
 	// goes on the form action (?state=) and in the HttpOnly cookie.
 	m := appManifest{
-		Name:               "docklift-" + sanitized,
-		URL:                "https://github.com/SSujitX/docklift",
-		RedirectURL:        serverURL + manifestCallbackPath,
-		CallbackURLs:       []string{serverURL + manifestCallbackPath},
-		SetupURL:           serverURL + "/api/github/setup",
-		HookAttributes:     manifestHook{URL: serverURL + "/api/github/webhook", Active: true},
-		DefaultEvents:      []string{"push"},
+		Name:           "docklift-" + sanitized,
+		URL:            "https://github.com/SSujitX/docklift",
+		RedirectURL:    serverURL + manifestCallbackPath,
+		CallbackURLs:   []string{serverURL + manifestCallbackPath},
+		SetupURL:       serverURL + "/api/github/setup",
+		HookAttributes: manifestHook{URL: serverURL + "/api/github/webhook", Active: true},
+		DefaultEvents:  []string{"push"},
+		// Public, as in TS: the App is created on the user's personal account,
+		// and only a public App can be installed on other accounts (the
+		// "Add Account" flow for organisations). Anyone may therefore install
+		// it, so installations are only bound through a matching setup state
+		// (/setup) or the saved id / App owner (check-installation).
 		Public:             true,
 		DefaultPermissions: manifestPermissions{Contents: "read", Metadata: "read"},
 	}
@@ -272,7 +283,7 @@ func (h *handlers) manifestCallback(w http.ResponseWriter, r *http.Request) {
 		h.d.Log.Error("Manifest callback error", "error", err)
 		redirect(w, r, h.frontendError("callback_failed"))
 	}
-	ok, err := h.requireState(r)
+	state, ok, err := h.requireState(r)
 	if err != nil {
 		failed(err)
 		return
@@ -281,15 +292,10 @@ func (h *handlers) manifestCallback(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, h.frontendError("invalid_state"))
 		return
 	}
-	fromQuery, fromCookie, err := stateInputs(r)
-	if err != nil {
-		failed(err)
-		return
-	}
 	code := queryCast(r, "code")
 	if code == "" {
 		if inst := queryCast(r, "installation_id"); inst != "" {
-			redirect(w, r, "/api/github/setup?installation_id="+js.EncodeURIComponent(inst))
+			redirect(w, r, "/api/github/setup?installation_id="+js.EncodeURIComponent(inst)+"&state="+js.EncodeURIComponent(state))
 			return
 		}
 		redirect(w, r, h.frontendError("no_code"))
@@ -332,11 +338,8 @@ func (h *handlers) manifestCallback(w http.ResponseWriter, r *http.Request) {
 	h.app.ForgetTokens()
 
 	states := h.app.States()
-	preserved := states.ReturnURL(fromQuery)
-	if preserved == "" {
-		preserved = states.ReturnURL(fromCookie)
-	}
-	if err := states.Clear(ctx, fromQuery, fromCookie); err != nil {
+	preserved := states.ReturnURL(state)
+	if err := states.Clear(ctx, state); err != nil {
 		failed(err)
 		return
 	}
@@ -348,7 +351,7 @@ func (h *handlers) manifestCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	h.setStateCookie(w, r, installState)
 	h.d.Log.Info("GitHub App created successfully", "name", conv.Name, "id", conv.ID.String())
-	redirect(w, r, *installURLFor(&conv.Slug))
+	redirect(w, r, withState(*installURLFor(&conv.Slug), installState))
 }
 
 func deref(s *string) string {
@@ -446,19 +449,24 @@ func (h *handlers) checkInstallation(w http.ResponseWriter, r *http.Request) {
 		httpx.JSON(w, http.StatusOK, notFoundBody{Message: "No installations found. Please install the app on GitHub first."})
 		return
 	}
-	// Keep the saved installation when it is still present; never replace a
-	// multi-account setup with installations[0] (often an organisation).
+	// Keep the saved installation when it is still present, else take the
+	// installation on the account that owns the App. Never fall back to
+	// installations[0] as TS did: the App is public, so anyone can install it
+	// on their own account, and that installation must not become ours.
 	existing, err := h.setting(ctx, githubapp.KeyInstallationID)
 	if err != nil {
 		httpx.JSON(w, http.StatusOK, unexpected)
 		return
 	}
-	chosen := installations[0]
-	for _, inst := range installations {
-		if existing != nil && inst.ID.String() == *existing {
-			chosen = inst
-			break
-		}
+	owner, err := h.setting(ctx, githubapp.KeyUsername)
+	if err != nil {
+		httpx.JSON(w, http.StatusOK, unexpected)
+		return
+	}
+	chosen, matched := matchInstallation(installations, deref(existing), deref(owner))
+	if !matched {
+		httpx.JSON(w, http.StatusOK, notFoundBody{Message: msgUnmatchedInstallation})
+		return
 	}
 	if chosen.ID == "" {
 		httpx.JSON(w, http.StatusOK, unexpected)
@@ -497,8 +505,34 @@ func (h *handlers) checkInstallation(w http.ResponseWriter, r *http.Request) {
 	}{true, idValue(chosen.ID.String()), username, list})
 }
 
+// msgUnmatchedInstallation is check-installation's answer when no listed
+// installation is the saved one or on the App owner's account.
+const msgUnmatchedInstallation = `Installation could not be matched to this Docklift. Click "Install GitHub App" to finish setup.`
+
+// matchInstallation picks the saved installation (by id) or, when none is
+// saved or it is gone, the one on the App owner's account (GitHub logins
+// compare case-insensitively). Nothing else is ever chosen.
+func matchInstallation(list []githubapp.Installation, savedID, ownerLogin string) (githubapp.Installation, bool) {
+	if savedID != "" {
+		for _, inst := range list {
+			if inst.ID.String() == savedID {
+				return inst, true
+			}
+		}
+	}
+	if ownerLogin != "" && ownerLogin != "unknown" {
+		for _, inst := range list {
+			if inst.Account != nil && inst.Account.Login != nil && strings.EqualFold(*inst.Account.Login, ownerLogin) {
+				return inst, true
+			}
+		}
+	}
+	return githubapp.Installation{}, false
+}
+
 // beginInstallSession is beginGithubInstallSession: a fresh nonce cookie
-// remembering the sanitised return URL, and the App's install URL.
+// remembering the sanitised return URL, and the App's install URL carrying
+// the same nonce as ?state= (GitHub hands it back to /setup).
 func (h *handlers) beginInstallSession(w http.ResponseWriter, r *http.Request, returnURL string, isString bool) (string, int, error) {
 	ctx := r.Context()
 	appID := h.d.Config.GitHubAppID
@@ -523,7 +557,7 @@ func (h *handlers) beginInstallSession(w http.ResponseWriter, r *http.Request, r
 		return "", 0, err
 	}
 	s := orDefault(slug, "docklift-app")
-	return *installURLFor(&s), 0, nil
+	return withState(*installURLFor(&s), state), 0, nil
 }
 
 const msgNotConfigured = "GitHub App not configured. Please create one first."
@@ -577,7 +611,7 @@ func (h *handlers) setup(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, returnBase+"?github_error=invalid_installation")
 		return
 	}
-	ok, err := h.requireState(r)
+	state, ok, err := h.requireState(r)
 	if err != nil {
 		failed(err)
 		return
@@ -613,20 +647,12 @@ func (h *handlers) setup(w http.ResponseWriter, r *http.Request) {
 		failed(err)
 		return
 	}
-	fromQuery, fromCookie, err := stateInputs(r)
-	if err != nil {
-		failed(err)
-		return
-	}
 	states := h.app.States()
-	returnURL := states.ReturnURL(fromQuery)
-	if returnURL == "" {
-		returnURL = states.ReturnURL(fromCookie)
-	}
+	returnURL := states.ReturnURL(state)
 	if returnURL == "" {
 		returnURL = returnBase
 	}
-	if err := states.Clear(ctx, fromQuery, fromCookie); err != nil {
+	if err := states.Clear(ctx, state); err != nil {
 		failed(err)
 		return
 	}

@@ -140,11 +140,11 @@ func TestSecurityHeadersAndSPA(t *testing.T) {
 		t.Errorf("POST to the SPA = %d", r.code)
 	}
 	https := map[string]string{"X-Forwarded-Proto": "https"}
-	api := doFrom(t, h, "172.28.0.3:40000", "GET", "/api/health", https)
+	api := doFrom(t, h, "172.28.255.254:40000", "GET", "/api/health", https)
 	if api.header.Get("Strict-Transport-Security") == "" || api.header.Get("X-Content-Type-Options") != "nosniff" {
 		t.Errorf("api security headers behind the proxy %v", api.header)
 	}
-	for _, remote := range []string{"192.0.2.1:1234", "172.28.0.1:40000", "[2001:db8::1]:443"} {
+	for _, remote := range []string{"192.0.2.1:1234", "172.28.0.1:40000", "172.28.0.3:40000", "[2001:db8::1]:443"} {
 		if r := doFrom(t, h, remote, "GET", "/api/health", https); r.header.Get("Strict-Transport-Security") != "" {
 			t.Errorf("X-Forwarded-Proto from untrusted peer %s must not enable HSTS", remote)
 		}
@@ -244,5 +244,43 @@ func TestRateLimitScopes(t *testing.T) {
 	}
 	if r := do(t, h, "GET", "/api/projects", nil); r.header.Get("RateLimit-Limit") != "" {
 		t.Error("only /api/auth is rate limited")
+	}
+}
+
+// Once any user exists the setup token is refused by the guard itself,
+// before the restore lock is taken or the upload is read.
+func TestBackupSetupTokenRefusedWithUsers(t *testing.T) {
+	d := apptest.NewDeps(t)
+	h := New(d)
+	token, err := d.Auth.Bootstrap().EnsureSetupToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	apptest.CreateAdmin(t, d, "ada@example.com", "password123")
+	// A busy restore lock would answer 409: the refusal must come first.
+	if !d.Maintenance.TryAcquireRestoreLock("test") {
+		t.Fatal("lock")
+	}
+	defer d.Maintenance.ReleaseRestoreLock()
+	r := do(t, h, "POST", "/api/backup/restore-upload", map[string]string{"X-Setup-Token": token})
+	if r.code != 403 || r.errorMsg() != "Setup-token restore is only allowed before the first admin exists" {
+		t.Fatalf("setup token with a user present: %d %s", r.code, r.body)
+	}
+}
+
+// An unreadable user count refuses the setup token (fail closed).
+func TestBackupSetupTokenFailsClosed(t *testing.T) {
+	d := apptest.NewDeps(t)
+	h := New(d)
+	token, err := d.Auth.Bootstrap().EnsureSetupToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.DB.Writer().Exec(`ALTER TABLE "users" RENAME TO "users_gone"`); err != nil {
+		t.Fatal(err)
+	}
+	r := do(t, h, "POST", "/api/backup/restore-upload", map[string]string{"X-Setup-Token": token})
+	if r.code != 503 {
+		t.Fatalf("setup token with a failing user count: %d %s", r.code, r.body)
 	}
 }

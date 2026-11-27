@@ -1,7 +1,9 @@
 package auth_test
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -9,11 +11,13 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"docklift/internal/app"
 	"docklift/internal/app/apptest"
 	"docklift/internal/app/router"
 	authsvc "docklift/internal/auth"
+	"docklift/internal/store"
 )
 
 type result struct {
@@ -170,15 +174,56 @@ func TestSessionRoutes(t *testing.T) {
 			t.Errorf("%s token: %d %+v %v", purpose, r.code, c, err)
 		}
 	}
-	internal := map[string]string{authsvc.InternalSecretHeader: "apptest-internal-secret"}
-	r := call(t, h, "POST", "/api/auth/sse-token", "", internal)
-	c, err := d.Auth.Verify(r.body["token"].(string))
-	if r.code != 200 || err != nil || c.UserID != authsvc.InternalUserID || c.Pwdv != 0 {
-		t.Errorf("internal sse token: %d %+v %v", r.code, c, err)
+	// The TypeScript X-Internal-Secret bypass is gone: the stored internal
+	// secret is not a credential.
+	internal := map[string]string{"X-Internal-Secret": "apptest-internal-secret"}
+	if r := call(t, h, "POST", "/api/auth/sse-token", "", internal); r.code != 401 || r.body["error"] != "Authentication required" {
+		t.Errorf("internal secret header: %d %v", r.code, r.body)
 	}
-	if r := call(t, h, "PATCH", "/api/auth/profile", `{"name":"I","email":"i@x"}`, internal); r.code != 500 || r.body["error"] != "Failed to update profile" {
-		t.Errorf("profile for the internal caller (no user row): %d %v", r.code, r.body)
+}
+
+// Changing the password ends the user's open SSE streams and terminal
+// sessions at once (they were authenticated by tokens of the old password).
+func TestChangePasswordRevokesOpenSessions(t *testing.T) {
+	d, h, _ := setup(t)
+	u, token := apptest.CreateAdmin(t, d, "ada@example.com", "password123")
+	bearer := map[string]string{"Authorization": "Bearer " + token}
+	sse := call(t, h, "POST", "/api/auth/sse-token", "", bearer).body["token"].(string)
+	claims, err := d.Auth.Verify(sse)
+	if err != nil {
+		t.Fatal(err)
 	}
+	ctx, stop := d.Auth.BindSession(context.Background(), claims)
+	defer stop()
+	other, _ := apptest.CreateAdmin(t, d, "bob@example.com", "password123")
+	otherClaims, _ := d.Auth.Verify(mustPurpose(t, d, other))
+	otherCtx, otherStop := d.Auth.BindSession(context.Background(), otherClaims)
+	defer otherStop()
+
+	r := call(t, h, "POST", "/api/auth/change-password", `{"currentPassword":"password123","newPassword":"password456"}`, bearer)
+	if r.code != 200 {
+		t.Fatalf("change-password: %d %v", r.code, r.body)
+	}
+	select {
+	case <-ctx.Done():
+		if !errors.Is(context.Cause(ctx), authsvc.ErrSessionRevoked) {
+			t.Errorf("cause = %v", context.Cause(ctx))
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatalf("session of %s still open after its password changed", u.Email)
+	}
+	if otherCtx.Err() != nil {
+		t.Error("another user's session must stay open")
+	}
+}
+
+func mustPurpose(t *testing.T, d *app.Deps, u *store.User) string {
+	t.Helper()
+	tok, err := d.Auth.IssuePurpose(authsvc.TokenSubject{UserID: u.ID, Email: u.Email, Role: u.Role, PasswordVersion: u.PasswordVersion()}, authsvc.PurposeSSE)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tok
 }
 
 // TestClientMistakesAre400 covers deliberate fix 3: wrong-typed or missing
@@ -230,5 +275,27 @@ func TestClientMistakesAre400(t *testing.T) {
 	// The bootstrap secret survives rejected registrations.
 	if d.Auth.Bootstrap().ReadSecret() != secret {
 		t.Error("a rejected registration must not consume the bootstrap secret")
+	}
+}
+
+// Registering the first admin removes the fresh-install restore token (TS
+// left it on disk, valid for the setup-token restore path).
+func TestRegisterConsumesSetupToken(t *testing.T) {
+	d, h, secret := setup(t)
+	tok := call(t, h, "GET", "/api/auth/setup-token", "", map[string]string{"X-Bootstrap-Secret": secret})
+	token, _ := tok.body["setupToken"].(string)
+	if token == "" {
+		t.Fatalf("setup token: %d %v", tok.code, tok.body)
+	}
+	r := call(t, h, "POST", "/api/auth/register", `{"name":"Ada","email":"ada@example.com","password":"password123"}`,
+		map[string]string{"X-Bootstrap-Secret": secret})
+	if r.code != 201 {
+		t.Fatalf("register: %d %v", r.code, r.body)
+	}
+	if _, err := os.Stat(d.Auth.Bootstrap().SetupTokenPath()); !os.IsNotExist(err) {
+		t.Fatalf(".setup-token must be removed after registration (err=%v)", err)
+	}
+	if d.Auth.Bootstrap().ValidateSetupToken(token) {
+		t.Fatal("setup token must no longer validate")
 	}
 }

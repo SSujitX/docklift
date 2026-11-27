@@ -338,7 +338,48 @@ func cutArea(area, name string) (string, bool) {
 // file, as 2.1.6 did. Each link replaces its file atomically (a temporary
 // link renamed over it). It returns how many links were recreated and the
 // first error.
+//
+// The lexical check of safeLinkTarget cannot see links chained through
+// other links (x/l2 -> .., x/l1 -> l2/../etc/passwd resolves outside the
+// area on disk), so every created link is also resolved on disk, right
+// after it is created and again once all exist (a later link can redirect
+// an earlier one), and removed when it leaves targetDir.
 func relinkArea(links []linkEntry, area, targetDir string) (int, error) {
+	root, err := pathsec.RealPath(targetDir)
+	if err != nil {
+		return 0, err
+	}
+	var created []string
+	var firstErr error
+	escaped := func(dst string) bool {
+		if linkInside(root, dst) {
+			return false
+		}
+		_ = os.Remove(dst)
+		if firstErr == nil {
+			firstErr = fmt.Errorf("link %s resolves outside %s; removed", filepath.Base(dst), filepath.Base(targetDir))
+		}
+		return true
+	}
+	_, err = relinkEach(links, area, targetDir, func(dst string) {
+		if !escaped(dst) {
+			created = append(created, dst)
+		}
+	})
+	n := 0
+	for _, dst := range created {
+		if !escaped(dst) {
+			n++
+		}
+	}
+	if err != nil {
+		return n, err
+	}
+	return n, firstErr
+}
+
+// relinkEach creates the safe links and calls done after each one.
+func relinkEach(links []linkEntry, area, targetDir string, done func(dst string)) (int, error) {
 	n := 0
 	for _, l := range links {
 		if !safeLinkTarget(area, l.name, l.target) {
@@ -359,6 +400,60 @@ func relinkArea(links []linkEntry, area, targetDir string) (int, error) {
 			return n, err
 		}
 		n++
+		done(dst)
 	}
 	return n, nil
+}
+
+// maxLinkHops bounds symlink resolution (Linux MAXSYMLINKS).
+const maxLinkHops = 40
+
+// linkInside reports whether the link at p resolves, on disk and following
+// every link on the way, to root or a path inside it. Missing components
+// are resolved lexically (a dangling link is judged by where it would point).
+func linkInside(root, p string) bool {
+	dir, err := pathsec.RealPath(filepath.Dir(p))
+	if err != nil {
+		return false
+	}
+	hops := 0
+	got, err := resolveOnDisk(dir, filepath.Base(p), &hops)
+	return err == nil && pathsec.IsInside(root, got)
+}
+
+// resolveOnDisk walks rel from the absolute, resolved directory cur one
+// component at a time, following symlinks the way the kernel does (".."
+// applies to the resolved location, not the text).
+func resolveOnDisk(cur, rel string, hops *int) (string, error) {
+	for _, seg := range strings.FieldsFunc(rel, func(r rune) bool { return r == '/' || r == '\\' }) {
+		switch seg {
+		case ".":
+			continue
+		case "..":
+			cur = filepath.Dir(cur)
+			continue
+		}
+		next := filepath.Join(cur, seg)
+		fi, err := os.Lstat(next)
+		if err != nil || fi.Mode()&fs.ModeSymlink == 0 {
+			cur = next
+			continue
+		}
+		if *hops++; *hops > maxLinkHops {
+			return "", errors.New("too many levels of symbolic links")
+		}
+		target, err := os.Readlink(next)
+		if err != nil {
+			return "", err
+		}
+		base := cur
+		if filepath.IsAbs(target) || filepath.VolumeName(target) != "" {
+			base = filepath.VolumeName(target) + string(filepath.Separator)
+			target = strings.TrimPrefix(target, filepath.VolumeName(target))
+		}
+		if cur, err = resolveOnDisk(base, target, hops); err != nil {
+			return "", err
+		}
+	}
+	return cur, nil
 }

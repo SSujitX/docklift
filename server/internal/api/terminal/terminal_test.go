@@ -29,6 +29,17 @@ type server struct {
 	session string
 	term    string
 	sse     string
+	sub     auth.TokenSubject
+}
+
+// freshTerm issues another terminal token (they are single-use).
+func (s *server) freshTerm(t *testing.T) string {
+	t.Helper()
+	tok, err := s.d.Auth.IssuePurpose(s.sub, auth.PurposeTerminal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tok
 }
 
 func newServer(t *testing.T, mutate func(*app.Deps)) *server {
@@ -46,7 +57,7 @@ func newServer(t *testing.T, mutate func(*app.Deps)) *server {
 	r := chi.NewRouter()
 	m := AttachWith(r, d, func(int, int) (sessions.Shell, error) { return nil, sessions.ErrUnsupported }, sessions.DefaultLimits())
 	r.Get("/*", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("spa")) })
-	s := &server{d: d, srv: httptest.NewServer(r), m: m, session: session, term: term, sse: sse}
+	s := &server{d: d, srv: httptest.NewServer(r), m: m, session: session, term: term, sse: sse, sub: sub}
 	t.Cleanup(s.srv.Close)
 	return s
 }
@@ -167,7 +178,7 @@ func readJSON(t *testing.T, conn *websocket.Conn) map[string]any {
 func TestAcceptedOrigins(t *testing.T) {
 	s := newServer(t, nil)
 	for _, origin := range []string{s.self(), "http://frontend.test:3000", "http://cors.test:4000"} {
-		conn, resp, err := dial(t, s.url(Path, s.term), origin)
+		conn, resp, err := dial(t, s.url(Path, s.freshTerm(t)), origin)
 		if err != nil {
 			t.Fatalf("origin %s: %v (%v)", origin, err, resp)
 		}
@@ -202,6 +213,39 @@ func TestPasswordChangeInvalidatesTerminalToken(t *testing.T) {
 	}
 	if got := rawUpgrade(t, s, Path+"?token="+s.term, s.self()); got != "HTTP/1.1 401 Unauthorized\r\n\r\n" {
 		t.Fatalf("stale terminal token: %q", got)
+	}
+}
+
+// A terminal token opens one WebSocket only.
+func TestTerminalTokenSingleUse(t *testing.T) {
+	s := newServer(t, nil)
+	conn, _, err := dial(t, s.url(Path, s.term), s.self())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m := readJSON(t, conn); m["type"] != "auth_required" {
+		t.Fatalf("%v", m)
+	}
+	if got := rawUpgrade(t, s, Path+"?token="+s.term, s.self()); got != "HTTP/1.1 401 Unauthorized\r\n\r\n" {
+		t.Fatalf("reused terminal token: %q", got)
+	}
+}
+
+// A password change (auth.RevokeUser) closes the user's open terminal.
+func TestRevokeUserClosesTerminal(t *testing.T) {
+	s := newServer(t, nil)
+	conn, _, err := dial(t, s.url(Path, s.term), s.self())
+	if err != nil {
+		t.Fatal(err)
+	}
+	readJSON(t, conn)
+	s.d.Auth.RevokeUser(s.sub.UserID)
+	if m := readJSON(t, conn); m["type"] != "exit" || m["reason"] != "session_revoked" {
+		t.Fatalf("%v", m)
+	}
+	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	if _, _, err := conn.ReadMessage(); err == nil {
+		t.Fatal("socket must be closed after revocation")
 	}
 }
 

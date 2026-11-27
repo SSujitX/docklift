@@ -118,18 +118,21 @@ func TestMigratePanelUpstreamsWithoutDocker(t *testing.T) {
 		t.Fatal(changed, err)
 	}
 	// The new upstream is kept: it is the only correct one in the Go layout.
-	if !strings.Contains(readFile(t, filepath.Join(e.confDir, "panel.example.com.conf")), "set $dashboard docklift-backend;") {
+	if !strings.Contains(readFile(t, filepath.Join(e.confDir, "panel.example.com.conf")), "set $dashboard docklift-backend.docklift_network;") {
 		t.Fatal("rewrite lost")
 	}
 }
 
 func TestRewritePanelUpstream(t *testing.T) {
 	for in, want := range map[string]string{
-		"set $dashboard docklift-nginx;\nproxy_pass http://$dashboard:80;":        "set $dashboard docklift-backend;\nproxy_pass http://$dashboard:8000;",
-		"set  $dashboard   docklift-nginx ;\nproxy_pass   http://$dashboard:80 ;": "set $dashboard docklift-backend;\nproxy_pass http://$dashboard:8000;",
-		"set $dashboard docklift-backend;\nproxy_pass http://$dashboard:8000;":    "set $dashboard docklift-backend;\nproxy_pass http://$dashboard:8000;",
-		"proxy_pass http://host.docker.internal:8080;":                            "proxy_pass http://host.docker.internal:8080;",
-		"set $dashboard docklift-nginx-other;\nproxy_pass http://$dashboard:80;":  "set $dashboard docklift-nginx-other;\nproxy_pass http://$dashboard:80;",
+		"set $dashboard docklift-nginx;\nproxy_pass http://$dashboard:80;":        "set $dashboard docklift-backend.docklift_network;\nproxy_pass http://$dashboard:8000;",
+		"set  $dashboard   docklift-nginx ;\nproxy_pass   http://$dashboard:80 ;": "set $dashboard docklift-backend.docklift_network;\nproxy_pass http://$dashboard:8000;",
+		// The unqualified name an earlier Go build wrote resolves through
+		// project networks too, so it is migrated to the qualified one.
+		"set $dashboard docklift-backend;\nproxy_pass http://$dashboard:8000;":                  "set $dashboard docklift-backend.docklift_network;\nproxy_pass http://$dashboard:8000;",
+		"set $dashboard docklift-backend.docklift_network;\nproxy_pass http://$dashboard:8000;": "set $dashboard docklift-backend.docklift_network;\nproxy_pass http://$dashboard:8000;",
+		"proxy_pass http://host.docker.internal:8080;":                                          "proxy_pass http://host.docker.internal:8080;",
+		"set $dashboard docklift-nginx-other;\nproxy_pass http://$dashboard:80;":                "set $dashboard docklift-nginx-other;\nproxy_pass http://$dashboard:80;",
 	} {
 		if got := rewritePanelUpstream(in, 8000); got != want {
 			t.Errorf("%q -> %q", in, got)

@@ -264,17 +264,40 @@ func TestManifestFlow(t *testing.T) {
 		t.Fatalf("manifest = %v", body["manifest"])
 	}
 
-	// Bad state, bad code.
-	rec = e.do("GET", "/manifest/callback?code=good-code&state=deadbeef", nil)
-	expectLocation(t, rec, "http://localhost:3000/settings?github_error=invalid_state")
-	rec = e.do("GET", "/manifest/callback?code=bad&state="+state, nil)
+	cookie := func(s string) []string { return []string{"Cookie", stateCookie + "=" + s} }
+	// Login-CSRF: the query state must be present AND equal the cookie of
+	// the browser that started the flow. A valid state in only one of them
+	// (an attacker's link, or the victim's cookie alone) is refused.
+	other, err := e.app.States().Create("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, tc := range map[string]struct {
+		query   string
+		headers []string
+	}{
+		"bad state":            {"code=good-code&state=deadbeef", cookie("deadbeef")},
+		"query without cookie": {"code=good-code&state=" + state, nil},
+		"cookie without query": {"code=good-code", cookie(state)},
+		"mismatched states":    {"code=good-code&state=" + other, cookie(state)},
+	} {
+		rec = e.do("GET", "/manifest/callback?"+tc.query, nil, tc.headers...)
+		if rec.Header().Get("Location") != "http://localhost:3000/settings?github_error=invalid_state" {
+			t.Fatalf("%s: Location %q", name, rec.Header().Get("Location"))
+		}
+	}
+	if e.setting(githubapp.KeyAppID) != "" {
+		t.Fatal("credentials stored without a matching state")
+	}
+	rec = e.do("GET", "/manifest/callback?code=bad&state="+state, nil, cookie(state)...)
 	expectLocation(t, rec, "http://localhost:3000/settings?github_error=conversion_failed")
 	if e.setting(githubapp.KeyAppID) != "" {
 		t.Fatal("credentials stored after a failed conversion")
 	}
 
-	rec = e.do("GET", "/manifest/callback?code=good-code&state="+state, nil)
-	expectLocation(t, rec, "https://github.com/apps/docklift-test/installations/new")
+	rec = e.do("GET", "/manifest/callback?code=good-code&state="+state, nil, cookie(state)...)
+	installState := stateFromSetCookie(t, rec)
+	expectLocation(t, rec, "https://github.com/apps/docklift-test/installations/new?state="+installState)
 	for k, want := range map[string]string{
 		githubapp.KeyAppID: "4242", githubapp.KeyAppSlug: "docklift-test", githubapp.KeyClientSecret: "csecret",
 		githubapp.KeyPrivateKey: e.gh.pem, githubapp.KeyWebhookSecret: "whsecret", githubapp.KeyUsername: "owner1",
@@ -283,18 +306,28 @@ func TestManifestFlow(t *testing.T) {
 			t.Errorf("setting %s = %q", k, got)
 		}
 	}
-	installState := stateFromSetCookie(t, rec)
 	if installState == state {
 		t.Fatal("install state must be fresh")
 	}
 	// The manifest state is single-use.
-	rec = e.do("GET", "/manifest/callback?code=good-code&state="+state, nil)
+	rec = e.do("GET", "/manifest/callback?code=good-code&state="+state, nil, cookie(state)...)
 	expectLocation(t, rec, "http://localhost:3000/settings?github_error=invalid_state")
 
+	// /setup needs the query state GitHub echoes back, equal to the cookie.
+	rec = e.do("GET", "/setup?installation_id=31", nil, cookie(installState)...)
+	expectLocation(t, rec, "http://localhost:3000/settings?github_error=invalid_state")
+	rec = e.do("GET", "/setup?installation_id=31&state="+installState, nil)
+	expectLocation(t, rec, "http://localhost:3000/settings?github_error=invalid_state")
+	rec = e.do("GET", "/setup?installation_id=31&state="+other, nil, cookie(installState)...)
+	expectLocation(t, rec, "http://localhost:3000/settings?github_error=invalid_state")
+	if e.setting(githubapp.KeyInstallationID) != "" {
+		t.Fatal("installation stored without a matching state")
+	}
+
 	// Installation callback: unknown installation, then the real one.
-	rec = e.do("GET", "/setup?installation_id=99", nil, "Cookie", stateCookie+"="+installState)
+	rec = e.do("GET", "/setup?installation_id=99&state="+installState, nil, cookie(installState)...)
 	expectLocation(t, rec, "http://localhost:3000/settings?github_error=installation_verify_failed")
-	rec = e.do("GET", "/setup?installation_id=31", nil, "Cookie", "a=b; "+stateCookie+"="+installState)
+	rec = e.do("GET", "/setup?installation_id=31&state="+installState, nil, "Cookie", "a=b; "+stateCookie+"="+installState)
 	expectLocation(t, rec, "http://localhost:8080/projects/new?github=connected")
 	if e.setting(githubapp.KeyInstallationID) != "31" || e.setting(githubapp.KeyUsername) != "inst-owner" {
 		t.Fatal("installation not stored")
@@ -302,11 +335,11 @@ func TestManifestFlow(t *testing.T) {
 	if c := rec.Header().Values("Set-Cookie"); len(c) != 1 || !strings.Contains(c[0], "Max-Age=0") {
 		t.Fatalf("cookie not cleared: %q", c)
 	}
-	rec = e.do("GET", "/setup?installation_id=31", nil, "Cookie", stateCookie+"="+installState)
+	rec = e.do("GET", "/setup?installation_id=31&state="+installState, nil, cookie(installState)...)
 	expectLocation(t, rec, "http://localhost:3000/settings?github_error=invalid_state")
 
 	// Malformed cookie encoding fails closed.
-	rec = e.do("GET", "/setup?installation_id=31", nil, "Cookie", stateCookie+"=%zz")
+	rec = e.do("GET", "/setup?installation_id=31&state=x", nil, "Cookie", stateCookie+"=%zz")
 	expectLocation(t, rec, "http://localhost:3000/settings?github_error=setup_failed")
 
 	rec = e.do("GET", "/status", nil)
@@ -346,8 +379,28 @@ func TestCheckInstallationAndInstallations(t *testing.T) {
 		t.Fatalf("unconfigured: %d", rec.Code)
 	}
 	e.configureApp()
-	e.set(githubapp.KeyInstallationID, "2")
+	// Nothing saved and no installation on the App owner's account: none is
+	// picked (TS took installations[0], which anyone can create on a public App).
+	e.set(githubapp.KeyUsername, "owner1")
 	got := e.json(e.do("POST", "/check-installation", nil))
+	if got["found"] != false || got["message"] != msgUnmatchedInstallation || e.setting(githubapp.KeyInstallationID) != "" {
+		t.Fatalf("unmatched check-installation = %v", got)
+	}
+	// A stale saved id does not fall back to installations[0] either.
+	e.set(githubapp.KeyInstallationID, "999")
+	if got = e.json(e.do("POST", "/check-installation", nil)); got["found"] != false || e.setting(githubapp.KeyInstallationID) != "999" {
+		t.Fatalf("stale check-installation = %v", got)
+	}
+	// The owner's installation is found by login (case-insensitively).
+	if err := e.d.Store.DeleteSetting(context.Background(), githubapp.KeyInstallationID); err != nil {
+		t.Fatal(err)
+	}
+	e.set(githubapp.KeyUsername, "ALICE")
+	if got = e.json(e.do("POST", "/check-installation", nil)); got["found"] != true || got["installationId"] != float64(1) {
+		t.Fatalf("owner check-installation = %v", got)
+	}
+	e.set(githubapp.KeyInstallationID, "2")
+	got = e.json(e.do("POST", "/check-installation", nil))
 	if got["found"] != true || got["installationId"] != float64(2) || got["username"] != "org" || len(got["installations"].([]any)) != 3 {
 		t.Fatalf("check-installation = %v", got)
 	}
@@ -469,16 +522,17 @@ func TestInstallSession(t *testing.T) {
 		{map[string]any{"returnUrl": "javascript:alert(1)"}, "http://localhost:3000/settings"},
 	} {
 		rec := e.do("POST", "/install-session", mustJSON(tc.body))
-		if rec.Code != 200 || rec.Body.String() != `{"installUrl":"https://github.com/apps/docklift-test/installations/new"}` {
+		state := stateFromSetCookie(t, rec)
+		// The install URL carries the cookie's nonce; GitHub returns it to /setup.
+		if rec.Code != 200 || rec.Body.String() != `{"installUrl":"https://github.com/apps/docklift-test/installations/new?state=`+state+`"}` {
 			t.Fatalf("install-session: %d %s", rec.Code, rec.Body)
 		}
-		state := stateFromSetCookie(t, rec)
 		if got := e.app.States().ReturnURL(state); got != tc.want {
 			t.Errorf("return URL for %v = %q, want %q", tc.body, got, tc.want)
 		}
 	}
 	rec := e.do("GET", "/install?return_url=/x", nil)
-	expectLocation(t, rec, "https://github.com/apps/docklift-test/installations/new")
+	expectLocation(t, rec, "https://github.com/apps/docklift-test/installations/new?state="+stateFromSetCookie(t, rec))
 }
 
 func sign(secret string, body []byte) string {

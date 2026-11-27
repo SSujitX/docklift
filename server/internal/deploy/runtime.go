@@ -3,6 +3,7 @@ package deploy
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -78,6 +79,21 @@ func (r *Runtime) ComposePath(projectID string) string {
 	return RuntimeComposePath(r.DeploymentsPath, projectID)
 }
 
+// ComposeWorkDir returns (creating it when needed) the working directory of
+// every `docker compose` command: DEPLOYMENTS_PATH/.docklift/.compose-cwd, an
+// empty directory Docklift owns. It is never a source checkout: without -f,
+// compose looks for compose.yaml/docker-compose.yml in the working directory
+// and its parents and reads .env from the project directory, so running it
+// inside a repository would load the repository's own compose file and .env
+// (and `down --rmi` would remove whatever images that file names).
+func (r *Runtime) ComposeWorkDir() (string, error) {
+	dir := filepath.Join(r.DeploymentsPath, ".docklift", ".compose-cwd")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", fmt.Errorf("create compose working directory: %w", err)
+	}
+	return dir, nil
+}
+
 // ErrRuntimeMissing is returned by ComposeFiles before the first deploy.
 var ErrRuntimeMissing = errors.New("DockLift runtime configuration is missing. Deploy the project first.")
 
@@ -94,6 +110,38 @@ func (r *Runtime) ComposeFiles(projectID string) ([]string, error) {
 // ConnectProxyToProjectNetwork attaches the edge proxy to the project network.
 func (r *Runtime) ConnectProxyToProjectNetwork(ctx context.Context, projectID string) error {
 	return r.Docker.ConnectProxy(ctx, ProjectNetworkName(projectID))
+}
+
+// ReattachProxyOnBoot attaches the edge proxy to the network of every
+// project that has one. Deploys attach it, but the attachment belongs to the
+// proxy container: when install or upgrade recreates docklift-nginx-proxy
+// (the Go compose file gives it fixed addresses, so the first upgrade from
+// 2.1.x always does), every app domain answered 502 until its project was
+// redeployed. TS had no such step (found on a real 2.1.6 → Go upgrade).
+// Projects without a network (never deployed, stopped) are skipped; other
+// failures are logged and do not stop the boot.
+func (r *Runtime) ReattachProxyOnBoot(ctx context.Context) error {
+	projects, err := r.Store.ListProjects(ctx, store.ProjectFilter{}, store.OrderNone)
+	if err != nil {
+		return fmt.Errorf("list projects: %w", err)
+	}
+	attached := 0
+	for _, p := range projects {
+		err := r.ConnectProxyToProjectNetwork(ctx, p.ID)
+		switch {
+		case err == nil:
+			attached++
+		case dockerx.IsUnavailable(err):
+			return nil
+		case dockerx.IsNotFound(err):
+		default:
+			r.Log.Warn("edge proxy re-attach failed", "project", p.ID, "network", ProjectNetworkName(p.ID), "error", err)
+		}
+	}
+	if attached > 0 {
+		r.Log.Info(fmt.Sprintf("Edge proxy attached to %d project network(s)", attached))
+	}
+	return nil
 }
 
 // DisconnectProxyFromProjectNetwork detaches the edge proxy (best-effort).

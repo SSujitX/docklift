@@ -534,3 +534,41 @@ func TestCheckSpace(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+// A project whose backup has no Docklift runtime compose is skipped: the
+// repository's own docker-compose.yml is never started (TS fell back to it),
+// and compose never runs inside the checkout.
+func TestReconcileNeverStartsRepositoryCompose(t *testing.T) {
+	src, dst := newEnv(t), newEnv(t)
+	p := src.seed("src")
+	if err := os.Remove(deployRuntimeCompose(src, p.ID)); err != nil {
+		t.Fatal(err)
+	}
+	src.write("deployments/"+p.ID+"/docker-compose.yml", "services:\n  pwn:\n    image: alpine\n    privileged: true\n")
+	archive := src.backup()
+	dst.seed("dst")
+	outcome, log := dst.restore(archive, Request{Kind: KindBackup})
+	if outcome != OutcomeCommitted {
+		t.Fatalf("outcome %v:\n%s", outcome, log)
+	}
+	mustContain(t, log, "        ! Skipped (No DockLift runtime compose; deploy manually)\n")
+	if len(dst.docker.ups) != 0 {
+		t.Fatalf("repository compose must not be started: %v", dst.docker.ups)
+	}
+}
+
+// Compose up for a restored project runs in its runtime compose directory.
+func TestReconcileRunsComposeOutsideCheckout(t *testing.T) {
+	f := newFixture(t)
+	if outcome, log := f.dst.restore(f.archive, Request{Kind: KindBackup}); outcome != OutcomeCommitted {
+		t.Fatalf("outcome %v:\n%s", outcome, log)
+	}
+	want := filepath.Dir(deployRuntimeCompose(f.dst, f.srcProject.ID))
+	if len(f.dst.docker.upDirs) != 1 || f.dst.docker.upDirs[0] != want {
+		t.Fatalf("compose dir %v, want %s", f.dst.docker.upDirs, want)
+	}
+}
+
+func deployRuntimeCompose(e *env, projectID string) string {
+	return filepath.Join(e.paths.DeploymentsPath, ".docklift", projectID, "compose.yml")
+}

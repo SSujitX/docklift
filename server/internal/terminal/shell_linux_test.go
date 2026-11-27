@@ -114,3 +114,20 @@ func alive(pid int) bool {
 	_, after, _ := strings.Cut(string(b), ") ")
 	return !strings.HasPrefix(after, "Z")
 }
+
+// The root shell does not see the backend's secrets.
+func TestShellEnvHasNoBackendSecrets(t *testing.T) {
+	t.Setenv("JWT_SECRET", "jwt")
+	t.Setenv("INTERNAL_API_SECRET", "internal")
+	t.Setenv("DOCKLIFT_GITHUB_CLIENT_SECRET", "gh")
+	t.Setenv("SHELL_ENV_KEEP", "kept")
+	env := strings.Join(shellEnv(80, 24), "\n")
+	for _, key := range []string{"JWT_SECRET=", "INTERNAL_API_SECRET=", "DOCKLIFT_GITHUB_CLIENT_SECRET="} {
+		if strings.Contains(env, key) {
+			t.Errorf("shell environment contains %s", key)
+		}
+	}
+	if !strings.Contains(env, "SHELL_ENV_KEEP=kept") || !strings.Contains(env, "TERM=xterm-256color") {
+		t.Error("shell environment lost ordinary variables")
+	}
+}

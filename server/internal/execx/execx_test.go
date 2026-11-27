@@ -261,3 +261,57 @@ func TestWriterFunc(t *testing.T) {
 		t.Fatalf("n=%d err=%v got=%v", n, err, got)
 	}
 }
+
+// Children never inherit the backend's secrets, whether the environment is
+// inherited or given; variables the caller passes in ExtraEnv are kept.
+func TestRunStripsBackendSecrets(t *testing.T) {
+	for _, kv := range [][2]string{
+		{"JWT_SECRET", "jwt"}, {"INTERNAL_API_SECRET", "internal"},
+		{"DOCKLIFT_GITHUB_CLIENT_SECRET", "gh"}, {"DOCKLIFT_GITHUB_APP_ID", "1"},
+		{"EXECX_KEEP_ME", "kept"},
+	} {
+		t.Setenv(kv[0], kv[1])
+	}
+	get := func(c Cmd) string {
+		t.Helper()
+		res, err := Run(context.Background(), c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(res.Stdout)
+	}
+	for _, key := range []string{"JWT_SECRET", "INTERNAL_API_SECRET", "DOCKLIFT_GITHUB_CLIENT_SECRET", "DOCKLIFT_GITHUB_APP_ID"} {
+		if got := get(self(t, "env", key)); got != "" {
+			t.Errorf("inherited %s = %q", key, got)
+		}
+		given := self(t, "env", key)
+		given.Env = append(os.Environ(), "jwt_secret=lower", key+"=given")
+		if got := get(given); got != "" {
+			t.Errorf("given %s = %q", key, got)
+		}
+	}
+	if got := get(self(t, "env", "EXECX_KEEP_ME")); got != "kept" {
+		t.Errorf("ordinary variable lost: %q", got)
+	}
+	// A project's own build variable may be called JWT_SECRET.
+	extra := self(t, "env", "JWT_SECRET")
+	extra.ExtraEnv = append(extra.ExtraEnv, "JWT_SECRET=project-value")
+	if got := get(extra); got != "project-value" {
+		t.Errorf("ExtraEnv JWT_SECRET = %q", got)
+	}
+}
+
+func TestIsSensitiveEnv(t *testing.T) {
+	for key, want := range map[string]bool{
+		"JWT_SECRET": true, "jwt_secret": true, "INTERNAL_API_SECRET": true,
+		"DOCKLIFT_GITHUB_PRIVATE_KEY_PATH": true, "DOCKLIFT_GITHUB_WEBHOOK_SECRET": true,
+		"PATH": false, "DOCKER_HOST": false, "JWT_SECRET_X": false, "MY_JWT_SECRET": false,
+	} {
+		if got := IsSensitiveEnv(key); got != want {
+			t.Errorf("IsSensitiveEnv(%q) = %v", key, got)
+		}
+	}
+	if got := FilterEnv([]string{`=C:=C:\x`, "JWT_SECRET=a", "A=b"}); len(got) != 2 || got[0] != `=C:=C:\x` || got[1] != "A=b" {
+		t.Errorf("FilterEnv = %q", got)
+	}
+}

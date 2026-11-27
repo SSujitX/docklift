@@ -62,6 +62,8 @@ type fakeDocker struct {
 	pingErr   error
 	built     []string
 	panicOnUp bool
+	// dirs are the working directories of every compose command.
+	dirs []string
 }
 
 func newFakeDocker() *fakeDocker {
@@ -72,6 +74,12 @@ func (f *fakeDocker) record(s string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls = append(f.calls, s)
+}
+
+func (f *fakeDocker) recordDir(dir string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.dirs = append(f.dirs, dir)
 }
 
 func (f *fakeDocker) called(prefix string) int {
@@ -89,6 +97,7 @@ func (f *fakeDocker) called(prefix string) int {
 func (f *fakeDocker) Ping(context.Context) error { return f.pingErr }
 
 func (f *fakeDocker) Compose(ctx context.Context, c dockerx.ComposeCmd) (execx.Result, error) {
+	f.recordDir(c.Dir)
 	f.record("compose " + strings.Join(c.Args, " ") + " -p " + c.Project)
 	if len(c.Args) > 0 && c.Args[0] == "up" {
 		if f.panicOnUp {
@@ -111,6 +120,7 @@ func (f *fakeDocker) Compose(ctx context.Context, c dockerx.ComposeCmd) (execx.R
 }
 
 func (f *fakeDocker) ComposeDown(_ context.Context, c dockerx.ComposeCmd) dockerx.DownResult {
+	f.recordDir(c.Dir)
 	f.record("down -p " + c.Project)
 	return dockerx.DownResult{OK: f.downOK}
 }
@@ -233,16 +243,19 @@ type fakeGit struct {
 	mu        sync.Mutex
 	origin    string
 	pullCreds *gitops.Credentials
-	pullErr   error
-	scrubErr  error
-	resets    []string
-	head      string
+	// pullOrigin is the origin at pull time; pullExpected the ExpectedOrigin.
+	pullOrigin, pullExpected string
+	pullErr                  error
+	scrubErr                 error
+	resets                   []string
+	head                     string
 }
 
 func (g *fakeGit) Pull(_ context.Context, _ string, out io.Writer, o gitops.PullOptions) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.pullCreds = o.Credentials
+	g.pullOrigin, g.pullExpected = g.origin, o.ExpectedOrigin
 	if o.Credentials != nil {
 		// A misbehaving remote echoing the token must not reach the log.
 		_, _ = io.WriteString(out, "remote: hello "+o.Credentials.Password+"\n")

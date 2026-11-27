@@ -76,6 +76,7 @@ type Checker struct {
 	cachedIP  string
 	cachedAt  time.Time
 	haveStamp bool
+	inflight  chan struct{} // closed when the running lookup ends
 }
 
 // Option configures a Checker.
@@ -140,10 +141,23 @@ func New(opts ...Option) *Checker {
 // by the IP source, or nil when it cannot be determined. Results (including
 // failures) are cached for IPCacheTTL; the cache is stamped before the request
 // so a server without internet access does not pay the timeout on every
-// certificate attempt (concurrent callers during that request see the previous
-// value, as in the TypeScript version).
+// certificate attempt. Callers arriving while that request runs wait for it
+// (bounded by their context). TS handed them the previous value, which is
+// null after a restart: the dns-check route looks the IP up twice
+// concurrently, so its per-domain result said "IP could not be confirmed"
+// (status unknown) next to a top-level serverIp that was known.
 func (c *Checker) GetServerPublicIP(ctx context.Context) *string {
 	c.mu.Lock()
+	if wait := c.inflight; wait != nil {
+		c.mu.Unlock()
+		select {
+		case <-wait:
+		case <-ctx.Done():
+		}
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		return strPtr(c.cachedIP)
+	}
 	if c.haveStamp && c.now().Sub(c.cachedAt) < IPCacheTTL {
 		ip := c.cachedIP
 		c.mu.Unlock()
@@ -151,15 +165,18 @@ func (c *Checker) GetServerPublicIP(ctx context.Context) *string {
 	}
 	c.cachedAt = c.now()
 	c.haveStamp = true
+	done := make(chan struct{})
+	c.inflight = done
 	c.mu.Unlock()
 
-	if ip, ok := c.fetchPublicIP(ctx); ok {
-		c.mu.Lock()
-		c.cachedIP = ip
-		c.mu.Unlock()
-	}
+	ip, ok := c.fetchPublicIP(ctx)
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if ok {
+		c.cachedIP = ip
+	}
+	c.inflight = nil
+	close(done)
 	return strPtr(c.cachedIP)
 }
 

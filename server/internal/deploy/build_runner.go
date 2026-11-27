@@ -21,8 +21,14 @@ import (
 // RailpackVersion pins the Railpack BuildKit frontend.
 const RailpackVersion = "0.33.0"
 
-// RailpackFrontend is the BUILDKIT_SYNTAX image of Railpack plans.
-const RailpackFrontend = "ghcr.io/railwayapp/railpack-frontend:v" + RailpackVersion
+// railpackFrontendDigest is the OCI image index digest of
+// railpack-frontend:v0.33.0 on ghcr.io (covers linux/amd64 and linux/arm64).
+// Update it together with RailpackVersion.
+const railpackFrontendDigest = "sha256:822711c4cb8aa7c03a6556d128186acab4aa49073431195e20617af83f742600"
+
+// RailpackFrontend is the BUILDKIT_SYNTAX image of Railpack plans, pinned by
+// digest so a re-pushed tag cannot change the frontend that runs builds.
+const RailpackFrontend = "ghcr.io/railwayapp/railpack-frontend:v" + RailpackVersion + "@" + railpackFrontendDigest
 
 // railpackPlaceholder replaces build variable values during `railpack
 // prepare`, keeping secrets out of argv and the plan file.
@@ -161,6 +167,13 @@ func BuildServiceImage(ctx context.Context, req BuildRequest) error {
 	for _, v := range buildVars {
 		prepare = append(prepare, "--env", v.Key+"="+railpackPlaceholder)
 	}
+	// railpack prepare runs in the backend container and follows symlinks
+	// when it reads manifests (package.json, Procfile, ...); what it reads
+	// ends up in the plan and the image. docker build and BuildKit send
+	// symlinks as links, so only this step needs the check.
+	if err := CheckProjectSymlinks(req.ProjectPath); err != nil {
+		return err
+	}
 	logf("🛤️  No Dockerfile found → analyzing %s with Railpack\n", svc.ContextPath)
 	if err := runBuild(ctx, run, execx.Cmd{Name: railpackBin, Args: prepare, Dir: contextDir}, logw); err != nil {
 		return err
@@ -186,6 +199,49 @@ func BuildServiceImage(ctx context.Context, req BuildRequest) error {
 	logf("📦 Railpack plan ready; building %s\n", req.ImageTag)
 	return runBuild(ctx, run, execx.Cmd{Name: dockerBin, Args: args, Dir: contextDir, ExtraEnv: extraEnv}, logw)
 }
+
+// CheckProjectSymlinks rejects a project checkout holding a symlink that
+// resolves outside the project directory. The whole checkout is walked, not
+// only the build context: a context link to another project directory
+// reaches that directory's links too. A link that resolves is judged by its
+// real path; a dangling link is allowed only with a relative target that
+// never climbs (".."), so it cannot point outside once its target appears.
+func CheckProjectSymlinks(projectPath string) error {
+	root, err := realPath(projectPath)
+	if err != nil {
+		return err
+	}
+	inside := func(p string) bool {
+		return p == root || strings.HasPrefix(p, root+string(filepath.Separator))
+	}
+	return filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.Type()&os.ModeSymlink == 0 {
+			return nil
+		}
+		target, err := os.Readlink(p)
+		if err != nil {
+			return err
+		}
+		ok := false
+		if real, err := filepath.EvalSymlinks(p); err == nil {
+			ok = inside(real)
+		} else {
+			// Dangling: only a relative target that never climbs ("..")
+			// stays inside; links it passes through are checked themselves.
+			ok = !filepath.IsAbs(target) && filepath.VolumeName(target) == "" && !slices.Contains(strings.FieldsFunc(target, isPathSep), "..")
+		}
+		if !ok {
+			rel, _ := filepath.Rel(root, p)
+			return fmt.Errorf("The project contains a symlink that points outside the project directory: %s -> %s. Remove it or replace it with a regular file, then redeploy.", filepath.ToSlash(rel), target)
+		}
+		return nil
+	})
+}
+
+func isPathSep(r rune) bool { return r == '/' || r == filepath.Separator }
 
 // SecretsHash is the sha256 (hex) of the sorted "KEY=VALUE" lines of the
 // build variables; Railpack uses it to invalidate cached layers when a

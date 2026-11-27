@@ -128,6 +128,11 @@ func ScanDockerfiles(projectPath string, maxDepth int) ([]ScannedService, error)
 		}
 	}
 	scan(projectPath, 0)
+	for _, svc := range services {
+		if err := CheckServiceName(svc.Name, filepath.ToSlash(svc.DockerfilePath)); err != nil {
+			return nil, err
+		}
+	}
 	return DedupeScannedServices(services)
 }
 
@@ -246,6 +251,11 @@ func RenderRuntimeCompose(services []RuntimeService, envVars []EnvVar, opts Runt
 	topVolumes := mapping()
 	volumeIndex := map[string]*yaml.Node{}
 	for _, svc := range services {
+		// Service rows predating the scan check (rollback, redeploy of stored
+		// services) must not become a reserved DNS alias either.
+		if err := CheckServiceName(svc.Name, ""); err != nil {
+			return nil, err
+		}
 		env := mapping()
 		envIndex := map[string]int{}
 		setEnv := func(k, v string) {

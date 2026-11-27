@@ -22,6 +22,8 @@ type fakeDocker struct {
 	images     []dockerx.Image
 	removeErr  map[string]error
 	connectErr map[string]error
+	// networkErr fails a connect to that network (e.g. a not-found error).
+	networkErr map[string]error
 	prune      dockerx.PruneResult
 }
 
@@ -31,6 +33,7 @@ func newFakeDocker() *fakeDocker {
 		imageRefs:  map[string]string{},
 		removeErr:  map[string]error{},
 		connectErr: map[string]error{},
+		networkErr: map[string]error{},
 		prune:      dockerx.PruneResult{OK: true},
 	}
 }
@@ -79,6 +82,9 @@ func (f *fakeDocker) ConnectContainer(_ context.Context, network, container stri
 	f.record("connect " + network + " " + container)
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if err := f.networkErr[network]; err != nil {
+		return err
+	}
 	return f.connectErr[container]
 }
 

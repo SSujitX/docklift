@@ -30,7 +30,7 @@ import (
 
 // coreContainers is every container of the DockLift stack (docker-compose.yml),
 // restarted by POST /reset.
-var coreContainers = []string{"docklift-backend", "docklift-frontend", "docklift-nginx", "docklift-nginx-proxy", "docklift-certbot"}
+var coreContainers = []string{"docklift-backend", "docklift-nginx-proxy", "docklift-certbot"}
 
 // selfContainer is the container this process runs in; /reset restarts it last.
 const selfContainer = "docklift-backend"
@@ -39,9 +39,7 @@ const selfContainer = "docklift-backend"
 // in the order the error message lists them.
 var logServices = []struct{ name, container string }{
 	{"backend", "docklift-backend"},
-	{"frontend", "docklift-frontend"},
 	{"proxy", "docklift-nginx-proxy"},
-	{"nginx", "docklift-nginx"},
 	{"certbot", "docklift-certbot"},
 }
 
@@ -306,9 +304,8 @@ func (h *handlers) pingDocker(ctx context.Context) error {
 // restartCoreContainers is `sleep 1 && docker restart <core containers>`,
 // except that this process's own container goes last: restarting it first
 // (as the TypeScript command did) killed the restart before it reached the
-// other containers. Containers that do not exist (docklift-frontend and
-// docklift-nginx are gone since the Go backend serves the dashboard) are
-// skipped.
+// other containers. Containers that do not exist (for example a certbot
+// container that was never created) are skipped.
 func (h *handlers) restartCoreContainers() {
 	time.Sleep(resetDelay)
 	// Detached from shutdown: restarting our own container stops this process.
@@ -393,7 +390,7 @@ func (h *handlers) execute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	authUser, _ := auth.UserFrom(r.Context())
-	if authUser.UserID == "" || authUser.UserID == auth.InternalUserID {
+	if authUser.UserID == "" {
 		httpx.Error(w, http.StatusUnauthorized, "Authentication required")
 		return
 	}

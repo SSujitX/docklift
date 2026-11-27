@@ -88,7 +88,7 @@ func TestDockerManagedDatabases(t *testing.T) {
 			containerName, volumeName := svc["container_name"].(string), vol["name"].(string)
 			image := body["image"].(string)
 			t.Cleanup(func() {
-				_ = exec.Command("docker", "rm", "-f", containerName).Run()
+				_ = exec.Command("docker", "rm", "-f", "-v", containerName).Run()
 				_ = exec.Command("docker", "volume", "rm", "-f", volumeName).Run()
 			})
 			labels := dockerCLI(t, "volume", "inspect", "-f", "{{json .Labels}}", volumeName)

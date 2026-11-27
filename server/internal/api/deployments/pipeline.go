@@ -207,6 +207,12 @@ func (s *Service) failDeploy(pid, id string, l *deployLog, err error) {
 	}
 	t.ForgetCancelled(id)
 	t.Release(pid, id)
+	// A cancel kills the build through its context; the client is told the
+	// deployment was cancelled (as TS's stillOwns checks threw), not
+	// "context canceled".
+	if cancelled && errors.Is(err, context.Canceled) {
+		err = errCancelled
+	}
 	l.toClient("\n❌ Error: " + err.Error() + "\n")
 }
 
@@ -324,12 +330,18 @@ func (s *Service) deploy(p *store.Project, id string, l *deployLog, opts DeployO
 	logf("   Compose project: %s\n", composeProject)
 	logf("%s\n\n", bar40)
 
+	// Compose never runs in the checkout: without -f it would load the
+	// repository's own compose file and .env.
+	composeDir, err := s.rt.ComposeWorkDir()
+	if err != nil {
+		return err
+	}
 	// Tear down legacy UUID-named compose projects once (pre-slug naming).
 	for _, alias := range deploy.ComposeProjectAliases(p.Name, pid) {
 		if alias == composeProject {
 			continue
 		}
-		_, _ = s.docker.Compose(s.bg, dockerx.ComposeCmd{Project: alias, Dir: projectPath, Args: []string{"down", "--remove-orphans"}, Timeout: composeDownTimeout})
+		_, _ = s.docker.Compose(s.bg, dockerx.ComposeCmd{Project: alias, Dir: composeDir, Args: []string{"down", "--remove-orphans"}, Timeout: composeDownTimeout})
 	}
 
 	if t.IsMarkedCancelled(id) || s.rt.IsDeploymentCancelled(ctx, pid, id) || !t.Owns(pid, id) {
@@ -342,7 +354,7 @@ func (s *Service) deploy(p *store.Project, id string, l *deployLog, opts DeployO
 
 	procCtx, finishProc := t.StartProcess(s.bg, pid, id)
 	res, runErr := s.docker.Compose(procCtx, dockerx.ComposeCmd{
-		Project: composeProject, Files: files, Dir: projectPath,
+		Project: composeProject, Files: files, Dir: composeDir,
 		Args: []string{"up", "-d", "--remove-orphans"}, Output: l,
 	})
 	killed := procCtx.Err() != nil
@@ -389,10 +401,17 @@ func (s *Service) composeError(pid, id string, l *deployLog, err error) {
 func (s *Service) pullGitHub(p *store.Project, id string, l *deployLog) error {
 	pid := p.ID
 	projectPath := s.rt.ProjectPath(pid)
-	cleanURL := *p.GithubURL
+	// Rows stored by older versions may say http:// or www.github.com; git
+	// only fetches https and credentials only go to https://github.com.
+	cleanURL := gitops.NormalizeGitHubURL(*p.GithubURL)
 	var creds *gitops.Credentials
 	tokenSet := false
 	if owner, repo, ok := gitops.GitHubOwnerRepo(cleanURL); ok {
+		// The checkout fetches from the stored repository and nowhere else:
+		// the origin is reset to it before the token is requested or sent.
+		if err := s.git.SetOriginURL(s.dbCtx(), projectPath, cleanURL); err != nil {
+			return fmt.Errorf("set repository origin: %w", err)
+		}
 		token, err := s.installationToken(owner, repo)
 		if err != nil {
 			l.line("⚠️ Token refresh warning: " + err.Error() + "\n")
@@ -404,7 +423,7 @@ func (s *Service) pullGitHub(p *store.Project, id string, l *deployLog) error {
 		}
 	}
 	pullErr := s.process(pid, id, func(ctx context.Context) error {
-		return s.git.Pull(ctx, projectPath, l, gitops.PullOptions{Ref: strVal(p.GithubBranch), Credentials: creds})
+		return s.git.Pull(ctx, projectPath, l, gitops.PullOptions{Ref: strVal(p.GithubBranch), Credentials: creds, ExpectedOrigin: cleanURL})
 	})
 	scrubFailed := false
 	if tokenSet {

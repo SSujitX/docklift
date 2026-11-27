@@ -5,15 +5,17 @@
 // Every invocation is hardened: git is executed directly (never through a
 // shell) with a timeout; terminal prompts, credential helpers, hooks and
 // fsmonitor are disabled; only the allowed transports may be used
-// (GIT_ALLOW_PROTOCOL, https and http by default, so `ext::`, `file://`,
-// local paths and ssh are refused); repository discovery cannot climb above
+// (GIT_ALLOW_PROTOCOL, https only by default, so plain http, `ext::`,
+// `file://`, local paths and ssh are refused); repository discovery cannot climb above
 // the project directory; inherited GIT_* variables are dropped; user values
 // are validated and passed after `--` or `--end-of-options`.
 //
 // Credentials (the GitHub App installation token) are sent as an HTTP
 // Authorization header through GIT_CONFIG_* environment variables scoped to
 // the remote's origin, so the token is never written to .git/config and
-// never appears in the process arguments. Every error message and every line
+// never appears in the process arguments. Credentials are only ever sent to
+// an allowed origin (https://github.com by default): a clone or pull whose
+// remote is anywhere else fails with ErrCredentialsOrigin instead. Every error message and every line
 // written to a log is passed through Redact, which removes URL userinfo and
 // the token itself.
 package gitops
@@ -41,7 +43,11 @@ const (
 )
 
 // DefaultProtocols are the transports git may use.
-var DefaultProtocols = []string{"https", "http"}
+var DefaultProtocols = []string{"https"}
+
+// DefaultCredentialOrigins are the origins (scheme://host) credentials may
+// be sent to.
+var DefaultCredentialOrigins = []string{"https://github.com"}
 
 // Credentials authenticate HTTP(S) fetches. They are sent as a Basic
 // Authorization header and never stored in the repository.
@@ -67,6 +73,9 @@ type Runner struct {
 	// Protocols is the transport allow-list (default DefaultProtocols).
 	// Tests add "file" to work with local repositories.
 	Protocols []string
+	// CredentialOrigins are the scheme://host[:port] origins credentials may
+	// be sent to (default DefaultCredentialOrigins).
+	CredentialOrigins []string
 }
 
 func (r *Runner) bin() string {
@@ -74,6 +83,32 @@ func (r *Runner) bin() string {
 		return r.Bin
 	}
 	return "git"
+}
+
+func (r *Runner) credentialOrigins() []string {
+	if len(r.CredentialOrigins) > 0 {
+		return r.CredentialOrigins
+	}
+	return DefaultCredentialOrigins
+}
+
+// credentialsAllowed reports whether credentials may be sent to remote: its
+// scheme://host must be one of the credential origins and it must not embed
+// userinfo of its own.
+func (r *Runner) credentialsAllowed(remote string) bool {
+	scope, ok := credentialScope(remote)
+	if !ok {
+		return false
+	}
+	if u, err := url.Parse(remote); err != nil || u.User != nil {
+		return false
+	}
+	for _, o := range r.credentialOrigins() {
+		if strings.EqualFold(strings.TrimSuffix(scope, "/"), strings.TrimSuffix(o, "/")) {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *Runner) protocols() []string {
@@ -109,6 +144,10 @@ var (
 	ErrInvalidCommit = errors.New("Invalid commit SHA")
 	ErrNotRepository = errors.New("Project path is not a git repository")
 )
+
+// ErrCredentialsOrigin refuses to send credentials to a remote that is not an
+// allowed credential origin (or, for Pull, not the expected origin).
+var ErrCredentialsOrigin = errors.New("refusing to send repository credentials to this remote")
 
 // ErrCredentialsRemain is VerifyNoCredentials' failure.
 var ErrCredentialsRemain = errors.New("Origin remote still contains credentials after scrub")
@@ -198,7 +237,7 @@ func (r *Runner) env(c call) []string {
 		// Discovery must not climb above the project into a parent repository.
 		env = append(env, "GIT_CEILING_DIRECTORIES="+filepath.Dir(c.dir))
 	}
-	if c.creds != nil {
+	if c.creds != nil && r.credentialsAllowed(c.remote) {
 		if scope, ok := credentialScope(c.remote); ok {
 			header := "Authorization: Basic " + base64.StdEncoding.EncodeToString([]byte(c.creds.Username+":"+c.creds.Password))
 			env = append(env,
@@ -308,16 +347,52 @@ func HasCredentials(remote string) bool {
 	return strings.Contains(remote, "x-access-token") || credsRe.MatchString(remote)
 }
 
-var githubRepoRe = regexp.MustCompile(`github\.com[/:]([^/]+)/([^/]+)`)
-
 // GitHubOwnerRepo extracts owner and repository (without .git) from a
-// GitHub URL, as the TS token-injection code did.
-func GitHubOwnerRepo(u string) (owner, repo string, ok bool) {
-	m := githubRepoRe.FindStringSubmatch(u)
-	if m == nil {
+// GitHub repository URL. Only https URLs whose host is exactly github.com
+// (no port, no userinfo) qualify: they are the only URLs an installation
+// token is ever requested for. The TS regex matched "github.com/" anywhere
+// in the string (https://evil.test/github.com/a/b included).
+func GitHubOwnerRepo(raw string) (owner, repo string, ok bool) {
+	u, err := url.Parse(raw)
+	if err != nil || !strings.EqualFold(u.Scheme, "https") || u.User != nil || u.Opaque != "" || !strings.EqualFold(u.Host, "github.com") {
 		return "", "", false
 	}
-	return m[1], strings.TrimSuffix(m[2], ".git"), true
+	var segs []string
+	for _, seg := range strings.Split(u.Path, "/") {
+		if seg != "" {
+			segs = append(segs, seg)
+		}
+	}
+	if len(segs) < 2 {
+		return "", "", false
+	}
+	repo = strings.TrimSuffix(segs[1], ".git")
+	if segs[0] == "." || segs[0] == ".." || repo == "" || repo == "." || repo == ".." {
+		return "", "", false
+	}
+	return segs[0], repo, true
+}
+
+// NormalizeGitHubURL rewrites a GitHub repository URL stored by older
+// versions (http scheme, www.github.com host, any case) to
+// https://github.com/<path>, the only form git may fetch and credentials may
+// be sent to. Any other value is returned unchanged.
+func NormalizeGitHubURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.User != nil || u.Opaque != "" {
+		return raw
+	}
+	switch s, port := strings.ToLower(u.Scheme), u.Port(); {
+	case s != "https" && s != "http":
+		return raw
+	case port != "" && !(s == "https" && port == "443") && !(s == "http" && port == "80"):
+		return raw
+	}
+	if h := strings.ToLower(u.Hostname()); h != "github.com" && h != "www.github.com" {
+		return raw
+	}
+	u.Scheme, u.Host = "https", "github.com"
+	return u.String()
 }
 
 func absDir(dir string) (string, error) {
@@ -353,6 +428,9 @@ func (r *Runner) Clone(ctx context.Context, remote, dest string, opts CloneOptio
 		if err := ValidateRef(opts.Ref); err != nil {
 			return err
 		}
+	}
+	if opts.Credentials != nil && !r.credentialsAllowed(remote) {
+		return fmt.Errorf("%w: %s", ErrCredentialsOrigin, RedactURL(remote))
 	}
 	dest, err := absDir(dest)
 	if err != nil {
@@ -392,7 +470,13 @@ type PullOptions struct {
 	// (or the detached commit), falling back to "main".
 	Ref string
 	// Credentials, if set, authenticate the fetch without being stored.
+	// They are sent only when the checkout's origin is an allowed credential
+	// origin and, when ExpectedOrigin is set, equal to it; otherwise Pull
+	// fails with ErrCredentialsOrigin before fetching.
 	Credentials *Credentials
+	// ExpectedOrigin is the origin URL the credentials belong to (the
+	// project's stored repository URL).
+	ExpectedOrigin string
 }
 
 // Pull syncs dir to the remote state of a branch or tag with fetch + hard
@@ -430,6 +514,11 @@ func (r *Runner) pull(ctx context.Context, dir string, out io.Writer, opts PullO
 		return r.run(ctx, call{dir: dir, args: args})
 	}
 	remote, _ := local("remote", "get-url", "--", "origin")
+	if opts.Credentials != nil {
+		if !r.credentialsAllowed(remote) || (opts.ExpectedOrigin != "" && remote != opts.ExpectedOrigin) {
+			return fmt.Errorf("%w: %s", ErrCredentialsOrigin, RedactURL(remote))
+		}
+	}
 	network := func(args ...string) (string, error) {
 		return r.run(ctx, call{dir: dir, args: args, network: true, creds: opts.Credentials, remote: remote})
 	}

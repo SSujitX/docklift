@@ -160,9 +160,11 @@ func (s *Service) teardown(p *store.Project, l *deployLog, orphans, retryOutput 
 	pid := p.ID
 	current := deploy.ComposeProjectName(p.Name, pid)
 	files, filesErr := s.rt.ComposeFiles(pid)
-	dir := s.rt.ProjectPath(pid)
-	if !exists(dir) && orphans {
-		dir = ""
+	// Never the checkout: compose without -f would load the repository's
+	// own compose file and .env.
+	dir, err := s.rt.ComposeWorkDir()
+	if err != nil {
+		return false, err
 	}
 	args := []string{"down"}
 	if orphans {
@@ -246,6 +248,10 @@ func (s *Service) Restart(ctx context.Context, projectID string, out io.Writer) 
 	if err != nil {
 		return nil, ErrNotDeployed
 	}
+	dir, err := s.rt.ComposeWorkDir()
+	if err != nil {
+		return nil, err
+	}
 	dctx := s.dbCtx()
 	row, err := s.store.CreateDeployment(dctx, store.DeploymentCreate{
 		ProjectID: projectID, Status: store.Ptr(deploy.StatusInProgress), Trigger: store.Ptr("restart"),
@@ -264,7 +270,7 @@ func (s *Service) Restart(ctx context.Context, projectID string, out io.Writer) 
 		logf := func(format string, a ...any) { l.line(fmt.Sprintf(format, a...)) }
 		logf("\n%s\n🔄 RESTARTING PROJECT\n📅 %s\n%s\n\n", bar50, isoNow(), bar50)
 		res, err := s.docker.Compose(s.bg, dockerx.ComposeCmd{
-			Project: deploy.ComposeProjectName(p.Name, projectID), Files: files, Dir: s.rt.ProjectPath(projectID),
+			Project: deploy.ComposeProjectName(p.Name, projectID), Files: files, Dir: dir,
 			Args: []string{"restart"}, Output: l,
 		})
 		if err != nil {
@@ -377,9 +383,11 @@ func (s *Service) cancel(p *store.Project, hasRuntime bool, l *deployLog) error 
 	s.rt.DisconnectProxyFromProjectNetwork(s.bg, pid)
 
 	if exists(s.rt.ProjectPath(pid)) && hasRuntime {
-		if files, err := s.rt.ComposeFiles(pid); err == nil {
+		files, err := s.rt.ComposeFiles(pid)
+		dir, dirErr := s.rt.ComposeWorkDir()
+		if err == nil && dirErr == nil {
 			_, _ = s.docker.Compose(s.bg, dockerx.ComposeCmd{
-				Project: deploy.ComposeProjectName(p.Name, pid), Files: files, Dir: s.rt.ProjectPath(pid),
+				Project: deploy.ComposeProjectName(p.Name, pid), Files: files, Dir: dir,
 				Args: []string{"kill"}, Timeout: 30 * time.Second,
 			})
 		}

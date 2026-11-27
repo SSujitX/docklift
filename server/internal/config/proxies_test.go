@@ -23,8 +23,7 @@ func TestParseTrustedProxies(t *testing.T) {
 		excluded []string
 	}{
 		{"default", DefaultTrustedProxies,
-			[]string{"127.0.0.0/8", "::1/128", "172.28.0.0/16", "fd12:3456:789a::/64"},
-			[]string{"172.28.0.1/32", "fd12:3456:789a::1/128"}},
+			[]string{"127.0.0.0/8", "::1/128", "172.28.255.254/32", "fd12:3456:789a::ffff:fffe/128"}, nil},
 		{"none", "none", nil, nil},
 		{"none is case-insensitive and trimmed", "  NONE ", nil, nil},
 		{"single addresses become host prefixes", "10.0.0.5, 2001:db8::1", []string{"10.0.0.5/32", "2001:db8::1/128"}, nil},

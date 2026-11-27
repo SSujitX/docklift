@@ -3,6 +3,7 @@ package backup
 import (
 	"archive/zip"
 	"context"
+	"errors"
 	"io"
 	"io/fs"
 	"os"
@@ -270,5 +271,86 @@ func TestRelinkArea(t *testing.T) {
 	}
 	if fi, _ := os.Lstat(filepath.Join(dir, "live", "a", "evil.pem")); fi.Mode()&fs.ModeSymlink != 0 {
 		t.Fatal("unsafe link target must stay a file")
+	}
+}
+
+// Links chained through other links pass the lexical check but resolve
+// outside the area on disk: x/l2 -> .. and x/l1 -> l2/../etc/passwd. In
+// either archive order the escaping link is removed and the error reported.
+func TestRelinkAreaChainedEscape(t *testing.T) {
+	if !symlinksSupported(t) {
+		t.Skip("symlinks not supported")
+	}
+	for _, order := range []string{"l1 first", "l2 first"} {
+		t.Run(order, func(t *testing.T) {
+			outside := t.TempDir()
+			if err := os.MkdirAll(filepath.Join(outside, "etc"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(outside, "etc", "passwd"), []byte("root:x:0:0\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			dir := filepath.Join(outside, "letsencrypt")
+			if err := os.MkdirAll(filepath.Join(dir, "x"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			for _, f := range []string{"x/l1", "x/l2"} {
+				if err := os.WriteFile(filepath.Join(dir, filepath.FromSlash(f)), []byte("link text"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			l1 := linkEntry{"letsencrypt/x/l1", "l2/../etc/passwd"}
+			l2 := linkEntry{"letsencrypt/x/l2", ".."}
+			if !safeLinkTarget("letsencrypt", l1.name, l1.target) || !safeLinkTarget("letsencrypt", l2.name, l2.target) {
+				t.Fatal("both targets pass the lexical check (that is the point of the test)")
+			}
+			links := []linkEntry{l1, l2}
+			if order == "l2 first" {
+				links = []linkEntry{l2, l1}
+			}
+			n, err := relinkArea(links, "letsencrypt", dir)
+			if err == nil || n != 1 {
+				t.Fatalf("relinked %d, err %v; want 1 and an error", n, err)
+			}
+			if _, err := os.Lstat(filepath.Join(dir, "x", "l1")); !errors.Is(err, fs.ErrNotExist) {
+				t.Fatalf("escaping link must be removed (err=%v)", err)
+			}
+			if b, err := os.ReadFile(filepath.Join(dir, "x", "l1")); err == nil {
+				t.Fatalf("read through escaping link: %q", b)
+			}
+			if fi, err := os.Lstat(filepath.Join(dir, "x", "l2")); err != nil || fi.Mode()&fs.ModeSymlink == 0 {
+				t.Fatalf("contained link must stay (err=%v)", err)
+			}
+		})
+	}
+}
+
+func TestLinkInside(t *testing.T) {
+	if !symlinksSupported(t) {
+		t.Skip("symlinks not supported")
+	}
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "live", "a"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mk := func(name, target string) string {
+		p := filepath.Join(root, filepath.FromSlash(name))
+		if err := os.Symlink(filepath.FromSlash(target), p); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	real, _ := filepath.EvalSymlinks(root)
+	for _, tc := range []struct {
+		name, target string
+		ok           bool
+	}{
+		{"live/a/cert.pem", "../../archive/a/cert1.pem", true},
+		{"live/a/up", "../../..", false},
+		{"live/a/self", "self", false},
+	} {
+		if got := linkInside(real, mk(tc.name, tc.target)); got != tc.ok {
+			t.Errorf("linkInside(%s -> %s) = %v, want %v", tc.name, tc.target, got, tc.ok)
+		}
 	}
 }

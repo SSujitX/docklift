@@ -289,6 +289,16 @@ func (h *handlers) update(w http.ResponseWriter, r *http.Request) {
 		}
 		*f.dst = store.Some(s)
 	}
+	// github_url is validated as on create (TS stored any string, so a PATCH
+	// could point the next deploy's token at another host); "" still clears.
+	if u := upd.GithubURL; u.Set && u.Value != nil && js.Trim(*u.Value) != "" {
+		trimmed := js.Trim(*u.Value)
+		if !validGithubRepoURL(trimmed) || h.d.Git.ValidateURL(trimmed) != nil {
+			httpx.Error(w, http.StatusBadRequest, msgGithubURL)
+			return
+		}
+		upd.GithubURL = store.Some(&trimmed)
+	}
 	if v := b.get("build_type"); v.defined {
 		upd.BuildType = store.Some(deploy.NormalizeBuildType(v.v))
 	}

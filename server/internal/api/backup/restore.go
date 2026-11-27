@@ -132,9 +132,14 @@ func (h *handlers) restoreUpload(w http.ResponseWriter, r *http.Request) {
 		r = withFields(r, fields)
 	}
 	if setupAuthorized(r) {
+		// Re-checked after the upload (the router checked before it): an
+		// admin may have registered meanwhile. A failed count refuses.
 		admins, err := h.d.Store.CountUsersByRole(r.Context(), "admin")
 		if err != nil {
-			admins = 0
+			h.release()
+			discard()
+			httpx.InternalError(w, r, err)
+			return
 		}
 		if admins > 0 {
 			h.release()

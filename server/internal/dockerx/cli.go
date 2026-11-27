@@ -60,7 +60,9 @@ type ComposeCmd struct {
 	Project string
 	// Files are compose files passed with -f (empty = compose's defaults in Dir).
 	Files []string
-	// Dir is the working directory (the project checkout).
+	// Dir is the working directory; never a source checkout (callers use
+	// deploy.Runtime.ComposeWorkDir), so compose cannot load a repository's
+	// own compose file or .env.
 	Dir string
 	// Args is the subcommand and its flags, e.g. {"up", "-d", "--remove-orphans"}.
 	Args []string

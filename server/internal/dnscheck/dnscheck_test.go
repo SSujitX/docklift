@@ -253,3 +253,68 @@ func TestCheckDomainsSequentialOrder(t *testing.T) {
 		t.Fatal("empty input")
 	}
 }
+
+// TestConcurrentCallersShareTheLookup: the dns-check route asks for the IP
+// twice at once (per-domain check and top level). Both must get the result
+// of the one request, not a null "cannot verify" for the second caller (seen
+// on a real server right after a restart: status "unknown" next to a known
+// top-level serverIp).
+func TestConcurrentCallersShareTheLookup(t *testing.T) {
+	var hits atomic.Int32
+	release := make(chan struct{})
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		<-release
+		_, _ = w.Write([]byte(`{"ip":"203.0.113.7"}`))
+	}))
+	t.Cleanup(srv.Close)
+	c := New(WithIPSource(srv.URL, srv.Client()))
+	const callers = 4
+	results := make(chan *string, callers)
+	for range callers {
+		go func() { results <- c.GetServerPublicIP(context.Background()) }()
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for hits.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	time.Sleep(50 * time.Millisecond) // let the other callers reach the wait
+	close(release)
+	for range callers {
+		if ip := <-results; ip == nil || *ip != "203.0.113.7" {
+			t.Fatalf("concurrent caller got %v", ip)
+		}
+	}
+	if hits.Load() != 1 {
+		t.Fatalf("%d requests for one lookup", hits.Load())
+	}
+
+	// A waiting caller gives up with its context; the lookup is unaffected.
+	slow := make(chan struct{})
+	srv2 := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		<-slow
+		_, _ = w.Write([]byte(`{"ip":"203.0.113.8"}`))
+	}))
+	t.Cleanup(srv2.Close)
+	c2 := New(WithIPSource(srv2.URL, srv2.Client()), WithTimeouts(time.Second, 5*time.Second))
+	first := make(chan *string, 1)
+	go func() { first <- c2.GetServerPublicIP(context.Background()) }()
+	for {
+		c2.mu.Lock()
+		running := c2.inflight != nil
+		c2.mu.Unlock()
+		if running {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	if ip := c2.GetServerPublicIP(ctx); ip != nil {
+		t.Fatalf("cancelled waiter got %v before the lookup ended", ip)
+	}
+	close(slow)
+	if ip := <-first; ip == nil || *ip != "203.0.113.8" {
+		t.Fatalf("lookup result %v", ip)
+	}
+}

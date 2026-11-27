@@ -6,12 +6,15 @@ import (
 	"strings"
 )
 
-// DefaultTrustedProxies is the TRUSTED_PROXIES default: loopback plus the
-// docklift_network subnets of docker-compose.yml (where docklift-nginx-proxy
-// lives), minus each subnet's gateway address. Docker's userland proxy and
-// hairpin NAT present clients of a published port (the dashboard on :8080) as
-// the network gateway, so the gateway must never be trusted as a proxy.
-const DefaultTrustedProxies = "127.0.0.0/8,::1/128,172.28.0.0/16,!172.28.0.1,fd12:3456:789a::/64,!fd12:3456:789a::1"
+// DefaultTrustedProxies is the TRUSTED_PROXIES default, the value
+// docker-compose.yml sets: loopback plus the fixed addresses of
+// docklift-nginx-proxy on docklift_network (ipv4_address / ipv6_address in
+// docker-compose.yml). Only the proxy is trusted, not the whole subnet: a
+// deployed app's container on docklift_network must not be able to forge
+// X-Forwarded-For (login rate limits) or X-Forwarded-Proto/-Host (origin
+// checks). The network gateway, which is how clients of the published
+// dashboard port appear, is never trusted.
+const DefaultTrustedProxies = "127.0.0.0/8,::1/128,172.28.255.254,fd12:3456:789a::ffff:fffe"
 
 // ProxyTrust is the parsed TRUSTED_PROXIES list: a socket peer is a trusted
 // proxy when it is inside one of Trusted and inside none of Excluded.

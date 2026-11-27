@@ -28,6 +28,7 @@ type fakeDocker struct {
 	stopped    []string
 	volumes    []string
 	ups        []string
+	upDirs     []string
 	proxies    []string
 	reloads    int
 	composeErr error
@@ -54,13 +55,14 @@ func (f *fakeDocker) VolumeCreate(_ context.Context, name string) error {
 	return nil
 }
 
-func (f *fakeDocker) ComposeUp(_ context.Context, file, project, _ string) error {
+func (f *fakeDocker) ComposeUp(_ context.Context, file, project, dir string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.composeErr != nil {
 		return f.composeErr
 	}
 	f.ups = append(f.ups, project+"|"+filepath.Base(filepath.Dir(file)))
+	f.upDirs = append(f.upDirs, dir)
 	return nil
 }
 

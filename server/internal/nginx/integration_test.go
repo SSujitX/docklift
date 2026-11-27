@@ -85,7 +85,8 @@ func writeSelfSigned(t *testing.T, le, name string, hosts []string) {
 	_ = os.WriteFile(filepath.Join(live, "privkey.pem"), pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER}), 0o644)
 }
 
-// startNginx runs nginx:stable-alpine like the docklift-nginx-proxy service.
+// startNginx runs the nginx image pinned in docker-compose.yml, like the
+// docklift-nginx-proxy service.
 func startNginx(t *testing.T, e *env) string {
 	t.Helper()
 	repo := filepath.Join("..", "..", "..", "nginx-proxy")
@@ -111,8 +112,8 @@ func startNginx(t *testing.T, e *env) string {
 		"-v", abs(filepath.Join(e.dir, "snippets"))+":/etc/nginx/snippets:ro",
 		"-v", abs(filepath.Join(e.dir, "www"))+":/var/www/certbot:ro",
 		"-v", abs(e.le)+":/etc/letsencrypt:ro",
-		"nginx:stable-alpine")
-	t.Cleanup(func() { _ = exec.Command("docker", "rm", "-f", name).Run() })
+		"nginx:1.30.8-alpine")
+	t.Cleanup(func() { _ = exec.Command("docker", "rm", "-f", "-v", name).Run() })
 
 	deadline := time.Now().Add(30 * time.Second)
 	for {
@@ -158,7 +159,7 @@ func TestDockerNginxAcceptsGeneratedConfs(t *testing.T) {
 		t.Fatal(err)
 	}
 	dump := docker(t, "exec", name, "nginx", "-T")
-	for _, want := range []string{"# docklift-ssl: active primary=a.example.com", "# docklift-ssl: partial primary=a.example.com", "set $dashboard docklift-backend;"} {
+	for _, want := range []string{"# docklift-ssl: active primary=a.example.com", "# docklift-ssl: partial primary=a.example.com", "set $dashboard docklift-backend.docklift_network;"} {
 		if !strings.Contains(dump, want) {
 			t.Fatalf("nginx -T lacks %q", want)
 		}

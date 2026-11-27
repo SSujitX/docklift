@@ -269,3 +269,33 @@ func TestRuntimePathsAndNetworkHelpers(t *testing.T) {
 		t.Fatalf("calls %v", fd.Calls())
 	}
 }
+
+// TestReattachProxyOnBoot: a recreated edge proxy is put back on every
+// existing project network; projects without a network are skipped and a
+// failing attach neither stops the others nor the boot.
+func TestReattachProxyOnBoot(t *testing.T) {
+	r, fd := newTestRuntime(t)
+	ctx := context.Background()
+	app := mustProject(t, r, store.ProjectCreate{Name: "app", Status: strp("running")})
+	db := mustProject(t, r, store.ProjectCreate{Name: "db", Status: strp("running"), ProjectType: strp("database")})
+	never := mustProject(t, r, store.ProjectCreate{Name: "never", Status: strp("pending")})
+	broken := mustProject(t, r, store.ProjectCreate{Name: "broken", Status: strp("running")})
+	fd.networkErr[ProjectNetworkName(never.ID)] = errors.New("inspect network: Error response from daemon: network " + ProjectNetworkName(never.ID) + " not found")
+	fd.networkErr[ProjectNetworkName(broken.ID)] = errors.New("connect: permission denied")
+
+	if err := r.ReattachProxyOnBoot(ctx); err != nil {
+		t.Fatal(err)
+	}
+	calls := fd.Calls()
+	for _, p := range []*store.Project{app, db, never, broken} {
+		if want := "connect " + ProjectNetworkName(p.ID) + " proxy"; !slices.Contains(calls, want) {
+			t.Errorf("missing %q in %v", want, calls)
+		}
+	}
+
+	// An unreachable daemon ends the step quietly.
+	fd.networkErr[ProjectNetworkName(app.ID)] = dockerx.ErrUnavailable
+	if err := r.ReattachProxyOnBoot(ctx); err != nil {
+		t.Fatalf("unavailable daemon: %v", err)
+	}
+}

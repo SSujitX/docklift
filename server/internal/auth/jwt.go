@@ -34,7 +34,8 @@ var (
 )
 
 // signedClaims is the payload jsonwebtoken produced, in the same key order:
-// {userId, email, role, purpose?, pwdv, iat, exp}.
+// {userId, email, role, purpose?, pwdv, iat, exp}. Terminal tokens also carry
+// a random jti, so two issued in the same second differ (they are one-time).
 type signedClaims struct {
 	UserID  string `json:"userId"`
 	Email   string `json:"email"`
@@ -43,6 +44,7 @@ type signedClaims struct {
 	Pwdv    int64  `json:"pwdv"`
 	Iat     int64  `json:"iat"`
 	Exp     int64  `json:"exp"`
+	Jti     string `json:"jti,omitempty"`
 }
 
 func (c signedClaims) GetExpirationTime() (*jwt.NumericDate, error) {
@@ -72,6 +74,12 @@ func sign(secret string, sub TokenSubject, purpose string, ttl time.Duration, no
 		UserID: sub.UserID, Email: sub.Email, Role: sub.Role, Purpose: purpose,
 		Pwdv: sub.PasswordVersion, Iat: iat, Exp: iat + int64(ttl/time.Second),
 	}
+	if purpose == PurposeTerminal {
+		var err error
+		if claims.Jti, err = randomHex(16); err != nil {
+			return "", fmt.Errorf("sign token: %w", err)
+		}
+	}
 	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(secret))
 	if err != nil {
 		return "", fmt.Errorf("sign token: %w", err)
@@ -92,6 +100,8 @@ type Claims struct {
 	// Pwdv is the pwdv claim when it is a number.
 	Pwdv    float64
 	HasPwdv bool
+	// exp is the expiry (zero when the token has no exp claim).
+	exp time.Time
 }
 
 type userIDState int
@@ -143,6 +153,10 @@ func verify(secret, token string, now time.Time) (*Claims, error) {
 	}
 
 	c := &Claims{}
+	if v, present := mc["exp"]; present {
+		exp, _ := number(v)
+		c.exp = time.Unix(int64(exp), 0)
+	}
 	switch v := mc["userId"].(type) {
 	case string:
 		if v != "" {

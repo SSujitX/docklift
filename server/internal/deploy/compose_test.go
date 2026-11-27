@@ -1,6 +1,7 @@
 package deploy
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -59,6 +60,38 @@ func TestDedupeScannedServicesRejectsPersistentDuplicates(t *testing.T) {
 	}
 	if out, err := DedupeScannedServices(nil); err != nil || len(out) != 0 {
 		t.Fatalf("empty: %v %v", out, err)
+	}
+}
+
+func TestScanDockerfilesRejectsReservedNames(t *testing.T) {
+	for _, dir := range []string{"docklift-backend", "Docklift-Nginx-Proxy", "docklift-certbot", "docklift", filepath.Join("docklift-backend.docklift_network", "x")} {
+		t.Run(dir, func(t *testing.T) {
+			root := t.TempDir()
+			writeFile(t, filepath.Join(root, "web", "Dockerfile"), "FROM x\n")
+			writeFile(t, filepath.Join(root, dir, "Dockerfile"), "FROM x\n")
+			services, err := ScanDockerfiles(root, 2)
+			var reserved *ReservedServiceNameError
+			if !errors.As(err, &reserved) || services != nil {
+				t.Fatalf("services %+v err %v", services, err)
+			}
+			if !strings.Contains(err.Error(), "is reserved") || !strings.Contains(err.Error(), filepath.ToSlash(filepath.Join(dir, "Dockerfile"))) {
+				t.Fatalf("message %q", err)
+			}
+		})
+	}
+	// Names that merely contain the word stay allowed.
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "my-docklift-app", "Dockerfile"), "FROM x\n")
+	if services, err := ScanDockerfiles(root, 2); err != nil || len(services) != 1 {
+		t.Fatalf("services %+v err %v", services, err)
+	}
+}
+
+func TestRenderRuntimeComposeRejectsReservedNames(t *testing.T) {
+	_, err := RenderRuntimeCompose([]RuntimeService{{Name: "docklift-backend", Image: "x", InternalPort: 8000, ContainerName: "dl_p_1234abcd_docklift-backend"}}, nil, RuntimeComposeOptions{ProjectID: "p"})
+	var reserved *ReservedServiceNameError
+	if !errors.As(err, &reserved) {
+		t.Fatalf("err %v", err)
 	}
 }
 

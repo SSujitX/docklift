@@ -14,12 +14,6 @@ import (
 	"docklift/internal/store"
 )
 
-// InternalUserID identifies calls authorised by the internal API secret.
-const InternalUserID = "internal"
-
-// InternalSecretHeader carries the internal API secret (webhook auto-deploy).
-const InternalSecretHeader = "X-Internal-Secret"
-
 // Password-version failures returned by CheckPasswordVersion.
 const (
 	msgUserNotFound    = "User not found"
@@ -37,6 +31,10 @@ type Service struct {
 	now       func() time.Time
 	// stepUpFailures counts wrong step-up passwords per user and client.
 	stepUpFailures *httpx.FailureLimiter
+	// sessions ends long-lived connections when their user's password changes.
+	sessions sessionRegistry
+	// usedTokens remembers consumed one-time purpose tokens until they expire.
+	usedTokens usedTokens
 }
 
 // Step-up password guessing limit: StepUpFailureLimit wrong passwords per
@@ -60,6 +58,7 @@ func New(st *store.Store, secrets Secrets, dataPath string, log *slog.Logger) *S
 		bootstrap: NewBootstrap(dataPath, log),
 		log:       log,
 		now:       time.Now,
+		sessions:  sessionRegistry{recheck: SessionRecheckInterval},
 	}
 	s.stepUpFailures = httpx.NewFailureLimiter(httpx.FailureLimitConfig{
 		Window:  StepUpFailureWindow,
@@ -70,7 +69,8 @@ func New(st *store.Store, secrets Secrets, dataPath string, log *slog.Logger) *S
 	return s
 }
 
-// Secrets returns the signing and internal secrets.
+// Secrets returns the signing secret and the stored internal API secret
+// (kept in .secrets for compatibility, no longer accepted as credentials).
 func (s *Service) Secrets() Secrets { return s.secrets }
 
 // Bootstrap returns the bootstrap-secret and setup-token files of this data directory.
@@ -102,9 +102,6 @@ func (s *Service) CheckPasswordVersion(ctx context.Context, c *Claims) string {
 	case userIDInvalid:
 		return msgAuthUnavailable
 	}
-	if c.UserID == InternalUserID {
-		return ""
-	}
 	u, err := s.store.GetUser(ctx, c.UserID)
 	if errors.Is(err, store.ErrNotFound) {
 		return msgUserNotFound
@@ -119,11 +116,18 @@ func (s *Service) CheckPasswordVersion(ctx context.Context, c *Claims) string {
 	return ""
 }
 
-// VerifyPurposeToken verifies a purpose token (terminal WebSocket upgrade):
-// valid signature and expiry, matching purpose, current password version.
+// VerifyPurposeToken verifies and consumes a one-time purpose token (the
+// terminal WebSocket upgrade): valid signature and expiry, matching purpose,
+// current password version, and not used before. A token is accepted once;
+// it is remembered until it expires. SSE tokens are not checked here: an
+// EventSource reconnects with the same URL, so RequireSSE accepts them again.
 func (s *Service) VerifyPurposeToken(ctx context.Context, token, purpose string) (*Claims, bool) {
 	c, err := s.Verify(token)
 	if err != nil || c.Purpose != purpose || s.CheckPasswordVersion(ctx, c) != "" {
+		return nil, false
+	}
+	if !s.usedTokens.consume(token, c.exp, s.now()) {
+		s.log.Warn("[SECURITY] Rejected reused or untrackable purpose token", "purpose", purpose, "userId", c.UserID)
 		return nil, false
 	}
 	return c, true
@@ -150,15 +154,6 @@ func UserFrom(ctx context.Context) (User, bool) {
 	return u, ok
 }
 
-// internalSecretMatches compares the X-Internal-Secret header in constant time.
-func (s *Service) internalSecretMatches(r *http.Request) bool {
-	provided := strings.Join(r.Header.Values(InternalSecretHeader), ", ")
-	if provided == "" {
-		return false
-	}
-	return secureEqual(provided, s.secrets.InternalAPISecret)
-}
-
 // secureEqual compares two strings without leaking their content or length
 // through timing.
 func secureEqual(a, b string) bool {
@@ -177,15 +172,13 @@ func (s *Service) writeVerifyError(w http.ResponseWriter, err error) {
 	}
 }
 
-// RequireSession is authMiddleware: the internal secret header, or an
-// `Authorization: Bearer <session JWT>`. Query tokens are never accepted and
-// purpose tokens (sse/terminal) are refused.
+// RequireSession is authMiddleware: an `Authorization: Bearer <session JWT>`.
+// Query tokens are never accepted and purpose tokens (sse/terminal) are
+// refused. The X-Internal-Secret header of the TypeScript backend (a
+// full-admin bypass used only by its webhook-to-deploy HTTP call, which the
+// Go backend makes in process) is no longer accepted.
 func (s *Service) RequireSession(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if s.internalSecretMatches(r) {
-			next.ServeHTTP(w, r.WithContext(WithUser(r.Context(), User{UserID: InternalUserID, Email: "internal@docklift", Role: "admin"})))
-			return
-		}
 		header := r.Header.Get("Authorization")
 		if !strings.HasPrefix(header, "Bearer ") {
 			httpx.Error(w, http.StatusUnauthorized, "Authentication required")
@@ -214,7 +207,9 @@ func (s *Service) RequireSession(next http.Handler) http.Handler {
 }
 
 // RequireSSE is sseAuthMiddleware: a `?token=` query JWT with purpose "sse"
-// (EventSource cannot send headers). Mount it only on log stream routes.
+// (EventSource cannot send headers). Mount it only on log stream routes. The
+// request context is bound to the session (BindSession), so an open stream
+// ends when the user's password changes.
 func (s *Service) RequireSSE(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		tokens := r.URL.Query()["token"]
@@ -240,7 +235,9 @@ func (s *Service) RequireSSE(next http.Handler) http.Handler {
 			httpx.Error(w, http.StatusUnauthorized, msg)
 			return
 		}
-		next.ServeHTTP(w, r.WithContext(WithUser(r.Context(), User{UserID: c.UserID, Email: c.Email, Role: c.Role, Purpose: PurposeSSE})))
+		ctx, stop := s.BindSession(r.Context(), c)
+		defer stop()
+		next.ServeHTTP(w, r.WithContext(WithUser(ctx, User{UserID: c.UserID, Email: c.Email, Role: c.Role, Purpose: PurposeSSE})))
 	})
 }
 
@@ -256,7 +253,7 @@ func (s *Service) RequireStepUpPassword(w http.ResponseWriter, r *http.Request) 
 		return false, nil
 	}
 	u, authed := UserFrom(r.Context())
-	if !authed || u.UserID == "" || u.UserID == InternalUserID {
+	if !authed || u.UserID == "" {
 		httpx.Error(w, http.StatusUnauthorized, "Unauthorized")
 		return false, nil
 	}

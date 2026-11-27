@@ -75,7 +75,7 @@ func (f *fakeDocker) ContainerRestart(_ context.Context, name string, _ client.C
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.restarts = append(f.restarts, name)
-	if name == "docklift-frontend" {
+	if name == "docklift-certbot" {
 		return client.ContainerRestartResult{}, cerrdefs.ErrNotFound
 	}
 	return client.ContainerRestartResult{}, nil
@@ -201,8 +201,9 @@ func TestStepUpGuards(t *testing.T) {
 		expect(t, e.do(t, "POST", path, nil), 403, `{"error":"Password confirmation required for this operation","requirePassword":true}`)
 		expect(t, e.do(t, "POST", path, map[string]any{"password": 5}), 403, `{"error":"Password confirmation required for this operation","requirePassword":true}`)
 		expect(t, e.do(t, "POST", path, map[string]any{"password": "nope"}), 403, `{"error":"Invalid password","requirePassword":true}`)
-		expect(t, e.do(t, "POST", path, map[string]any{"password": password}, "Authorization", "", auth.InternalSecretHeader, e.d.Auth.Secrets().InternalAPISecret),
-			401, `{"error":"Unauthorized"}`)
+		// The internal secret of the TypeScript backend is not a credential.
+		expect(t, e.do(t, "POST", path, map[string]any{"password": password}, "Authorization", "", "X-Internal-Secret", e.d.Auth.Secrets().InternalAPISecret),
+			401, `{"error":"Authentication required"}`)
 	}
 	if len(e.host.calls) != 0 || len(e.docker.restarted()) != 0 || e.images.pruned {
 		t.Fatal("no action may run without step-up")
@@ -256,7 +257,7 @@ func TestReset(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	got := strings.Join(e.docker.restarted(), " ")
-	if got != "docklift-frontend docklift-nginx docklift-nginx-proxy docklift-certbot docklift-backend" {
+	if got != "docklift-nginx-proxy docklift-certbot docklift-backend" {
 		t.Fatalf("restart order %q: the backend's own container must go last", got)
 	}
 
@@ -392,7 +393,7 @@ func TestExecuteValidation(t *testing.T) {
 	expect(t, e.do(t, "POST", "/execute", map[string]any{"command": "id"}), 401, `{"error":"Password required for terminal access","requirePassword":true}`)
 	expect(t, e.do(t, "POST", "/execute", map[string]any{"command": "id", "password": 1}), 401, `{"error":"Password required for terminal access","requirePassword":true}`)
 	expect(t, e.do(t, "POST", "/execute", map[string]any{"command": "id", "password": "wrong"}), 403, `{"error":"Invalid password","requirePassword":true}`)
-	expect(t, e.do(t, "POST", "/execute", map[string]any{"command": "id", "password": password}, "Authorization", "", auth.InternalSecretHeader, e.d.Auth.Secrets().InternalAPISecret),
+	expect(t, e.do(t, "POST", "/execute", map[string]any{"command": "id", "password": password}, "Authorization", "", "X-Internal-Secret", e.d.Auth.Secrets().InternalAPISecret),
 		401, `{"error":"Authentication required"}`)
 
 	missing := newEnv(t, func(o *Options) { o.Shell = "/definitely/not/a/shell" })
@@ -513,7 +514,7 @@ func TestStatsRoutes(t *testing.T) {
 
 func TestSystemLogStream(t *testing.T) {
 	e := newEnv(t, nil)
-	expect(t, e.do(t, "GET", "/logs/database", nil), 400, `{"error":"Invalid service name. Available: backend, frontend, proxy, nginx, certbot"}`)
+	expect(t, e.do(t, "GET", "/logs/database", nil), 400, `{"error":"Invalid service name. Available: backend, proxy, certbot"}`)
 	r := e.do(t, "GET", "/logs/proxy?tail=10", nil)
 	if r.code != 200 || r.raw != `data: {"type":"error","message":"Container not found: No such container"}`+"\n\n" {
 		t.Fatalf("stream: %d %q", r.code, r.raw)

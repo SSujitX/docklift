@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -432,6 +433,43 @@ func TestRestoreUploadWithSetupToken(t *testing.T) {
 			t.Fatalf("refused upload must be deleted and the lock released: %v", entries)
 		}
 	})
+	t.Run("refused when the admin count cannot be read", func(t *testing.T) {
+		s := newServer(t, false)
+		s.token = ""
+		tok, _ := s.d.Auth.Bootstrap().EnsureSetupToken()
+		if _, err := s.d.DB.Writer().Exec(`ALTER TABLE "users" RENAME TO "users_gone"`); err != nil {
+			t.Fatal(err)
+		}
+		body, ct := multipartBody(t, []filePart{{"backup", "x.zip", "application/zip", data}})
+		if r := s.do(http.MethodPost, "/api/backup/restore-upload", body, ct, auth.SetupTokenHeader, tok); r.status != 500 {
+			t.Fatalf("a failed admin count must refuse the setup token: %d %s", r.status, r.body)
+		}
+		if entries, _ := os.ReadDir(filepath.Join(s.d.Config.BackupPath, "uploads")); len(entries) != 0 || !s.lockFree() || s.d.Maintenance.Active() {
+			t.Fatalf("refused upload must be deleted and the lock released: %v", entries)
+		}
+	})
+}
+
+// Uploaded archives are stored 0600 in a 0700 directory.
+func TestUploadIsPrivate(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix file modes")
+	}
+	s := newServer(t, true)
+	body, ct := multipartBody(t, []filePart{{"backup", "a.zip", "application/zip", "PK"}})
+	if r := s.do(http.MethodPost, "/api/backup/upload", body, ct); r.status != 200 {
+		t.Fatalf("upload: %d %s", r.status, r.body)
+	}
+	dir := filepath.Join(s.d.Config.BackupPath, "uploads")
+	entries, _ := os.ReadDir(dir)
+	if len(entries) != 1 {
+		t.Fatalf("uploads: %v", entries)
+	}
+	for p, want := range map[string]os.FileMode{dir: 0o700, filepath.Join(dir, entries[0].Name()): 0o600} {
+		if fi, err := os.Stat(p); err != nil || fi.Mode().Perm() != want {
+			t.Errorf("%s mode %v (%v), want %v", p, fi.Mode().Perm(), err, want)
+		}
+	}
 }
 
 func TestCriticalEndpoints(t *testing.T) {

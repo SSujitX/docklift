@@ -28,7 +28,7 @@ func TestDockerPurgeInUseIncludesStoppedContainers(t *testing.T) {
 	if out, err := exec.Command("docker", "create", "--name", name, "alpine:3.20", "true").CombinedOutput(); err != nil {
 		t.Fatalf("docker create: %v\n%s", err, out)
 	}
-	t.Cleanup(func() { _ = exec.Command("docker", "rm", "-f", name).Run() })
+	t.Cleanup(func() { _ = exec.Command("docker", "rm", "-f", "-v", name).Run() })
 
 	h := &handlers{docker: c}
 	inUse := map[string]bool{}

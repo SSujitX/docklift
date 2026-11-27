@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -290,8 +291,8 @@ func TestRequireSession(t *testing.T) {
 		{"deleted user", map[string]string{"Authorization": "Bearer " + ghost}, 401, errJSON("User not found")},
 		{"valid", map[string]string{"Authorization": "Bearer " + session}, 299, ""},
 		{"trailing segment ignored", map[string]string{"Authorization": "Bearer " + session + " extra"}, 299, ""},
-		{"internal secret", map[string]string{"X-Internal-Secret": "internal-secret"}, 299, ""},
-		{"wrong internal secret", map[string]string{"X-Internal-Secret": "internal-secreT"}, 401, errJSON("Authentication required")},
+		// The TypeScript internal-secret bypass is not accepted.
+		{"internal secret", map[string]string{"X-Internal-Secret": "internal-secret"}, 401, errJSON("Authentication required")},
 	}
 	for _, c := range cases {
 		req := httptest.NewRequest(http.MethodGet, "/api/projects?token="+session, nil)
@@ -307,11 +308,6 @@ func TestRequireSession(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+session)
 	if res := run(f.svc.RequireSession, req); res.user != (User{UserID: f.user.ID, Email: "ada@example.com", Role: "admin"}) {
 		t.Errorf("attached user = %+v", res.user)
-	}
-	req = httptest.NewRequest(http.MethodGet, "/", nil)
-	req.Header.Set("X-Internal-Secret", "internal-secret")
-	if res := run(f.svc.RequireSession, req); res.user != (User{UserID: InternalUserID, Email: "internal@docklift", Role: "admin"}) {
-		t.Errorf("internal user = %+v", res.user)
 	}
 }
 
@@ -365,9 +361,132 @@ func TestVerifyPurposeToken(t *testing.T) {
 	if _, ok := f.svc.VerifyPurposeToken(context.Background(), sse, PurposeTerminal); ok {
 		t.Error("sse token accepted for terminal")
 	}
-	internal, _ := f.svc.IssuePurpose(TokenSubject{UserID: InternalUserID}, PurposeTerminal)
-	if _, ok := f.svc.VerifyPurposeToken(context.Background(), internal, PurposeTerminal); !ok {
-		t.Error("internal purpose tokens skip the password check, as in TypeScript")
+	// The synthetic "internal" user of the removed internal-secret bypass
+	// gets no exemption from the password-version check any more.
+	internal, _ := f.svc.IssuePurpose(TokenSubject{UserID: "internal"}, PurposeTerminal)
+	if _, ok := f.svc.VerifyPurposeToken(context.Background(), internal, PurposeTerminal); ok {
+		t.Error("a token for a user without an account must be refused")
+	}
+}
+
+// Terminal tokens are single-use: a token seen in a URL (proxy log, browser
+// history) cannot open a second WebSocket.
+func TestVerifyPurposeTokenIsSingleUse(t *testing.T) {
+	f := newFixture(t)
+	sub := TokenSubject{UserID: f.user.ID, PasswordVersion: f.user.PasswordVersion()}
+	first, _ := f.svc.IssuePurpose(sub, PurposeTerminal)
+	second, _ := f.svc.IssuePurpose(sub, PurposeTerminal)
+	if first == second {
+		t.Fatal("two purpose tokens issued in the same second must differ (jti)")
+	}
+	if _, ok := f.svc.VerifyPurposeToken(context.Background(), first, PurposeTerminal); !ok {
+		t.Fatal("first use refused")
+	}
+	if _, ok := f.svc.VerifyPurposeToken(context.Background(), first, PurposeTerminal); ok {
+		t.Fatal("second use of the same terminal token accepted")
+	}
+	if _, ok := f.svc.VerifyPurposeToken(context.Background(), second, PurposeTerminal); !ok {
+		t.Fatal("a fresh token must still work")
+	}
+	// A token issued without jti (TypeScript) is tracked by its bytes.
+	legacy, _ := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"userId": f.user.ID, "purpose": PurposeTerminal, "pwdv": f.user.PasswordVersion(),
+		"iat": time.Now().Unix(), "exp": time.Now().Add(time.Minute).Unix(),
+	}).SignedString([]byte("jwt-secret"))
+	if _, ok := f.svc.VerifyPurposeToken(context.Background(), legacy, PurposeTerminal); !ok {
+		t.Fatal("legacy token refused")
+	}
+	if _, ok := f.svc.VerifyPurposeToken(context.Background(), legacy, PurposeTerminal); ok {
+		t.Fatal("legacy token reused")
+	}
+}
+
+func TestUsedTokensBounded(t *testing.T) {
+	var u usedTokens
+	now := time.Unix(1_800_000_000, 0)
+	for i := 0; i < maxUsedTokens; i++ {
+		if !u.consume(strconv.Itoa(i), now.Add(time.Minute), now) {
+			t.Fatalf("token %d refused", i)
+		}
+	}
+	if u.consume("one-too-many", now.Add(time.Minute), now) {
+		t.Fatal("a full set must fail closed")
+	}
+	later := now.Add(2 * time.Minute)
+	if !u.consume("after-expiry", later.Add(time.Minute), later) {
+		t.Fatal("expired entries must be pruned")
+	}
+	if len(u.seen) != 1 {
+		t.Fatalf("seen = %d after pruning", len(u.seen))
+	}
+}
+
+func TestRevokeUserEndsBoundSessions(t *testing.T) {
+	f := newFixture(t)
+	c := &Claims{UserID: f.user.ID, userIDState: userIDString, Pwdv: float64(f.user.PasswordVersion()), HasPwdv: true}
+	ctx, stop := f.svc.BindSession(context.Background(), c)
+	defer stop()
+	other, otherStop := f.svc.BindSession(context.Background(), &Claims{UserID: "someone-else", userIDState: userIDString})
+	defer otherStop()
+	f.svc.RevokeUser(f.user.ID)
+	if !errors.Is(context.Cause(ctx), ErrSessionRevoked) {
+		t.Fatalf("cause = %v", context.Cause(ctx))
+	}
+	if other.Err() != nil {
+		t.Fatal("another user's session was revoked")
+	}
+	otherStop()
+	if len(f.svc.sessions.subs) != 0 {
+		t.Fatalf("registry not released: %v", f.svc.sessions.subs)
+	}
+}
+
+// A password changed by another process (the reset-password command) is
+// caught by the periodic recheck.
+func TestBindSessionRecheck(t *testing.T) {
+	f := newFixture(t)
+	f.svc.sessions.recheck = 20 * time.Millisecond
+	c := &Claims{UserID: f.user.ID, userIDState: userIDString, Pwdv: float64(f.user.PasswordVersion()), HasPwdv: true}
+	ctx, stop := f.svc.BindSession(context.Background(), c)
+	defer stop()
+	time.Sleep(80 * time.Millisecond)
+	if ctx.Err() != nil {
+		t.Fatal("a valid session was closed")
+	}
+	changed := db.FromUnixMilli(1796000000000)
+	if _, err := f.store.UpdateUser(context.Background(), f.user.ID, store.UserUpdate{PasswordChangedAt: store.Some(&changed)}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-ctx.Done():
+		if !errors.Is(context.Cause(ctx), ErrSessionRevoked) {
+			t.Fatalf("cause = %v", context.Cause(ctx))
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("session survived an out-of-process password change")
+	}
+}
+
+// RequireSSE binds the stream's context to the session.
+func TestRequireSSEBindsSession(t *testing.T) {
+	f := newFixture(t)
+	sse, _ := f.svc.IssuePurpose(TokenSubject{UserID: f.user.ID, PasswordVersion: f.user.PasswordVersion()}, PurposeSSE)
+	started, ended := make(chan struct{}), make(chan error, 1)
+	h := f.svc.RequireSSE(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(started)
+		<-r.Context().Done()
+		ended <- context.Cause(r.Context())
+	}))
+	go h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/?token="+sse, nil))
+	<-started
+	f.svc.RevokeUser(f.user.ID)
+	select {
+	case cause := <-ended:
+		if !errors.Is(cause, ErrSessionRevoked) {
+			t.Fatalf("cause = %v", cause)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("SSE handler not stopped by RevokeUser")
 	}
 }
 
@@ -383,7 +502,7 @@ func TestRequireStepUpPassword(t *testing.T) {
 	}{
 		{"no body password", &User{UserID: f.user.ID}, `{}`, false, 403, `{"error":"Password confirmation required for this operation","requirePassword":true}`},
 		{"non-string password", &User{UserID: f.user.ID}, `{"password":123}`, false, 403, `{"error":"Password confirmation required for this operation","requirePassword":true}`},
-		{"internal caller", &User{UserID: InternalUserID}, `{"password":"x"}`, false, 401, `{"error":"Unauthorized"}`},
+		{"no user id", &User{}, `{"password":"x"}`, false, 401, `{"error":"Unauthorized"}`},
 		{"unknown user", &User{UserID: "ghost"}, `{"password":"x"}`, false, 403, `{"error":"Unable to verify password","requirePassword":true}`},
 		{"wrong password", &User{UserID: f.user.ID}, `{"password":"nope"}`, false, 403, `{"error":"Invalid password","requirePassword":true}`},
 		{"right password", &User{UserID: f.user.ID}, `{"password":"password123"}`, true, 200, ``},

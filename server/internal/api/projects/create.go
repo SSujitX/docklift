@@ -190,13 +190,15 @@ func (h *handlers) createBody(w http.ResponseWriter, r *http.Request) (fields, s
 	return nil, "", false
 }
 
-// validGithubRepoURL is isValidGithubRepoUrl: an http(s) URL on github.com
-// or www.github.com with at least owner and repository path segments. URLs
-// with embedded credentials are refused, so a token can never be stored in
-// github_url or the checkout's origin.
+// validGithubRepoURL is isValidGithubRepoUrl: an https URL on github.com
+// or www.github.com (default port only) with at least owner and repository
+// path segments. URLs with embedded credentials are refused, so a token can
+// never be stored in github_url or the checkout's origin. Plain http, which
+// TS accepted, is refused: the installation token must never travel in the
+// clear.
 func validGithubRepoURL(raw string) bool {
 	u, err := url.Parse(raw)
-	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.User != nil {
+	if err != nil || !strings.EqualFold(u.Scheme, "https") || u.User != nil || (u.Port() != "" && u.Port() != "443") {
 		return false
 	}
 	if host := strings.ToLower(u.Hostname()); host != "github.com" && host != "www.github.com" {
@@ -350,6 +352,9 @@ func nonEmpty(s string) *string {
 // stored), then scrubs and verifies the origin remote. On failure it
 // returns the response status and message.
 func (h *handlers) cloneProject(ctx context.Context, dir, repoURL, ref string) (int, string, error) {
+	// www.github.com and :443 are fetched as https://github.com, the only
+	// origin a token is sent to.
+	repoURL = gitops.NormalizeGitHubURL(repoURL)
 	creds := h.cloneCredentials(ctx, repoURL)
 	if err := h.d.Git.Clone(ctx, repoURL, dir, gitops.CloneOptions{Ref: ref, Credentials: creds}); err != nil {
 		return http.StatusInternalServerError, "Failed to clone repository", err

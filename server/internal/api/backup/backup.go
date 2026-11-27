@@ -87,6 +87,7 @@ func MountWith(r chi.Router, d *app.Deps, o Options) {
 	d.Lifecycle.On(app.PhaseDockerNetwork, "backup-restore-recovery", func(context.Context) error {
 		svc.RecoverInterrupted(paths, d.Maintenance, d.Log)
 		svc.CleanupOnBoot(paths, d.Log)
+		svc.TightenModes(paths, d.Log)
 		return nil
 	})
 
@@ -151,7 +152,7 @@ type fileEntry struct {
 
 // listZips lists the *.zip entries of dir (newest first), skipping "skip".
 func listZips(dir, skip string) ([]fileEntry, error) {
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
 	entries, err := os.ReadDir(dir)

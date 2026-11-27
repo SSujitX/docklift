@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/creack/pty"
+
+	"docklift/internal/execx"
 )
 
 // shellCommand and shellDir are what `script -q -c /bin/bash /dev/null` ran
@@ -23,9 +25,10 @@ const (
 )
 
 // shellEnv is the environment the TypeScript backend gave the shell, on top
-// of the server's own environment (later entries win).
+// of the server's own environment (later entries win) minus the backend's
+// secrets (execx.Environ), which TypeScript passed on.
 func shellEnv(cols, rows int) []string {
-	return append(os.Environ(),
+	return append(execx.Environ(),
 		"TERM=xterm-256color",
 		"COLORTERM=truecolor",
 		"LANG=C.UTF-8",

@@ -19,6 +19,7 @@ import (
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/go-chi/chi/v5"
 	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/client"
 
 	"docklift/internal/app"
@@ -39,6 +40,8 @@ type fakeEngine struct {
 	calls   []string
 	pingErr error
 	running map[string]bool
+	// images are the local images ImageList returns.
+	images []image.Summary
 }
 
 func (f *fakeEngine) record(s string) {
@@ -87,6 +90,15 @@ func (f *fakeEngine) NetworkConnect(_ context.Context, network string, o client.
 func (f *fakeEngine) NetworkDisconnect(_ context.Context, network string, o client.NetworkDisconnectOptions) (client.NetworkDisconnectResult, error) {
 	f.record("network disconnect " + network + " " + o.Container)
 	return client.NetworkDisconnectResult{}, nil
+}
+
+func (f *fakeEngine) ImageList(context.Context, client.ImageListOptions) (client.ImageListResult, error) {
+	return client.ImageListResult{Items: f.images}, nil
+}
+
+func (f *fakeEngine) ImageRemove(_ context.Context, ref string, _ client.ImageRemoveOptions) (client.ImageRemoveResult, error) {
+	f.record("image rm " + ref)
+	return client.ImageRemoveResult{}, nil
 }
 
 func (f *fakeEngine) NetworkRemove(_ context.Context, name string, _ client.NetworkRemoveOptions) (client.NetworkRemoveResult, error) {

@@ -9,7 +9,7 @@
 // installs keep their files, and markers such as "# docklift-ssl:" and
 // "# docklift-panel-domain" are parsed back out of them), with one deliberate
 // change: a panel domain for the dashboard port proxies to the Go backend
-// (docklift-backend:<PORT>) instead of the removed docklift-nginx gateway.
+// (PanelUpstreamHost:<PORT>) instead of the removed docklift-nginx gateway.
 // MigratePanelUpstreams rewrites existing panel confs once at boot.
 package nginx
 
@@ -29,8 +29,21 @@ const PanelConfMarker = "# docklift-panel-domain"
 // rather than host.docker.internal.
 const DashboardPort = 8080
 
-// BackendContainer is the Docker DNS name of the Go backend.
+// BackendContainer is the container name of the Go backend.
 const BackendContainer = "docklift-backend"
+
+// BackendNetwork is the control-plane network the backend and nginx-proxy
+// share (docker-compose.yml networks.docklift_network.name).
+const BackendNetwork = "docklift_network"
+
+// PanelUpstreamHost is the name the panel conf resolves the backend by. It
+// is network-qualified: nginx-proxy also joins every project network, where
+// a project's service keys are DNS aliases, and Docker's embedded DNS
+// resolves "<name>.<network>" by looking up <name> only among endpoints of
+// <network> (Sandbox.ResolveName in moby's libnetwork; a whole-name match in
+// any network is tried first, which is why deploys reject service names
+// starting with "docklift").
+const PanelUpstreamHost = BackendContainer + "." + BackendNetwork
 
 const acmeInclude = "include /etc/nginx/snippets/acme.conf;"
 
@@ -86,7 +99,7 @@ func BuildServiceProxyLocation(serviceID, containerName string, internalPort int
 func dashboardLocation(backendPort int) string {
 	return `
     location / {
-        set $dashboard ` + BackendContainer + `;
+        set $dashboard ` + PanelUpstreamHost + `;
         proxy_pass http://$dashboard:` + strconv.Itoa(backendPort) + `;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
@@ -103,7 +116,7 @@ func dashboardLocation(backendPort int) string {
 }
 
 // BuildPanelProxyLocation is the `location /` block of a panel domain: the Go
-// backend (docklift-backend:backendPort) for the dashboard port 8080, else
+// backend (PanelUpstreamHost:backendPort) for the dashboard port 8080, else
 // host.docker.internal:<port>.
 func BuildPanelProxyLocation(port, backendPort int) (string, error) {
 	if !validPort(port) {

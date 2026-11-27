@@ -17,6 +17,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"docklift/internal/js"
@@ -122,3 +123,42 @@ func VolumeLabels(projectName, projectID string, extra ...string) []string {
 }
 
 func itoa(n int) string { return js.NumberString(float64(n)) }
+
+// reservedServicePrefix is the prefix of every Docklift control-plane
+// container name (docklift-backend, docklift-nginx-proxy, docklift-certbot
+// and the 2.x docklift-nginx / docklift-frontend).
+const reservedServicePrefix = "docklift"
+
+// ReservedServiceNameError reports a service name a project may not use.
+type ReservedServiceNameError struct {
+	Name string
+	// Dockerfile is the scanned Dockerfile the name came from ("" when the
+	// name did not come from a scan).
+	Dockerfile string
+}
+
+func (e *ReservedServiceNameError) Error() string {
+	from := ""
+	if e.Dockerfile != "" {
+		from = " (from " + e.Dockerfile + ")"
+	}
+	return "Service name " + strconv.Quote(e.Name) + from + " is reserved: names starting with \"docklift\" belong to Docklift's own containers. Rename the directory that holds the Dockerfile."
+}
+
+// IsReservedServiceName reports whether name may not be a runtime compose
+// service key. A service key is a DNS alias on the project network, which
+// nginx-proxy joins, so a project must not be able to answer for a
+// control-plane container name (or the network-qualified
+// "<name>.docklift_network" form Docker's DNS tries as a whole name first).
+// Docker's embedded DNS matches names case-insensitively.
+func IsReservedServiceName(name string) bool {
+	return strings.HasPrefix(strings.ToLower(name), reservedServicePrefix)
+}
+
+// CheckServiceName returns a *ReservedServiceNameError for a reserved name.
+func CheckServiceName(name, dockerfile string) error {
+	if IsReservedServiceName(name) {
+		return &ReservedServiceNameError{Name: name, Dockerfile: dockerfile}
+	}
+	return nil
+}

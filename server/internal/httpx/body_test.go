@@ -219,7 +219,7 @@ func TestParseBodyLimitsAndEncodings(t *testing.T) {
 
 func valueOf(t *testing.T, raw string) Value {
 	t.Helper()
-	b, err := parseJSONBody([]byte(`{"v":` + raw + `}`))
+	b, err := parseJSONBody([]byte(`{"v":`+raw+`}`), true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -239,11 +239,11 @@ func TestValueSemantics(t *testing.T) {
 	if (Body{}).Get("v").Defined() || (Body{}).Get("v").Truthy() {
 		t.Error("undefined body fields are undefined")
 	}
-	b, _ := parseJSONBody([]byte(`{"n":null}`))
+	b, _ := parseJSONBody([]byte(`{"n":null}`), true)
 	if !b.Get("n").IsNull() || !b.Get("n").Defined() || b.Get("missing").Defined() {
 		t.Error("null vs undefined")
 	}
-	arr, _ := parseJSONBody([]byte(`[{"a":1}]`))
+	arr, _ := parseJSONBody([]byte(`[{"a":1}]`), true)
 	if arr.Get("a").Defined() {
 		t.Error("property access on an array body is undefined")
 	}

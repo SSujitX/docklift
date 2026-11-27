@@ -188,6 +188,9 @@ func newHandler(d *app.Deps) http.Handler {
 // startCertRenewWatcher. Route groups add their own hooks from Mount.
 func registerStartupHooks(d *app.Deps) {
 	d.Lifecycle.On(app.PhaseDockerNetwork, "docker-network", d.DockerX.EnsureNetwork)
+	// Before nginx-sync reloads the vhosts: a recreated proxy has lost its
+	// project networks (not a TS step; see ReattachProxyOnBoot).
+	d.Lifecycle.On(app.PhaseAfterListen, "proxy-reattach", d.Deploy.ReattachProxyOnBoot)
 	d.Lifecycle.On(app.PhaseAfterListen, "nginx-sync", d.Edge.Boot)
 	d.Lifecycle.On(app.PhaseRecovery, "deployment-recovery", d.Deploy.RecoverOnBoot)
 	d.Lifecycle.On(app.PhaseWatchers, "cert-renew-watcher", func(context.Context) error {

@@ -153,18 +153,29 @@ func (s *Service) DeleteProject(ctx context.Context, projectID string) error {
 // used. The current name uses the runtime compose file when it exists.
 // Each must be verified gone; on the first failure the proxy and linked
 // databases are re-attached (best-effort) and a *ConflictError returned.
+//
+// Compose runs in rt.ComposeWorkDir, never in the checkout (TS ran it there,
+// so a legacy alias without -f loaded the repository's own compose file and
+// .env, and `--rmi all` removed every image that file named). Images are
+// removed afterwards by Docklift tag only: docklift-<project8>-* tags, never
+// upstream images such as a managed database's postgres image.
+//
+// --volumes removes the anonymous volumes of the project's containers (an
+// image VOLUME no Docklift volume is mounted on, such as mongo's
+// /data/configdb). TS left them behind on every delete (found on a real
+// daemon); the persistent volumes are external in the runtime compose, so
+// compose never removes them — they are removed by name after this.
 func (s *Service) composeDown(ctx context.Context, project *store.Project, isDatabase bool) error {
 	rt := s.d.Deploy
-	dir := rt.ProjectPath(project.ID)
-	if _, err := os.Stat(dir); err != nil {
-		// A missing checkout must not make teardown impossible.
-		dir = rt.DeploymentsPath
+	dir, err := rt.ComposeWorkDir()
+	if err != nil {
+		return err
 	}
 	runtimeCompose := rt.ComposePath(project.ID)
 	_, statErr := os.Stat(runtimeCompose)
 	primary := deploy.ComposeProjectName(project.Name, project.ID)
 	for _, alias := range deploy.ComposeProjectAliases(project.Name, project.ID) {
-		cmd := dockerx.ComposeCmd{Project: alias, Dir: dir, Args: []string{"down", "--remove-orphans", "--rmi", "all"}, Timeout: composeDownTimeout}
+		cmd := dockerx.ComposeCmd{Project: alias, Dir: dir, Args: []string{"down", "--remove-orphans", "--volumes"}, Timeout: composeDownTimeout}
 		if alias == primary && statErr == nil {
 			cmd.Files = []string{runtimeCompose}
 		}
@@ -181,6 +192,10 @@ func (s *Service) composeDown(ctx context.Context, project *store.Project, isDat
 			}
 		}
 		return &ConflictError{Message: fmt.Sprintf(`Cannot delete project: Docker teardown failed for "%s" (owned containers/networks still present). %s`, alias, down.Detail())}
+	}
+	res, err := rt.RemoveUnusedDockliftImages(ctx, project.ID, nil, nil)
+	if err != nil || len(res.Errors) > 0 {
+		s.d.Log.Warn("Image cleanup warned for project "+project.ID, "error", err, "failures", res.Errors)
 	}
 	return nil
 }

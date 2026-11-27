@@ -66,7 +66,8 @@ func TestIntegrationDeleteTearsDownCompose(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(compose), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	spec := "services:\n  app:\n    image: " + itImage + "\n    command: [\"sleep\", \"300\"]\n"
+	// /anon is an anonymous volume, like an image VOLUME nothing is mounted on.
+	spec := "services:\n  app:\n    image: " + itImage + "\n    command: [\"sleep\", \"300\"]\n    volumes: [\"/anon\"]\n"
 	if err := os.WriteFile(compose, []byte(spec), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -81,9 +82,23 @@ func TestIntegrationDeleteTearsDownCompose(t *testing.T) {
 	vol := f.do("POST", "/"+id+"/storage", map[string]any{"name": "data", "service_name": "app", "mount_path": "/data"}).expect(t, 201)
 	volName := vol["name"].(string)
 	t.Cleanup(func() { _, _ = f.d.DockerX.VolumeRemove(context.Background(), volName) })
+	cid, _, _, err := execx.Output(ctx, execx.Cmd{Name: "docker", Args: []string{"ps", "-q", "--filter", "label=com.docker.compose.project=" + primary}, Timeout: 30 * time.Second})
+	if err != nil || strings.TrimSpace(cid) == "" {
+		t.Fatalf("project container: %q %v", cid, err)
+	}
+	anon, _, _, err := execx.Output(ctx, execx.Cmd{Name: "docker", Args: []string{"inspect", "-f", `{{range .Mounts}}{{if eq .Destination "/anon"}}{{.Name}}{{end}}{{end}}`, strings.TrimSpace(cid)}, Timeout: 30 * time.Second})
+	anon = strings.TrimSpace(anon)
+	if err != nil || anon == "" {
+		t.Fatalf("anonymous volume of the container: %q %v", anon, err)
+	}
+	t.Cleanup(func() { _, _ = f.d.DockerX.VolumeRemove(context.Background(), anon) })
 
 	f.do("DELETE", "/"+id, nil).expect(t, 200)
 
+	// The container's anonymous volume goes with it (TS leaked these).
+	if _, err := execx.Run(ctx, execx.Cmd{Name: "docker", Args: []string{"volume", "inspect", anon}, Timeout: 30 * time.Second}); err == nil {
+		t.Fatalf("anonymous volume %s must be removed", anon)
+	}
 	if gone := f.d.DockerX.ProbeComposeProject(ctx, primary); !gone.Gone() {
 		t.Fatalf("compose resources left: %+v", gone)
 	}

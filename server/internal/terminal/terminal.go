@@ -2,7 +2,9 @@
 // terminal (the session logic of backend/src/services/terminal.ts): the
 // password prompt with per-session and per-client failure limits, at most
 // three concurrent sessions, the PTY shell, resize, the 30-minute idle
-// timeout, and the shutdown of every session when the server stops.
+// timeout, and the shutdown of every session when the server stops. Not in
+// TypeScript: a session must pass the password step within AuthTimeout, and
+// it ends when its context ends (the user's password changed).
 //
 // The HTTP upgrade (path, Origin and token checks) lives in
 // internal/api/terminal.
@@ -31,6 +33,10 @@ type Limits struct {
 	MaxSessions     int
 	MaxAuthAttempts int
 	IdleTimeout     time.Duration
+	// AuthTimeout closes a session that has not passed the password step in
+	// time, so unauthenticated sockets cannot hold the session slots
+	// (0 = no deadline).
+	AuthTimeout time.Duration
 	// GlobalAuthWindow / GlobalAuthMaxFails rate-limit failed passwords per
 	// client address and user across reconnects.
 	GlobalAuthWindow   time.Duration
@@ -51,6 +57,7 @@ func DefaultLimits() Limits {
 		MaxSessions:        3,
 		MaxAuthAttempts:    5,
 		IdleTimeout:        30 * time.Minute,
+		AuthTimeout:        60 * time.Second,
 		GlobalAuthWindow:   15 * time.Minute,
 		GlobalAuthMaxFails: 20,
 		MaxMessageBytes:    1 << 20,
@@ -138,9 +145,11 @@ func (m *Manager) recordFail(key string) {
 }
 
 // Serve runs one upgraded connection until it closes. clientAddr is the
-// socket peer address (the rate-limit key is "<address>:<user id>").
-func (m *Manager) Serve(conn *websocket.Conn, user User, clientAddr string) {
-	s := &session{m: m, conn: conn, user: user, rateKey: clientAddr + ":" + user.ID, done: make(chan struct{})}
+// socket peer address (the rate-limit key is "<address>:<user id>"). When
+// ctx ends (auth.BindSession cancels it after a password change) the shell
+// is killed and the socket closed.
+func (m *Manager) Serve(ctx context.Context, conn *websocket.Conn, user User, clientAddr string) {
+	s := &session{m: m, ctx: ctx, conn: conn, user: user, rateKey: clientAddr + ":" + user.ID, done: make(chan struct{})}
 	conn.SetReadLimit(m.limits.MaxMessageBytes)
 
 	if !m.admit(s) {
@@ -191,7 +200,8 @@ func (m *Manager) remove(s *session) {
 }
 
 // CloseAll is cleanupAllSessions: it kills every shell, closes every socket,
-// refuses new sessions and waits (until ctx ends) for the sessions to finish.
+// refuses new sessions and waits for the sessions to finish. When ctx ends
+// first, the remaining connections are dropped.
 func (m *Manager) CloseAll(ctx context.Context) {
 	m.mu.Lock()
 	m.closed = true
@@ -212,9 +222,13 @@ func (m *Manager) CloseAll(ctx context.Context) {
 	select {
 	case <-finished:
 	case <-ctx.Done():
+		// A peer that did not answer the close frame in time: drop the
+		// connections, which ends each read loop, then let the sessions
+		// unregister so none is still counted when CloseAll returns.
 		for _, s := range all {
 			_ = s.conn.Close()
 		}
+		<-finished
 	}
 }
 
@@ -237,6 +251,7 @@ type exitMessage struct {
 
 type session struct {
 	m       *Manager
+	ctx     context.Context
 	conn    *websocket.Conn
 	user    User
 	rateKey string
@@ -250,6 +265,7 @@ type session struct {
 	shell         Shell
 	closing       bool
 	idle          *time.Timer
+	authDeadline  *time.Timer
 }
 
 // send writes one JSON text frame unless the socket is closing.
@@ -318,6 +334,9 @@ func (s *session) run() {
 		if s.idle != nil {
 			s.idle.Stop()
 		}
+		if s.authDeadline != nil {
+			s.authDeadline.Stop()
+		}
 		s.mu.Unlock()
 		s.killShell()
 		_ = s.conn.Close()
@@ -336,13 +355,26 @@ func (s *session) run() {
 		}
 		return nil
 	})
-	helpers.Add(1)
+	helpers.Add(2)
 	go func() {
 		defer helpers.Done()
 		s.pinger()
 	}()
+	go func() {
+		defer helpers.Done()
+		select {
+		case <-s.done:
+		case <-s.ctx.Done():
+			s.revoked()
+		}
+	}()
 
 	s.send(authMessage{Type: "auth_required"})
+	if s.m.limits.AuthTimeout > 0 {
+		s.mu.Lock()
+		s.authDeadline = time.AfterFunc(s.m.limits.AuthTimeout, s.authTimeout)
+		s.mu.Unlock()
+	}
 	for {
 		_, data, err := s.conn.ReadMessage()
 		if err != nil {
@@ -459,8 +491,15 @@ func (s *session) authenticate(msg map[string]any, helpers *sync.WaitGroup) {
 		return
 	}
 
+	if s.ctx.Err() != nil {
+		// Revoked while the password was being checked.
+		return
+	}
 	s.mu.Lock()
 	s.authenticated = true
+	if s.authDeadline != nil {
+		s.authDeadline.Stop()
+	}
 	s.mu.Unlock()
 	s.m.log.Info("[TERMINAL] User authenticated for interactive terminal", "user", s.user.Email)
 
@@ -490,6 +529,27 @@ func (s *session) authenticate(msg map[string]any, helpers *sync.WaitGroup) {
 	s.mu.Lock()
 	s.idle = time.AfterFunc(s.m.limits.IdleTimeout, s.idleTimeout)
 	s.mu.Unlock()
+}
+
+// authTimeout closes a session still waiting for its password.
+func (s *session) authTimeout() {
+	s.mu.Lock()
+	authed := s.authenticated
+	s.mu.Unlock()
+	if authed {
+		return
+	}
+	s.m.log.Warn("[TERMINAL] Authentication timeout for user: " + s.user.Email)
+	s.send(exitMessage{Type: "exit", Code: -1, Reason: "auth_timeout"})
+	s.closeSocket()
+}
+
+// revoked ends the session because its context ended (password changed).
+func (s *session) revoked() {
+	s.m.log.Info("[TERMINAL] Closing session after password change for user: " + s.user.Email)
+	s.killShell()
+	s.send(exitMessage{Type: "exit", Code: -1, Reason: "session_revoked"})
+	s.closeSocket()
 }
 
 func (s *session) resetIdle() {

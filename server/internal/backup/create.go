@@ -55,7 +55,7 @@ func LogFailure(out func(string), err error) {
 }
 
 func (c *Creator) create(ctx context.Context, label string, out func(string)) (_ string, err error) {
-	if err := os.MkdirAll(c.Paths.BackupDir, 0o755); err != nil {
+	if err := mkPrivateDir(c.Paths.BackupDir); err != nil {
 		return "", err
 	}
 	now := c.now()
@@ -70,7 +70,7 @@ func (c *Creator) create(ctx context.Context, label string, out func(string)) (_
 	suffix := make([]byte, 4)
 	_, _ = rand.Read(suffix)
 	partial := filepath.Join(c.Paths.BackupDir, "."+filename+"."+hex.EncodeToString(suffix)+partialSuffix)
-	f, err := os.OpenFile(partial, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	f, err := os.OpenFile(partial, os.O_WRONLY|os.O_CREATE|os.O_EXCL, privateFile)
 	if err != nil {
 		return "", err
 	}

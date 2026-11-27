@@ -89,11 +89,13 @@ func TestValidDomainList(t *testing.T) {
 }
 
 func TestValidGithubRepoURL(t *testing.T) {
-	good := []string{"https://github.com/a/b", "http://github.com/a/b.git", "https://www.github.com/a/b/tree/main",
+	good := []string{"https://github.com/a/b", "https://github.com/a/b.git", "https://www.github.com/a/b/tree/main",
 		"HTTPS://GitHub.com/a/b", "https://github.com:443/a/b", "https://github.com/a/./b"}
 	bad := []string{"https://gitlab.com/a/b", "https://github.com/only-owner", "https://github.com/owner.git", "git@github.com:a/b.git",
 		"ftp://github.com/a/b", "https://github.com.evil.test/a/b", "https://x-access-token:tok@github.com/a/b",
-		"https://user@github.com/a/b", "https://github.com/a/..", "not a url", "https:github.com/a/b"}
+		"https://user@github.com/a/b", "https://github.com/a/..", "not a url", "https:github.com/a/b",
+		// The installation token must never be sent in the clear or to another port.
+		"http://github.com/a/b.git", "HTTP://github.com/a/b", "https://github.com:8443/a/b"}
 	for _, s := range good {
 		if !validGithubRepoURL(s) {
 			t.Errorf("%q should be valid", s)

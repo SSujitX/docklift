@@ -257,7 +257,7 @@ func TestBuildRailpack(t *testing.T) {
 	sum := sha256.Sum256([]byte("A_URL=aaa\nB_TOKEN=bbb"))
 	build := rr.cmds[1]
 	wantBuild := []string{"buildx", "build", "--load", "--progress", "plain",
-		"--build-arg", "BUILDKIT_SYNTAX=ghcr.io/railwayapp/railpack-frontend:v0.33.0", "--build-arg", "PORT=8080",
+		"--build-arg", "BUILDKIT_SYNTAX=ghcr.io/railwayapp/railpack-frontend:v0.33.0@sha256:822711c4cb8aa7c03a6556d128186acab4aa49073431195e20617af83f742600", "--build-arg", "PORT=8080",
 		"--secret", "id=PORT,env=PORT", "-f", plan, "-t", "docklift-abcdef12-my-app:deadbeef",
 		"--build-arg", "secrets-hash=" + hex.EncodeToString(sum[:]),
 		"--secret", "id=B_TOKEN,env=B_TOKEN", "--secret", "id=A_URL,env=A_URL", abs}
@@ -288,6 +288,90 @@ func TestBuildRailpack(t *testing.T) {
 	}
 }
 
+func TestBuildRailpackRejectsEscapingSymlinks(t *testing.T) {
+	outside := t.TempDir()
+	secret := filepath.Join(outside, ".secrets")
+	if err := os.WriteFile(secret, []byte(`{"jwtSecret":"x"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	svc := ResolvedBuildService{Name: "app", Builder: BuildRailpack, ContextPath: "web", InternalPort: 3000}
+	cases := []struct {
+		name   string
+		link   string // relative to the context
+		target string
+		ok     bool
+	}{
+		{"absolute outside", "package.json", secret, false},
+		{"relative climbing out", "Procfile", "", false},
+		{"nested dir link out", filepath.Join("src", "cfg"), outside, false},
+		{"dangling climbing", "x.json", filepath.Join("..", "..", "nope"), false},
+		{"dangling absolute", "y.json", filepath.Join(outside, "missing"), false},
+		{"inside the project", "shared.json", filepath.Join("..", "shared.json"), true},
+		{"dangling inside", "later.json", "build/later.json", true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			root := filepath.Join(t.TempDir(), "proj")
+			if err := os.MkdirAll(filepath.Join(root, "web", "src"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(root, "shared.json"), []byte("{}"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			target := c.target
+			if target == "" {
+				// A relative path from the context to the outside file.
+				rel, err := filepath.Rel(filepath.Join(root, "web"), secret)
+				if err != nil {
+					t.Fatal(err)
+				}
+				target = rel
+			}
+			if err := os.Symlink(target, filepath.Join(root, "web", c.link)); err != nil {
+				t.Skip("symlinks unavailable:", err)
+			}
+			rr := &recordingRunner{}
+			err := BuildServiceImage(context.Background(), BuildRequest{ProjectPath: root, StatePath: t.TempDir(), Service: svc, ImageTag: "t:1", Run: rr.run})
+			if c.ok {
+				if err != nil {
+					t.Fatal(err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), "symlink that points outside the project directory") {
+				t.Fatalf("err %v", err)
+			}
+			if len(rr.cmds) != 0 {
+				t.Fatalf("railpack ran: %+v", rr.cmds)
+			}
+		})
+	}
+}
+
+// A context link to another project directory reaches that directory's
+// links, so the whole checkout is checked.
+func TestCheckProjectSymlinksOutsideContext(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "proj")
+	if err := os.MkdirAll(filepath.Join(root, "web"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "lib"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join("..", "lib"), filepath.Join(root, "web", "lib")); err != nil {
+		t.Skip("symlinks unavailable:", err)
+	}
+	if err := CheckProjectSymlinks(root); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(t.TempDir(), filepath.Join(root, "lib", "out")); err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckProjectSymlinks(root); err == nil || !strings.Contains(err.Error(), "lib/out") {
+		t.Fatalf("err %v", err)
+	}
+}
+
 func TestBuildFailureIsSummarized(t *testing.T) {
 	root := t.TempDir()
 	svc := ResolvedBuildService{Name: "app", Builder: BuildRailpack, ContextPath: ".", InternalPort: 3000}
@@ -315,5 +399,18 @@ func TestSecretsHashSortsLikeJavaScript(t *testing.T) {
 	sum := sha256.Sum256([]byte("K=🚀\nK=�\nZ=2\na=1"))
 	if got := SecretsHash(vars); got != hex.EncodeToString(sum[:]) {
 		t.Fatalf("hash %s", got)
+	}
+}
+
+// The Railpack frontend runs inside BuildKit with access to every build
+// context, so it must be pinned by digest, not only by a mutable tag.
+func TestRailpackFrontendPinnedByDigest(t *testing.T) {
+	name, digest, ok := strings.Cut(RailpackFrontend, "@")
+	if !ok || name != "ghcr.io/railwayapp/railpack-frontend:v"+RailpackVersion {
+		t.Fatalf("frontend %q is not <image>:v%s@<digest>", RailpackFrontend, RailpackVersion)
+	}
+	hexPart, ok := strings.CutPrefix(digest, "sha256:")
+	if _, err := hex.DecodeString(hexPart); !ok || len(hexPart) != 64 || err != nil {
+		t.Fatalf("digest %q is not a sha256 digest", digest)
 	}
 }

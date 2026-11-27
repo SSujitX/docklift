@@ -88,13 +88,13 @@ func TestUpdate(t *testing.T) {
 	got := f.do("PATCH", "/"+id, map[string]any{
 		"name": "renamed", "description": "desc", "domain": "patched.example.dev", "build_type": "railpack",
 		"base_directory": "  src  ", "dockerfile_path": "  docker/Dockerfile ", "internal_port": 99999, "publish_host_port": "yes",
-		"project_type": "worker", "github_url": "not validated on patch",
+		"project_type": "worker", "github_url": "  https://github.com/a/patched  ",
 		// Not editable: ignored.
 		"status": "running", "webhook_secret": "x", "auto_deploy": true, "source_type": "github", "db_engine": "postgres",
 	}).expect(t, 200)
 	want := map[string]any{"name": "renamed", "description": "desc", "domain": "patched.example.dev", "build_type": "railpack",
 		"base_directory": "src", "dockerfile_path": "docker/Dockerfile", "internal_port": float64(65535), "publish_host_port": true,
-		"project_type": "worker", "github_url": "not validated on patch", "status": "pending", "webhook_secret": nil,
+		"project_type": "worker", "github_url": "https://github.com/a/patched", "status": "pending", "webhook_secret": nil,
 		"auto_deploy": false, "source_type": "upload", "db_engine": nil, "created_at": p["created_at"]}
 	for k, v := range want {
 		if got[k] != v {
@@ -118,6 +118,14 @@ func TestUpdate(t *testing.T) {
 	f.do("PATCH", "/"+id, map[string]any{"name": 5}).expectError(t, 400, "name must be a string")
 	f.do("PATCH", "/"+id, map[string]any{"description": []any{}}).expectError(t, 400, "description must be a string")
 	f.do("PATCH", "/"+id, map[string]any{"github_url": 1}).expectError(t, 400, "github_url must be a string")
+	// github_url is validated like on create: a PATCH cannot point the next
+	// deploy (and its installation token) at another host.
+	for _, bad := range []string{"not a url", "https://evil.test/github.com/a/b", "http://github.com/a/b", "https://x-access-token:t@github.com/a/b", "https://github.com/only-owner"} {
+		f.do("PATCH", "/"+id, map[string]any{"github_url": bad}).expectError(t, 400, msgGithubURL)
+	}
+	if got := f.do("PATCH", "/"+id, map[string]any{"github_url": ""}).expect(t, 200); got["github_url"] != "" {
+		t.Fatalf("empty github_url = %#v", got["github_url"])
+	}
 	f.do("PATCH", "/"+missingID, map[string]any{"name": "x"}).expectError(t, 404, msgProjectNotFound)
 	if got := f.do("PATCH", "/"+id, nil).expect(t, 200); got["name"] != "renamed" {
 		t.Fatalf("empty patch %v", got)

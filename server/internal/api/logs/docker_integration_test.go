@@ -49,11 +49,13 @@ func runContainer(t *testing.T, tty bool) string {
 	if out, err := exec.Command("docker", args...).CombinedOutput(); err != nil {
 		t.Fatalf("docker run: %v\n%s", err, out)
 	}
-	t.Cleanup(func() { _ = exec.Command("docker", "rm", "-f", name).Run() })
+	t.Cleanup(func() { _ = exec.Command("docker", "rm", "-f", "-v", name).Run() })
 	return name
 }
 
-func readEvents(t *testing.T, url string, n int) []map[string]any {
+// readEvents reads SSE data events until done reports true for the events
+// so far (or the stream fails / times out).
+func readEvents(t *testing.T, url string, done func([]map[string]any) bool) []map[string]any {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
@@ -65,7 +67,7 @@ func readEvents(t *testing.T, url string, n int) []map[string]any {
 	defer resp.Body.Close()
 	r := bufio.NewReader(resp.Body)
 	var out []map[string]any
-	for len(out) < n {
+	for !done(out) {
 		line, err := r.ReadString('\n')
 		if err != nil {
 			t.Fatalf("after %v: %v", out, err)
@@ -92,12 +94,16 @@ func TestDockerStreamDemultiplexes(t *testing.T) {
 			Stream(w, r, c, name, "200")
 		}))
 		// A multiplexed stream has one frame per write (stdout, stderr); a TTY
-		// container's raw stream may deliver both lines in one chunk.
-		want := 3
-		if tty {
-			want = 2
-		}
-		ev := readEvents(t, srv.URL, want)
+		// container's raw stream may deliver both lines in one chunk or in two,
+		// so read until both lines have arrived.
+		ev := readEvents(t, srv.URL, func(ev []map[string]any) bool {
+			joined := ""
+			for _, e := range ev {
+				msg, _ := e["message"].(string)
+				joined += msg
+			}
+			return strings.Contains(joined, "to-stdout") && strings.Contains(joined, "to-stderr")
+		})
 		srv.Close()
 		if ev[0]["type"] != "connected" || ev[0]["container"] != name {
 			t.Fatalf("tty=%v first event %v", tty, ev[0])

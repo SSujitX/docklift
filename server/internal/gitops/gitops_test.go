@@ -287,8 +287,9 @@ func TestHostileURLsRejected(t *testing.T) {
 		"-oProxyCommand=x",
 		"ext::sh -c touch% /tmp/pwned",
 		"fd::17",
-		u.url, // file:// is not allowed by default
-		u.dir, // local path
+		u.url,                       // file:// is not allowed by default
+		"http://github.com/a/b.git", // plain http is not allowed by default
+		u.dir,                       // local path
 		"git@github.com:a/b.git",
 		"ssh://git@github.com/a/b.git",
 		"https:///nohost",
@@ -304,8 +305,8 @@ func TestHostileURLsRejected(t *testing.T) {
 	if err := def.ValidateURL("https://github.com/a/b"); err != nil {
 		t.Error(err)
 	}
-	if err := def.ValidateURL("http://github.com/a/b.git"); err != nil {
-		t.Error(err)
+	if err := def.ValidateURL("http://github.com/a/b.git"); !errors.Is(err, ErrInvalidURL) {
+		t.Errorf("ValidateURL(http) = %v", err)
 	}
 }
 
@@ -460,8 +461,8 @@ func TestGitHubOwnerRepo(t *testing.T) {
 	tests := []struct{ in, owner, repo string }{
 		{"https://github.com/acme/app", "acme", "app"},
 		{"https://github.com/acme/app.git", "acme", "app"},
-		{"git@github.com:acme/app.git", "acme", "app"},
-		{"https://www.github.com/acme/app/tree/main", "acme", "app"},
+		{"https://github.com/acme/app/tree/main", "acme", "app"},
+		{"HTTPS://GitHub.com/acme/app", "acme", "app"},
 	}
 	for _, tc := range tests {
 		o, r, ok := GitHubOwnerRepo(tc.in)
@@ -469,8 +470,91 @@ func TestGitHubOwnerRepo(t *testing.T) {
 			t.Errorf("GitHubOwnerRepo(%q) = %q %q %v", tc.in, o, r, ok)
 		}
 	}
-	if _, _, ok := GitHubOwnerRepo("https://gitlab.com/a/b"); ok {
-		t.Error("non-GitHub URL matched")
+	// Only https://github.com/<owner>/<repo> qualifies for a token: the TS
+	// regex matched "github.com/" anywhere in the string.
+	for _, bad := range []string{
+		"https://gitlab.com/a/b",
+		"https://evil.test/github.com/a/b",
+		"https://github.com.evil.test/a/b",
+		"https://evilgithub.com/a/b",
+		"https://www.github.com/a/b",
+		"http://github.com/a/b",
+		"https://github.com:8443/a/b",
+		"https://u:p@github.com/a/b",
+		"git@github.com:a/b.git",
+		"https://github.com/only-owner",
+	} {
+		if o, r, ok := GitHubOwnerRepo(bad); ok {
+			t.Errorf("GitHubOwnerRepo(%q) = %q %q, want no match", bad, o, r)
+		}
+	}
+}
+
+func TestNormalizeGitHubURL(t *testing.T) {
+	for in, want := range map[string]string{
+		"http://github.com/a/b.git":      "https://github.com/a/b.git",
+		"HTTP://WWW.GitHub.com/a/b":      "https://github.com/a/b",
+		"https://www.github.com/a/b":     "https://github.com/a/b",
+		"https://github.com/a/b":         "https://github.com/a/b",
+		"https://evil.test/github.com/a": "https://evil.test/github.com/a",
+		"http://github.com:80/a/b":       "https://github.com/a/b",
+		"https://github.com:443/a/b":     "https://github.com/a/b",
+		"https://github.com:8443/a/b":    "https://github.com:8443/a/b",
+		"http://u:p@github.com/a/b":      "http://u:p@github.com/a/b",
+		"git@github.com:a/b.git":         "git@github.com:a/b.git",
+	} {
+		if got := NormalizeGitHubURL(in); got != want {
+			t.Errorf("NormalizeGitHubURL(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// Credentials are never sent to a remote outside the credential origins:
+// Clone and Pull fail before git runs, so no request reaches the remote.
+func TestCredentialsOnlyForAllowedOrigins(t *testing.T) {
+	var hits int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		http.Error(w, "no", http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+	creds := InstallationCredentials("ghs_SHOULD_NOT_LEAVE")
+	r := &Runner{Protocols: []string{"http", "https"}}
+	if err := r.Clone(ctx, srv.URL+"/a/b", filepath.Join(t.TempDir(), "c"), CloneOptions{Credentials: creds}); !errors.Is(err, ErrCredentialsOrigin) {
+		t.Fatalf("clone to a non-GitHub origin with credentials = %v", err)
+	}
+	if hits != 0 {
+		t.Fatalf("remote was contacted %d times", hits)
+	}
+	if !(&Runner{}).credentialsAllowed("https://github.com/a/b") {
+		t.Error("https://github.com must be a credential origin")
+	}
+	for _, bad := range []string{"http://github.com/a/b", "https://www.github.com/a/b", "https://github.com.evil.test/a/b", "https://x:y@github.com/a/b", srv.URL + "/a/b"} {
+		if (&Runner{}).credentialsAllowed(bad) {
+			t.Errorf("credentials allowed for %q", bad)
+		}
+	}
+
+	// Pull: an origin that is not the expected one (or not allowed) is refused.
+	u := newUpstream(t)
+	dest := filepath.Join(t.TempDir(), "proj")
+	fr := fileRunner()
+	if err := fr.Clone(ctx, u.url, dest, CloneOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := fr.SetOriginURL(ctx, dest, srv.URL+"/a/b"); err != nil {
+		t.Fatal(err)
+	}
+	pr := &Runner{Protocols: []string{"http"}, CredentialOrigins: []string{srv.URL}}
+	err := pr.Pull(ctx, dest, nil, PullOptions{Ref: "main", Credentials: creds, ExpectedOrigin: "https://github.com/a/b"})
+	if !errors.Is(err, ErrCredentialsOrigin) {
+		t.Fatalf("pull with mismatched origin = %v", err)
+	}
+	if err := (&Runner{Protocols: []string{"http"}}).Pull(ctx, dest, nil, PullOptions{Ref: "main", Credentials: creds}); !errors.Is(err, ErrCredentialsOrigin) {
+		t.Fatalf("pull to a non-allowed origin = %v", err)
+	}
+	if hits != 0 {
+		t.Fatalf("remote was contacted %d times", hits)
 	}
 }
 
@@ -501,7 +585,7 @@ func TestCredentialsNeverStored(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	r := &Runner{}
+	r := &Runner{Protocols: []string{"http"}, CredentialOrigins: []string{srv.URL}}
 	remote := srv.URL + "/upstream"
 	dest := filepath.Join(t.TempDir(), "proj")
 	if err := r.Clone(ctx, remote, dest, CloneOptions{Credentials: InstallationCredentials(token)}); err != nil {

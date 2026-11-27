@@ -37,7 +37,7 @@ func markerPath(p Paths) string { return filepath.Join(p.DataPath, InProgressMar
 
 // writeMarker records (durably) that a restore is applying stage.
 func writeMarker(p Paths, m inProgress) error {
-	if err := os.MkdirAll(p.DataPath, 0o755); err != nil {
+	if err := os.MkdirAll(p.DataPath, privateDir); err != nil {
 		return err
 	}
 	raw, err := json.MarshalIndent(m, "", "  ")
