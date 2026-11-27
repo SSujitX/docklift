@@ -1,6 +1,6 @@
 # API Reference
 
-The dashboard talks to the backend through the gateway at **`http://SERVER_IP:8080`**. Browser clients use same-origin `/api/...` paths. In local development the API listens on **`http://localhost:8000`**.
+The Go backend serves both the dashboard and the API at **`http://SERVER_IP:8080`** (container port 8000). Browser clients use same-origin `/api/...` paths. In local development (`make dev`) the API listens on **`http://localhost:8000`** and the Vite dev server on `http://127.0.0.1:3600` proxies `/api` and `/ws` to it.
 
 Most endpoints require an authenticated admin session (cookie/JWT). Destructive operations may also require **step-up password** verification.
 
@@ -108,4 +108,4 @@ curl -s http://SERVER_IP:8080/api/health
 | `POST` | `/api/backup/create` | Create backup |
 | `POST` | `/api/backup/restore/:filename` | Restore (step-up / locks) |
 
-This is a practical operator map, not an OpenAPI dump. Paths and payloads evolve with releases — inspect the running UI network tab or backend routes under `backend/src/routes/` when integrating.
+This is a practical operator map, not an OpenAPI dump. Paths and payloads evolve with releases — inspect the running UI network tab or the Go server sources under [`server/`](https://github.com/SSujitX/docklift/tree/master/server) when integrating.

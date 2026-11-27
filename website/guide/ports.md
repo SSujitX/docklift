@@ -8,12 +8,12 @@ Prefer a [custom domain](./domains.md): raw `IP:port` reveals your origin server
 
 | Port | Use |
 |------|-----|
-| `8080` | Docklift dashboard gateway (`docklift-nginx`) |
+| `8080` | Docklift dashboard, API, and terminal (`docklift-backend`, container port 8000) |
 | `80` | Custom domains HTTP + ACME (`docklift-nginx-proxy`) |
 | `443` | Custom domains HTTPS |
 | `5500`–`5600` | Optional published app host ports (default pool) |
-| `8000` | Backend (internal / local dev) |
-| `3600` | Vite frontend (local `bun run dev`) |
+| `8000` | Backend inside the container / local `make dev` |
+| `3600` | Vite dev server (local `make dev`) |
 
 Managed databases also keep host ports **off** by default — [link](./databases.md) them on the Docker network instead.
 

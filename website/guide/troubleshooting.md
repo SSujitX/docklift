@@ -86,7 +86,7 @@ Cancel the in-flight build first. Deployments are serialized per project.
 
 ```bash
 docker compose ps
-docker logs docklift-nginx -f --tail 100
+docker logs docklift-backend -f --tail 100
 curl -s http://127.0.0.1:8080/api/health
 ```
 

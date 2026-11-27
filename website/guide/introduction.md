@@ -24,13 +24,11 @@ Think of it as a lighter Coolify / Dokku-style workflow with a real dashboard: g
 
 ## How it works
 
-Docklift is a small Docker Compose stack: a React dashboard, an Express backend that talks to the Docker socket, and two nginx containers with different jobs.
+Docklift is a small Docker Compose stack: one Go backend that talks to the Docker socket and serves the React dashboard, plus an nginx proxy and a certbot sidecar for domains and certificates.
 
 | Container | Role |
 |-----------|------|
-| `docklift-frontend` | Dashboard UI |
-| `docklift-backend` | Deploy, auth, GitHub App, nginx/SSL orchestration |
-| `docklift-nginx` | Dashboard gateway on **`:8080`** |
+| `docklift-backend` | One Go binary: API, WebSocket terminal, embedded dashboard (container port 8000, published on **`:8080`**), deploys, auth, GitHub App, nginx/SSL orchestration |
 | `docklift-nginx-proxy` | Public **`:80` / `:443`** for project and panel domains |
 | `docklift-certbot` | Issues and renews Let's Encrypt certificates (HTTP-01) |
 

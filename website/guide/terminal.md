@@ -7,6 +7,8 @@ Full SSH-like terminal in the browser at `/terminal` (xterm.js), backed by a pri
 - **Step-up password:** your session JWT is not enough. Opening the root shell and running host actions each require your **account password** again
 - **Upgrade from the sidebar** asks for that password **once** (in the upgrade dialog). The shell stays paused until you cancel or finish — it does not ask for a second “terminal” password first
 - **Cancel aborts** — if you dismiss the password prompt, the action does not continue
+- **Single-use tokens:** the terminal connection token can be used once, and the terminal must authenticate within 60 seconds of connecting
+- Wrong step-up passwords are throttled (10 per user and client address per 15 minutes)
 - Treat the terminal as root access to the VPS; restrict who can log into the panel
 
 ## Features
@@ -50,4 +52,4 @@ docker ps --filter name=docklift --filter name=dl_
 | Live build logs | Project deployments |
 | Host package updates / reboot | Terminal host strip (with password) |
 | Ad-hoc debugging | Terminal |
-| Password reset | SSH + [reset script](./reset-password.md) — not from the web UI alone |
+| Password reset | SSH + [`docklift reset-password`](./reset-password.md) — not from the web UI alone |

@@ -1,233 +1,208 @@
 ---
 name: System Administration
-description: Guide for server management, system APIs, backups, and maintenance operations.
+description: Guide for server management, system APIs, backups, restore, and maintenance operations in the Docklift Go stack.
 ---
 
 # System Administration Guide
 
-Docklift includes built-in system management features accessible through the UI and API.
+Docklift ships server management features in the dashboard and API. The Go backend (`server/`) implements them; the three-container stack is defined in `docker-compose.yml`.
+
+## Stack
+
+| Container | Role | Ports |
+|-----------|------|-------|
+| `docklift-backend` | Go binary: API, WebSocket terminal, embedded dashboard | container 8000, host `:8080` (`DASHBOARD_BIND` selects the host address) |
+| `docklift-nginx-proxy` | Public proxy for app domains and the optional panel domain | `:80`, `:443` |
+| `docklift-certbot` | `certbot renew` every 12 h (webroot); the backend triggers issuance with `docker exec` | none |
+
+There is no frontend container, no gateway nginx, and no separate database container: the SQLite file is `DATABASE_URL` (default `file:/app/data/docklift.db`), migrated by `docklift serve` at start.
+
+## Backend Server Access Requirements
+
+From `docker-compose.yml` (the backend container runs as root):
+
+-   `privileged: true` and `pid: host`: `nsenter` into host PID 1 for system update, upgrade and host process listing.
+-   `/var/run/docker.sock`: all Docker work.
+-   Mounts: `./data:/app/data`, `./deployments:/deployments`, `./nginx-proxy/conf.d:/nginx-conf`, `./nginx-proxy/certbot/conf:/etc/letsencrypt` (RW so restores can put certificates back; nginx-proxy mounts it read-only), `./backups:/data/backups`, and read-only `/etc/hostname`, `/etc/os-release`, `/proc` under `/host/`.
+-   The image (`Dockerfile`) is Alpine with `docker-cli` (+ buildx, compose), `git`, `bash`, `procps`, `util-linux` (`nsenter`, `script`) and a pinned, checksum-verified Railpack.
+
+### Environment
+
+Read once at start by `server/internal/config/config.go` (`.env` and `.env.local` in the working directory are loaded first):
+
+| Variable | Default | Meaning |
+|----------|---------|---------|
+| `PORT` | `8000` | listen port inside the container |
+| `DATA_PATH` | `./data` | database dir, secrets, tokens, restore markers |
+| `DATABASE_URL` | `file:/app/data/docklift.db` | SQLite file |
+| `DEPLOYMENTS_PATH` | `./deployments` | project sources and runtime compose files |
+| `BACKUP_PATH` | `<DATA_PATH>/backups` (compose sets `/data/backups`) | backups and `uploads/` |
+| `NGINX_CONF_PATH` | `./nginx-proxy/conf.d` | generated vhosts |
+| `LETSENCRYPT_PATH` | `./nginx-proxy/certbot/conf` | certificates |
+| `DOCKER_NETWORK` | `docklift_network` | control-plane network |
+| `PORT_RANGE_START` / `PORT_RANGE_END` | `5500` / `5600` | host ports for deployed apps |
+| `JWT_SECRET`, `INTERNAL_API_SECRET` | generated into `DATA_PATH/.secrets` | see `authentication` |
+| `CORS_ORIGIN`, `DOCKLIFT_FRONTEND_URL` | empty / `http://localhost:3000` (compose: `http://localhost:8080`) | trusted origins, callback fallback |
+| `TRUSTED_PROXIES` | loopback + nginx-proxy's fixed address | see `security_hardening` |
+| `TERMINAL_ALLOW_NO_ORIGIN` | `false` | allow terminal upgrade without `Origin` |
+| `CERTBOT_EMAIL`, `CERTBOT_STAGING`, `CERTBOT_CONTAINER`, `NGINX_PROXY_CONTAINER` | | TLS issuance |
+
+Data and backup directories are `0700` and their files `0600`; `TightenModes` repairs older installs at boot.
+
+## CLI
+
+The binary is `/usr/local/bin/docklift` in the container (working dir `/app`):
+
+```bash
+docker exec docklift-backend docklift reset-password   # new random admin password, prints it
+docker exec docklift-backend docklift migrate          # apply migrations and exit
+docker exec docklift-backend docklift serve            # the container entrypoint (default)
+```
+
+Local development, from the repo root: `make dev` (Vite dev server plus `go run ./cmd/docklift serve` in `server/`), `make build` (dashboard embedded into `bin/docklift`), `make server` (placeholder dashboard, enough for API work), `make test`, `make contract`, `make lint`.
 
 ## System Dashboard (`/system`)
 
-The system page shows real-time server health metrics:
-- **CPU**: Usage percentage, model, core count, temperature
-- **Memory**: Used/total/percentage (reads host `/proc/meminfo` for accuracy)
-- **GPU**: Model, VRAM, temperature, utilization (if available)
-- **Disk**: Mount points, used/total/percentage
-- **Network**: Bytes sent/received, speeds
-- **Processes**: Top 10 by CPU (uses `nsenter` to read host processes)
-- **Server Info**: Hostname, distro, kernel, uptime, public IP, location
+`GET /api/system/stats` (3 s cache), `GET /api/system/quick` (CPU and memory percent for the header widget), `GET /api/system/ip` (public IP via `api.ipify.org`, 5 min cache, `N/A` when unknown). Code: `server/internal/api/system/system.go` and `server/internal/sysinfo`.
 
-### API Endpoints
-| API | Purpose |
-|-----|---------|
-| `GET /api/system/stats` | Full system metrics (3s cache) |
-| `GET /api/system/quick` | CPU + memory only (for header widget) |
-| `GET /api/system/ip` | Server's public IP (5-min cache) |
+-   **CPU, memory, disk, network, GPU, load**: read with gopsutil and the `/host/proc`, `/host/os-release`, `/host/hostname` mounts. Load averages are the real system values.
+-   **Processes**: top 10 by CPU. The host process table comes from `nsenter --target 1 ... ps aux --sort=-%cpu`, with `top` inside the container as fallback.
+-   **Server info**: hostname, distro, kernel, uptime, public IP.
+-   On Windows and macOS (development) host readings that need Linux return what is available.
 
 ## Maintenance Operations
 
-### Purge Resources
-**API**: `POST /api/system/purge`
+All of these need a session token **and** the account password in the body (step-up, throttled at 10 wrong attempts per user and address per 15 minutes). Each logs an `[AUDIT]` line with the client address.
 
-**DockLift-scoped only.** Requires **password step-up** (`requireStepUpPassword` / body `password`).
+| API | Effect |
+|-----|--------|
+| `POST /api/system/purge` | Docklift-scoped cleanup, below |
+| `POST /api/system/reset` | Restart the stack containers: `docklift-nginx-proxy`, `docklift-certbot`, then `docklift-backend` last, after 1 s. A missing container is skipped. |
+| `POST /api/system/reboot` | `reboot -f` on the host after 1 s |
+| `POST /api/system/update-system` | `apt update`, `apt upgrade`, `apt autoremove` on the host via `nsenter`, 15 min timeout |
+| `POST /api/system/upgrade` | Starts `/opt/docklift/upgrade.sh` on the host, detached (`systemd-run`, falling back to `nohup`) |
+| `POST /api/system/execute` | Run one shell command in the container with the password re-verified; 30 s timeout, 1 MiB output cap |
 
-What it does (step-up required):
-1. **409** if any deployment is `in_progress` before mutations (and again before image cleanup if a deploy raced in)
-2. Remove unused `docklift-*` app tags outside each project’s keep-2 set (last 2 success `image_tags` + in-use container refs)
-3. `docker builder prune -af` unless a deploy is in progress after image cleanup (skip `-af` rather than wipe live build cache)
-4. Return real counts in `details[]`
+On Windows and macOS (dev machines) `reboot`, `update-system` and `upgrade` are simulated, and `reset` is simulated on Windows only. When Docker is unreachable, Docker routes answer 503 "Docker is not available".
 
-What it must **never** do from the panel:
-- `docker system prune` / delete non-`docklift-*` images
-- Restart foreign containers
-- Swap cycling, `drop_caches`, journal vacuum, apt clean, `/tmp` wipe
+### Purge
 
-**Related automatic hygiene:** after successful deploy only — keep-2 project images + `builder prune -f` (unused). Failed deploy does not strip the last good release. Project → Deployments → **Restore** (step-up) pairs with keep-2.
+`POST /api/system/purge` never touches anything outside Docklift:
 
-UI copy: “unused Docklift images + clear BuildKit cache” — not “dangling only” / no-op.
+1.  **409** if any deployment is `in_progress`, checked before and again after the keep set is computed.
+2.  Remove `docklift-*` application image tags that are outside each project's **keep-2 set** (images of the last two successful deployments) and not used by **any** container on the host, running or stopped.
+3.  `docker builder prune -af`, skipped (and reported) if a deployment started meanwhile. The BuildKit cache is shared by all projects.
+4.  Response `{ message, details[], removedImages, keptImages, memory* }`.
 
-Load averages on `/api/system/stats` come from real `os.loadavg()` — never fabricated load5/load15.
+It never runs `docker system prune`, removes foreign images, containers or volumes, or does OS maintenance (swap, `drop_caches`, journal, apt, `/tmp`).
 
-### Server Control
-
-| API | Purpose | Notes |
-|-----|---------|-------|
-| `POST /api/system/reboot` | Reboot the host server | Uses `reboot -f`, simulated on Windows/Mac |
-| `POST /api/system/reset` | Restart all Docklift containers | `docker restart` on `CORE_CONTAINERS` (all 5) |
-| `POST /api/system/update-system` | Run `apt update && upgrade` on host | Via `nsenter`, 15-min timeout |
-| `POST /api/system/upgrade` | Run Docklift upgrade script | Executes `/opt/docklift/upgrade.sh` on host |
+Automatic hygiene: after a **successful** deploy only, the keep-2 image set is retained and unused builder cache is pruned. A failed deploy never strips the last good release. Project, Deployments, **Restore** (step-up, `POST /api/deployments/:projectId/rollback`) pairs with keep-2.
 
 ## Interactive Web Terminal
 
-**Route**: `/terminal`
-**WebSocket**: `ws://host:8000/ws/terminal` (proxied via Nginx `/ws/`)
+-   **Route**: `/terminal`; WebSocket `/ws/terminal` on the same origin as the dashboard (nginx-proxy passes it for a panel domain).
+-   **Frontend**: xterm.js in `frontend/src/components/TerminalView.tsx` and `Terminal.tsx`.
+-   **Backend**: `server/internal/api/terminal` (upgrade checks) and `server/internal/terminal` (sessions). The shell is `/bin/bash` in `/root` on a PTY (`creack/pty`), Linux only. The container has host access through privileged mode and `pid: host`.
+-   **Connect flow**: `POST /api/auth/terminal-token` (5 min, **single use**), open `/ws/terminal?token=...`, receive `auth_required`, send `{ type: "auth", password, cols, rows }` within **60 s**, receive `auth_success`, then `input` / `resize` messages and `output` / `exit` messages back.
+-   **Limits**: 3 concurrent sessions; 5 wrong passwords per session and 20 per address and user per 15 minutes; 30 minute idle timeout; resize accepts integers `0 < n < 500`; 1 MiB per client message; ping every 30 s.
+-   **Ends when**: the shell exits, the idle or auth timeout hits (`exit` with `reason` `idle_timeout` / `auth_timeout`), the server stops, or the user's **password changes** (`session_revoked`).
+-   The shell environment has `JWT_SECRET`, `INTERNAL_API_SECRET` and `DOCKLIFT_GITHUB_*` removed.
+-   **Host strip UI**: text actions above the shell for package update, Docklift upgrade, purge, reset stack, reboot. Upgrade and package dialogs confirm first and then show a wait dialog; the sidebar "Upgrade now" opens `/terminal?confirm=upgrade` and defers the shell password prompt so the operator is not asked twice.
 
-A full-featured xterm.js-based interactive terminal providing direct root access to the host.
+### Graceful shutdown
 
-### Architecture
-- **Frontend**: xterm.js + WebSocket
-- **Backend**: `ws` server + `child_process.spawn('script', ...)`
-- **PTY**: Uses Linux `script` command for TTY emulation (zero native dependencies)
-- **Container**: Runs inside `docklift-backend` (Alpine) but has host access via Docker privileged mode & PID host.
-
-### Features
-- **Real-time PTY**: Supports tab completion, history, colors, ncurses (htop/nano).
-- **Root Access**: Session starts in `/root` with full host privileges.
-- **Host strip UI** (`TerminalView`): quiet text actions above the shell — update packages, upgrade Docklift, purge unused Docklift images + BuildKit, reset stack, reboot. No rainbow action cards; shell chrome follows light/dark theme.
-- **Upgrade / package dialogs**: Confirm first (panel goes offline; Docklift upgrade shows Now → Installing version + password on the same dialog; wrong password re-asks inline). After start, a wait dialog (Esc/overlay blocked; Dismiss only after countdown or in simulated dev) tells the operator to refresh in ~1–2 minutes. Sidebar “Upgrade now” routes to `/terminal?confirm=upgrade` (does not POST from the rail) and **defers shell WS auth** so operators are not prompted twice. Legacy `?action=upgrade` opens the same confirm, not a fake in-progress state.
-- **Resizing**: Bi-directional resize sync between frontend/backend. Resize inputs are validated (cols: 1–500, rows: 1–200) to prevent injection.
-- **Persistence**: Auto-reconnect on network drops.
-- **Security**:
-  - **Double Authentication**: JWT (connect) + Password (interactive).
-  - **Rate Limiting**: Max 5 logins/minute.
-  - **Session Limits**: Max 3 concurrent connections per user.
-  - **Idle Timeout**: Auto-disconnect after 30 minutes of inactivity.
-
-### Graceful Shutdown
-
-The backend handles SIGTERM/SIGINT signals for clean exit:
-- Stops accepting new HTTP connections.
-- Cleans up all active terminal PTY sessions via `cleanupAllSessions()`.
-- Disconnects Prisma database client.
-- Applied in: `index.ts`.
+On SIGINT/SIGTERM `docklift serve` cancels background work (which ends streams), drains the HTTP server for up to 10 s, closes every terminal session, runs shutdown hooks and closes the database.
 
 ## System Logs
 
-**API**: `GET /api/system/logs/:service` (SSE stream)
+`GET /api/system/logs/:service` (SSE, `?tail=` default 200). Mapping in `server/internal/api/system/system.go` (`logServices`), UI in `frontend/src/pages/Logs.tsx`:
 
-Mapping lives in `LOG_SERVICE_CONTAINERS` (`backend/src/routes/system.ts`):
-
-| Service | Container | UI label |
-|---------|-----------|----------|
+| Service key | Container | UI label |
+|-------------|-----------|----------|
 | `backend` | `docklift-backend` | Backend |
-| `frontend` | `docklift-frontend` | Frontend |
-| `nginx` | `docklift-nginx` | Dashboard Gateway (:8080) |
-| `proxy` | `docklift-nginx-proxy` | Public Proxy (:80/:443) |
+| `proxy` | `docklift-nginx-proxy` | Public Proxy |
 | `certbot` | `docklift-certbot` | Certbot |
+
+Any other key gives 400. See the `logging_monitoring` skill for the stream format and viewer.
 
 ## Version Check
 
-**API**: `GET /api/system/version`
-- Compares local `package.json` version against GitHub `releases/latest`
-- Returns `{ current, latest, updateAvailable, githubOk, checkedAt }`
-- TTL: ~15m when update available, ~2m when current, ~30s when GitHub fails —
-  never cache a failed probe as “no update” for an hour (that hid new releases)
-- Concurrent callers share one GitHub fetch (single-flight). `?refresh=1` revalidates
-  only if the cache is older than 30s (not an unconditional bypass).
-- UI: sidebar footer only; one shared poller (desktop+mobile rails); no routine `refresh=1`
+`GET /api/system/version` returns `{ current, latest, updateAvailable, githubOk, checkedAt }`. `current` is the `docklift/internal/version.Version` set at build time (from the root `package.json`). It compares against GitHub `releases/latest`. TTL about 15 min when an update exists, 2 min when current, 30 s when GitHub fails (a failed probe is never cached as "no update"). Concurrent callers share one fetch; `?refresh=1` re-probes only if the cache is older than 30 s. The UI polls from the sidebar footer only.
 
-## Backup & Restore System
+## Backup and Restore
 
-All backup/restore routes are in `backend/src/routes/backup.ts`, mounted at `/api/backup`.
+Handlers: `server/internal/api/backup/`; archive and restore logic: `server/internal/backup/`; locks and seal: `server/internal/maintenance/`. Mounted at `/api/backup`, session token required (except fresh-install `restore-upload`, below).
 
-### Paths
+### Archive layout
 
--   `BACKUP_PATH` defaults to `<DATA_PATH>/backups` (not a hardcoded `/data/backups`).
--   Production/dev Compose set `BACKUP_PATH=/data/backups` with a `./backups` mount.
--   Env names are `DEPLOYMENTS_PATH`, `NGINX_CONF_PATH`, `DOCKER_NETWORK`, `DATA_PATH` (not `DOCKLIFT_*` for those).
+| Entry | Source |
+|-------|--------|
+| `database/docklift.db` | consistent SQLite snapshot (`VACUUM INTO`), never a raw copy of the live file |
+| `deployments/` | `DEPLOYMENTS_PATH`, including `.docklift/<projectId>/compose.yml` |
+| `nginx-conf/` | `NGINX_CONF_PATH` |
+| `letsencrypt/` | `LETSENCRYPT_PATH` (links stored as links) |
+| `github-app.pem` | `DOCKLIFT_GITHUB_PRIVATE_KEY_PATH`, when it exists |
 
-### Backup
+Named volume contents are **not** archived: volumes are re-created empty if missing. Snapshot application data separately.
 
-| API | Purpose |
-|-----|---------|
-| `POST /api/backup/create` | Create a full backup (DB, deployments, Nginx configs, GitHub key) |
-| `GET /api/backup/list` | List available backups |
-| `GET /api/backup/download/:filename` | Download a backup file |
-| `DELETE /api/backup/:filename` | Delete a backup |
-
-**SQLite integrity**: create uses `VACUUM INTO` a temp snapshot, then archives that file — never a live
-raw copy of `docklift.db`. Missing DB aborts with `[ERROR]` (UI must not toast success).
-
-Frontend streams use `frontend/src/lib/streamProgress.ts`: require `res.ok` and fail on `[ERROR]` lines.
-
-### Restore
+### Backup API
 
 | API | Purpose |
 |-----|---------|
-| `POST /api/backup/restore/:filename` | Restore from a server-side backup |
-| `POST /api/backup/restore-upload` | Upload and immediately restore |
-| `POST /api/backup/restore-from-upload/:filename` | Restore from a previously uploaded file |
+| `GET /api/backup` | list server-created backups, newest first |
+| `POST /api/backup/create` | create a backup; streamed `text/plain` progress; optional `name` (sanitised to `[A-Za-z0-9_-]`, 50 chars) |
+| `GET /api/backup/download/:filename` | download (fetch with Bearer + blob; no URL tokens) |
+| `DELETE /api/backup/:filename` | delete |
+| `POST /api/backup/upload` | store an uploaded ZIP (field `backup`, 500 MiB max, ZIP only) without restoring |
+| `GET /api/backup/uploads`, `DELETE /api/backup/uploads/:filename` | manage uploaded files |
 
-**Safety**:
--   **`tryAcquireRestoreLock()` before Multer** (`lib/restoreLock.ts`) — concurrent restore → **409**.
-    Upload filenames are server-chosen (`restore-<ts>-<random>.zip`), never trusted client names.
--   **Password step-up** for authenticated restores; **setup-token path** for fresh install (no users yet)
-    via `setupTokenAuth`.
--   **All three restore routes** track `dbReplaced` and call `rollbackDatabaseFromPreRestore` on later failure.
--   **Commit gate** (`finishRestoreCommit` / `decideRestoreCommit`): consume setup secrets only when
-    reconcile succeeds **and** restored DB has `role: 'admin'`. Setup-token + incomplete reconcile →
-    abort + roll DB back. If rollback itself fails → **critical seal**:
-    - Persist `data/.restore-critical`, hold restore lock, keep maintenance
-    - Reload seal on backend boot (`loadRestoreCriticalOnBoot`)
-    - Block all `/api/backup/restore*` until `POST /api/backup/clear-critical-restore` (password step-up)
-    - Clear must verify the marker is gone before exiting maintenance — deletion failure stays sealed
+Create writes to a hidden `.partial` file, fsyncs, then renames, so a crash never leaves a truncated `.zip`. Failures appear as `[ERROR]` lines in the stream while the HTTP status stays 200. The frontend (`lib/streamProgress.ts`) requires `res.ok` and treats any `[ERROR]` line as failure. Filenames must match `^[a-zA-Z0-9._-]+\.zip$` and stay inside the backup directory after symlink resolution.
 
--   `enterMaintenance()` blocks **all** API traffic except `/api/health` and the active restore stream
-    (not just mutating methods).
--   Files/certs/proxy directory swaps are still not fully transactional with the DB.
--   Directory restores use `lib/fsCopy.ts` (`fs.promises.cp` + **content-level** replace inside
-    the target) — never shell `cp`, and never `rename` bind-mount roots (`/deployments`,
-    `/nginx-conf`, `/etc/letsencrypt`). Staging/prev live under the mount as
-    `.docklift-restore-staging-*` / `.docklift-restore-prev-*`. Failed promote or partial
-    move-aside restores from prev; orphaned prev dirs are folded in on the next successful replace.
--   Restore does **not** wipe other backup ZIPs.
+### Restore API
 
-### Auto-Restore (reconcileSystem)
+| API | Purpose |
+|-----|---------|
+| `POST /api/backup/restore/:filename` | restore a server-side backup (step-up) |
+| `POST /api/backup/restore-from-upload/:filename` | restore a previously uploaded file (step-up) |
+| `POST /api/backup/restore-upload` | upload and restore in one request (step-up, or `X-Setup-Token` on a fresh install) |
+| `GET /api/backup/critical-status` | is the restore seal set |
+| `POST /api/backup/clear-critical-restore` | clear the seal (step-up) |
 
-After restoring files, the system **automatically**:
-1. **Reads restored database** — `reconnectPrisma()` then read projects
-2. **Recreates persistent volumes** — Each `PersistentVolume` row is re-created as an external
-   labelled Docker volume before the project starts, so mounts resolve
-3. **Brings every project back up** — `docker compose -f <runtime-compose> -p <composeProject> up -d`,
-   where the compose file is `deployments/.docklift/<projectId>/compose.yml` and the project name comes
-   from `composeProjectName()`. Older backups without generated runtime state fall back to a
-   `docker-compose.yml` at the source root; if neither exists the project is skipped and must be
-   deployed manually
-4. **Reloads Nginx proxy** — `docker exec docklift-nginx-proxy nginx -s reload`
-5. **Self-restarts backend** — `process.exit(0)` triggers Docker's `restart: unless-stopped` policy
+### Restore safety
 
-Any per-project or nginx failure emits `[ERROR]`; the stream ends with **RESTORE INCOMPLETE** so the
-UI does not toast success. Backend still restarts so the restored DB is loaded.
+-   **Restore lock** (`TryAcquireRestoreLock`) is taken before any upload byte is read. A concurrent restore gets **409**. The lock also fails while the critical seal exists. Uploaded names are replaced by `restore-<ms>-<random>.zip`.
+-   **Maintenance mode** is on for the whole restore: every `/api/*` request except `/api/health` and `/api/backup/restore*` gets 503.
+-   Extraction uses `safeunzip` (50,000 files, 2 GiB), with a free-space check, into `BACKUP_PATH/temp-restore-<ms>`. The staged database is integrity-checked and migrated before anything live is touched.
+-   Stages: extract, validate, stop user containers, **marker** (the point of no return), `.pre-restore` copy of the live database, database swap, migrations, deployments, nginx-conf, letsencrypt, GitHub key, reconcile, commit. Directory areas are replaced by content inside the target (`fscopy.ReplaceDirContents`), never by renaming bind-mounted roots, with the previous content kept in `.docklift-restore-prev-*` for rollback.
+-   **Restore-critical seal**: before the first live change a durable marker is written. A crash or a failed rollback leaves `DATA_PATH/.restore-critical` (mode 0600), which is loaded at boot, keeps maintenance and the restore lock on, and blocks every `/api/backup/restore*` call. Only `POST /api/backup/clear-critical-restore` (step-up) removes it, and if deletion fails maintenance stays on.
+-   **Commit policy** (`DecideCommit`): a restored database with no `admin` user is never committed; a setup-token restore whose reconcile failed is rolled back from `.pre-restore`; an authenticated restore keeps its data even if reconcile partly failed. The setup token and bootstrap secret are consumed only on a successful setup-token commit.
+-   After a committed restore the backend sends itself SIGTERM after 1 s (`restartProcess`), and Docker's `restart: unless-stopped` starts it on the restored data. A 30 s watchdog forces exit.
+-   Restore does not delete other backup ZIPs.
 
-> The `-p` name must match deploy-time naming, or restore creates a *second* set of containers and
-> images alongside the originals.
+### Reconcile
 
-### What's Backed Up
+After the files are in place, `reconcile` starts every project:
 
-| Item | Path | Description |
-|------|------|-------------|
-| Database | `/app/data/docklift.db` | SQLite database |
-| Deployments | `/deployments/` | Project source + generated runtime compose |
-| Nginx configs | `/nginx-conf/` | Generated proxy configurations |
-| Certificates | `/etc/letsencrypt/` | Let's Encrypt certs (backend mounts this RW for restore) |
-| GitHub key | `github-app.pem` | GitHub App private key |
+1.  Read projects from the restored database.
+2.  Re-create each project's persistent volumes (external, labelled).
+3.  Start the project **only from the Docklift-generated runtime compose file** `DEPLOYMENTS_PATH/.docklift/<projectId>/compose.yml`, run from that directory, project name `ComposeProjectName(name, id)`. A repository's own `docker-compose.yml` is **never** started by a restore. If the runtime file is missing the project is skipped and must be deployed manually. Re-attach the project's containers to nginx-proxy.
+4.  Reload nginx-proxy.
 
-Named volume *contents* are not archived — the volumes are re-created empty if missing. Snapshot
-application data separately if it matters.
+Per-project failures produce `[ERROR]` lines and the stream ends as incomplete, so the UI does not show success. The compose project name must match deploy-time naming or restore creates a second set of containers.
 
-## Install / Upgrade / Uninstall Scripts
+## Install, Upgrade, Uninstall
 
 | Script | Purpose |
 |--------|---------|
-| `install.sh` | Production install into `/opt/docklift` (default **latest** release). Pin with `bash -s -- v=2.0.2` or `DOCKLIFT_VERSION=2.0.2`. Resolves/validates the tag **before** `compose down`; fails closed if latest API/tag missing (no master fallback). |
-| `install-dev.sh` | Same, but from `master` (unreleased code) |
-| `upgrade.sh` | Stop backend → SQLite snapshot (`.backup` / copy) → tag `*:pre-upgrade` images → rebuild; rollback uses tagged images + DB restore with backend stopped; health-checks `/api/health` |
-| `install.sh` | Prints `Dashboard: http://SERVER_IP:8080` + **Setup code** from `.bootstrap-secret` |
-| `uninstall.sh` | Remove DockLift containers, images, volumes, network, build cache and `/opt/docklift` |
+| `install.sh` | Production install into `/opt/docklift` (default **latest** release). Pin with `bash -s -- v=2.0.2` or `DOCKLIFT_VERSION`. Fails closed if the release tag cannot be resolved. Waits for health, prints `Dashboard: http://SERVER_IP:8080` and the **setup code** from `data/.bootstrap-secret`. Removes obsolete 2.x containers (`docklift-frontend`, `docklift-nginx`). |
+| `install-dev.sh` | Same, from `master` |
+| `upgrade.sh` | Stops the backend, takes an SQLite backup (`sqlite3 .backup`, or a file copy with the backend stopped), tags the running image `docklift-backend:pre-upgrade`, rebuilds, health-checks `/api/health`, and rolls back (tagged images plus database restore) on failure. Migrates a 2.x layout to the Go backend and removes the obsolete containers and the `docklift-frontend` image once the new backend is healthy. |
+| `uninstall.sh` | Removes Docklift containers, images, volumes, networks, build cache and `/opt/docklift`, restricted to Docklift-owned resources (`docklift*`, `dl_*`, `dl-*`, `dl-net-*`, `com.docklift.*` labels). Never a host-wide prune, never Docker Engine or git. |
 
-`uninstall.sh` targets **DockLift-owned resources only** (core names, `dl_*` / `dl-*`,
-`dl-net-*`, `com.docklift.*` labels). Never host-wide `docker system prune` / `builder prune`, and
-never remove Docker Engine/git.
+The Docker `HEALTHCHECK` calls `GET /api/health` (public), which returns `{ status, timestamp, version, instanceId }`; the dashboard uses `instanceId` to detect restarts.
 
-## Server Access Requirements
+## Pitfalls
 
-The backend container needs these host-level permissions (defined in `docker-compose.yml`):
-- `privileged: true` — required for `nsenter` into host PID 1 (system update / reboot)
-- `pid: host` — For host process visibility (reboot, system info)
-- Docker socket mount: `/var/run/docker.sock`
-- Host file mounts: `/etc/hostname`, `/etc/os-release`, `/proc` (read-only)
-- `./nginx-proxy/certbot/conf:/etc/letsencrypt` — read-write, so restores can put certificates back
-  (the proxy mounts the same path read-only)
-
-Panel purge must **not** use privileged host maintenance (drop_caches, journal, apt, swap, `/tmp`).
+-   Changing a path variable in compose without moving the mount makes backups, restores and nginx sync act on the wrong directory.
+-   The panel purge must stay Docklift-scoped. Do not add host-wide prune or OS maintenance to product APIs.
+-   `reset-password` runs as a separate process: running sessions notice within 30 s because bound connections recheck the password version.

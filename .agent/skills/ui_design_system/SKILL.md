@@ -9,16 +9,33 @@ Docklift uses a modern UI stack built on standards-compliant technologies.
 
 ## Tech Stack
 
--   **Framework**: Tailwind CSS (v3 with `tailwindcss-animate` plugin)
--   **Component Library**: Shadcn UI (Headless Radix UI + Tailwind)
+-   **Framework**: Tailwind CSS 4 via `@tailwindcss/vite`, with `tw-animate-css` for animation utilities (no `tailwindcss-animate`, no PostCSS config)
+-   **Component Library**: shadcn-style components (headless Radix UI + Tailwind), copied into the repo
 -   **Icons**: Lucide React
 -   **Theming**: Custom `ThemeProvider` (`frontend/src/lib/theme.tsx`)
--   **Fonts**: Inter (Google Fonts, imported in `src/styles/globals.css`)
+-   **Fonts**: Inter (Google Fonts, imported at the top of `src/styles/globals.css`); mono is the system `ui-monospace` stack
 
 ## Tailwind Configuration
 
-Found in `frontend/tailwind.config.ts`.
-It uses CSS variables for colors to support dynamic theming (dark/light mode).
+There is **no `tailwind.config.ts`**. Tailwind 4 is configured in CSS, in
+`frontend/src/styles/globals.css`:
+
+-   `@import 'tailwindcss'` and `@import 'tw-animate-css'`.
+-   `@custom-variant dark (&:is(.dark *))`: dark mode is the `.dark` class on the root, set by
+    `ThemeProvider`. `@custom-variant hover (&:hover)` keeps `hover:` working on touch devices
+    (v4 otherwise gates it on `(hover: hover)`).
+-   `@theme { ... }` maps design tokens to utilities: `--color-background: hsl(var(--background))`
+    and so on, plus `--font-sans`, `--font-mono` and the text line-heights. A new color token needs
+    both the raw variable (in `:root` and `.dark`) and a `--color-*` entry in `@theme`.
+-   The `@theme` block also pins the Tailwind 3 values of the palette shades the app uses (amber,
+    blue, cyan, emerald, ...), because v4's default oklch colors look brighter. Keep using those
+    shades; do not remove the overrides.
+-   `@utility space-x-*` / `space-y-*` re-declare the v3 sibling selectors (v4 changed them and hidden
+    siblings such as inactive Radix tab panels would leave extra margin).
+-   Class detection is automatic (source files are scanned); there is no `content` array.
+
+Colors use CSS variables holding bare HSL triples (`--primary: 0 0% 9%`), so the same utility works
+in both themes. The values live in `:root` and `.dark` inside `@layer base`.
 
 ### Key Colors (HSL vars)
 -   `bg-background` / `text-foreground`: Main page colors.
@@ -37,13 +54,14 @@ rail, the active states and the CTAs in sync.
 ## Shadcn UI Components
 
 Located in `frontend/src/components/ui/`.
-These are **not** an installed library but copy-pasted code you own.
+These are **not** an installed library but code you own (there is no `components.json`; add new ones by hand).
 
 ### Core Components
 -   `button.tsx`: Variants (default, destructive, outline, secondary, ghost, link).
 -   `card.tsx`: Structure for widgets (Header, Title, Content).
 -   `dialog.tsx`: Modals.
 -   `input.tsx` / `textarea.tsx`: Form elements.
+-   `tabs.tsx`: Tabs (`@radix-ui/react-tabs`).
 -   `sonner.tsx`: Toast notifications.
 
 ### Customizing Components
@@ -68,5 +86,6 @@ Example: To make all buttons rounded, edit `frontend/src/components/ui/button.ts
 
 ## Troubleshooting Styles
 
--   **"Styles missing"**: ensure the file path is included in `tailwind.config.ts` content array.
+-   **"Styles missing"**: Tailwind 4 detects classes by scanning source files; check the class is written as a complete literal string (no string concatenation) and that the dev server was restarted after editing `globals.css`. A new color needs its `--color-*` entry in `@theme`.
+-   **Utility renamed or behaves differently**: this app is on Tailwind 4; check the v4 upgrade notes before copying v3 snippets.
 -   **"Dark mode not working"**: Ensure `ThemeProvider` wraps the app in `src/app/AppProviders.tsx`.

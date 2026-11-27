@@ -4,7 +4,7 @@ If you lose access to the admin account, reset the password from the server with
 
 ## Security
 
-The reset script must run **on the host** where Docklift is installed (SSH or console). Anyone with shell access to the Docker socket can reset the admin password — protect SSH accordingly.
+The reset command must run **on the host** where Docklift is installed (SSH or console). Anyone with shell access to the Docker socket can reset the admin password — protect SSH accordingly.
 
 ## Production (Docker)
 
@@ -13,10 +13,10 @@ ssh root@your-server-ip
 ```
 
 ```bash
-docker exec -it docklift-backend node dist/scripts/reset-password.js
+docker exec -it docklift-backend docklift reset-password
 ```
 
-The CLI prints a new random password (typically 16 characters) for the admin user.
+The command prints a new random password for the first admin user.
 
 ## After reset
 
@@ -27,8 +27,8 @@ The CLI prints a new random password (typically 16 characters) for the admin use
 ## Local development
 
 ```bash
-cd backend
-bun run reset-password
+cd server
+DATA_PATH=../data DATABASE_URL=file:$(pwd)/../data/docklift.db go run ./cmd/docklift reset-password
 ```
 
 ## Related

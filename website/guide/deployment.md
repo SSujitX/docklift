@@ -92,7 +92,7 @@ Prefer [custom domains](./domains.md). Host ports are optional — see [Port Man
 
 ## Runtime compose
 
-Docklift writes Compose under `deployments/.docklift/<project-id>/`. A `docker-compose.yml` you committed yourself stays untouched.
+Docklift writes Compose under `deployments/.docklift/<project-id>/`. A `docker-compose.yml` you committed yourself stays untouched, and Docklift's compose commands never read your repository's own compose file or `.env`. A service directory whose name starts with `docklift` is refused at deploy.
 
 App container naming:
 

@@ -1,11 +1,12 @@
 # Commands Reference
 
-End-to-end reference for install, day-to-day ops, logs, nginx, password reset, networking, and versioning.
+End-to-end reference for install, day-to-day ops, logs, nginx, password reset, networking, versioning, and local development.
 
 | Item | Value |
 |------|--------|
-| Compose services | `backend` · `frontend` · `nginx` · `nginx-proxy` · `certbot` |
-| Container names | `docklift-backend` · `docklift-frontend` · `docklift-nginx` · `docklift-nginx-proxy` · `docklift-certbot` |
+| Compose services | `backend` · `nginx-proxy` · `certbot` |
+| Container names | `docklift-backend` · `docklift-nginx-proxy` · `docklift-certbot` |
+| Backend | One Go binary (`docklift`) serving the API, the WebSocket terminal, and the embedded dashboard on port 8000 (published as host `:8080`) |
 | App containers | `dl_<project-slug>_<id>_<service>` (e.g. `dl_python-smoke_53b01966_app`) |
 | Dashboard | `http://SERVER_IP:8080` |
 | App publish ports | `5500`–`5600` (opt-in) |
@@ -22,12 +23,12 @@ curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh 
 
 ```bash
 # Fresh install — pin a release (argv)
-curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh | sudo bash -s -- v=2.0.2
+curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh | sudo bash -s -- v=3.0.0
 ```
 
 ```bash
 # Same pin via env
-curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh | sudo DOCKLIFT_VERSION=2.0.2 bash
+curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh | sudo DOCKLIFT_VERSION=3.0.0 bash
 ```
 
 ```bash
@@ -50,15 +51,13 @@ docker compose restart
 ```
 
 ```bash
-# Rebuild one service (Compose service keys, not container names)
+# Rebuild / recreate one service (Compose service keys, not container names)
 docker compose up -d --build backend
-docker compose up -d --build frontend
-docker compose up -d --build nginx
-docker compose up -d --build nginx-proxy
+docker compose up -d --force-recreate nginx-proxy
 ```
 
 ```bash
-# Status
+# Status (backend has a Docker HEALTHCHECK on /api/health)
 docker compose ps
 docker ps --filter name=docklift --filter name=dl_
 ```
@@ -66,9 +65,29 @@ docker ps --filter name=docklift --filter name=dl_
 ## 2. Upgrade & uninstall
 
 ```bash
-# Safe upgrade (keeps data + user app containers)
+# Safe upgrade to the latest release (keeps data + user app containers)
 curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/upgrade.sh | sudo bash
 ```
+
+```bash
+# Upgrade to a specific release
+curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/upgrade.sh | sudo bash -s -- v=3.0.0
+```
+
+What `upgrade.sh` does, in order:
+
+1. Tags the running images `docklift-backend:pre-upgrade` (and `docklift-frontend:pre-upgrade` on 2.1.x), stops the backend and verifies it stopped, then snapshots the database to `backups/docklift_<stamp>.db.bak` and `nginx-proxy/conf.d` to `backups/nginx-conf_<stamp>.tar.gz`.
+2. Checks out the release tag.
+3. Builds the new `docklift-backend` image while `nginx-proxy` keeps serving app domains.
+4. Removes the 2.1.x `docklift-frontend` and `docklift-nginx` containers (the Go backend now serves the dashboard on `:8080`) and starts the stack.
+5. Waits up to 180 s for `/api/health` with every service running.
+6. Removes the obsolete `docklift-frontend` image.
+
+Any failure after the backend stopped rolls back automatically: previous git ref, database snapshot, nginx confs, and pre-upgrade images, then waits for health again. If that also fails, the script prints the exact manual rollback commands. The log is `/opt/docklift/upgrade.log`.
+
+::: warning Upgrading from 2.1.x
+Use the new `upgrade.sh` from GitHub as shown above. The dashboard's **Upgrade** button on 2.1.x runs the old local script, which cannot switch to the new container layout (it fails safely and rolls back).
+:::
 
 ```bash
 # Full uninstall (destructive — deletes Docklift data)
@@ -80,6 +99,8 @@ curl -fsSL "https://raw.githubusercontent.com/SSujitX/docklift/master/uninstall.
 curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install-dev.sh | sudo bash
 ```
 
+All install, upgrade, and uninstall scripts honour `DOCKLIFT_INSTALL_DIR` (default `/opt/docklift`).
+
 ## 3. Logs (all services)
 
 ### Platform containers
@@ -88,17 +109,16 @@ curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install-dev
 # Compose (all services, live)
 docker compose logs -f
 docker compose logs -f --tail 100 backend
-docker compose logs -f --tail 100 frontend
-docker compose logs -f --tail 100 nginx
 docker compose logs -f --tail 100 nginx-proxy
+docker compose logs -f --tail 100 certbot
 
 # By container name
-docker logs docklift-backend -f --tail 100
-docker logs docklift-frontend -f --tail 100
-docker logs docklift-nginx -f --tail 100          # dashboard gateway (:8080)
-docker logs docklift-nginx-proxy -f --tail 100    # custom domains (:80/:443)
+docker logs docklift-backend -f --tail 100        # API, terminal, dashboard (:8080)
+docker logs docklift-nginx-proxy -f --tail 100    # app + panel domains (:80/:443)
 docker logs docklift-certbot -f --tail 50         # Let's Encrypt renewals
 ```
+
+The backend logs in `slog` text format (`time=… level=… msg=…`). It never logs query strings, so `?token=` values do not reach the logs.
 
 ### Deployed project apps
 
@@ -109,34 +129,30 @@ docker logs dl_python-smoke_53b01966_app -f --tail 200
 
 ### In the UI
 
-Dashboard → **Logs** → Backend · Frontend · Nginx Proxy · Nginx (SSE live stream).
+Dashboard → **Logs** streams the platform containers (SSE live stream).
 
-## 4. Nginx (gateway + app proxy)
+## 4. Nginx (app and panel domains)
 
 | Container | Role | Host port | Config |
 |-----------|------|-----------|--------|
-| `docklift-nginx` | Dashboard gateway (`/`, `/api`, `/ws`) | **8080** | repo `nginx.conf` |
-| `docklift-nginx-proxy` | User app domains + HTTPS | **80**, **443** | `nginx-proxy/conf.d/*.conf` |
+| `docklift-backend` | Dashboard, `/api`, `/ws` (Go server) | **8080** → 8000 | environment (see §11) |
+| `docklift-nginx-proxy` | User app domains, panel domain, HTTPS | **80**, **443** | `nginx-proxy/nginx.conf`, `nginx-proxy/conf.d/*.conf` |
 | `docklift-certbot` | Let's Encrypt ACME | — | `nginx-proxy/certbot/` |
 
-```bash
-# Test config then reload (gateway)
-docker exec docklift-nginx nginx -t
-docker exec docklift-nginx nginx -s reload
+A panel domain (**Settings → Domain**) proxies to `docklift-backend.docklift_network:8000`. The name is network-qualified so a project network cannot answer for it. Confs written by 2.1.x (upstream `docklift-nginx:80`) are rewritten once when the new backend boots, then nginx is reloaded.
 
-# Test config then reload (app domain proxy)
+`docklift-nginx-proxy` has fixed addresses on `docklift_network` (`172.28.255.254`, `fd12:3456:789a::ffff:fffe`). The backend trusts `X-Forwarded-*` headers only from those and loopback (`TRUSTED_PROXIES`).
+
+```bash
+# Test config then reload
 docker exec docklift-nginx-proxy nginx -t
 docker exec docklift-nginx-proxy nginx -s reload
 
 # List generated domain configs
 ls -la /opt/docklift/nginx-proxy/conf.d/
-```
 
-Edit gateway routing: change `nginx.conf`, then:
-
-```bash
-docker compose up -d --force-recreate nginx
-# or: docker exec docklift-nginx nginx -s reload  (if only conf mounted)
+# Follow proxy logs
+docker logs docklift-nginx-proxy -f --tail 100
 ```
 
 ## 5. Reset admin password
@@ -144,33 +160,36 @@ docker compose up -d --force-recreate nginx
 ### Production (Docker)
 
 ```bash
-docker exec -it docklift-backend node dist/scripts/reset-password.js
+docker exec -it docklift-backend docklift reset-password
 ```
 
-Prints a new random password for the admin user. Change it after login.
+Prints a new random password for the first admin user. Change it after login.
 
 ### Local development
 
 ```bash
-cd backend
-bun run reset-password
+cd server
+DATA_PATH=../data DATABASE_URL=file:$(pwd)/../data/docklift.db go run ./cmd/docklift reset-password
 ```
+
+Other subcommands: `docklift serve` (default) and `docklift migrate` (apply database migrations and exit).
 
 ## 6. Version (check & release)
 
 ### See current version
 
 ```bash
-grep '"version"' backend/package.json frontend/package.json
+# Source of truth in the repo: the root package.json
+grep '"version"' package.json
 ```
 
 ```bash
 curl -s http://SERVER_IP:8080/api/health
 # or from the server:
-curl -s http://127.0.0.1:8080/api/health
+docker exec docklift-backend wget -qO- http://127.0.0.1:8000/api/health
 ```
 
-UI also shows the version in the header / footer (authenticated compare).
+The UI also shows the version in the header / footer (authenticated compare against the latest release). The version is stamped into the Go binary at build time: the Docker build reads it from the root `package.json` (override with `--build-arg VERSION=…` or `DOCKLIFT_BUILD_VERSION=… docker compose build`), and `make build` does the same.
 
 ### How versions are changed (do not hand-edit)
 
@@ -178,7 +197,7 @@ Versioning is **automatic** via [semantic-release](https://github.com/semantic-r
 Do **not** use `npm version`, `bumpp`, or manual bumps unless you know you are breaking the pipeline.
 
 ```bash
-# Assume current version is 1.3.21 (root + frontend + backend stay in sync)
+# Assume current version is 1.3.21 (root package.json; frontend/package.json follows it)
 
 # 1) Commit with conventional messages on master
 git commit -m "fix(deploy): description"       # → patch  → 1.3.22
@@ -190,7 +209,7 @@ git commit -m "chore: docs *skip release*"      # → none   → stays 1.3.21
 
 # 2) Push — wait for CI + Install (Ubuntu) to go green
 # 3) GitHub → Actions → "Release" → Run workflow
-# semantic-release bumps package.json (root/frontend/backend), CHANGELOG.md, tag + GitHub Release
+# semantic-release bumps package.json (root + frontend), CHANGELOG.md, tag + GitHub Release
 # Release then deploys Docs (changelog on docklift.dev). Do not edit CHANGELOG.md by hand.
 ```
 
@@ -216,7 +235,7 @@ curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/upgrade.sh 
 ```bash
 docker ps -a --filter name=docklift --filter name=dl_
 docker inspect dl_python-smoke_53b01966_app
-docker exec -it docklift-backend sh
+docker exec -it docklift-backend bash
 docker exec -it dl_python-smoke_53b01966_app sh
 ```
 
@@ -231,18 +250,18 @@ Naming:
 docker network inspect docklift_network
 docker network ls --filter label=com.docklift.managed=true
 
-sudo ss -tulpn | grep -E ':(80|443|8080|550[0-9]|8000)\b'
+sudo ss -tulpn | grep -E ':(80|443|8080|550[0-9])\b'
 sudo fuser -k 5500/tcp
 ```
 
 | Port | Use |
 |------|-----|
-| `8080` | Dashboard (gateway nginx) |
-| `80` | Custom domains HTTP + ACME |
+| `8080` | Dashboard + API + terminal (`docklift-backend`, container port 8000) |
+| `80` | Custom domains HTTP + ACME (nginx-proxy) |
 | `443` | Custom domains HTTPS |
 | `5500`–`5600` | Published app ports (opt-in pool) |
-| `8000` | Backend (internal / local dev) |
-| `3600` | Vite frontend (local `bun run dev`) |
+| `8000` | Backend inside the network / local `make dev` |
+| `3600` | Vite dev server (local `make dev`) |
 
 Compose env defaults:
 
@@ -250,6 +269,12 @@ Compose env defaults:
 # PORT_RANGE_START=5500
 # PORT_RANGE_END=5600
 # DASHBOARD_BIND=0.0.0.0
+```
+
+Bind the dashboard to localhost only (then use a panel domain or an SSH tunnel):
+
+```bash
+cd /opt/docklift && DASHBOARD_BIND=127.0.0.1 docker compose up -d backend
 ```
 
 ## 9. Clean / reset
@@ -260,6 +285,9 @@ docker compose down
 
 # Stop + remove containers/network (data dirs on disk remain)
 docker compose down --remove-orphans
+
+# Remove the pre-upgrade image once the new version is confirmed good
+docker rmi docklift-backend:pre-upgrade
 
 # Free stuck app port pool
 for port in {5500..5600}; do sudo fuser -k ${port}/tcp 2>/dev/null; done
@@ -275,27 +303,41 @@ docker volume ls --filter label=com.docklift.project
 
 ## 10. Local development
 
+Requirements: Go (version in `server/go.mod`), Bun (`1.4.5`), bash + make. Docker is needed for deploy features.
+
 ```bash
-cd backend
-cp .env.local.example .env.local
-bun install
-bun run db:generate
-bun run db:push
-bun run dev            # http://localhost:8000
+make dev        # Go API on :8000 + Vite on http://127.0.0.1:3600 (proxies /api and /ws to :8000)
+make build      # dashboard + Go binary with the dashboard embedded → bin/docklift
+make server     # Go binary only (placeholder dashboard; enough for API work)
+make test       # go vet + go test ./... (server), go vet (contract suite)
+make contract   # contract suite against bin/docklift
+make frontend   # bun install --frozen-lockfile, typecheck, vite build, bun audit --prod
+make lint       # gofmt, go vet, bash -n + shellcheck, actionlint, compose config
+make vuln       # govulncheck
+make docker     # docker build -t docklift-backend .
+```
+
+`make dev` keeps local state in `./data`, `./deployments`, `./backups`, and `./nginx-proxy` (gitignored). Docker-dependent tests run when a daemon is available:
+
+```bash
+DOCKLIFT_DOCKER=1 make test contract
+```
+
+Without make:
+
+```bash
+# Backend
+cd server
+go run ./cmd/docklift                 # reads .env / .env.local from the working directory
+go test ./...
 ```
 
 ```bash
+# Frontend (other terminal)
 cd frontend
-bun install
-bun run dev            # http://127.0.0.1:3600
-bun run build          # production → dist/
-```
-
-```bash
-cd backend
-bun run db:studio
-bun run db:push
-bun run db:generate
+bun install --frozen-lockfile
+bun run dev                           # http://127.0.0.1:3600
+bun run build                         # production → dist/ (embedded via server/web/dist)
 ```
 
 ```bash
@@ -303,15 +345,34 @@ curl -s http://127.0.0.1:8000/api/health
 curl -s http://127.0.0.1:3600/api/auth/status   # via Vite proxy
 ```
 
-### Database scripts (from `backend/`)
+The SQLite database (`data/docklift.db`, WAL mode) can be inspected with `sqlite3`. Migrations are embedded in the binary and applied on start; `docklift migrate` applies them without serving.
 
-| Command | Description |
-|---------|-------------|
-| `bun run db:studio` | Prisma Studio GUI |
-| `bun run db:migrate` | Apply checked-in Prisma migrations |
-| `bun run db:ensure` | Production DB bootstrap (dedupe + migrate + repair) |
-| `bun run db:generate` | Regenerate Prisma client |
-| `bun run db:push` | Local-only schema sync (not used on container boot) |
+## 11. Configuration (environment)
+
+Set in `docker-compose.yml`. Values written as `${…}` can be overridden from the shell or a `.env` file next to it.
+
+| Variable | Default (compose) | Meaning |
+|---|---|---|
+| `DASHBOARD_BIND` | `0.0.0.0` | Host address for the dashboard port 8080 |
+| `PORT` | `8000` | Backend listen port inside the container |
+| `DATABASE_URL` | `file:/app/data/docklift.db` | SQLite file (`file:` URL) |
+| `DATA_PATH` | `/app/data` | `.secrets`, bootstrap secret, setup token, restore markers |
+| `DEPLOYMENTS_PATH` | `/deployments` | Project sources and runtime compose files |
+| `BACKUP_PATH` | `/data/backups` | Backup zips |
+| `NGINX_CONF_PATH` | `/nginx-conf` | Generated nginx-proxy confs |
+| `LETSENCRYPT_PATH` | `/etc/letsencrypt` | Certificates (shared with certbot / nginx-proxy) |
+| `DOCKER_NETWORK` | `docklift_network` | Control-plane network |
+| `PORT_RANGE_START` / `PORT_RANGE_END` | `5500` / `5600` | Host port pool for apps |
+| `JWT_SECRET` | empty | Empty = generated and kept in `DATA_PATH/.secrets` |
+| `INTERNAL_API_SECRET` | empty | Unused (the `X-Internal-Secret` header is no longer accepted); still kept in `.secrets` for compatibility |
+| `CORS_ORIGIN` | empty | Extra allowed browser origins (comma-separated) |
+| `TRUSTED_PROXIES` | loopback + nginx-proxy's fixed IPs | Peers whose `X-Forwarded-*` headers are believed (`none` = never) |
+| `DOCKLIFT_FRONTEND_URL` | `http://localhost:8080` | Dashboard URL used for GitHub App redirects |
+| `CERTBOT_EMAIL` / `CERTBOT_STAGING` | empty / `false` | Let's Encrypt account e-mail / staging CA |
+| `CERTBOT_CONTAINER` / `NGINX_PROXY_CONTAINER` | `docklift-certbot` / `docklift-nginx-proxy` | Sidecar container names |
+| `DOCKLIFT_GITHUB_APP_ID`, `DOCKLIFT_GITHUB_CLIENT_ID`, `DOCKLIFT_GITHUB_CLIENT_SECRET`, `DOCKLIFT_GITHUB_PRIVATE_KEY_PATH` | unset | GitHub App (normally configured from the dashboard) |
+| `TERMINAL_ALLOW_NO_ORIGIN` | unset | `true` allows terminal WebSocket clients without an `Origin` header |
+| `DOCKLIFT_BUILD_VERSION` | root `package.json` | Version stamped into the image at build time |
 
 ## Quick cheat sheet
 
@@ -320,12 +381,10 @@ curl -s http://127.0.0.1:3600/api/auth/status   # via Vite proxy
 | Start stack | `docker compose up -d --build` |
 | Upgrade server | `curl -fsSL …/upgrade.sh \| sudo bash` |
 | Backend logs | `docker logs docklift-backend -f` |
-| Frontend logs | `docker logs docklift-frontend -f` |
-| Gateway nginx logs | `docker logs docklift-nginx -f` |
 | Domain proxy logs | `docker logs docklift-nginx-proxy -f` |
 | Reload domain nginx | `docker exec docklift-nginx-proxy nginx -s reload` |
-| Reset password | `docker exec -it docklift-backend node dist/scripts/reset-password.js` |
-| Check version file | `grep version backend/package.json` |
-| Health | `curl -s http://SERVER_IP:8080/api/health` |
+| Reset password | `docker exec -it docklift-backend docklift reset-password` |
+| Check version | `grep '"version"' package.json` / `curl -s localhost:8080/api/health` |
+| Run everything CI runs | `make lint test contract frontend docker` |
 | List apps | `docker ps --filter name=dl_` |
 | Ship a release | green CI + Install → Actions → **Release** |

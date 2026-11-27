@@ -5,132 +5,201 @@ description: Guide for setting up, running, and developing the Docklift project.
 
 # General Development Guide
 
-Docklift is a self-hosted Docker deployment platform. This skill covers local setup and the
-day-to-day workflow; the other skills go deep on individual subsystems.
+Docklift is a self-hosted Docker deployment platform. The backend is a Go module in `server/`;
+the dashboard is a React app in `frontend/` that is embedded into the Go binary. This skill covers
+local setup and the day-to-day workflow; the other skills go deep on individual subsystems.
 
 ## Prerequisites
 
-- **Docker**: installed and running.
-- **Bun**: [Bun](https://bun.sh/) is the package manager and script runner.
+- **Go**: version from `server/go.mod` (1.27, toolchain 1.27.4).
+- **Bun**: 1.4.5 (the version CI and the `Dockerfile` use). Package manager and script runner for `frontend/`.
+- **Docker** (daemon reachable via `DOCKER_HOST` or the default socket): only for Docker-backed features and the Docker-gated tests. API-only work and the contract suite run without it.
+- **bash** and `make`: the `Makefile` uses bash. On Windows use Git Bash.
 
 ## Project Structure
 
 ```
-backend/          Express + Prisma API (TypeScript, ESM)
-  src/routes/     HTTP endpoints
-  src/services/   Docker, git, build, nginx, certs, terminal
-  src/lib/        Config, auth middleware, naming, path/origin security
-  prisma/         schema.prisma + migrations/ (ensureDb migrate deploy on boot)
-frontend/         Vite + React 19 dashboard
-  src/app/        AppShell + router
-  src/components/ shell/, ui/, feature components
-  src/pages/      Route pages, incl. docs/
-nginx.conf        Dashboard gateway config
-nginx-proxy/      Public proxy config, snippets, generated vhosts, certbot state
-data/             SQLite DB + uploads (mounted)
-deployments/      Project sources + .docklift/ generated runtime state (mounted)
-backups/          Backup archives (mounted)
-*.sh              install / install-dev / upgrade / uninstall
+server/                  Go module `docklift` (go.mod)
+  cmd/docklift/          main.go: subcommands serve (default), migrate, reset-password
+  internal/
+    api/<group>/         One package per route group (auth, projects, deployments, databases,
+                         domains, files, github, health, logs, ports, system, terminal, backup)
+    app/                 Deps (shared dependencies) and lifecycle; app/router/router.go is the mount table
+    auth/                JWT, passwords, persisted secrets, bootstrap/setup tokens
+    backup/              Backup and restore archives
+    certs/ nginx/ dnscheck/   Let's Encrypt, nginx vhost generation, DNS checks
+    config/              Every environment variable the server reads (config.go) + .env loading
+    db/                  SQLite open (WAL, writer/reader pools), embedded migrations, ensure/repair
+    deploy/              Build resolver, compose generation, ports, env vars, deploy status
+    dockerx/ execx/      Docker Engine client wrapper + docker CLI runner
+    gitops/ githubapp/   git operations, GitHub App
+    httpx/               Middleware, JSON/body helpers, rate limiter, trusted proxies
+    store/               Hand-written SQL, one file per table
+    terminal/ sysinfo/ maintenance/ pathsec/ safeunzip/ fscopy/ version/ ...
+  web/                   go:embed of the dashboard (web/dist holds a tracked placeholder index.html)
+frontend/                Vite + React 19 dashboard
+  src/app/               AppShell + router
+  src/components/        shell/, ui/, domains/, databases/, project/, feature components
+  src/pages/             Route pages
+  src/lib/               auth, theme, streamProgress, focusTrap, ...
+tests/contract/          Black-box HTTP suite against the real binary (own Go module)
+tests/e2e/               End-to-end suite against a real install (own Go module)
+nginx-proxy/             nginx config, snippets, generated vhosts, certbot state (mounted)
+data/                    SQLite DB + uploads (mounted)
+deployments/             Project sources + .docklift/ generated runtime state (mounted)
+backups/                 Backup archives (mounted)
+scripts/                 smoke.sh and shell-script tests
+website/                 VitePress docs site (https://docklift.dev)
+*.sh                     install / install-dev / upgrade / uninstall
 ```
+
+The old TypeScript backend (`backend/`: Express, Prisma, Bun) no longer exists. Do not recreate
+patterns from it (`lib/*.ts`, `prisma/schema.prisma`, `bun run db:*`).
 
 ## Quick Start (Development)
 
 ```bash
 git clone https://github.com/SSujitX/docklift.git
 cd docklift
+make dev
 ```
 
-**Backend** (terminal 1) — serves `http://localhost:8000`:
+`make dev` starts both processes and stops them together:
+
+- Go API (`go run ./cmd/docklift serve` from `server/`) on `http://localhost:8000`. State goes
+  to `./data`, `./deployments`, `./backups` and `./nginx-proxy` (all gitignored);
+  `DOCKLIFT_FRONTEND_URL` is set to `http://127.0.0.1:3600`.
+- Vite dev server on `http://127.0.0.1:3600`, proxying `/api` and `/ws` to `127.0.0.1:8000`.
+  Open the dashboard on `:3600`.
+
+Or run them by hand in two terminals:
+
 ```bash
-cd backend
-cp .env.local.example .env.local   # gitignored; JWT auto-generates if left empty
-bun install
-bun run db:generate
-bun run db:push
-bun run dev                        # tsx watch
+cd server && go run ./cmd/docklift serve                      # :8000 (PORT changes it)
+cd frontend && bun install --frozen-lockfile && bun run dev   # :3600
 ```
 
-**Frontend** (terminal 2) — serves `http://localhost:3600`:
-```bash
-cd frontend
-bun install
-bun run dev
-```
+The server creates and migrates the SQLite file at startup. JWT and internal secrets are generated
+and persisted under `DATA_PATH/.secrets` when `JWT_SECRET` / `INTERNAL_API_SECRET` are empty. The
+first admin needs the bootstrap secret, stored in `DATA_PATH/.bootstrap-secret` and printed at startup.
 
-### Env file layout
+### Environment
 
-| File | Committed | Purpose |
-|------|-----------|---------|
-| `backend/.env` | yes | Server/production defaults |
-| `backend/.env.local.example` | yes | Template for local overrides |
-| `backend/.env.local` | **no** | Your machine: Vite CORS origin, optional GitHub App creds |
+All variables are read in `server/internal/config/config.go` (single source of truth). At startup
+the server also loads `.env` (never overrides the real environment) and `.env.local` (overrides)
+from its working directory (`config.LoadDotenv`). `frontend/.env` holds the Vite dev `PORT`
+(default 3600); `VITE_API_URL` stays empty so the browser calls the same origin.
 
-Secrets (`JWT_SECRET`, `INTERNAL_API_SECRET`) auto-generate and persist under `data/.secrets` when
-not supplied, so a fresh install needs no manual setup.
-
-Because the Vite dev server runs on `:3600` while the API runs on `:8000`, the dev origin is
-cross-origin and must be allowed via `CORS_ORIGIN` in `.env.local` — the production build is
-same-origin behind `docklift-nginx` and needs nothing.
+Because Vite proxies `/api` and `/ws`, local development needs no `CORS_ORIGIN`. Set it only when
+the dashboard is served from an origin other than the API's.
 
 ## Common Commands
 
-### Backend
-- `bun run dev` — tsx watch on `:8000`
-- `bun run build` — `tsc` → `dist/`
-- `bun run test` — `tsx --test` (build resolver)
-- `bun run db:studio` / `db:push` / `db:generate`
-- `bun run reset-password` — reset the admin password
+Run from the repository root.
 
-### Frontend
-- `bun run dev` — Vite on `:3600`
-- `bun run build` — `tsc -b` + production build into `dist/`
-- `bun run preview` — serve the production build
+| Command | What it does |
+|---------|--------------|
+| `make build` | Dashboard build + Go binary with the dashboard embedded -> `bin/docklift` |
+| `make server` | Go binary with the placeholder dashboard (enough for API work and the contract suite) |
+| `make test` | `go vet` + `go test -count=1 ./...` in `server`, `go vet` in `tests/contract` |
+| `make contract` | Contract suite against the Go binary (`DOCKLIFT_GO_BIN`) |
+| `make frontend` | `bun install --frozen-lockfile`, typecheck, `vite build`, `bun audit --prod` |
+| `make lint` | gofmt, go vet, `bash -n` + shellcheck, actionlint, upgrade-script test, compose config |
+| `make vuln` | govulncheck |
+| `make docker` | `docker build -t docklift-backend .` |
+| `make dev` | API + Vite dev server |
 
-### Docker (full stack)
-- `docker compose up -d --build` — production-like stack on `:8080`
-- `docker compose logs -f` — all services
+Docker-gated tests are skipped by default; run them with a daemon available:
+`DOCKLIFT_DOCKER=1 make test contract`.
+
+Server subcommands (also usable in the container):
+
+```bash
+docklift serve            # default; applies migrations, then listens
+docklift migrate          # apply migrations and exit
+docker exec -it docklift-backend docklift reset-password   # new random password for the first admin
+```
+
+Frontend (from `frontend/`): `bun run dev`, `bun run build` (typecheck + production build into
+`dist/`), `bun run preview`.
+
+Full stack in Docker: `docker compose up -d --build` (dashboard on `:8080`), `docker compose logs -f`.
 
 ### Type-checking from an agent shell (Windows)
-`cd` does not persist between calls and `npx tsc` may not resolve. Use one command with the local binary:
-```powershell
-cd backend; .\node_modules\.bin\tsc --noEmit
-cd frontend; .\node_modules\.bin\tsc -b --noEmit
+
+`cd` does not persist between calls. Use one command per check:
+
+```bash
+cd server && go vet ./...
+cd frontend && bunx tsc -p tsconfig.app.json --noEmit
 ```
 
 ## Architecture Notes
 
-- **UI shell**: every authenticated page renders inside `AppShell` — a collapsible left sidebar
-  (nav, status, user menu), a breadcrumb top bar, and a `Ctrl+K` command palette. There is no
-  global `Header`/`Footer` component any more. See `frontend_development` and `ui_design_system`.
-- **Auth**: JWT in `localStorage`, short-lived separate tokens for SSE. See `authentication`.
+- **One binary**: `docklift serve` serves `/api`, the `/ws/terminal` WebSocket and the embedded
+  dashboard (SPA fallback, `server/web`). There is no separate frontend or dashboard-gateway container.
+- **UI shell**: every authenticated page renders inside `AppShell`: collapsible left sidebar, breadcrumb
+  top bar and a `Ctrl+K` command palette. See `frontend_development` and `ui_design_system`.
+- **Auth**: JWT in `localStorage`, short-lived separate tokens for SSE and terminal. See `authentication`.
 - **Deployments**: the backend clones/unzips source, resolves Dockerfile vs Railpack, builds a tagged
-  image, and writes its **own** compose file under `deployments/.docklift/<projectId>/` — repository
+  image, and writes its **own** compose file under `deployments/.docklift/<projectId>/`; repository
   files are never modified. Apps land on **per-project networks**; host ports are opt-in. See
   `deployment_system`.
-- **Networking**: two nginx containers (dashboard gateway `:8080` default `0.0.0.0`, public proxy
-  `:80`/`:443`) plus a certbot sidecar; proxy attaches to each project network and routes to
+- **Networking**: `docklift-backend` on host `:8080` (default `0.0.0.0`), `docklift-nginx-proxy` on
+  `:80`/`:443`, and a certbot sidecar. The proxy attaches to each project network and routes to
   `container_name:internal_port`. See `networking_proxy`.
-- **Onboarding**: install prints `http://SERVER_IP:8080` + bootstrap setup code; first account cannot
-  be claimed without it. See `authentication`.
+- **Onboarding**: install prints `http://SERVER_IP:8080` + a bootstrap setup code; the first account
+  cannot be claimed without it. See `authentication`.
+
+## Adding a route
+
+1. Put the group in `server/internal/api/<group>/` (a new package, or a new file in an existing one).
+   The package exposes `Mount(r chi.Router, d *app.Deps)`, which registers handlers on a router that
+   is already scoped to `/api/<group>` and already wrapped in the group's auth middleware.
+2. Handlers are methods on a small `handlers` struct holding `d *app.Deps` (see
+   `server/internal/api/ports/ports.go`): `r.Get("/", h.list)`, `r.Delete("/{port}", h.release)`.
+   Read path params with `chi.URLParam`, write responses with `httpx.JSON(w, status, v)` and
+   `httpx.Error(w, status, msg)`, and report unexpected failures with `httpx.InternalError` (logs the
+   cause, returns a generic 500). The request body is already parsed by the group's `body`
+   middleware (`httpx.BodyFrom(r)`).
+3. Data access goes through `d.Store` (add a method in `internal/store`, see below); Docker through
+   `d.Docker` (Engine client) or `d.DockerX`.
+4. Wire the group in `server/internal/app/router/router.go`, inside `apiRouter`:
+   `group("/name", pkg.Mount, session, body)` (`session` is `d.Auth.RequireSession`). Public routes,
+   SSE-token routes and step-up routes follow the guards already defined in that file; read the
+   `security_hardening` skill before adding one.
+5. Add a handler test using `apptest.NewDeps(t)` (`server/internal/app/apptest`), list the route in
+   `tests/contract/ROUTES.md`, and cover it in `tests/contract`.
+
+## Adding a store query
+
+`internal/store` has one file per table (`projects.go`, `ports.go`, ...). Methods hang off `*Store`,
+use `s.reader()` for reads and `s.writer()` for writes, and call the helpers in `store.go`
+(`queryList`, `queryOne`, `execAffected`, `execOne`; `InTx` for transactions). Write plain SQL with
+quoted identifiers and `?` placeholders. Unique violations surface as `ErrConflict`, missing rows as
+`ErrNotFound`. Schema changes need a migration: see `database_management`.
 
 ## Conventions
 
-- Conventional commits (`feat:`, `fix:`, `docs:`…) — releases are derived from them. See `release_process`.
-- Reuse `lib/naming.ts` for any Docker name; never build those strings inline.
+- Run `gofmt` (CI fails on unformatted files in `server` and `tests/contract`) and `go vet`.
+- Conventional commits (`feat:`, `fix:`, `docs:`...). Releases are derived from them. See `release_process`.
+- Build Docker names with the helpers in `server/internal/deploy/naming.go`; never build those strings inline.
 - Reuse `LogViewer` for anything log-shaped rather than writing another console.
 - Read the `security_hardening` checklist before adding an endpoint.
 - **Always keep docs in sync with code.** For any major behavior change (bind defaults, networking,
-  deploy lifecycle, auth/setup, purge/restore, schema, install/upgrade scripts): update in the
-  **same change** —
+  deploy lifecycle, auth/setup, purge/restore, schema, install/upgrade scripts), update in the
+  **same change**:
   1. matching `.agent/skills/*/SKILL.md`
   2. operator docs (`README.md`, `commands.md`)
   3. install/upgrade/uninstall `.sh` scripts when behavior changes
-  4. public docs under `website/guide/` (VitePress → https://docklift.dev)
+  4. public docs under `website/guide/` (VitePress, https://docklift.dev)
   Do not ship code-only updates and leave skills/docs/scripts stale.
 
 ## Troubleshooting
 
 - **"Session validation failed"**: expired/invalid JWT, or the password changed after it was issued.
-- **CORS errors in dev**: the dev origin is not in `CORS_ORIGIN` in `backend/.env.local`.
-- **Prisma type errors after a schema edit**: `bun run db:generate`.
-- **Build errors**: confirm Bun/Node versions and reinstall dependencies.
+- **Dashboard shows a placeholder page**: the binary was built without the dashboard. Use
+  `make build` (or the Docker image), or open the Vite dev server on `:3600`.
+- **Docker features fail locally**: no reachable daemon; set `DOCKER_HOST` or start Docker.
+- **`gofmt needed` in CI**: run `gofmt -l server tests/contract` and `gofmt -w` the listed files.
+- **Migration failure at startup**: see `database_management`.

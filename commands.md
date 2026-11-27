@@ -36,12 +36,12 @@ curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh 
 
 ```bash
 # Fresh install — pin a release (argv; see github.com/SSujitX/docklift/releases)
-curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh | sudo bash -s -- v=2.2.0
+curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh | sudo bash -s -- v=3.0.0
 ```
 
 ```bash
 # Same pin via env
-curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh | sudo DOCKLIFT_VERSION=2.2.0 bash
+curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh | sudo DOCKLIFT_VERSION=3.0.0 bash
 ```
 
 ```bash
@@ -94,7 +94,7 @@ curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/upgrade.sh 
 
 ```bash
 # Upgrade to a specific release
-curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/upgrade.sh | sudo bash -s -- v=2.2.0
+curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/upgrade.sh | sudo bash -s -- v=3.0.0
 ```
 
 What `upgrade.sh` does, in order:
@@ -353,7 +353,7 @@ make dev        # Go API on :8000 + Vite on http://127.0.0.1:3600 (proxies /api 
 make build      # dashboard + Go binary with the dashboard embedded → bin/docklift
 make server     # Go binary only (placeholder dashboard; enough for API work)
 make test       # go vet + go test ./... (server), go vet (contract suite)
-make contract   # contract suite against bin/docklift (DOCKLIFT_TARGET=go)
+make contract   # contract suite against bin/docklift
 make frontend   # bun install --frozen-lockfile, typecheck, vite build, bun audit --prod
 make lint       # gofmt, go vet, bash -n + shellcheck, actionlint, compose config
 make vuln       # govulncheck
@@ -382,7 +382,7 @@ bun run build                         # production → dist/ (embedded via serve
 
 # Contract suite
 cd server && go build -o ../bin/docklift ./cmd/docklift
-cd ../tests/contract && DOCKLIFT_TARGET=go DOCKLIFT_GO_BIN=$(pwd)/../../bin/docklift go test ./...
+cd ../tests/contract && DOCKLIFT_GO_BIN=$(pwd)/../../bin/docklift go test ./...
 ```
 
 Health check while developing:
