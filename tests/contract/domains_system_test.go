@@ -7,9 +7,9 @@ import (
 
 func sslMissing(domain string) Obj {
 	o := Obj{"status": "missing", "domain": domain, "expiresAt": nil, "error": nil, "diagnosticCommand": nil, "certPath": nil}
-	if targetIsGo() {
-		o["expired"], o["renewalOverdue"], o["daysUntilExpiry"] = false, false, nil
-	}
+
+	o["expired"], o["renewalOverdue"], o["daysUntilExpiry"] = false, false, nil
+
 	return o
 }
 
@@ -74,11 +74,11 @@ func TestACMEEmail(t *testing.T) {
 	c.Get(t, "/api/domains/ssl/email").Expect(t, 200, Obj{"email": Str})
 	c.Put(t, "/api/domains/ssl/email", map[string]any{}).ExpectError(t, 400, "Invalid email")
 	c.Put(t, "/api/domains/ssl/email", map[string]any{"email": "not-an-email"}).ExpectError(t, 400, "Invalid email")
-	// A non-string reaches String.prototype methods in TS and leaks the JS TypeError; Go answers clearly.
+	// A non-string reaches String.prototype methods in 2.x and leaks the JS TypeError; Go answers clearly.
 	nonString := "email.includes is not a function"
-	if targetIsGo() {
-		nonString = "Email must be a string"
-	}
+
+	nonString = "Email must be a string"
+
 	c.Put(t, "/api/domains/ssl/email", map[string]any{"email": 12}).ExpectError(t, 400, nonString)
 	c.Put(t, "/api/domains/ssl/email", map[string]any{"email": "  Ops@Contract.Test "}).Expect(t, 200, Obj{"success": true, "email": "ops@contract.test"})
 	c.Get(t, "/api/domains/ssl/email").Expect(t, 200, Obj{"email": "ops@contract.test"})
@@ -158,9 +158,9 @@ func TestSystemDangerousEndpointsRequireStepUp(t *testing.T) {
 			if internal != "" {
 				// Go no longer accepts the internal secret at all (deliberate fix).
 				msg := "Unauthorized"
-				if targetIsGo() {
-					msg = "Authentication required"
-				}
+
+				msg = "Authentication required"
+
 				mainInst.Anon().With("X-Internal-Secret", internal).Post(t, path, map[string]any{"password": admin.Password}).ExpectError(t, 401, msg)
 			}
 			mainInst.Anon().Post(t, path, map[string]any{"password": admin.Password}).ExpectError(t, 401, "Authentication required")
@@ -176,35 +176,27 @@ func TestSystemDangerousEndpointsRequireStepUp(t *testing.T) {
 		switch {
 		case runtime.GOOS == "windows":
 			r.Expect(t, 200, Obj{"message": "Dev Mode: Simulated Service Reset complete."})
-		case targetIsGo():
-			// Deliberate fix 9: TypeScript reported success and the detached
-			// `docker restart` failed silently.
-			r.ExpectError(t, 503, "Docker is not available")
 		default:
-			r.Expect(t, 200, Obj{"message": "Services reset command sent successfully (Restarting in 1s)"})
+			r.ExpectError(t, 503, "Docker is not available")
 		}
 	})
 	t.Run("purge without docker", func(t *testing.T) {
 		// Safe to run: no daemon, so nothing can be removed.
 		requireNoDocker(t)
 		r := c.Post(t, "/api/system/purge", map[string]any{"password": admin.Password})
-		if targetIsGo() {
-			// Deliberate fix 9; the dashboard only shows data.error.
-			r.ExpectError(t, 503, "Docker is not available")
-			return
-		}
-		r.ExpectError(t, 500, "Failed to complete purge operation")
+
+		// Deliberate fix 9; the dashboard only shows data.error.
+		r.ExpectError(t, 503, "Docker is not available")
+		return
 	})
 }
 
 // TestStepUpPasswordThrottle covers the Go-only brute-force limit on
-// step-up passwords (owner-approved security fix; TypeScript allowed
+// step-up passwords (owner-approved security fix; 2.x allowed
 // unlimited guesses to anyone holding a session token): 10 wrong passwords
 // per user and client address in 15 minutes, then 429 with Retry-After.
 func TestStepUpPasswordThrottle(t *testing.T) {
-	if !targetIsGo() {
-		t.Skip("Go-only security fix: the TypeScript backend has no step-up throttle")
-	}
+
 	// Clients behind one proxy address would share (and exhaust) the counter.
 	requireBoot(t)
 	c := admin.Client()

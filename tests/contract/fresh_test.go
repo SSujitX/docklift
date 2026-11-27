@@ -172,19 +172,15 @@ func TestFreshInstallFlow(t *testing.T) {
 				ExpectError(t, 403, "Setup already complete. Use login instead.")
 			c.Get(t, "/api/auth/setup-token", "X-Bootstrap-Secret", secret).
 				ExpectError(t, 403, "Setup already complete. Setup tokens are only available before first user registration.")
-			if targetIsGo() {
-				// Go removes the setup token when the first admin registers
-				// (deliberate fix), so it no longer authorises anything.
-				if _, err := os.Stat(filepath.Join(inst.DataDir, ".setup-token")); !os.IsNotExist(err) {
-					t.Fatalf(".setup-token must be removed after registration (stat err=%v)", err)
-				}
-				c.Post(t, "/api/backup/restore-upload", backupUpload(restoreZip(t, false), "late.zip"), "X-Setup-Token", setupToken).
-					ExpectError(t, 401, "Authentication required")
-			} else {
-				// The setup token file outlives registration, but restore by setup token is refused once an admin exists.
-				c.Post(t, "/api/backup/restore-upload", backupUpload(restoreZip(t, false), "late.zip"), "X-Setup-Token", setupToken).
-					ExpectError(t, 403, "Setup-token restore is only allowed before the first admin exists")
+
+			// Go removes the setup token when the first admin registers
+			// (deliberate fix), so it no longer authorises anything.
+			if _, err := os.Stat(filepath.Join(inst.DataDir, ".setup-token")); !os.IsNotExist(err) {
+				t.Fatalf(".setup-token must be removed after registration (stat err=%v)", err)
 			}
+			c.Post(t, "/api/backup/restore-upload", backupUpload(restoreZip(t, false), "late.zip"), "X-Setup-Token", setupToken).
+				ExpectError(t, 401, "Authentication required")
+
 			// Uploaded files from the aborted restores were kept and marked as restored.
 			ups := sess.Client().Get(t, "/api/backup/uploads").Arr(t)
 			date := time.Now().UTC().Format("2006-01-02")

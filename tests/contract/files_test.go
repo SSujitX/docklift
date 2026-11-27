@@ -8,19 +8,9 @@ import (
 	"testing"
 )
 
-// relPath is how the server spells a project-relative path in the file tree.
-// TS uses path.relative, so a Windows-hosted server answers with backslashes;
-// Go answers with forward slashes on every OS (deliberate fix, the dashboard
-// splits paths on "/").
-func relPath(p string) any {
-	if targetIsGo() {
-		return p
-	}
-	if mainInst.Booted() {
-		return filepath.FromSlash(p)
-	}
-	return Either(p, filepath.FromSlash(p))
-}
+// relPath is how the server spells a project-relative path in the file tree:
+// forward slashes on every OS (the dashboard splits paths on "/").
+func relPath(p string) any { return p }
 
 func contentURL(id, p string) string {
 	return "/api/files/" + id + "/content?path=" + url.QueryEscape(p)
@@ -75,14 +65,12 @@ func TestFilesReadWrite(t *testing.T) {
 	// The editor never creates files.
 	c.Put(t, contentURL(id, "new.txt"), map[string]any{"content": "x"}).ExpectError(t, 404, "File not found")
 	c.Put(t, contentURL(id, "src"), map[string]any{"content": "x"}).ExpectError(t, 500, "Failed to update file")
-	// A missing or non-string content field: TS reaches fs.writeFileSync(undefined)
+	// A missing or non-string content field: 2.x reaches fs.writeFileSync(undefined)
 	// and answers 500; Go rejects it with a 400 (deliberate fix).
 	for _, body := range []map[string]any{{}, {"content": 7}, {"content": nil}} {
-		if targetIsGo() {
-			c.Put(t, contentURL(id, "index.html"), body).ExpectError(t, 400, "File content must be a string")
-		} else {
-			c.Put(t, contentURL(id, "index.html"), body).ExpectError(t, 500, "Failed to update file")
-		}
+
+		c.Put(t, contentURL(id, "index.html"), body).ExpectError(t, 400, "File content must be a string")
+
 	}
 	c.Get(t, contentURL(id, "index.html")).Expect(t, 200, Obj{"name": "index.html", "content": "<h1>contract</h1>\n"})
 }

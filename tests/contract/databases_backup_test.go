@@ -52,12 +52,10 @@ func TestDatabaseValidationWithoutDocker(t *testing.T) {
 		requireNoDocker(t)
 		name := uniq("db")
 		create := c.Post(t, "/api/databases", map[string]any{"name": name, "engine": "postgres"})
-		if targetIsGo() {
-			// Deliberate fix: an unreachable daemon is a 503, not a 500 carrying docker's stderr.
-			create.ExpectError(t, 503, "Docker is not available")
-		} else {
-			create.Expect(t, 500, Obj{"error": NonEmpty})
-		}
+
+		// Deliberate fix: an unreachable daemon is a 503, not a 500 carrying docker's stderr.
+		create.ExpectError(t, 503, "Docker is not available")
+
 		for _, d := range c.Get(t, "/api/databases").Arr(t) {
 			if d.(map[string]any)["name"] == name {
 				t.Fatal("failed database create must be rolled back")
@@ -219,17 +217,13 @@ func TestBackupUploads(t *testing.T) {
 	c.Post(t, "/api/backup/upload", &Multipart{Files: []FilePart{{Field: "backup", Filename: "noext", ContentType: "application/zip", Data: data}}}).
 		Expect(t, 200, Obj{"success": true, "filename": Re(`\.zip$`), "size": len(data), "message": "Backup uploaded successfully"})
 	c.Post(t, "/api/backup/upload", &Multipart{Fields: [][2]string{{"a", "b"}}}).ExpectError(t, 400, "No backup file uploaded")
-	// Multer errors on this route reached the generic error handler in TS;
-	// Go answers 400 with the multer message (deliberate fix 1).
+	// Multer errors on this route reached the generic error handler in 2.x;
+	// Go answers 400 with the multipart message (deliberate fix 1).
 	wrongType := c.Post(t, "/api/backup/upload", &Multipart{Files: []FilePart{{Field: "backup", Filename: "x.txt", ContentType: "text/plain", Data: []byte("x")}}})
 	wrongField := c.Post(t, "/api/backup/upload", &Multipart{Files: []FilePart{{Field: "file", Filename: "x.zip", ContentType: "application/zip", Data: data}}})
-	if targetIsGo() {
-		wrongType.ExpectError(t, 400, "Only ZIP files are allowed")
-		wrongField.ExpectError(t, 400, "Unexpected file field")
-	} else {
-		wrongType.ExpectError(t, 500, "Something went wrong!")
-		wrongField.ExpectError(t, 500, "Something went wrong!")
-	}
+
+	wrongType.ExpectError(t, 400, "Only ZIP files are allowed")
+	wrongField.ExpectError(t, 400, "Unexpected file field")
 
 	c.Delete(t, "/api/backup/uploads/"+name).Expect(t, 200, Obj{"success": true, "message": "File deleted successfully"})
 	c.Delete(t, "/api/backup/uploads/"+name).ExpectError(t, 404, "File not found")

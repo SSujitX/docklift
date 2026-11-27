@@ -19,7 +19,7 @@ import (
 const (
 	contractProxy   = "docklift-contract-nginx-proxy"
 	contractNetwork = "docklift_contract_network"
-	edgeImage       = "nginx:stable-alpine"
+	edgeImage       = "nginx:1.30.8-alpine"
 )
 
 func dockerCmd(args ...string) (string, error) {

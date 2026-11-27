@@ -164,56 +164,31 @@ func TestCORS(t *testing.T) {
 
 func TestUnknownAPIPath(t *testing.T) {
 	c := mainInst.Anon()
-	if targetIsGo() {
-		// Deliberate fix 2: unknown /api paths get a JSON 404.
-		for _, m := range []string{"GET", "POST", "DELETE"} {
-			r := c.Do(t, m, "/api/no-such-thing", nil)
-			r.ExpectError(t, 404, "Not found")
-			if ct := r.Header.Get("Content-Type"); ct != "application/json; charset=utf-8" {
-				t.Fatalf("%s 404 Content-Type = %q", m, ct)
-			}
+
+	// Deliberate fix 2: unknown /api paths get a JSON 404.
+	for _, m := range []string{"GET", "POST", "DELETE"} {
+		r := c.Do(t, m, "/api/no-such-thing", nil)
+		r.ExpectError(t, 404, "Not found")
+		if ct := r.Header.Get("Content-Type"); ct != "application/json; charset=utf-8" {
+			t.Fatalf("%s 404 Content-Type = %q", m, ct)
 		}
-		c.Get(t, "/api/projects/x/y/z").ExpectError(t, 401, "Authentication required")
-		admin.Client().Get(t, "/api/projects/x/y/z").ExpectError(t, 404, "Not found")
-		admin.Client().Do(t, "PUT", "/api/auth/me", map[string]any{}).ExpectError(t, 404, "Not found")
-		return
 	}
-	r := c.Get(t, "/api/no-such-thing")
-	r.ExpectStatus(t, 404)
-	if ct := r.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
-		t.Fatalf("404 Content-Type = %q, want text/html (Express default)", ct)
-	}
-	if !strings.Contains(string(r.Body), "<pre>Cannot GET /api/no-such-thing</pre>") {
-		t.Fatalf("404 body = %q", r.Body)
-	}
-	r = c.Post(t, "/api/no-such-thing", map[string]any{})
-	r.ExpectStatus(t, 404)
-	if !strings.Contains(string(r.Body), "<pre>Cannot POST /api/no-such-thing</pre>") {
-		t.Fatalf("404 body = %q", r.Body)
-	}
-	// Under an authenticated mount the auth middleware answers first.
 	c.Get(t, "/api/projects/x/y/z").ExpectError(t, 401, "Authentication required")
-	r = admin.Client().Get(t, "/api/projects/x/y/z")
-	r.ExpectStatus(t, 404)
-	if !strings.Contains(string(r.Body), "<pre>Cannot GET /api/projects/x/y/z</pre>") {
-		t.Fatalf("404 body = %q", r.Body)
-	}
-	r = admin.Client().Do(t, "PUT", "/api/auth/me", map[string]any{})
-	r.ExpectStatus(t, 404)
+	admin.Client().Get(t, "/api/projects/x/y/z").ExpectError(t, 404, "Not found")
+	admin.Client().Do(t, "PUT", "/api/auth/me", map[string]any{}).ExpectError(t, 404, "Not found")
+	return
 }
 
 // TestRequestBodies covers body parsing. The Go backend answers client
-// mistakes with 4xx (deliberate fix 1); TS sent them to its 500 handler.
+// mistakes with 4xx (deliberate fix 1); 2.x sent them to its 500 handler.
 func TestRequestBodies(t *testing.T) {
 	c := mainInst.Anon()
 	t.Run("malformed JSON", func(t *testing.T) {
 		for _, raw := range []string{`{"email":`, `{} trailing`, `"just a string"`, `null`} {
 			r := c.Post(t, "/api/auth/login", RawBody{"application/json", []byte(raw)})
-			if targetIsGo() {
-				r.ExpectError(t, 400, "Invalid JSON body")
-			} else {
-				r.ExpectError(t, 500, "Something went wrong!")
-			}
+
+			r.ExpectError(t, 400, "Invalid JSON body")
+
 		}
 	})
 	t.Run("urlencoded body is parsed", func(t *testing.T) {
@@ -224,19 +199,14 @@ func TestRequestBodies(t *testing.T) {
 	})
 	t.Run("unparsed content type leaves body undefined", func(t *testing.T) {
 		r := c.Post(t, "/api/auth/login", RawBody{"text/plain", []byte("email=a@b.c&password=x")})
-		if targetIsGo() {
-			// Deliberate fix 3: a missing body is a missing field, not a crash.
-			r.ExpectError(t, 400, "Email and password are required")
-		} else {
-			r.ExpectError(t, 500, "Login failed")
-		}
+
+		// Deliberate fix 3: a missing body is a missing field, not a crash.
+		r.ExpectError(t, 400, "Email and password are required")
+
 	})
 	t.Run("JSON under the 10mb limit is accepted", func(t *testing.T) {
 		big := strings.Repeat("a", 9*1024*1024)
-		if !targetIsGo() {
-			c.Post(t, "/api/auth/login", map[string]any{"email": big + "@x.test", "password": "x"}).ExpectError(t, 401, "Invalid email or password")
-			return
-		}
+
 		// Go parses bodies only after the auth guard: the 10mb limit applies
 		// to authenticated routes, unauthenticated ones (login, register,
 		// GitHub callbacks) accept 64 KB.
@@ -246,21 +216,17 @@ func TestRequestBodies(t *testing.T) {
 		c.Post(t, "/api/auth/login", map[string]any{"email": small + "@x.test", "password": "x"}).ExpectError(t, 401, "Invalid email or password")
 	})
 	t.Run("unauthenticated bodies are not parsed", func(t *testing.T) {
-		// TS parsed (and on errors 500ed) the body before the auth guard.
+		// 2.x parsed (and on errors 500ed) the body before the auth guard.
 		r := c.Post(t, "/api/projects", RawBody{"application/json", []byte(`{"name":`)})
-		if targetIsGo() {
-			r.ExpectError(t, 401, "Authentication required")
-		} else {
-			r.ExpectError(t, 500, "Something went wrong!")
-		}
+
+		r.ExpectError(t, 401, "Authentication required")
+
 	})
 	tooLarge := func(t *testing.T, r *Resp) {
 		t.Helper()
-		if targetIsGo() {
-			r.ExpectError(t, 413, "Request body too large")
-		} else {
-			r.ExpectError(t, 500, "Something went wrong!")
-		}
+
+		r.ExpectError(t, 413, "Request body too large")
+
 	}
 	t.Run("JSON over the 10mb limit", func(t *testing.T) {
 		big := strings.Repeat("a", 11*1024*1024)
@@ -290,16 +256,14 @@ func Test401Shapes(t *testing.T) {
 	c.Get(t, "/api/system/stats?token="+sse).ExpectError(t, 401, "Authentication required")
 }
 
-// TestTrustedProxies covers deliberate fix 11 (Go only: Express ran with
+// TestTrustedProxies covers deliberate fix 11 (Go only: 2.x ran with
 // trust proxy = 1 and believed X-Forwarded-* from every peer). The instance
 // trusts loopback except 127.0.0.1, which stands in for the Docker network
 // gateway a client of the published dashboard port appears as: requests from
 // 127.0.0.1 are "direct" and their forwarded headers must be ignored, while
 // ::1 plays the trusted docklift-nginx-proxy.
 func TestTrustedProxies(t *testing.T) {
-	if !targetIsGo() {
-		t.Skip("the TS backend trusts X-Forwarded-* from every peer (trust proxy = 1)")
-	}
+
 	inst := dedicatedInstance(t, BootOptions{Name: "proxytrust", ExtraEnv: map[string]string{
 		"TRUSTED_PROXIES": "127.0.0.0/8,::1,!127.0.0.1",
 	}})

@@ -10,7 +10,7 @@ import (
 
 func shortID(id string) string { return strings.ReplaceAll(id, "-", "")[:8] }
 
-// containerName mirrors lib/naming.ts serviceContainerName for slug-safe names.
+// containerName mirrors the service container name for slug-safe names.
 func containerName(projectName, projectID, svc string) string {
 	return "dl_" + projectName + "_" + shortID(projectID) + "_" + svc
 }
@@ -227,26 +227,19 @@ func TestStopRestartCancelWithoutRuntime(t *testing.T) {
 	id := p["id"].(string)
 
 	// Deliberate fix 8: Go answers both with the same JSON 400 (the dashboard
-	// shows `error` of any non-OK response); TS sent a 200 text error and a 500.
+	// shows `error` of any non-OK response); 2.x sent a 200 text error and a 500.
 	runtimeMissing := "DockLift runtime configuration is missing. Deploy the project first."
 	t.Run("stop before first deploy", func(t *testing.T) {
 		r := c.Post(t, "/api/deployments/"+id+"/stop", nil)
-		if targetIsGo() {
-			r.ExpectError(t, 400, runtimeMissing)
-		} else {
-			r.ExpectStatus(t, 200)
-			if string(r.Body) != "\n❌ Error: "+runtimeMissing+"\n" {
-				t.Fatalf("stop body = %q", r.Body)
-			}
-		}
+
+		r.ExpectError(t, 400, runtimeMissing)
+
 		c.Get(t, "/api/deployments/"+id).Expect(t, 200, Arr{})
 	})
 	t.Run("restart before first deploy", func(t *testing.T) {
-		if targetIsGo() {
-			c.Post(t, "/api/deployments/"+id+"/restart", nil).ExpectError(t, 400, runtimeMissing)
-		} else {
-			c.Post(t, "/api/deployments/"+id+"/restart", nil).ExpectError(t, 500, "Restart failed")
-		}
+
+		c.Post(t, "/api/deployments/"+id+"/restart", nil).ExpectError(t, 400, runtimeMissing)
+
 		c.Get(t, "/api/deployments/"+id).Expect(t, 200, Arr{})
 	})
 	t.Run("idle cancel", func(t *testing.T) {
@@ -343,11 +336,9 @@ func TestDeployInProgressConflicts(t *testing.T) {
 		}
 		// The lock is released once the deploy ends (the failed deploy wrote
 		// no runtime compose, so Go answers the deliberate-fix-8 400, not a 409).
-		if targetIsGo() {
-			c.Post(t, "/api/deployments/"+id+"/stop", nil).ExpectError(t, 400, "DockLift runtime configuration is missing. Deploy the project first.")
-		} else {
-			c.Post(t, "/api/deployments/"+id+"/stop", nil).ExpectStatus(t, 200)
-		}
+
+		c.Post(t, "/api/deployments/"+id+"/stop", nil).ExpectError(t, 400, "DockLift runtime configuration is missing. Deploy the project first.")
+
 		return
 	}
 	t.Fatalf("never observed every probe inside the deploy window; last: %v", last)
@@ -362,14 +353,14 @@ func TestServiceDomainsAndSSL(t *testing.T) {
 	svc := func(pid, sid, suffix string) string { return "/api/deployments/" + pid + "/services/" + sid + suffix }
 	host := "svc-" + randHex(4) + ".contract-test.dev"
 	missing := Obj{"status": "missing", "domain": Str, "expiresAt": nil, "error": nil, "diagnosticCommand": nil, "certPath": nil}
-	if targetIsGo() {
-		// SSL status responses are certs.Report: the six keys plus the expiry health.
-		missing = missing.merge(Obj{"expired": false, "renewalOverdue": false, "daysUntilExpiry": nil})
-	}
+
+	// SSL status responses are certs.Report: the six keys plus the expiry health.
+	missing = missing.merge(Obj{"expired": false, "renewalOverdue": false, "daysUntilExpiry": nil})
+
 	event := func(msg string) Obj { return Obj{"at": ISOms, "level": "info", "message": msg} }
 	// Without Docker the services never ran, so a domain change only records
 	// the event. With Docker they are deployed: the vhost is written, nginx
-	// reloaded and issuance attempted (as TS awaited updateServiceDomain with
+	// reloaded and issuance attempted (as 2.x awaited updateServiceDomain with
 	// issueSsl), which fails the DNS preflight for these unresolvable names.
 	sslEntry := func(domain string) any {
 		if cfg.docker {
@@ -433,16 +424,12 @@ func TestServiceDomainsAndSSL(t *testing.T) {
 			"a": AnyArr, "aaaa": AnyArr, "serverIp": OrNull(Str), "message": Str}, 1), "serverIp": OrNull(Str)})
 	})
 
-	if targetIsGo() {
-		// Deliberate fix 5: omitting the field leaves the mapping unchanged;
-		// an explicit "" clears it.
-		c.Put(t, svc(id1, sid1, ""), map[string]any{}).Expect(t, 200, Obj{"success": true, "ssl": Obj{host: AnyObj}, "events": AnyArr})
-		match(t, "unchanged domain", serviceRow(Obj{"id": sid1, "domain": host}), findBy(c.Get(t, "/api/deployments/"+id1+"/services").Arr(t), "id", sid1))
-		c.Put(t, svc(id1, sid1, ""), map[string]any{"domain": ""}).Expect(t, 200, Obj{"success": true, "ssl": Obj{}, "events": Arr{}})
-	} else {
-		// Omitting the field clears the mapping (normalizeDomainList(undefined) => []).
-		c.Put(t, svc(id1, sid1, ""), map[string]any{}).Expect(t, 200, Obj{"success": true, "ssl": Obj{}, "events": Arr{}})
-	}
+	// Deliberate fix 5: omitting the field leaves the mapping unchanged;
+	// an explicit "" clears it.
+	c.Put(t, svc(id1, sid1, ""), map[string]any{}).Expect(t, 200, Obj{"success": true, "ssl": Obj{host: AnyObj}, "events": AnyArr})
+	match(t, "unchanged domain", serviceRow(Obj{"id": sid1, "domain": host}), findBy(c.Get(t, "/api/deployments/"+id1+"/services").Arr(t), "id", sid1))
+	c.Put(t, svc(id1, sid1, ""), map[string]any{"domain": ""}).Expect(t, 200, Obj{"success": true, "ssl": Obj{}, "events": Arr{}})
+
 	match(t, "cleared domain", serviceRow(Obj{"id": sid1, "domain": nil}), findBy(c.Get(t, "/api/deployments/"+id1+"/services").Arr(t), "id", sid1))
 	// Now the second service may take it.
 	c.Put(t, svc(id2, sid2, ""), map[string]any{"domain": host}).ExpectStatus(t, 200)
@@ -454,14 +441,11 @@ func TestDeploymentLogsAndStats(t *testing.T) {
 	c := admin.Client()
 	p, svc := deployedProject(t, c, "logs")
 	id := p["id"].(string)
-	if targetIsGo() {
-		// Deliberate fix 9: an unreachable Docker is a 503 (the dashboard treats
-		// any non-OK stats response as "no stats").
-		c.Get(t, "/api/deployments/"+id+"/logs").ExpectError(t, 503, "Docker is not available")
-		c.Get(t, "/api/deployments/"+id+"/stats").ExpectError(t, 503, "Docker is not available")
-	} else {
-		c.Get(t, "/api/deployments/"+id+"/logs").Expect(t, 200, Obj{"logs": Obj{"app": ""}})
-		c.Get(t, "/api/deployments/"+id+"/stats").Expect(t, 200, Obj{"app": nil})
-	}
+
+	// Deliberate fix 9: an unreachable Docker is a 503 (the dashboard treats
+	// any non-OK stats response as "no stats").
+	c.Get(t, "/api/deployments/"+id+"/logs").ExpectError(t, 503, "Docker is not available")
+	c.Get(t, "/api/deployments/"+id+"/stats").ExpectError(t, 503, "Docker is not available")
+
 	_ = svc
 }

@@ -40,7 +40,7 @@ func sortedStrings(v any) []string {
 }
 
 // TestSeeded runs against an instance booted on testdata/seed.db.gz (an
-// existing-install database written by the TS backend's Prisma client). The
+// existing-install database written by Docklift 2.x's Prisma client). The
 // subtests share that state and run in order.
 func TestSeeded(t *testing.T) {
 	inst := seededInstance(t)
@@ -57,12 +57,10 @@ func TestSeeded(t *testing.T) {
 			now := time.Now().Unix()
 			minted := signJWT(knownSecrets.JWT, map[string]any{"userId": seedAdminID, "email": seedAdminEmail, "role": "admin", "pwdv": seedAdminPwdv, "iat": now, "exp": now + 600})
 			inst.As(minted).Get(t, "/api/auth/me").Expect(t, 200, Obj{"user": Obj{"id": seedAdminID, "name": "Seed Admin", "email": seedAdminEmail, "role": "admin", "created_at": "2026-01-01T00:00:00.000Z"}})
-			if targetIsGo() {
-				// The internal secret still loads from .secrets but is not a credential on Go.
-				anon.With("X-Internal-Secret", knownSecrets.Internal).Get(t, "/api/ports").ExpectError(t, 401, "Authentication required")
-			} else {
-				anon.With("X-Internal-Secret", knownSecrets.Internal).Get(t, "/api/ports").ExpectStatus(t, 200)
-			}
+
+			// The internal secret still loads from .secrets but is not a credential on Go.
+			anon.With("X-Internal-Secret", knownSecrets.Internal).Get(t, "/api/ports").ExpectError(t, 401, "Authentication required")
+
 			anon.Get(t, "/api/auth/status").Expect(t, 200, Obj{"setupComplete": true, "userCount": 1, "bootstrapRequired": false})
 		}},
 		{"webhook signature verification", func(t *testing.T) {
@@ -124,14 +122,9 @@ func TestSeeded(t *testing.T) {
 			c.Get(t, "/api/github/repos?owner=contract-org").ExpectError(t, 500, "Failed to fetch repositories")
 			c.Get(t, "/api/github/branches?repo=contract-org/contract-repo&type=private").ExpectError(t, 403, "Access denied: Could not verify GitHub App installation for this repository.")
 
-			// Go appends the cookie's nonce to the install URL (GitHub hands it
-			// back to /setup, which requires it to match the cookie).
-			withState := func(state string) string {
-				if targetIsGo() {
-					return installURL + "?state=" + state
-				}
-				return installURL
-			}
+			// The install URL carries the cookie's nonce (GitHub hands it back to
+			// /setup, which requires it to match the cookie).
+			withState := func(state string) string { return installURL + "?state=" + state }
 			r := c.Post(t, "/api/github/install-session", map[string]any{"returnUrl": "/projects/new"})
 			state, _ := stateFromCookie(t, r)
 			r.Expect(t, 200, Obj{"installUrl": withState(state)})
@@ -288,35 +281,26 @@ func TestSeeded(t *testing.T) {
 			rb(seedGHMain, seedDepOldTagged).ExpectError(t, 404, "Target successful deployment not found")
 			t.Run("missing image", func(t *testing.T) {
 				requireNoDocker(t)
-				if targetIsGo() {
-					// Deliberate fix 9: an unreachable daemon is reported as such,
-					// before a rollback row is created, instead of every image
-					// reading as missing.
-					before := lastDeployment(t, c, seedApp)
-					rb(seedApp, seedDepOldTagged).ExpectError(t, 503, "Docker is not available")
-					if after := lastDeployment(t, c, seedApp); after["id"] != before["id"] {
-						t.Fatalf("a refused rollback must not create a deployment row: %v", after)
-					}
-					rb(seedApp, seedDepOldTagged).ExpectError(t, 503, "Docker is not available")
-					return
+
+				// Deliberate fix 9: an unreachable daemon is reported as such,
+				// before a rollback row is created, instead of every image
+				// reading as missing.
+				before := lastDeployment(t, c, seedApp)
+				rb(seedApp, seedDepOldTagged).ExpectError(t, 503, "Docker is not available")
+				if after := lastDeployment(t, c, seedApp); after["id"] != before["id"] {
+					t.Fatalf("a refused rollback must not create a deployment row: %v", after)
 				}
-				rb(seedApp, seedDepOldTagged).ExpectError(t, 409, "Image missing for app: docklift-5eed0000-app:5eed0000. Redeploy from git instead.")
-				row := lastDeployment(t, c, seedApp)
-				match(t, "rollback row", deploymentRow(Obj{"project_id": seedApp, "status": "failed", "trigger": "rollback", "commit_message": "Rollback: seed deployment 301",
-					"commit_sha": nil, "image_tags": Obj{"app": "docklift-5eed0000-app:5eed0000"}, "logs": "❌ Image missing for app: docklift-5eed0000-app:5eed0000\n", "finished_at": ISOms}), row)
-				// The lock is released: a second attempt gets the same answer, not a conflict.
-				rb(seedApp, seedDepOldTagged).ExpectError(t, 409, "Image missing for app: docklift-5eed0000-app:5eed0000. Redeploy from git instead.")
+				rb(seedApp, seedDepOldTagged).ExpectError(t, 503, "Docker is not available")
+				return
 			})
 		}},
 		{"purge without docker", func(t *testing.T) {
 			requireNoDocker(t)
 			r := c.Post(t, "/api/system/purge", map[string]any{"password": seedAdminPassword})
-			if targetIsGo() {
-				// Deliberate fix 9 (see TestSystemDangerousEndpointsRequireStepUp).
-				r.ExpectError(t, 503, "Docker is not available")
-				return
-			}
-			r.ExpectError(t, 500, "Failed to complete purge operation")
+
+			// Deliberate fix 9 (see TestSystemDangerousEndpointsRequireStepUp).
+			r.ExpectError(t, 503, "Docker is not available")
+			return
 		}},
 		{"project reads resync status from docker", func(t *testing.T) {
 			requireNoDocker(t)

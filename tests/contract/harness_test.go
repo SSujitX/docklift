@@ -20,8 +20,7 @@ import (
 
 // Target selection (see README.md):
 //
-//	DOCKLIFT_TARGET=ts (default)  boot backend/dist with node on a fresh temp dir
-//	DOCKLIFT_TARGET=go            boot the binary in DOCKLIFT_GO_BIN with the same env
+//	DOCKLIFT_GO_BIN=<path>        boot that binary on a fresh temp dir per instance
 //	DOCKLIFT_BASE_URL=http://...  use a running server (DOCKLIFT_DATA_DIR optional)
 const (
 	// Values the harness passes to every booted server. Tests assert behaviour
@@ -32,38 +31,33 @@ const (
 	portRangeEnd      = 5510
 )
 
-// serverEnvKeys are every environment variable the TS backend reads
-// (grep process.env in backend/src). They are stripped from the inherited
-// environment so a developer's shell cannot change server behaviour.
+// serverEnvKeys are the environment variables the server reads that the
+// harness controls. They are stripped from the inherited environment so a
+// developer's shell cannot change server behaviour.
 var serverEnvKeys = []string{
-	"NODE_ENV", "PORT", "DATABASE_URL", "DATA_PATH", "DEPLOYMENTS_PATH", "BACKUP_PATH",
+	"PORT", "DATABASE_URL", "DATA_PATH", "DEPLOYMENTS_PATH", "BACKUP_PATH",
 	"NGINX_CONF_PATH", "LETSENCRYPT_PATH", "DOCKER_HOST", "DOCKER_NETWORK", "JWT_SECRET",
 	"INTERNAL_API_SECRET", "CORS_ORIGIN", "DOCKLIFT_FRONTEND_URL", "DOCKLIFT_GITHUB_APP_ID",
 	"DOCKLIFT_GITHUB_CLIENT_ID", "DOCKLIFT_GITHUB_CLIENT_SECRET", "DOCKLIFT_GITHUB_PRIVATE_KEY_PATH",
 	"PORT_RANGE_START", "PORT_RANGE_END", "CERTBOT_CONTAINER", "CERTBOT_EMAIL", "CERTBOT_STAGING",
 	"NGINX_PROXY_CONTAINER", "TERMINAL_ALLOW_NO_ORIGIN",
-	// Read only by the Go backend (trusted-proxy model); stripped so the
-	// default (loopback trusted) applies unless a test sets it.
+	// Stripped so the default (loopback trusted) applies unless a test sets it.
 	"TRUSTED_PROXIES",
 }
 
 type config struct {
-	target     string // ts | go | remote
-	goBin      string
-	baseURL    string
-	dataDir    string
-	backendDir string
-	docker     bool
-	network    bool
-	keepTmp    bool
+	target  string // go | remote
+	goBin   string
+	baseURL string
+	dataDir string
+	docker  bool
+	network bool
+	keepTmp bool
 }
 
 var (
-	cfg      config
-	runRoot  string
-	tsAppDir string
-	tsOnce   sync.Once
-	tsErr    error
+	cfg     config
+	runRoot string
 
 	instMu       sync.Mutex
 	allInstances []*Instance
@@ -136,48 +130,27 @@ func runMain(m *testing.M) int {
 }
 
 func loadConfig() error {
-	cfg.target = strings.ToLower(strings.TrimSpace(os.Getenv("DOCKLIFT_TARGET")))
-	if cfg.target == "" {
-		cfg.target = "ts"
-	}
+	cfg.target = "go"
 	cfg.baseURL = strings.TrimSpace(os.Getenv("DOCKLIFT_BASE_URL"))
 	cfg.dataDir = strings.TrimSpace(os.Getenv("DOCKLIFT_DATA_DIR"))
-	if cfg.baseURL != "" {
-		cfg.target = "remote"
-	}
 	cfg.goBin = strings.TrimSpace(os.Getenv("DOCKLIFT_GO_BIN"))
 	cfg.docker = os.Getenv("DOCKLIFT_DOCKER") == "1"
 	cfg.network = os.Getenv("DOCKLIFT_NETWORK") == "1"
 	cfg.keepTmp = os.Getenv("DOCKLIFT_KEEP_TMP") == "1"
-	cfg.backendDir = os.Getenv("DOCKLIFT_BACKEND_DIR")
-	if cfg.backendDir == "" {
-		cfg.backendDir = filepath.Join("..", "..", "backend")
+	if cfg.baseURL != "" {
+		cfg.target = "remote"
+		return nil
 	}
-	abs, err := filepath.Abs(cfg.backendDir)
+	if cfg.goBin == "" {
+		return errors.New("set DOCKLIFT_GO_BIN to a built server binary (or DOCKLIFT_BASE_URL to a running server)")
+	}
+	abs, err := filepath.Abs(cfg.goBin)
 	if err != nil {
 		return err
 	}
-	cfg.backendDir = abs
-	switch cfg.target {
-	case "ts":
-		if _, err := os.Stat(filepath.Join(cfg.backendDir, "dist", "index.js")); err != nil {
-			return fmt.Errorf("DOCKLIFT_TARGET=ts needs %s/dist/index.js: %w", cfg.backendDir, err)
-		}
-	case "go":
-		if cfg.goBin == "" {
-			return errors.New("DOCKLIFT_TARGET=go requires DOCKLIFT_GO_BIN")
-		}
-		abs, err := filepath.Abs(cfg.goBin)
-		if err != nil {
-			return err
-		}
-		cfg.goBin = abs
-		if _, err := os.Stat(cfg.goBin); err != nil {
-			return fmt.Errorf("DOCKLIFT_GO_BIN: %w", err)
-		}
-	case "remote":
-	default:
-		return fmt.Errorf("unknown DOCKLIFT_TARGET %q (want ts or go)", cfg.target)
+	cfg.goBin = abs
+	if _, err := os.Stat(cfg.goBin); err != nil {
+		return fmt.Errorf("DOCKLIFT_GO_BIN: %w", err)
 	}
 	return nil
 }
@@ -208,8 +181,7 @@ type BootOptions struct {
 	Name string
 	// Prepare runs after the directories exist and before migrations/boot.
 	Prepare func(d InstanceDirs) error
-	// ExtraEnv overrides harness defaults (keep to a minimum: the suite must
-	// pass the same variables to TS and Go).
+	// ExtraEnv overrides harness defaults (keep to a minimum).
 	ExtraEnv map[string]string
 }
 
@@ -245,7 +217,6 @@ func bootInstance(opts BootOptions) (*Instance, error) {
 	}
 	inst := &Instance{Name: opts.Name, Root: root, Dirs: d, DataDir: d.Data, logPath: filepath.Join(root, "server.log")}
 	inst.Env = map[string]string{
-		"NODE_ENV":                         "production",
 		"DATABASE_URL":                     fileURL(d.DBFile),
 		"DATA_PATH":                        d.Data,
 		"DEPLOYMENTS_PATH":                 d.Deployments,
@@ -282,14 +253,6 @@ func bootInstance(opts BootOptions) (*Instance, error) {
 			return nil, fmt.Errorf("prepare %s: %w", opts.Name, err)
 		}
 	}
-	if cfg.target == "ts" {
-		if err := prepareTSApp(); err != nil {
-			return nil, err
-		}
-		if err := migrateTS(inst); err != nil {
-			return nil, err
-		}
-	}
 	instMu.Lock()
 	allInstances = append(allInstances, inst)
 	instMu.Unlock()
@@ -297,52 +260,6 @@ func bootInstance(opts BootOptions) (*Instance, error) {
 		return nil, err
 	}
 	return inst, nil
-}
-
-// prepareTSApp copies backend/dist + package.json into the run directory and
-// links node_modules. Running from a copy keeps backend/.env and
-// backend/.env.local (loaded with override=true by lib/loadEnv.ts) out of the
-// server, so the TS and Go servers see exactly the same environment.
-func prepareTSApp() error {
-	tsOnce.Do(func() {
-		tsAppDir = filepath.Join(runRoot, "ts-app")
-		if err := copyTree(filepath.Join(cfg.backendDir, "dist"), filepath.Join(tsAppDir, "dist")); err != nil {
-			tsErr = err
-			return
-		}
-		pkg, err := os.ReadFile(filepath.Join(cfg.backendDir, "package.json"))
-		if err != nil {
-			tsErr = err
-			return
-		}
-		if err := os.WriteFile(filepath.Join(tsAppDir, "package.json"), pkg, 0o644); err != nil {
-			tsErr = err
-			return
-		}
-		tsErr = linkDir(filepath.Join(cfg.backendDir, "node_modules"), filepath.Join(tsAppDir, "node_modules"))
-	})
-	return tsErr
-}
-
-func copyTree(src, dst string) error {
-	return filepath.Walk(src, func(p string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		rel, _ := filepath.Rel(src, p)
-		target := filepath.Join(dst, rel)
-		if info.IsDir() {
-			return os.MkdirAll(target, 0o755)
-		}
-		if strings.HasSuffix(p, ".map") || strings.HasSuffix(p, ".d.ts") {
-			return nil
-		}
-		b, err := os.ReadFile(p)
-		if err != nil {
-			return err
-		}
-		return os.WriteFile(target, b, 0o644)
-	})
 }
 
 func linkDir(target, link string) error {
@@ -375,22 +292,6 @@ func baseEnv(extra map[string]string) []string {
 	return env
 }
 
-func migrateTS(inst *Instance) error {
-	var cmd *exec.Cmd
-	if bunx, err := exec.LookPath("bunx"); err == nil {
-		cmd = exec.Command(bunx, "prisma", "migrate", "deploy")
-	} else {
-		cmd = exec.Command("node", filepath.Join(cfg.backendDir, "node_modules", "prisma", "build", "index.js"), "migrate", "deploy")
-	}
-	cmd.Dir = cfg.backendDir
-	cmd.Env = baseEnv(map[string]string{"DATABASE_URL": inst.Env["DATABASE_URL"]})
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("prisma migrate deploy: %v\n%s", err, out)
-	}
-	return nil
-}
-
 // Start launches the server process on a fresh port and waits for /api/health.
 func (i *Instance) Start() error {
 	port, err := freePort()
@@ -400,17 +301,11 @@ func (i *Instance) Start() error {
 	i.Env["PORT"] = fmt.Sprint(port)
 	i.BaseURL = fmt.Sprintf("http://127.0.0.1:%d", port)
 
-	var cmd *exec.Cmd
-	switch cfg.target {
-	case "ts":
-		cmd = exec.Command("node", filepath.Join("dist", "index.js"))
-		cmd.Dir = tsAppDir
-	case "go":
-		cmd = exec.Command(cfg.goBin)
-		cmd.Dir = i.Root
-	default:
+	if cfg.target != "go" {
 		return errors.New("cannot start a remote instance")
 	}
+	cmd := exec.Command(cfg.goBin)
+	cmd.Dir = i.Root
 	cmd.Env = baseEnv(i.Env)
 	lf, err := os.OpenFile(i.logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
@@ -457,7 +352,7 @@ func (i *Instance) waitHealthy(timeout time.Duration) error {
 	return fmt.Errorf("%s not healthy after %s; log:\n%s", i.Name, timeout, i.Log())
 }
 
-// Stop kills the whole process tree (node spawns docker/git children).
+// Stop kills the whole process tree (the server spawns docker/git children).
 func (i *Instance) Stop() {
 	i.mu.Lock()
 	cmd, exited, lf := i.cmd, i.exited, i.logFile
@@ -600,7 +495,7 @@ func seedDBBytes() ([]byte, error) {
 }
 
 // knownSecrets is written to DATA_PATH/.secrets for instances whose tests mint
-// their own JWTs (on-disk format from lib/authMiddleware.ts).
+// their own JWTs (the on-disk format of the secrets file).
 var knownSecrets = struct {
 	JWT      string `json:"jwtSecret"`
 	Internal string `json:"internalApiSecret"`

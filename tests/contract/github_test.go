@@ -132,24 +132,21 @@ func TestGithubManifestAndSetupState(t *testing.T) {
 			expectRedirect(t, anon.Get(t, "/api/github/manifest/callback?state="+evil), fe+"invalid_state")
 			expectRedirect(t, anon.Get(t, "/api/github/manifest/callback", "Cookie", "docklift_github_state="+url.QueryEscape(evil)), fe+"invalid_state")
 		}
-		// TS accepted the state from the query OR the cookie (login-CSRF); Go
+		// 2.x accepted the state from the query OR the cookie (login-CSRF); Go
 		// requires the query state to be present and equal to the cookie.
 		oneSided := fe + "no_code"
-		if targetIsGo() {
-			oneSided = fe + "invalid_state"
-		}
+
+		oneSided = fe + "invalid_state"
+
 		expectRedirect(t, anon.Get(t, "/api/github/manifest/callback?state="+state), oneSided)
 		expectRedirect(t, anon.Get(t, "/api/github/manifest/callback", "Cookie", "other=1; docklift_github_state="+state), oneSided)
 		both := []string{"Cookie", "other=1; docklift_github_state=" + state}
 		expectRedirect(t, anon.Get(t, "/api/github/manifest/callback?state="+state, both...), fe+"no_code")
-		if targetIsGo() {
-			expectRedirect(t, anon.Get(t, "/api/github/manifest/callback?state="+strings.Repeat("0", 48), both...), fe+"invalid_state")
-			expectRedirect(t, anon.Get(t, "/api/github/manifest/callback?state="+state+"&installation_id=42", both...), "/api/github/setup?installation_id=42&state="+state)
-			expectRedirect(t, anon.Get(t, "/api/github/manifest/callback?state="+state+"&installation_id=a%26b", both...), "/api/github/setup?installation_id=a%26b&state="+state)
-		} else {
-			expectRedirect(t, anon.Get(t, "/api/github/manifest/callback?state="+state+"&installation_id=42"), "/api/github/setup?installation_id=42")
-			expectRedirect(t, anon.Get(t, "/api/github/manifest/callback?state="+state+"&installation_id=a%26b"), "/api/github/setup?installation_id=a%26b")
-		}
+
+		expectRedirect(t, anon.Get(t, "/api/github/manifest/callback?state="+strings.Repeat("0", 48), both...), fe+"invalid_state")
+		expectRedirect(t, anon.Get(t, "/api/github/manifest/callback?state="+state+"&installation_id=42", both...), "/api/github/setup?installation_id=42&state="+state)
+		expectRedirect(t, anon.Get(t, "/api/github/manifest/callback?state="+state+"&installation_id=a%26b", both...), "/api/github/setup?installation_id=a%26b&state="+state)
+
 		t.Run("code exchange", func(t *testing.T) {
 			requireNetwork(t)
 			expectRedirect(t, anon.Get(t, "/api/github/manifest/callback?state="+state+"&code=bogus-contract-code", both...), fe+"conversion_failed")
@@ -162,11 +159,11 @@ func TestGithubManifestAndSetupState(t *testing.T) {
 		expectRedirect(t, anon.Get(t, "/api/github/setup?installation_id=12&state=../../.secrets"), fe+"invalid_state")
 		expectRedirect(t, anon.Get(t, "/api/github/setup?installation_id=12", "Cookie", "docklift_github_state=..%2F..%2F.secrets"), fe+"invalid_state")
 		// Valid state, but no App private key: fails closed before calling GitHub.
-		// Go needs the query state AND the matching cookie (TS took either).
+		// Go needs the query state AND the matching cookie (2.x took either).
 		oneSided := fe + "setup_failed"
-		if targetIsGo() {
-			oneSided = fe + "invalid_state"
-		}
+
+		oneSided = fe + "invalid_state"
+
 		expectRedirect(t, anon.Get(t, "/api/github/setup?installation_id=12&state="+state), oneSided)
 		expectRedirect(t, anon.Get(t, "/api/github/setup?installation_id=12", "Cookie", "docklift_github_state="+state), oneSided)
 		expectRedirect(t, anon.Get(t, "/api/github/setup?installation_id=12&state="+state, "Cookie", "docklift_github_state="+state), fe+"setup_failed")
@@ -191,7 +188,7 @@ func TestGithubWebhookWithoutSecret(t *testing.T) {
 	body := map[string]any{"ref": "refs/heads/main", "repository": map[string]any{"clone_url": "https://github.com/a/b.git"}, "head_commit": map[string]any{"id": "abc"}}
 	anon.Post(t, "/api/github/webhook", map[string]any{"zen": "hi"}, "X-GitHub-Event", "ping").Expect(t, 200, Obj{"message": "Ignoring ping event"})
 	anon.Post(t, "/api/github/webhook", map[string]any{}, "X-GitHub-Event", "pull_request").Expect(t, 200, Obj{"message": "Ignoring pull_request event"})
-	// Missing event header: the TS code interpolates undefined.
+	// Missing event header: 2.x interpolates undefined.
 	anon.Post(t, "/api/github/webhook", map[string]any{}).Expect(t, 200, Obj{"message": "Ignoring undefined event"})
 	anon.Post(t, "/api/github/webhook", body, "X-GitHub-Event", "push").ExpectError(t, 401, "Webhook secret not configured")
 	anon.Post(t, "/api/github/webhook", body, "X-GitHub-Event", "push", "X-Hub-Signature-256", "sha256=00").ExpectError(t, 401, "Webhook secret not configured")

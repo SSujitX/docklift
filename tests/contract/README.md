@@ -1,53 +1,28 @@
 # Docklift HTTP contract tests
 
-Black-box tests of the Docklift HTTP + WebSocket API. They define "correct" for the
-Go rewrite: the suite passes against the TypeScript backend (`backend/`) and against the
-Go backend (`server/`). The only expectations that differ by target are the deliberate
-behaviour fixes of the Go port; they branch on `targetIsGo()` (`quirks_test.go`) and keep the
-TypeScript expectation for `DOCKLIFT_TARGET=ts`. Go-only tests (`TestTrustedProxies`,
-`TestStepUpPasswordThrottle`) skip against TypeScript. It is its own Go module
-(`docklift/tests/contract`, standard library + `gorilla/websocket`).
+Black-box tests of the Docklift HTTP + WebSocket API. They boot the real server binary
+(`server/`) on a temporary directory per instance and talk to it over HTTP and WebSocket.
+It is its own Go module (`docklift/tests/contract`, standard library + `gorilla/websocket`).
 
-Every route is listed in [ROUTES.md](ROUTES.md) with its auth rule, TS source line and covering test.
+Every route is listed in [ROUTES.md](ROUTES.md) with its auth rule, handler and covering test.
 
 ## Running
 
-From this directory:
-
-```sh
-go vet ./...
-go test ./...                       # default: DOCKLIFT_TARGET=ts
-go test -run TestFreshInstallFlow -v ./...
-```
-
-### Against the TypeScript backend (default)
-
-Needs `node`, `backend/dist` and `backend/node_modules` (and `bunx` or the Prisma CLI in
-`backend/node_modules`). For every booted instance the harness:
-
-1. creates a temp dir (`data/ deployments/ backups/ nginx/ letsencrypt/`),
-2. runs `bunx prisma migrate deploy` in `backend/` with `DATABASE_URL=file:<tmp>/data/smoke.db`,
-3. starts `node dist/index.js` from a **copy** of `backend/dist` (+ `package.json`, with
-   `node_modules` linked) on a free port, and waits for `GET /api/health`.
-
-Running from a copy matters: `backend/src/lib/loadEnv.ts` loads `backend/.env` and
-`backend/.env.local` with `override: true`, which would silently replace `CORS_ORIGIN`,
-`DOCKLIFT_FRONTEND_URL`, etc. The copy has no `.env` files, so the TS and Go servers
-receive exactly the same environment.
-
-### Against the Go backend
+From the repository root, `make contract` builds the binary and runs the suite. By hand:
 
 ```sh
 bin="$(mktemp -d)/docklift"   # add .exe on Windows
-(cd ../../server && go build -o "$bin" ./cmd/docklift)
-DOCKLIFT_TARGET=go DOCKLIFT_GO_BIN="$bin" go test ./...
+(cd server && go build -o "$bin" ./cmd/docklift)
+cd tests/contract
+go vet ./...
+DOCKLIFT_GO_BIN="$bin" go test -count=1 ./...
+DOCKLIFT_GO_BIN="$bin" go test -run TestFreshInstallFlow -v ./...
 ```
 
-The binary is started with no arguments (default `serve` subcommand), with the same
-environment variables, cwd set to the instance temp dir. No migration step is run by the
-harness — the Go binary must create/migrate the SQLite file itself. Some instances start on
-`testdata/seed.db.gz`, a database written by the TS backend's Prisma client (existing-install
-compatibility).
+The binary is started with no arguments (default `serve` subcommand), with the environment
+listed below, cwd set to the instance temp dir. The harness runs no migration step: the server
+creates and migrates the SQLite file itself. Some instances start on `testdata/seed.db.gz`, a
+database written by the 2.1.6 release (existing-install compatibility).
 
 ### Against a running server
 
@@ -57,15 +32,14 @@ DOCKLIFT_BASE_URL=https://panel.example.com DOCKLIFT_ADMIN_EMAIL=... DOCKLIFT_AD
 
 - A fresh remote server is set up by the suite: provide `DOCKLIFT_BOOTSTRAP_SECRET`, or
   `DOCKLIFT_DATA_DIR` (the server's `DATA_PATH`, readable by the test process).
-- `DOCKLIFT_DATA_DIR` also enables tests that read `.secrets` (internal-secret header — honoured
-  by TS, ignored by Go —, self-signed JWTs).
+- `DOCKLIFT_DATA_DIR` also enables tests that read `.secrets` (internal-secret header, self-signed JWTs).
 - Tests that need a dedicated instance (fresh install, seeded DB, restore, critical seal) and
   allowlist-specific CORS checks are skipped.
 - Every client sends its own `X-Forwarded-For` so rate-limit buckets do not collide. Behind a
   reverse proxy that appends the real IP, all clients share one bucket; the rate-limit tests
   and repeated runs within 15 minutes can then hit 429s. The terminal brute-force counter
   (20 failures / 15 min per socket IP + user) also accumulates across runs on a remote server,
-  and so does the Go step-up password limit (10 failures / 15 min per user + client address;
+  and so does the step-up password limit (10 failures / 15 min per user + client address;
   `TestStepUpPasswordThrottle` needs a booted instance and skips against a remote server).
 
 ## Docker
@@ -79,7 +53,7 @@ touched. Docker-dependent endpoints are still covered for validation, auth and t
   database create, delete) run. When booting with `DOCKLIFT_DOCKER=1` the harness passes the
   caller's `DOCKER_HOST` through instead of the unreachable one. Use this on the Linux test server.
   Deploys attach the edge proxy to each project network and fail without it (as in production), so
-  the harness also runs a stand-in `docklift-contract-nginx-proxy` (`nginx:stable-alpine`, the main
+  the harness also runs a stand-in `docklift-contract-nginx-proxy` (`nginx:1.30.8-alpine`, the main
   instance's conf dir as `conf.d`, the repo's `nginx-proxy/nginx.conf` and snippets) on
   `docklift_contract_network`. After the run it removes the containers (with their anonymous
   volumes), networks, volumes and `docklift-<id8>-*` images of every project the booted instances
@@ -91,23 +65,20 @@ touched. Docker-dependent endpoints are still covered for validation, auth and t
 
 | Variable | Meaning |
 |---|---|
-| `DOCKLIFT_TARGET` | `ts` (default) or `go` |
-| `DOCKLIFT_GO_BIN` | Go server binary (required for `go`) |
+| `DOCKLIFT_GO_BIN` | server binary to boot (required unless `DOCKLIFT_BASE_URL` is set) |
 | `DOCKLIFT_BASE_URL` | use a running server instead of booting |
 | `DOCKLIFT_DATA_DIR` | that server's `DATA_PATH` (optional) |
 | `DOCKLIFT_ADMIN_EMAIL` / `DOCKLIFT_ADMIN_PASSWORD` | admin of an already set-up remote server |
 | `DOCKLIFT_BOOTSTRAP_SECRET` | bootstrap secret of a fresh remote server |
-| `DOCKLIFT_BACKEND_DIR` | TS backend dir (default `../../backend`) |
 | `DOCKLIFT_DOCKER=1` | server has Docker (see above) |
 | `DOCKLIFT_NETWORK=1` | allow server-side internet calls |
 | `DOCKLIFT_KEEP_TMP=1` | keep the temp dir (server logs, data dirs) |
 
 ## Environment passed to booted servers
 
-The inherited environment is stripped of every variable the backend reads, then:
+The inherited environment is stripped of every variable the server reads, then:
 
 ```
-NODE_ENV=production
 PORT=<free port>
 DATABASE_URL=file:<tmp>/<instance>/data/smoke.db
 DATA_PATH=<tmp>/<instance>/data
@@ -134,7 +105,7 @@ NGINX_PROXY_CONTAINER=docklift-contract-nginx-proxy
 TERMINAL_ALLOW_NO_ORIGIN=
 ```
 
-`TRUSTED_PROXIES` (read only by the Go backend) is stripped too, so its default applies:
+`TRUSTED_PROXIES` is stripped too, so its default applies:
 loopback is a trusted proxy and the per-client `X-Forwarded-For` addresses are honoured.
 
 ## Instances
@@ -146,21 +117,16 @@ loopback is a trusted proxy and the per-client `X-Forwarded-For` addresses are h
 | `seeded` | `TestSeeded`, `TestACMEEmailDefaultsToAdmin` | `testdata/seed.db.gz` + known `.secrets`: webhook HMAC with a known secret, configured GitHub App, managed DB links, rollback guards |
 | `critical` | `TestCriticalRestoreGate` | data dir carrying a `.restore-critical` seal |
 | `restore` | `TestAuthenticatedRestore` | a committed restore (server exits, harness restarts it) |
-| `proxytrust` | `TestTrustedProxies` (Go only) | `TRUSTED_PROXIES=127.0.0.0/8,::1,!127.0.0.1`: forwarded headers from 127.0.0.1 are ignored, from `::1` honoured |
+| `proxytrust` | `TestTrustedProxies` | `TRUSTED_PROXIES=127.0.0.0/8,::1,!127.0.0.1`: forwarded headers from 127.0.0.1 are ignored, from `::1` honoured |
 
 Processes are killed as a tree (`taskkill /T /F` on Windows, process group on Unix). On any
 failure every instance's server log is printed at the end of the run.
 
 ## Seed database
 
-`testdata/seed.db.gz` is generated by `testdata/seed/generate.mjs` using the TS backend's own
-migrations and Prisma client (IDs mirrored in `seed_test.go`):
-
-```sh
-node testdata/seed/generate.mjs ../../backend testdata/seed.db.gz
-```
-
-It is gzipped (and not named `*.db`) because the repository `.gitignore` ignores `*.db`.
+`testdata/seed.db.gz` is a database written by the 2.1.6 TypeScript backend's Prisma client
+(IDs mirrored in `seed_test.go`). It is committed as is; the server must keep opening it. It is
+gzipped (and not named `*.db`) because the repository `.gitignore` ignores `*.db`.
 
 ## Conventions
 
@@ -171,5 +137,5 @@ It is gzipped (and not named `*.db`) because the repository `.gitignore` ignores
   output, only the stable prefix is asserted.
 - Test data uses unique names per test (`uniq`), so tests are order-independent and re-runnable;
   the dedicated instances' ordered flows are single tests with ordered subtests.
-- Local HTTPS-intercepting tools (e.g. AdGuard) may rewrite HTML responses; assertions on the
-  Express HTML 404 use `Contains`.
+- Local HTTPS-intercepting tools (e.g. AdGuard) may rewrite HTML responses; assertions on
+  HTML responses use `Contains`.

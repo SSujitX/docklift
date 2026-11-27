@@ -53,17 +53,11 @@ func TestLogin(t *testing.T) {
 	c.Post(t, "/api/auth/login", map[string]any{"email": "", "password": "x"}).ExpectError(t, 400, "Email and password are required")
 	c.Post(t, "/api/auth/login", map[string]any{"email": "nobody@contract.test", "password": "whatever1"}).ExpectError(t, 401, "Invalid email or password")
 	c.Post(t, "/api/auth/login", map[string]any{"email": admin.Email, "password": "wrong-password"}).ExpectError(t, 401, "Invalid email or password")
-	if targetIsGo() {
-		// Deliberate fix 3: wrong-typed fields are a 400, never a 500.
-		c.Post(t, "/api/auth/login", map[string]any{"email": 42, "password": "x"}).ExpectError(t, 400, "Email and password must be strings")
-		c.Post(t, "/api/auth/login", map[string]any{"email": admin.Email, "password": map[string]any{"$ne": ""}}).ExpectError(t, 400, "Email and password must be strings")
-		c.Post(t, "/api/auth/login", map[string]any{"email": []string{admin.Email}, "password": admin.Password}).ExpectError(t, 400, "Email and password must be strings")
-	} else {
-		// Non-string email reaches .toLowerCase() and fails inside the handler;
-		// a non-string password makes bcrypt.compare throw.
-		c.Post(t, "/api/auth/login", map[string]any{"email": 42, "password": "x"}).ExpectError(t, 500, "Login failed")
-		c.Post(t, "/api/auth/login", map[string]any{"email": admin.Email, "password": map[string]any{"$ne": ""}}).ExpectError(t, 500, "Login failed")
-	}
+
+	// Deliberate fix 3: wrong-typed fields are a 400, never a 500.
+	c.Post(t, "/api/auth/login", map[string]any{"email": 42, "password": "x"}).ExpectError(t, 400, "Email and password must be strings")
+	c.Post(t, "/api/auth/login", map[string]any{"email": admin.Email, "password": map[string]any{"$ne": ""}}).ExpectError(t, 400, "Email and password must be strings")
+	c.Post(t, "/api/auth/login", map[string]any{"email": []string{admin.Email}, "password": admin.Password}).ExpectError(t, 400, "Email and password must be strings")
 
 	r := c.Post(t, "/api/auth/login", map[string]any{"email": "CONTRACT-ADMIN@Contract.Test", "password": admin.Password})
 	got := r.Expect(t, 200, Obj{"message": "Login successful", "token": JWT, "user": userObj}).(map[string]any)
@@ -94,8 +88,8 @@ func TestPurposeTokens(t *testing.T) {
 				"userId": admin.UserID, "email": admin.Email, "role": "admin", "purpose": tc.purpose,
 				"pwdv": session["pwdv"], "iat": Int, "exp": Int,
 			}
-			if targetIsGo() && tc.purpose == "terminal" {
-				// Terminal tokens are single-use on Go; a random jti keeps two
+			if tc.purpose == "terminal" {
+				// Terminal tokens are single-use; a random jti keeps two
 				// issued in the same second apart.
 				want["jti"] = NonEmpty
 			}
@@ -134,14 +128,12 @@ func TestRateLimitHeaders(t *testing.T) {
 	// address is not locked out of the dashboard.
 	r = c.Get(t, "/api/auth/me")
 	spent := 2
-	if targetIsGo() {
-		spent = 1
-		if got := r.Header.Get("RateLimit-Limit"); got != "1000" {
-			t.Errorf("/me RateLimit-Limit = %q, want its own limiter", got)
-		}
-	} else if got := r.Header.Get("RateLimit-Remaining"); got != "98" {
-		t.Errorf("after 2 requests RateLimit-Remaining = %q", got)
+
+	spent = 1
+	if got := r.Header.Get("RateLimit-Limit"); got != "1000" {
+		t.Errorf("/me RateLimit-Limit = %q, want its own limiter", got)
 	}
+
 	c.Get(t, "/api/auth/status")
 	r = c.Post(t, "/api/auth/login", map[string]any{})
 	if got, want := r.Header.Get("RateLimit-Remaining"), fmt.Sprint(100-spent-1); got != want {
@@ -211,43 +203,28 @@ func TestAuthRateLimitExhaustion(t *testing.T) {
 	// Authenticated /api/auth routes from that IP are limited too; /status is
 	// not, and on Go neither are the cheap session checks.
 	me := c.With("Authorization", "Bearer "+admin.Token).Get(t, "/api/auth/me")
-	if targetIsGo() {
-		me.ExpectStatus(t, 200)
-		c.With("Authorization", "Bearer "+admin.Token).Post(t, "/api/auth/sse-token", nil).ExpectStatus(t, 200)
-		c.With("Authorization", "Bearer "+admin.Token).Post(t, "/api/auth/change-password", map[string]any{}).
-			ExpectError(t, 429, "Too many attempts, please try again later")
-	} else {
-		me.ExpectError(t, 429, "Too many attempts, please try again later")
-	}
+
+	me.ExpectStatus(t, 200)
+	c.With("Authorization", "Bearer "+admin.Token).Post(t, "/api/auth/sse-token", nil).ExpectStatus(t, 200)
+	c.With("Authorization", "Bearer "+admin.Token).Post(t, "/api/auth/change-password", map[string]any{}).
+		ExpectError(t, 429, "Too many attempts, please try again later")
+
 	c.Get(t, "/api/auth/status").ExpectStatus(t, 200)
 }
 
 func TestInternalSecretHeader(t *testing.T) {
 	_, internal := readSecrets(t, mainInst)
 	c := mainInst.Anon().With("X-Internal-Secret", internal)
-	if targetIsGo() {
-		// Deliberate fix: the X-Internal-Secret full-admin bypass is removed
-		// (the Go backend starts webhook deploys in process); the header is
-		// ignored and the request needs a session like any other.
-		for _, path := range []string{"/api/projects", "/api/ports", "/api/auth/me", "/api/backup/critical-status"} {
-			c.Get(t, path).ExpectError(t, 401, "Authentication required")
-		}
-		c.Post(t, "/api/system/purge", map[string]any{"password": "anything"}).ExpectError(t, 401, "Authentication required")
-		c.Get(t, "/api/system/logs/backend").ExpectError(t, 401, "SSE token required")
-		return
+
+	// Deliberate fix: the X-Internal-Secret full-admin bypass is removed
+	// (the Go backend starts webhook deploys in process); the header is
+	// ignored and the request needs a session like any other.
+	for _, path := range []string{"/api/projects", "/api/ports", "/api/auth/me", "/api/backup/critical-status"} {
+		c.Get(t, path).ExpectError(t, 401, "Authentication required")
 	}
-	c.Get(t, "/api/projects").ExpectStatus(t, 200)
-	c.Get(t, "/api/ports").ExpectStatus(t, 200)
-	// The synthetic internal user has no DB row.
-	c.Get(t, "/api/auth/me").ExpectError(t, 404, "User not found")
-	// Step-up refuses the internal identity even with a password.
-	c.Post(t, "/api/system/purge", map[string]any{"password": "anything"}).ExpectError(t, 401, "Unauthorized")
-	c.Post(t, "/api/system/execute", map[string]any{"command": "echo", "password": "x"}).ExpectError(t, 401, "Authentication required")
-	// Wrong secret falls back to normal Bearer auth.
-	mainInst.Anon().With("X-Internal-Secret", internal+"x").Get(t, "/api/projects").ExpectError(t, 401, "Authentication required")
-	mainInst.Anon().With("X-Internal-Secret", "").Get(t, "/api/projects").ExpectError(t, 401, "Authentication required")
-	// The internal secret is only honoured by the Bearer middleware, not by SSE routes.
+	c.Post(t, "/api/system/purge", map[string]any{"password": "anything"}).ExpectError(t, 401, "Authentication required")
 	c.Get(t, "/api/system/logs/backend").ExpectError(t, 401, "SSE token required")
+	return
 }
 
 func TestSelfSignedTokens(t *testing.T) {
@@ -285,12 +262,9 @@ func TestSelfSignedTokens(t *testing.T) {
 		ExpectError(t, 401, "Token expired")
 	mainInst.Anon().Get(t, "/api/system/logs/nope?token="+base(map[string]any{"purpose": "terminal"})).
 		ExpectError(t, 401, "SSE token required")
-	if targetIsGo() {
-		// The internal identity went with the X-Internal-Secret bypass: a
-		// token for it is checked like any other and has no user row.
-		c(base(map[string]any{"userId": "internal", "pwdv": nil})).Get(t, "/api/projects").ExpectError(t, 401, "User not found")
-	} else {
-		// Internal identity in a signed token skips the password-version check.
-		c(base(map[string]any{"userId": "internal", "pwdv": nil})).Get(t, "/api/projects").ExpectStatus(t, 200)
-	}
+
+	// The internal identity went with the X-Internal-Secret bypass: a
+	// token for it is checked like any other and has no user row.
+	c(base(map[string]any{"userId": "internal", "pwdv": nil})).Get(t, "/api/projects").ExpectError(t, 401, "User not found")
+
 }

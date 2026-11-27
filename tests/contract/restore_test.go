@@ -44,18 +44,16 @@ func TestCriticalRestoreGate(t *testing.T) {
 	// Recovery endpoints stay reachable (still authenticated).
 	anon.Get(t, "/api/backup/critical-status").ExpectError(t, 401, "Authentication required")
 	c.Get(t, "/api/backup/critical-status").Expect(t, 200, Obj{"critical": true, "seal": seal})
-	if targetIsGo() {
-		// The internal-secret bypass is removed on Go (deliberate fix).
-		anon.With("X-Internal-Secret", knownSecrets.Internal).Get(t, "/api/backup/critical-status").ExpectError(t, 401, "Authentication required")
-	} else {
-		anon.With("X-Internal-Secret", knownSecrets.Internal).Get(t, "/api/backup/critical-status").Expect(t, 200, Obj{"critical": true, "seal": seal})
-	}
+
+	// The internal-secret bypass is removed on Go (deliberate fix).
+	anon.With("X-Internal-Secret", knownSecrets.Internal).Get(t, "/api/backup/critical-status").ExpectError(t, 401, "Authentication required")
+
 	c.Post(t, "/api/backup/clear-critical-restore", nil).Expect(t, 403, Obj{"error": "Password confirmation required for this operation", "requirePassword": true})
 	c.Post(t, "/api/backup/clear-critical-restore", map[string]any{"password": "wrong"}).Expect(t, 403, Obj{"error": "Invalid password", "requirePassword": true})
 	internalMsg := "Unauthorized"
-	if targetIsGo() {
-		internalMsg = "Authentication required"
-	}
+
+	internalMsg = "Authentication required"
+
 	anon.With("X-Internal-Secret", knownSecrets.Internal).Post(t, "/api/backup/clear-critical-restore", map[string]any{"password": seedAdminPassword}).ExpectError(t, 401, internalMsg)
 	if _, err := os.Stat(marker); err != nil {
 		t.Fatalf("seal must survive rejected clears: %v", err)
@@ -103,16 +101,16 @@ func TestAuthenticatedRestore(t *testing.T) {
 	if _, ok := s.ReadUntil("RESTORING FROM UPLOADED FILE", 30*time.Second); !ok {
 		t.Fatal("restore stream did not start")
 	}
-	// While the restore runs: API gated, restore routes reach the lock. In TS
+	// While the restore runs: API gated, restore routes reach the lock. In 2.x
 	// the 409 error is the lock owner label (restoreLockReason returns the "why"
 	// string); Go returns a sentence (deliberate fix 7).
 	c.Get(t, "/api/projects").Expect(t, 503, Obj{"error": "Restoring from uploaded backup", "maintenance": true})
 	inst.Anon().Get(t, "/api/auth/status").Expect(t, 503, Obj{"error": "Restoring from uploaded backup", "maintenance": true})
 	inst.Anon().Get(t, "/api/health").ExpectStatus(t, 200)
 	locked := Obj{"error": "restore-from-upload", "locked": true}
-	if targetIsGo() {
-		locked = Obj{"error": "A restore is already in progress. Wait for it to finish before starting another one.", "locked": true}
-	}
+
+	locked = Obj{"error": "A restore is already in progress. Wait for it to finish before starting another one.", "locked": true}
+
 	c.Post(t, "/api/backup/restore-upload", backupUpload(archive, "again.zip", "password", adm.Password)).Expect(t, 409, locked)
 	c.Post(t, "/api/backup/restore/x.zip", map[string]any{"password": adm.Password}).Expect(t, 409, locked)
 
