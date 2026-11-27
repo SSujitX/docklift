@@ -1,5 +1,8 @@
 # Docklift - Ignore List
 
+# Build output (make build / make server)
+/bin/
+
 # Node.js
 node_modules/
 .next/

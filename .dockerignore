@@ -1,0 +1,22 @@
+# Build context for the root Dockerfile: allow-list only what the image needs
+# (frontend sources, Go server sources, root package.json for the version).
+*
+!package.json
+!frontend/
+!server/
+
+# Frontend: installed/built in the image, never copied from the host.
+frontend/node_modules
+frontend/dist
+frontend/.env
+frontend/.env.*
+frontend/**/*.log
+
+# Server: the embedded dashboard is rebuilt in the image; tests are not built.
+server/web/dist
+server/**/*_test.go
+server/**/testdata
+server/**/*.exe
+server/docklift
+server/.env
+server/.env.*
