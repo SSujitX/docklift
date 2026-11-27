@@ -132,13 +132,27 @@ func TestGithubManifestAndSetupState(t *testing.T) {
 			expectRedirect(t, anon.Get(t, "/api/github/manifest/callback?state="+evil), fe+"invalid_state")
 			expectRedirect(t, anon.Get(t, "/api/github/manifest/callback", "Cookie", "docklift_github_state="+url.QueryEscape(evil)), fe+"invalid_state")
 		}
-		expectRedirect(t, anon.Get(t, "/api/github/manifest/callback?state="+state), fe+"no_code")
-		expectRedirect(t, anon.Get(t, "/api/github/manifest/callback", "Cookie", "other=1; docklift_github_state="+state), fe+"no_code")
-		expectRedirect(t, anon.Get(t, "/api/github/manifest/callback?state="+state+"&installation_id=42"), "/api/github/setup?installation_id=42")
-		expectRedirect(t, anon.Get(t, "/api/github/manifest/callback?state="+state+"&installation_id=a%26b"), "/api/github/setup?installation_id=a%26b")
+		// TS accepted the state from the query OR the cookie (login-CSRF); Go
+		// requires the query state to be present and equal to the cookie.
+		oneSided := fe + "no_code"
+		if targetIsGo() {
+			oneSided = fe + "invalid_state"
+		}
+		expectRedirect(t, anon.Get(t, "/api/github/manifest/callback?state="+state), oneSided)
+		expectRedirect(t, anon.Get(t, "/api/github/manifest/callback", "Cookie", "other=1; docklift_github_state="+state), oneSided)
+		both := []string{"Cookie", "other=1; docklift_github_state=" + state}
+		expectRedirect(t, anon.Get(t, "/api/github/manifest/callback?state="+state, both...), fe+"no_code")
+		if targetIsGo() {
+			expectRedirect(t, anon.Get(t, "/api/github/manifest/callback?state="+strings.Repeat("0", 48), both...), fe+"invalid_state")
+			expectRedirect(t, anon.Get(t, "/api/github/manifest/callback?state="+state+"&installation_id=42", both...), "/api/github/setup?installation_id=42&state="+state)
+			expectRedirect(t, anon.Get(t, "/api/github/manifest/callback?state="+state+"&installation_id=a%26b", both...), "/api/github/setup?installation_id=a%26b&state="+state)
+		} else {
+			expectRedirect(t, anon.Get(t, "/api/github/manifest/callback?state="+state+"&installation_id=42"), "/api/github/setup?installation_id=42")
+			expectRedirect(t, anon.Get(t, "/api/github/manifest/callback?state="+state+"&installation_id=a%26b"), "/api/github/setup?installation_id=a%26b")
+		}
 		t.Run("code exchange", func(t *testing.T) {
 			requireNetwork(t)
-			expectRedirect(t, anon.Get(t, "/api/github/manifest/callback?state="+state+"&code=bogus-contract-code"), fe+"conversion_failed")
+			expectRedirect(t, anon.Get(t, "/api/github/manifest/callback?state="+state+"&code=bogus-contract-code", both...), fe+"conversion_failed")
 		})
 	})
 	t.Run("setup (public)", func(t *testing.T) {
@@ -148,8 +162,14 @@ func TestGithubManifestAndSetupState(t *testing.T) {
 		expectRedirect(t, anon.Get(t, "/api/github/setup?installation_id=12&state=../../.secrets"), fe+"invalid_state")
 		expectRedirect(t, anon.Get(t, "/api/github/setup?installation_id=12", "Cookie", "docklift_github_state=..%2F..%2F.secrets"), fe+"invalid_state")
 		// Valid state, but no App private key: fails closed before calling GitHub.
-		expectRedirect(t, anon.Get(t, "/api/github/setup?installation_id=12&state="+state), fe+"setup_failed")
-		expectRedirect(t, anon.Get(t, "/api/github/setup?installation_id=12", "Cookie", "docklift_github_state="+state), fe+"setup_failed")
+		// Go needs the query state AND the matching cookie (TS took either).
+		oneSided := fe + "setup_failed"
+		if targetIsGo() {
+			oneSided = fe + "invalid_state"
+		}
+		expectRedirect(t, anon.Get(t, "/api/github/setup?installation_id=12&state="+state), oneSided)
+		expectRedirect(t, anon.Get(t, "/api/github/setup?installation_id=12", "Cookie", "docklift_github_state="+state), oneSided)
+		expectRedirect(t, anon.Get(t, "/api/github/setup?installation_id=12&state="+state, "Cookie", "docklift_github_state="+state), fe+"setup_failed")
 		c.Get(t, "/api/github/status").Expect(t, 200, Obj{"connected": false, "username": nil, "app_name": nil, "app_slug": nil})
 	})
 	t.Run("legacy callback (public)", func(t *testing.T) {

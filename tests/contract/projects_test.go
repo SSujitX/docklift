@@ -70,6 +70,8 @@ func TestProjectCreateValidation(t *testing.T) {
 			{"non-string domain", map[string]any{"name": "x", "github_url": "https://github.com/a/b", "domain": 5}, 400, domainFormatMsg},
 			{"option-like branch", map[string]any{"name": "x", "github_url": "https://github.com/a/b", "github_branch": "--upload-pack=x"}, 400, "Invalid branch or tag name"},
 			{"non-string description", map[string]any{"name": "x", "github_url": "https://github.com/a/b", "description": 5}, 400, "description must be a string"},
+			// The installation token never travels over plain http.
+			{"plain http github url", map[string]any{"name": "x", "github_url": "http://github.com/a/b"}, 400, githubURLMsg},
 		}...)
 	}
 	for _, tc := range cases {
@@ -159,11 +161,11 @@ func TestProjectReadUpdate(t *testing.T) {
 		got := c.Patch(t, "/api/projects/"+id, map[string]any{
 			"name": "renamed-" + randHex(3), "description": "desc", "domain": "patched.contract-test.dev", "build_type": "railpack",
 			"base_directory": "  src  ", "dockerfile_path": "  docker/Dockerfile ", "internal_port": 99999, "publish_host_port": "yes",
-			"project_type": "worker", "github_url": "not validated on patch",
+			"project_type": "worker", "github_url": "https://github.com/a/patched",
 		}).Expect(t, 200, projectRow(Obj{
 			"id": id, "name": Prefix("renamed-"), "description": "desc", "domain": "patched.contract-test.dev", "build_type": "railpack",
 			"base_directory": "src", "dockerfile_path": "docker/Dockerfile", "internal_port": 65535, "publish_host_port": true,
-			"project_type": "worker", "github_url": "not validated on patch", "created_at": first["created_at"],
+			"project_type": "worker", "github_url": "https://github.com/a/patched", "created_at": first["created_at"],
 		})).(map[string]any)
 		if got["updated_at"].(string) < first["updated_at"].(string) {
 			t.Fatalf("updated_at must advance")
@@ -175,13 +177,18 @@ func TestProjectReadUpdate(t *testing.T) {
 		}).Expect(t, 200, projectRow(Obj{
 			"id": id, "name": got["name"], "project_type": "worker", "description": nil, "domain": nil, "dockerfile_path": nil,
 			"base_directory": ".", "internal_port": 3000, "publish_host_port": false, "build_type": "auto",
-			"github_url": "not validated on patch",
+			"github_url": "https://github.com/a/patched",
 		}))
 		c.Patch(t, "/api/projects/"+id, map[string]any{"internal_port": -5}).Expect(t, 200, projectRow(Obj{
-			"id": id, "name": got["name"], "project_type": "worker", "internal_port": 1, "github_url": "not validated on patch",
+			"id": id, "name": got["name"], "project_type": "worker", "internal_port": 1, "github_url": "https://github.com/a/patched",
 		}))
 		c.Patch(t, "/api/projects/"+id, map[string]any{"domain": "bad_domain"}).ExpectError(t, 400, domainFormatMsg)
 		if targetIsGo() {
+			// Deliberate fix: github_url is validated like on create (TS stored
+			// any string, so a PATCH could aim the next deploy's token elsewhere).
+			for _, bad := range []string{"not validated on patch", "https://evil.test/github.com/a/b", "http://github.com/a/b"} {
+				c.Patch(t, "/api/projects/"+id, map[string]any{"github_url": bad}).ExpectError(t, 400, githubURLMsg)
+			}
 			// Deliberate fixes: a missing project is a 404, a wrong type a 400.
 			c.Patch(t, "/api/projects/"+missingProjectID, map[string]any{"name": "x"}).ExpectError(t, 404, "Project not found")
 			c.Patch(t, "/api/projects/"+id, map[string]any{"description": 5}).ExpectError(t, 400, "description must be a string")
@@ -229,6 +236,17 @@ func TestProjectBuildDetect(t *testing.T) {
 	t.Run("forced railpack ignores Dockerfiles", func(t *testing.T) {
 		detect(t, dockerfileApp(), "build_type", "railpack").Expect(t, 200, Obj{"requestedType": "railpack", "resolvedType": "railpack",
 			"baseDirectory": ".", "dockerfilePath": nil, "detected": "Railpack source (package.json)", "manifests": Arr{"package.json"}})
+	})
+	t.Run("reserved service name", func(t *testing.T) {
+		// Go: a scanned service named like a control-plane container would be
+		// a DNS alias on the project network nginx-proxy joins. TS accepted it.
+		r := detect(t, files("docklift-backend/Dockerfile", "FROM alpine\n"))
+		if targetIsGo() {
+			r.ExpectError(t, 400, `Service name "docklift-backend" (from docklift-backend/Dockerfile) is reserved: names starting with "docklift" belong to Docklift's own containers. Rename the directory that holds the Dockerfile.`)
+			return
+		}
+		r.Expect(t, 200, Obj{"requestedType": "auto", "resolvedType": "dockerfile", "baseDirectory": ".",
+			"dockerfilePath": "docklift-backend/Dockerfile", "detected": "1 repository Dockerfile", "manifests": Arr{}})
 	})
 	t.Run("errors", func(t *testing.T) {
 		detect(t, files("x.txt", "x"), "build_type", "dockerfile", "dockerfile_path", "nope/Dockerfile").ExpectError(t, 400, "Dockerfile not found: nope/Dockerfile")

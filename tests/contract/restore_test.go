@@ -44,10 +44,19 @@ func TestCriticalRestoreGate(t *testing.T) {
 	// Recovery endpoints stay reachable (still authenticated).
 	anon.Get(t, "/api/backup/critical-status").ExpectError(t, 401, "Authentication required")
 	c.Get(t, "/api/backup/critical-status").Expect(t, 200, Obj{"critical": true, "seal": seal})
-	anon.With("X-Internal-Secret", knownSecrets.Internal).Get(t, "/api/backup/critical-status").Expect(t, 200, Obj{"critical": true, "seal": seal})
+	if targetIsGo() {
+		// The internal-secret bypass is removed on Go (deliberate fix).
+		anon.With("X-Internal-Secret", knownSecrets.Internal).Get(t, "/api/backup/critical-status").ExpectError(t, 401, "Authentication required")
+	} else {
+		anon.With("X-Internal-Secret", knownSecrets.Internal).Get(t, "/api/backup/critical-status").Expect(t, 200, Obj{"critical": true, "seal": seal})
+	}
 	c.Post(t, "/api/backup/clear-critical-restore", nil).Expect(t, 403, Obj{"error": "Password confirmation required for this operation", "requirePassword": true})
 	c.Post(t, "/api/backup/clear-critical-restore", map[string]any{"password": "wrong"}).Expect(t, 403, Obj{"error": "Invalid password", "requirePassword": true})
-	anon.With("X-Internal-Secret", knownSecrets.Internal).Post(t, "/api/backup/clear-critical-restore", map[string]any{"password": seedAdminPassword}).ExpectError(t, 401, "Unauthorized")
+	internalMsg := "Unauthorized"
+	if targetIsGo() {
+		internalMsg = "Authentication required"
+	}
+	anon.With("X-Internal-Secret", knownSecrets.Internal).Post(t, "/api/backup/clear-critical-restore", map[string]any{"password": seedAdminPassword}).ExpectError(t, 401, internalMsg)
 	if _, err := os.Stat(marker); err != nil {
 		t.Fatalf("seal must survive rejected clears: %v", err)
 	}

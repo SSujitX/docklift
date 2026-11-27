@@ -184,6 +184,28 @@ func TestTerminalWebSocket(t *testing.T) {
 			c.Close()
 		}
 	})
+	t.Run("terminal token reuse", func(t *testing.T) {
+		time.Sleep(300 * time.Millisecond) // let the sessions above finish closing server-side
+		tok := terminalToken(t)
+		conn, _, err := wsDial(t, mainInst, "/ws/terminal", tok, self)
+		if err != nil {
+			t.Fatal(err)
+		}
+		match(t, "first use", Obj{"type": "auth_required"}, wsRead(t, conn))
+		conn.Close()
+		if targetIsGo() {
+			// Deliberate fix: terminal tokens are single-use on Go.
+			wsExpectStatus(t, mainInst, tok, self, 401)
+			return
+		}
+		time.Sleep(300 * time.Millisecond)
+		again, _, err := wsDial(t, mainInst, "/ws/terminal", tok, self)
+		if err != nil {
+			t.Fatal(err)
+		}
+		match(t, "second use", Obj{"type": "auth_required"}, wsRead(t, again))
+		again.Close()
+	})
 	t.Run("expired terminal token", func(t *testing.T) {
 		secret, _ := readSecrets(t, mainInst)
 		claims := jwtClaims(t, terminalToken(t))

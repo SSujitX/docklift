@@ -90,10 +90,16 @@ func TestPurposeTokens(t *testing.T) {
 		t.Run(tc.purpose, func(t *testing.T) {
 			tok := c.Post(t, tc.path, nil).Expect(t, 200, Obj{"token": JWT}).(map[string]any)["token"].(string)
 			claims := jwtClaims(t, tok)
-			match(t, tc.purpose+" claims", Obj{
+			want := Obj{
 				"userId": admin.UserID, "email": admin.Email, "role": "admin", "purpose": tc.purpose,
 				"pwdv": session["pwdv"], "iat": Int, "exp": Int,
-			}, claims)
+			}
+			if targetIsGo() && tc.purpose == "terminal" {
+				// Terminal tokens are single-use on Go; a random jti keeps two
+				// issued in the same second apart.
+				want["jti"] = NonEmpty
+			}
+			match(t, tc.purpose+" claims", want, claims)
 			if ttl := claims["exp"].(float64) - claims["iat"].(float64); ttl != 300 {
 				t.Fatalf("%s token ttl = %v, want 300s", tc.purpose, ttl)
 			}
@@ -122,15 +128,24 @@ func TestRateLimitHeaders(t *testing.T) {
 	if err != nil || reset < 890 || reset > 900 {
 		t.Errorf("RateLimit-Reset = %q", r.Header.Get("RateLimit-Reset"))
 	}
-	// Every /api/auth route (except /status) shares the 100/15min budget per client IP.
+	// Every /api/auth route (except /status) shares the 100/15min budget per
+	// client IP. Go exempts the cheap session checks (/me, /sse-token,
+	// /terminal-token): they get their own 1000/15min budget, so a shared
+	// address is not locked out of the dashboard.
 	r = c.Get(t, "/api/auth/me")
-	if got := r.Header.Get("RateLimit-Remaining"); got != "98" {
+	spent := 2
+	if targetIsGo() {
+		spent = 1
+		if got := r.Header.Get("RateLimit-Limit"); got != "1000" {
+			t.Errorf("/me RateLimit-Limit = %q, want its own limiter", got)
+		}
+	} else if got := r.Header.Get("RateLimit-Remaining"); got != "98" {
 		t.Errorf("after 2 requests RateLimit-Remaining = %q", got)
 	}
 	c.Get(t, "/api/auth/status")
 	r = c.Post(t, "/api/auth/login", map[string]any{})
-	if got := r.Header.Get("RateLimit-Remaining"); got != "97" {
-		t.Errorf("/status must not count: RateLimit-Remaining = %q", got)
+	if got, want := r.Header.Get("RateLimit-Remaining"), fmt.Sprint(100-spent-1); got != want {
+		t.Errorf("/status must not count: RateLimit-Remaining = %q, want %q", got, want)
 	}
 	// A different client IP has its own bucket.
 	if got := mainInst.Anon().Post(t, "/api/auth/login", map[string]any{}).Header.Get("RateLimit-Remaining"); got != "99" {
@@ -193,14 +208,34 @@ func TestAuthRateLimitExhaustion(t *testing.T) {
 	if got := r.Header.Get("RateLimit-Remaining"); got != "0" {
 		t.Errorf("RateLimit-Remaining = %q", got)
 	}
-	// Authenticated /api/auth routes from that IP are limited too; /status is not.
-	c.With("Authorization", "Bearer "+admin.Token).Get(t, "/api/auth/me").ExpectError(t, 429, "Too many attempts, please try again later")
+	// Authenticated /api/auth routes from that IP are limited too; /status is
+	// not, and on Go neither are the cheap session checks.
+	me := c.With("Authorization", "Bearer "+admin.Token).Get(t, "/api/auth/me")
+	if targetIsGo() {
+		me.ExpectStatus(t, 200)
+		c.With("Authorization", "Bearer "+admin.Token).Post(t, "/api/auth/sse-token", nil).ExpectStatus(t, 200)
+		c.With("Authorization", "Bearer "+admin.Token).Post(t, "/api/auth/change-password", map[string]any{}).
+			ExpectError(t, 429, "Too many attempts, please try again later")
+	} else {
+		me.ExpectError(t, 429, "Too many attempts, please try again later")
+	}
 	c.Get(t, "/api/auth/status").ExpectStatus(t, 200)
 }
 
 func TestInternalSecretHeader(t *testing.T) {
 	_, internal := readSecrets(t, mainInst)
 	c := mainInst.Anon().With("X-Internal-Secret", internal)
+	if targetIsGo() {
+		// Deliberate fix: the X-Internal-Secret full-admin bypass is removed
+		// (the Go backend starts webhook deploys in process); the header is
+		// ignored and the request needs a session like any other.
+		for _, path := range []string{"/api/projects", "/api/ports", "/api/auth/me", "/api/backup/critical-status"} {
+			c.Get(t, path).ExpectError(t, 401, "Authentication required")
+		}
+		c.Post(t, "/api/system/purge", map[string]any{"password": "anything"}).ExpectError(t, 401, "Authentication required")
+		c.Get(t, "/api/system/logs/backend").ExpectError(t, 401, "SSE token required")
+		return
+	}
 	c.Get(t, "/api/projects").ExpectStatus(t, 200)
 	c.Get(t, "/api/ports").ExpectStatus(t, 200)
 	// The synthetic internal user has no DB row.
@@ -243,13 +278,19 @@ func TestSelfSignedTokens(t *testing.T) {
 	c(base(map[string]any{"purpose": "other"})).Get(t, "/api/projects").ExpectStatus(t, 200)
 	// SSE routes accept only purpose=sse.
 	c(base(nil)).Get(t, "/api/system/logs/nope?token="+base(map[string]any{"purpose": "sse"})).
-		ExpectError(t, 400, "Invalid service name. Available: backend, frontend, proxy, nginx, certbot")
+		ExpectError(t, 400, invalidLogService())
 	mainInst.Anon().Get(t, "/api/system/logs/nope?token="+base(map[string]any{"purpose": "sse", "pwdv": 2})).
 		ExpectError(t, 401, "Session expired. Please log in again.")
 	mainInst.Anon().Get(t, "/api/system/logs/nope?token="+base(map[string]any{"purpose": "sse", "iat": now - 7200, "exp": now - 3600})).
 		ExpectError(t, 401, "Token expired")
 	mainInst.Anon().Get(t, "/api/system/logs/nope?token="+base(map[string]any{"purpose": "terminal"})).
 		ExpectError(t, 401, "SSE token required")
-	// Internal identity in a signed token skips the password-version check.
-	c(base(map[string]any{"userId": "internal", "pwdv": nil})).Get(t, "/api/projects").ExpectStatus(t, 200)
+	if targetIsGo() {
+		// The internal identity went with the X-Internal-Secret bypass: a
+		// token for it is checked like any other and has no user row.
+		c(base(map[string]any{"userId": "internal", "pwdv": nil})).Get(t, "/api/projects").ExpectError(t, 401, "User not found")
+	} else {
+		// Internal identity in a signed token skips the password-version check.
+		c(base(map[string]any{"userId": "internal", "pwdv": nil})).Get(t, "/api/projects").ExpectStatus(t, 200)
+	}
 }

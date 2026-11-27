@@ -1,6 +1,7 @@
 package contract
 
 import (
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -39,8 +40,14 @@ func TestDeploymentHistory(t *testing.T) {
 	if len(all) != 3 {
 		t.Fatalf("want 3 deployments (idle cancel adds no row), got %d", len(all))
 	}
+	// Without Docker every deploy fails (no image); with Docker they succeed
+	// and record the built image.
+	var imageTags any
+	if cfg.docker {
+		imageTags = Obj{"app": Prefix("docklift-" + id[:8] + "-app:")}
+	}
 	for i, d := range all {
-		match(t, "deployment row", deploymentRow(Obj{"project_id": id, "image_tags": nil, "commit_sha": nil}), d)
+		match(t, "deployment row", deploymentRow(Obj{"project_id": id, "image_tags": imageTags, "commit_sha": nil}), d)
 		if i > 0 && all[i-1].(map[string]any)["created_at"].(string) < d.(map[string]any)["created_at"].(string) {
 			t.Fatalf("deployments must be newest first")
 		}
@@ -65,8 +72,11 @@ func TestDeploymentHistory(t *testing.T) {
 	if meta["items"].([]any)[0].(map[string]any)["id"] != firstID {
 		t.Fatalf("meta items[0] is not the newest deployment")
 	}
-	c.Get(t, "/api/deployments/"+id+"?meta=1&status=success").Expect(t, 200, Obj{"items": Arr{}, "total": 0})
-	if !cfg.docker {
+	if cfg.docker {
+		c.Get(t, "/api/deployments/"+id+"?meta=1&status=failed").Expect(t, 200, Obj{"items": Arr{}, "total": 0})
+		c.Get(t, "/api/deployments/"+id+"?meta=1&status=%20success%20").Expect(t, 200, Obj{"items": ArrayOf(AnyObj, 3), "total": 3})
+	} else {
+		c.Get(t, "/api/deployments/"+id+"?meta=1&status=success").Expect(t, 200, Obj{"items": Arr{}, "total": 0})
 		c.Get(t, "/api/deployments/"+id+"?meta=1&status=%20failed%20").Expect(t, 200, Obj{"items": ArrayOf(AnyObj, 3), "total": 3})
 	}
 	c.Get(t, "/api/deployments/"+id+"?meta=0").Expect(t, 200, ArrayOf(AnyObj, 3))
@@ -357,6 +367,31 @@ func TestServiceDomainsAndSSL(t *testing.T) {
 		missing = missing.merge(Obj{"expired": false, "renewalOverdue": false, "daysUntilExpiry": nil})
 	}
 	event := func(msg string) Obj { return Obj{"at": ISOms, "level": "info", "message": msg} }
+	// Without Docker the services never ran, so a domain change only records
+	// the event. With Docker they are deployed: the vhost is written, nginx
+	// reloaded and issuance attempted (as TS awaited updateServiceDomain with
+	// issueSsl), which fails the DNS preflight for these unresolvable names.
+	sslEntry := func(domain string) any {
+		if cfg.docker {
+			return missing.merge(Obj{"domain": domain, "status": Either("missing", "failed"), "error": OrNull(Str), "diagnosticCommand": OrNull(Str)})
+		}
+		return missing.merge(Obj{"domain": domain})
+	}
+	events := func(first Obj) any {
+		if !cfg.docker {
+			return Arr{first}
+		}
+		return mf("events starting with "+short(first), func(v any) error {
+			arr, ok := v.([]any)
+			if !ok || len(arr) == 0 {
+				return fmt.Errorf("want a non-empty event array, got %s", short(v))
+			}
+			if diffs := compare("$[0]", first, arr[0]); len(diffs) > 0 {
+				return fmt.Errorf("%s", strings.Join(diffs, "; "))
+			}
+			return nil
+		})
+	}
 
 	c.Get(t, svc(id1, sid1, "/ssl")).Expect(t, 200, Obj{"ssl": Obj{}, "events": Arr{}})
 	c.Get(t, svc(id2, sid1, "/ssl")).ExpectError(t, 404, "Service not found")
@@ -372,20 +407,20 @@ func TestServiceDomainsAndSSL(t *testing.T) {
 	upper := strings.ToUpper(host[:1]) + host[1:]
 	ssl := c.Put(t, svc(id1, sid1, ""), map[string]any{"domain": upper + ", " + host + ",www." + host}).Expect(t, 200, Obj{
 		"success": true,
-		"ssl":     Obj{host: missing.merge(Obj{"domain": host}), "www." + host: missing.merge(Obj{"domain": "www." + host})},
-		"events":  Arr{event("Domain added: " + host + ", www." + host)},
+		"ssl":     Obj{host: sslEntry(host), "www." + host: sslEntry("www." + host)},
+		"events":  events(event("Domain added: " + host + ", www." + host)),
 	})
 	_ = ssl
 	match(t, "service domain", serviceRow(Obj{"id": sid1, "domain": host + ", www." + host}), findBy(c.Get(t, "/api/deployments/"+id1+"/services").Arr(t), "id", sid1))
-	c.Get(t, svc(id1, sid1, "/ssl")).Expect(t, 200, Obj{"ssl": AnyObj, "events": Arr{event("Domain added: " + host + ", www." + host)}})
+	c.Get(t, svc(id1, sid1, "/ssl")).Expect(t, 200, Obj{"ssl": AnyObj, "events": events(event("Domain added: " + host + ", www." + host))})
 
 	// Hostnames are owned by one service.
 	c.Put(t, svc(id2, sid2, ""), map[string]any{"domain": "WWW." + host}).ExpectError(t, 409, `Hostname "www.`+host+`" is already assigned to another service`)
 	// Re-saving your own hostname is fine.
-	c.Put(t, svc(id1, sid1, ""), map[string]any{"domain": host}).Expect(t, 200, Obj{"success": true, "ssl": Obj{host: AnyObj}, "events": Arr{event("Domain added: " + host + ", www." + host)}})
+	c.Put(t, svc(id1, sid1, ""), map[string]any{"domain": host}).Expect(t, 200, Obj{"success": true, "ssl": Obj{host: AnyObj}, "events": events(event("Domain added: " + host + ", www." + host))})
 
-	c.Post(t, svc(id1, sid1, "/ssl/retry"), nil).Expect(t, 200, Obj{"success": true, "ssl": Obj{host: missing.merge(Obj{"domain": host})},
-		"events": Arr{event("Manual SSL retry requested.")}})
+	c.Post(t, svc(id1, sid1, "/ssl/retry"), nil).Expect(t, 200, Obj{"success": true, "ssl": Obj{host: sslEntry(host)},
+		"events": events(event("Manual SSL retry requested."))})
 
 	t.Run("dns-check input filtering", func(t *testing.T) {
 		c.Post(t, svc(id1, sid1, "/dns-check"), map[string]any{"domains": []any{"not a domain", "a,b.test", 7, ""}}).

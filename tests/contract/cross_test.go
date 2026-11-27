@@ -233,7 +233,26 @@ func TestRequestBodies(t *testing.T) {
 	})
 	t.Run("JSON under the 10mb limit is accepted", func(t *testing.T) {
 		big := strings.Repeat("a", 9*1024*1024)
-		c.Post(t, "/api/auth/login", map[string]any{"email": big + "@x.test", "password": "x"}).ExpectError(t, 401, "Invalid email or password")
+		if !targetIsGo() {
+			c.Post(t, "/api/auth/login", map[string]any{"email": big + "@x.test", "password": "x"}).ExpectError(t, 401, "Invalid email or password")
+			return
+		}
+		// Go parses bodies only after the auth guard: the 10mb limit applies
+		// to authenticated routes, unauthenticated ones (login, register,
+		// GitHub callbacks) accept 64 KB.
+		admin.Client().Patch(t, "/api/projects/"+missingProjectID, map[string]any{"name": big}).ExpectError(t, 404, "Project not found")
+		c.Post(t, "/api/auth/login", map[string]any{"email": big + "@x.test", "password": "x"}).ExpectError(t, 413, "Request body too large")
+		small := strings.Repeat("a", 60*1024)
+		c.Post(t, "/api/auth/login", map[string]any{"email": small + "@x.test", "password": "x"}).ExpectError(t, 401, "Invalid email or password")
+	})
+	t.Run("unauthenticated bodies are not parsed", func(t *testing.T) {
+		// TS parsed (and on errors 500ed) the body before the auth guard.
+		r := c.Post(t, "/api/projects", RawBody{"application/json", []byte(`{"name":`)})
+		if targetIsGo() {
+			r.ExpectError(t, 401, "Authentication required")
+		} else {
+			r.ExpectError(t, 500, "Something went wrong!")
+		}
 	})
 	tooLarge := func(t *testing.T, r *Resp) {
 		t.Helper()

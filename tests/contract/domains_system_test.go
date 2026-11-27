@@ -122,12 +122,12 @@ func TestSystemLogStreams(t *testing.T) {
 	c.Get(t, "/api/system/logs/backend").ExpectError(t, 401, "SSE token required")
 	anon.Get(t, "/api/system/logs/backend?token="+admin.Token).ExpectError(t, 401, "SSE token required")
 	anon.Get(t, "/api/system/logs/backend?token=x.y.z").ExpectError(t, 401, "Invalid token")
-	anon.Get(t, "/api/system/logs/database?token="+sse).ExpectError(t, 400, "Invalid service name. Available: backend, frontend, proxy, nginx, certbot")
+	anon.Get(t, "/api/system/logs/database?token="+sse).ExpectError(t, 400, invalidLogService())
 	// Only GET /logs/* takes the SSE path; other methods use Bearer auth.
 	anon.Post(t, "/api/system/logs/backend?token="+sse, nil).ExpectError(t, 401, "Authentication required")
 	t.Run("stream without docker", func(t *testing.T) {
 		requireNoDocker(t)
-		for _, svc := range []string{"backend", "frontend", "proxy", "nginx", "certbot"} {
+		for _, svc := range logServices() {
 			r := anon.Get(t, "/api/system/logs/"+svc+"?token="+sse+"&tail=10")
 			r.ExpectStatus(t, 200)
 			assertSSEHeaders(t, r)
@@ -156,7 +156,12 @@ func TestSystemDangerousEndpointsRequireStepUp(t *testing.T) {
 			c.Post(t, path, map[string]any{"password": true}).Expect(t, 403, Obj{"error": "Password confirmation required for this operation", "requirePassword": true})
 			c.Post(t, path, map[string]any{"password": "wrong-password"}).Expect(t, 403, Obj{"error": "Invalid password", "requirePassword": true})
 			if internal != "" {
-				mainInst.Anon().With("X-Internal-Secret", internal).Post(t, path, map[string]any{"password": admin.Password}).ExpectError(t, 401, "Unauthorized")
+				// Go no longer accepts the internal secret at all (deliberate fix).
+				msg := "Unauthorized"
+				if targetIsGo() {
+					msg = "Authentication required"
+				}
+				mainInst.Anon().With("X-Internal-Secret", internal).Post(t, path, map[string]any{"password": admin.Password}).ExpectError(t, 401, msg)
 			}
 			mainInst.Anon().Post(t, path, map[string]any{"password": admin.Password}).ExpectError(t, 401, "Authentication required")
 			sse := c.Post(t, "/api/auth/sse-token", nil).Obj(t)["token"].(string)

@@ -57,7 +57,12 @@ func TestSeeded(t *testing.T) {
 			now := time.Now().Unix()
 			minted := signJWT(knownSecrets.JWT, map[string]any{"userId": seedAdminID, "email": seedAdminEmail, "role": "admin", "pwdv": seedAdminPwdv, "iat": now, "exp": now + 600})
 			inst.As(minted).Get(t, "/api/auth/me").Expect(t, 200, Obj{"user": Obj{"id": seedAdminID, "name": "Seed Admin", "email": seedAdminEmail, "role": "admin", "created_at": "2026-01-01T00:00:00.000Z"}})
-			anon.With("X-Internal-Secret", knownSecrets.Internal).Get(t, "/api/ports").ExpectStatus(t, 200)
+			if targetIsGo() {
+				// The internal secret still loads from .secrets but is not a credential on Go.
+				anon.With("X-Internal-Secret", knownSecrets.Internal).Get(t, "/api/ports").ExpectError(t, 401, "Authentication required")
+			} else {
+				anon.With("X-Internal-Secret", knownSecrets.Internal).Get(t, "/api/ports").ExpectStatus(t, 200)
+			}
 			anon.Get(t, "/api/auth/status").Expect(t, 200, Obj{"setupComplete": true, "userCount": 1, "bootstrapRequired": false})
 		}},
 		{"webhook signature verification", func(t *testing.T) {
@@ -119,17 +124,26 @@ func TestSeeded(t *testing.T) {
 			c.Get(t, "/api/github/repos?owner=contract-org").ExpectError(t, 500, "Failed to fetch repositories")
 			c.Get(t, "/api/github/branches?repo=contract-org/contract-repo&type=private").ExpectError(t, 403, "Access denied: Could not verify GitHub App installation for this repository.")
 
+			// Go appends the cookie's nonce to the install URL (GitHub hands it
+			// back to /setup, which requires it to match the cookie).
+			withState := func(state string) string {
+				if targetIsGo() {
+					return installURL + "?state=" + state
+				}
+				return installURL
+			}
 			r := c.Post(t, "/api/github/install-session", map[string]any{"returnUrl": "/projects/new"})
-			r.Expect(t, 200, Obj{"installUrl": installURL})
 			state, _ := stateFromCookie(t, r)
+			r.Expect(t, 200, Obj{"installUrl": withState(state)})
 			r = c.Post(t, "/api/github/install-session", map[string]any{"return_url": "javascript:alert(1)"})
-			r.Expect(t, 200, Obj{"installUrl": installURL})
+			s2, _ := stateFromCookie(t, r)
+			r.Expect(t, 200, Obj{"installUrl": withState(s2)})
 			r = c.Get(t, "/api/github/install?return_url=/x")
-			expectRedirect(t, r, installURL)
-			stateFromCookie(t, r)
+			s3, _ := stateFromCookie(t, r)
+			expectRedirect(t, r, withState(s3))
 			fe := frontendURL + "/settings?github_error="
 			// Valid nonce, but the App key is missing: fail closed before GitHub is called.
-			expectRedirect(t, anon.Get(t, "/api/github/setup?installation_id=987654&state="+state), fe+"setup_failed")
+			expectRedirect(t, anon.Get(t, "/api/github/setup?installation_id=987654&state="+state, "Cookie", "docklift_github_state="+state), fe+"setup_failed")
 			c.Get(t, "/api/github/app-status").Expect(t, 200, Obj{"configured": true, "installed": true, "appId": "123456", "appName": Str, "appSlug": Str,
 				"installationId": "987654", "username": "contract-user", "avatarUrl": Str, "installUrl": installURL})
 		}},

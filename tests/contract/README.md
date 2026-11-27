@@ -57,8 +57,8 @@ DOCKLIFT_BASE_URL=https://panel.example.com DOCKLIFT_ADMIN_EMAIL=... DOCKLIFT_AD
 
 - A fresh remote server is set up by the suite: provide `DOCKLIFT_BOOTSTRAP_SECRET`, or
   `DOCKLIFT_DATA_DIR` (the server's `DATA_PATH`, readable by the test process).
-- `DOCKLIFT_DATA_DIR` also enables tests that read `.secrets` (internal-secret header,
-  self-signed JWTs).
+- `DOCKLIFT_DATA_DIR` also enables tests that read `.secrets` (internal-secret header — honoured
+  by TS, ignored by Go —, self-signed JWTs).
 - Tests that need a dedicated instance (fresh install, seeded DB, restore, critical seal) and
   allowlist-specific CORS checks are skipped.
 - Every client sends its own `X-Forwarded-For` so rate-limit buckets do not collide. Behind a
@@ -78,6 +78,12 @@ touched. Docker-dependent endpoints are still covered for validation, auth and t
   skip and `requireDocker(t)` tests (deploy success, stop/restart/rollback, storage volumes,
   database create, delete) run. When booting with `DOCKLIFT_DOCKER=1` the harness passes the
   caller's `DOCKER_HOST` through instead of the unreachable one. Use this on the Linux test server.
+  Deploys attach the edge proxy to each project network and fail without it (as in production), so
+  the harness also runs a stand-in `docklift-contract-nginx-proxy` (`nginx:stable-alpine`, the main
+  instance's conf dir as `conf.d`, the repo's `nginx-proxy/nginx.conf` and snippets) on
+  `docklift_contract_network`. After the run it removes the containers (with their anonymous
+  volumes), networks, volumes and `docklift-<id8>-*` images of every project the booted instances
+  created, then the proxy and the network (`dockerenv_test.go`).
 - `DOCKLIFT_NETWORK=1` enables tests whose server-side code calls the public internet (DNS
   checks, GitHub manifest code exchange).
 

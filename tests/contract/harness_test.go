@@ -100,6 +100,7 @@ func runMain(m *testing.M) int {
 	code := 1
 	defer func() {
 		stopAll()
+		cleanupDocker()
 		if code != 0 {
 			dumpLogs()
 		}
@@ -117,6 +118,10 @@ func runMain(m *testing.M) int {
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "contract: boot main:", err)
 			dumpLogs()
+			return 2
+		}
+		if err := startEdgeProxy(mainInst); err != nil {
+			fmt.Fprintln(os.Stderr, "contract: edge proxy:", err)
 			return 2
 		}
 	}

@@ -14,14 +14,18 @@ Auth types:
 - **public** — no credentials.
 - **public+limit** — public, behind the 100/15 min auth limiter (`/status` is skipped).
 - **public+setup** — public, behind both the 10/15 min setup limiter and the auth limiter; needs the bootstrap secret.
-- **bearer** — `authMiddleware`: `Authorization: Bearer <session JWT>` (purpose `sse`/`terminal` refused, `pwdv` checked) or `X-Internal-Secret`.
-- **bearer+limit** — bearer, inside `/api/auth` (auth limiter applies).
+- **bearer** — `authMiddleware`: `Authorization: Bearer <session JWT>` (purpose `sse`/`terminal` refused, `pwdv` checked) or `X-Internal-Secret` (TS only; Go removed the internal-secret bypass, the header is ignored).
+- **bearer+limit** — bearer, inside `/api/auth` (auth limiter applies). Go only: `/me`, `/sse-token` and
+  `/terminal-token` are skipped by the auth limiter and have their own 1000/15 min limiter instead.
 - **step-up** — bearer plus `password` in the body (`requireStepUpPassword`; internal identity refused).
   Go only: 10 wrong passwords per user and client address in 15 minutes, then 429 with `Retry-After`
   (shared with `/api/system/execute`; a correct password resets the count).
 - **sse** — `sseAuthMiddleware`: `?token=` with `purpose: "sse"` only (Bearer and internal secret not accepted).
-- **bearer|setup** — `X-Setup-Token` (valid, before first admin) or bearer + step-up.
+- **bearer|setup** — `X-Setup-Token` (valid, before first admin) or bearer + step-up. Go (deliberate fix): registering the first admin deletes `.setup-token` (also deleted at boot when users exist), and the guard refuses the token once any user exists (403) or when the user count fails (503) before taking the restore lock or reading the upload.
 - **terminal** — WebSocket: trusted `Origin` (else 403) then `?token=` with `purpose: "terminal"` (else 401).
+  Go only: the token is single-use (a second upgrade with it is 401; terminal tokens carry a random `jti`),
+  the password step must complete within 60 s, and open sessions and SSE streams end when the user's
+  password changes (at once via change-password, within 30 s after `docklift reset-password`).
 
 | # | Method | Path | Auth | TS source | Go handler (server/internal/) | Covered by |
 |---|---|---|---|---|---|---|
@@ -81,12 +85,12 @@ Auth types:
 | 54 | GET | /api/files/:projectId/content | bearer | routes/files.ts:34 | api/files/files.go:283 `read` | TestFilesReadWrite, TestFilesPathSecurity, TestFilesSymlinks, TestFilesDirLinkEscape |
 | 55 | PUT | /api/files/:projectId/content | bearer | routes/files.ts:78 | api/files/files.go:315 `write` | TestFilesReadWrite, TestFilesPathSecurity, TestFilesSymlinks, TestFilesDirLinkEscape |
 | 56 | POST | /api/github/manifest | bearer | routes/github.ts:315 | api/github/github.go:217 `manifest` | TestGithubManifestAndSetupState |
-| 57 | GET | /api/github/manifest/callback | public | routes/github.ts:373 | api/github/github.go:269 `manifestCallback` | TestGithubManifestAndSetupState (code exchange needs DOCKLIFT_NETWORK=1) |
+| 57 | GET | /api/github/manifest/callback | public | routes/github.ts:373 | api/github/github.go:269 `manifestCallback` | TestGithubManifestAndSetupState (code exchange needs DOCKLIFT_NETWORK=1); Go: query `state` must equal the state cookie (TS: either) |
 | 58 | GET | /api/github/app-status | bearer | routes/github.ts:456 | api/github/github.go:370 `appStatus` | TestGithubUnconfigured, TestSeeded/github_app_configured_state, TestSeeded/github_disconnect |
 | 59 | POST | /api/github/check-installation | bearer | routes/github.ts:483 | api/github/github.go:415 `checkInstallation` | TestGithubUnconfigured, TestSeeded/github_app_configured_state |
-| 60 | POST | /api/github/install-session | bearer | routes/github.ts:693 | api/github/github.go:532 `installSession` | TestGithubUnconfigured, TestSeeded/github_app_configured_state |
+| 60 | POST | /api/github/install-session | bearer | routes/github.ts:693 | api/github/github.go:532 `installSession` | TestGithubUnconfigured, TestSeeded/github_app_configured_state; Go: `installUrl` carries `?state=` |
 | 61 | GET | /api/github/install | bearer | routes/github.ts:707 | api/github/github.go:553 `install` | TestGithubUnconfigured, TestSeeded/github_app_configured_state |
-| 62 | GET | /api/github/setup | public | routes/github.ts:721 | api/github/github.go:568 `setup` | TestGithubManifestAndSetupState, TestSeeded/github_app_configured_state |
+| 62 | GET | /api/github/setup | public | routes/github.ts:721 | api/github/github.go:568 `setup` | TestGithubManifestAndSetupState, TestSeeded/github_app_configured_state; Go: query `state` must equal the state cookie (TS: either) |
 | 63 | GET | /api/github/callback | public | routes/github.ts:778 | api/github/github.go:645 `callback` | TestGithubManifestAndSetupState/legacy_callback |
 | 64 | GET | /api/github/status | bearer | routes/github.ts:792 | api/github/github.go:659 `status` | TestGithubUnconfigured, TestSeeded/github_app_configured_state, TestSeeded/github_disconnect |
 | 65 | GET | /api/github/installations | bearer | routes/github.ts:839 | api/github/github.go:709 `installations` | TestGithubUnconfigured, TestSeeded/github_app_configured_state |
@@ -101,13 +105,13 @@ Auth types:
 | 74 | DELETE | /api/ports/:port | bearer | routes/ports.ts:98 | api/ports/ports.go:173 `release` | TestPorts |
 | 75 | GET | /api/projects | bearer | routes/projects.ts:100 | api/projects/projects.go:179 `list` | TestProjectReadUpdate, TestSeeded/project_reads_resync_status_from_docker |
 | 76 | GET | /api/projects/:id | bearer | routes/projects.ts:147 | api/projects/projects.go:195 `get` | TestProjectReadUpdate, TestDeployWithoutDocker, TestPorts |
-| 77 | POST | /api/projects | bearer | routes/projects.ts:195 | api/projects/create.go:218 `create` | TestProjectCreateValidation, TestProjectCreateUnsafeZip, TestProjectCreateUploadFields |
-| 78 | PATCH | /api/projects/:id | bearer | routes/projects.ts:366 | api/projects/projects.go:257 `update` | TestProjectReadUpdate, TestPorts |
-| 79 | GET | /api/projects/:id/build/detect | bearer | routes/projects.ts:418 | api/projects/storage.go:64 `detect` | TestProjectBuildDetect, TestDeploymentNotFoundAndValidation |
+| 77 | POST | /api/projects | bearer | routes/projects.ts:195 | api/projects/create.go:218 `create` | TestProjectCreateValidation, TestProjectCreateUnsafeZip, TestProjectCreateUploadFields; Go: `http://` GitHub URLs refused |
+| 78 | PATCH | /api/projects/:id | bearer | routes/projects.ts:366 | api/projects/projects.go:257 `update` | TestProjectReadUpdate, TestPorts; Go: `github_url` validated as on create |
+| 79 | GET | /api/projects/:id/build/detect | bearer | routes/projects.ts:418 | api/projects/storage.go:64 `detect` | TestProjectBuildDetect, TestDeploymentNotFoundAndValidation; Go: a scanned service named `docklift*` is refused (400) |
 | 80 | GET | /api/projects/:id/storage | bearer | routes/projects.ts:462 | api/projects/storage.go:97 `listStorage` | TestProjectStorage (+ docker: TestDockerStorage) |
 | 81 | POST | /api/projects/:id/storage | bearer | routes/projects.ts:474 | api/projects/storage.go:109 `createStorage` | TestProjectStorage (+ docker: TestDockerStorage) |
 | 82 | DELETE | /api/projects/:id/storage/:storageId | bearer | routes/projects.ts:525 | api/projects/storage.go:174 `deleteStorage` | TestProjectStorage (+ docker: TestDockerStorage) |
-| 83 | DELETE | /api/projects/:id | bearer | routes/projects.ts:551 | api/projects/projects.go:320 `remove` | TestProjectDelete, TestDeployInProgressConflicts (+ docker) |
+| 83 | DELETE | /api/projects/:id | bearer | routes/projects.ts:551 | api/projects/projects.go:320 `remove` | TestProjectDelete, TestDeployInProgressConflicts (+ docker); Go: compose runs outside the checkout and only `docklift-<id8>-*` images are removed (no `--rmi all`) |
 | 84 | GET | /api/projects/:id/env | bearer | routes/projects.ts:690 | api/projects/env.go:80 `listEnv` | TestEnvVariables, TestSeeded/database_links |
 | 85 | POST | /api/projects/:id/env | bearer | routes/projects.ts:709 | api/projects/env.go:97 `createEnv` | TestEnvVariables, TestSeeded/managed_credential_env_is_locked |
 | 86 | POST | /api/projects/:id/env/bulk | bearer | routes/projects.ts:758 | api/projects/env.go:176 `bulkEnv` | TestEnvVariables, TestSeeded/managed_credential_env_is_locked |
@@ -132,3 +136,10 @@ restore-critical and maintenance gate (126), rate limiters (47, 57, 174-176), mo
 error handler (225), Express 404 — is covered by TestSecurityHeaders, TestCORS, TestRequestBodies,
 TestUnknownAPIPath, Test401Shapes, TestCriticalRestoreGate, TestAuthenticatedRestore, TestRateLimitHeaders,
 TestSetupRateLimit and TestAuthRateLimitExhaustion.
+
+Go only: bodies are parsed inside each group after its rate limiter and auth guard (TS parsed every
+body first). Unauthenticated requests to a guarded group get 401 without the body being read;
+`/api/auth/*` and the public GitHub callbacks accept JSON/urlencoded bodies up to 64 KB (413 above);
+the webhook reads its raw body (10 MB) only when it carries a signature and decodes it only after
+the HMAC matches; authenticated routes keep the 10 MB limit, at most 100 000 JSON values, and a
+shared in-flight budget (503 + `Retry-After` when saturated).
