@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "docklift-frontend",
+      "name": "docklift-dashboard",
       "dependencies": {
         "@monaco-editor/react": "^4.7.0",
         "@radix-ui/react-dialog": "^1.3.1",

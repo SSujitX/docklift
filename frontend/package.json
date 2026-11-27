@@ -1,5 +1,5 @@
 {
-  "name": "docklift-frontend",
+  "name": "docklift-dashboard",
   "version": "2.1.6",
   "description": "Docklift frontend - Vite dashboard for Docker management",
   "private": true,
