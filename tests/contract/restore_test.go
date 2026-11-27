@@ -94,14 +94,18 @@ func TestAuthenticatedRestore(t *testing.T) {
 	if _, ok := s.ReadUntil("RESTORING FROM UPLOADED FILE", 30*time.Second); !ok {
 		t.Fatal("restore stream did not start")
 	}
-	// While the restore runs: API gated, restore routes reach the lock. The 409
-	// error is the lock owner label (restoreLockReason returns the "why" string).
+	// While the restore runs: API gated, restore routes reach the lock. In TS
+	// the 409 error is the lock owner label (restoreLockReason returns the "why"
+	// string); Go returns a sentence (deliberate fix 7).
 	c.Get(t, "/api/projects").Expect(t, 503, Obj{"error": "Restoring from uploaded backup", "maintenance": true})
 	inst.Anon().Get(t, "/api/auth/status").Expect(t, 503, Obj{"error": "Restoring from uploaded backup", "maintenance": true})
 	inst.Anon().Get(t, "/api/health").ExpectStatus(t, 200)
-	c.Post(t, "/api/backup/restore-upload", backupUpload(archive, "again.zip", "password", adm.Password)).
-		Expect(t, 409, Obj{"error": "restore-from-upload", "locked": true})
-	c.Post(t, "/api/backup/restore/x.zip", map[string]any{"password": adm.Password}).Expect(t, 409, Obj{"error": "restore-from-upload", "locked": true})
+	locked := Obj{"error": "restore-from-upload", "locked": true}
+	if targetIsGo() {
+		locked = Obj{"error": "A restore is already in progress. Wait for it to finish before starting another one.", "locked": true}
+	}
+	c.Post(t, "/api/backup/restore-upload", backupUpload(archive, "again.zip", "password", adm.Password)).Expect(t, 409, locked)
+	c.Post(t, "/api/backup/restore/x.zip", map[string]any{"password": adm.Password}).Expect(t, 409, locked)
 
 	log := s.ReadAll()
 	expectContains(t, "restore log", log,

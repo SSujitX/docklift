@@ -6,7 +6,11 @@ import (
 )
 
 func sslMissing(domain string) Obj {
-	return Obj{"status": "missing", "domain": domain, "expiresAt": nil, "error": nil, "diagnosticCommand": nil, "certPath": nil}
+	o := Obj{"status": "missing", "domain": domain, "expiresAt": nil, "error": nil, "diagnosticCommand": nil, "certPath": nil}
+	if targetIsGo() {
+		o["expired"], o["renewalOverdue"], o["daysUntilExpiry"] = false, false, nil
+	}
+	return o
 }
 
 func TestPanelDomains(t *testing.T) {
@@ -70,8 +74,12 @@ func TestACMEEmail(t *testing.T) {
 	c.Get(t, "/api/domains/ssl/email").Expect(t, 200, Obj{"email": Str})
 	c.Put(t, "/api/domains/ssl/email", map[string]any{}).ExpectError(t, 400, "Invalid email")
 	c.Put(t, "/api/domains/ssl/email", map[string]any{"email": "not-an-email"}).ExpectError(t, 400, "Invalid email")
-	// A non-string reaches String.prototype methods and leaks the JS TypeError.
-	c.Put(t, "/api/domains/ssl/email", map[string]any{"email": 12}).ExpectError(t, 400, "email.includes is not a function")
+	// A non-string reaches String.prototype methods in TS and leaks the JS TypeError; Go answers clearly.
+	nonString := "email.includes is not a function"
+	if targetIsGo() {
+		nonString = "Email must be a string"
+	}
+	c.Put(t, "/api/domains/ssl/email", map[string]any{"email": 12}).ExpectError(t, 400, nonString)
 	c.Put(t, "/api/domains/ssl/email", map[string]any{"email": "  Ops@Contract.Test "}).Expect(t, 200, Obj{"success": true, "email": "ops@contract.test"})
 	c.Get(t, "/api/domains/ssl/email").Expect(t, 200, Obj{"email": "ops@contract.test"})
 }
@@ -170,6 +178,17 @@ func TestSystemDangerousEndpointsRequireStepUp(t *testing.T) {
 		default:
 			r.Expect(t, 200, Obj{"message": "Services reset command sent successfully (Restarting in 1s)"})
 		}
+	})
+	t.Run("purge without docker", func(t *testing.T) {
+		// Safe to run: no daemon, so nothing can be removed.
+		requireNoDocker(t)
+		r := c.Post(t, "/api/system/purge", map[string]any{"password": admin.Password})
+		if targetIsGo() {
+			// Deliberate fix 9; the dashboard only shows data.error.
+			r.ExpectError(t, 503, "Docker is not available")
+			return
+		}
+		r.ExpectError(t, 500, "Failed to complete purge operation")
 	})
 }
 
