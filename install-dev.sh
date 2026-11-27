@@ -93,11 +93,31 @@ echo -e "  ${YELLOW}Warning: This installs the latest development code from mast
 echo -e "  For production use, run: curl -sSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh | sudo bash${NC}\n"
 
 # Step 1: Requirements
+
+# Installs Docker with Docker's own script. A freshly booted server often holds
+# the apt lock for a minute (cloud-init, unattended-upgrades), so retry; on
+# failure show the installer's own output instead of exiting silently.
+install_docker() {
+    local log=/tmp/docklift-install-docker.log script=/tmp/docklift-get-docker.sh try
+    for try in 1 2 3 4; do
+        if curl -fsSL https://get.docker.com -o "$script" >"$log" 2>&1 && sh "$script" >>"$log" 2>&1; then
+            rm -f "$script" "$log"
+            return 0
+        fi
+        [ "$try" -lt 4 ] && sleep 30
+    done
+    rm -f "$script"
+    echo -e " ${RED}failed${NC}"
+    echo -e "  ${RED}Docker could not be installed. Last lines of the installer output:${NC}"
+    tail -n 20 "$log" | sed 's/^/    /'
+    echo -e "  ${DIM}Full log: $log. Install Docker manually (https://docs.docker.com/engine/install/), then retry.${NC}"
+    exit 1
+}
 echo -ne "  ${CYAN}[1/5]${NC} Checking requirements..."
 for cmd in docker git; do
     if ! command -v "$cmd" &>/dev/null; then
         echo -n " Installing $cmd..."
-        if [ "$cmd" = "docker" ]; then curl -fsSL https://get.docker.com | sh -s -- --quiet >/dev/null 2>&1
+        if [ "$cmd" = "docker" ]; then install_docker
         else { apt-get update -qq && apt-get install -y -qq git; } >/dev/null 2>&1 || yum install -y git >/dev/null 2>&1 || apk add --no-cache git >/dev/null 2>&1; fi
     fi
 done
