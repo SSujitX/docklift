@@ -1,4 +1,4 @@
-// Package logs serves /api/logs (the port of backend/src/routes/logs.ts):
+// Package logs serves /api/logs:
 // the containers of a project with their live state, and the SSE stream of a
 // container's logs. Stream is also used by /api/system/logs/:service.
 package logs
@@ -112,10 +112,10 @@ func (h *handlers) containers(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, out)
 }
 
-// ContainerStatus is getContainerStatus of services/docker.ts: the state of
+// ContainerStatus is the state of
 // the container with this exact name, else of the first container whose name
 // matches the filter, else "not_found". The error is non-nil only when the
-// daemon cannot be reached (deliberate fix 9; TypeScript reported
+// daemon cannot be reached (deliberate fix 9; 2.x reported
 // "not_found" then).
 func ContainerStatus(ctx context.Context, docker Docker, name string) (string, bool, error) {
 	if docker == nil {
@@ -163,7 +163,7 @@ func (h *handlers) fail(w http.ResponseWriter, msg string, err error) {
 	httpx.Error(w, http.StatusInternalServerError, msg)
 }
 
-// Tail is `parseInt(req.query.tail) || 200` as the decimal string dockerode
+// Tail is `parseInt(req.query.tail) || 200` as the decimal string 2.x
 // sent; negative values pass through (the daemon reads them as "all").
 func Tail(r *http.Request) string {
 	n := js.ParseInt(r.URL.Query().Get("tail"))

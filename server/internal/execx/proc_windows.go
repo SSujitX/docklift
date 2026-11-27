@@ -15,7 +15,7 @@ func prepare(cmd *exec.Cmd) {
 }
 
 // terminateTree kills the program and its children with taskkill /T /F, as
-// the TS backend did. It runs while the process handle is still open, so the
+// Docklift 2.x did. It runs while the process handle is still open, so the
 // pid cannot have been reused.
 func terminateTree(p *os.Process) {
 	kill := exec.Command("taskkill", "/pid", strconv.Itoa(p.Pid), "/T", "/F")

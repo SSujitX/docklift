@@ -34,7 +34,7 @@ type Decision struct {
 	RollbackDB   bool
 }
 
-// DecideCommit is decideRestoreCommit (lib/restoreCommitPolicy.ts): a restore
+// DecideCommit applies the restore commit policy: a restore
 // without an administrator is never committed; a setup-token restore whose
 // reconciliation failed is rolled back so the setup code stays usable; an
 // authenticated restore keeps its data even when reconciliation failed but

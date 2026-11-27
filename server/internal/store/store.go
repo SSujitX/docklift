@@ -1,5 +1,5 @@
 // Package store is the typed query layer over the Docklift SQLite schema
-// (backend/prisma/schema.prisma). Every table has a file with its row type,
+// (the Prisma-created schema kept in internal/db/migrations). Every table has a file with its row type,
 // whose JSON tags reproduce the keys Prisma returned to API clients (snake_case
 // columns, `passwordChangedAt` camelCase, null for NULL, ISO-8601 DateTimes),
 // plus the queries the route handlers need.

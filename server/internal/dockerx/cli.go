@@ -22,8 +22,8 @@ type PullOptions struct {
 	Timeout time.Duration
 }
 
-// PullImage runs `docker pull image`, streaming its output (pullImage in
-// docker.ts). Cancelling ctx kills the pull. Errors carry the TS messages:
+// PullImage runs `docker pull image`, streaming its output.
+// Cancelling ctx kills the pull. Errors carry the 2.x messages:
 // "Pull cancelled: <image>", "Timed out pulling <image> after <ms>ms",
 // "Failed to pull <image> (exit <code>)".
 func (d *Docker) PullImage(ctx context.Context, image string, o PullOptions) error {
@@ -89,7 +89,7 @@ func (c ComposeCmd) ComposeArgs() []string {
 // when the command did not run to completion: it could not start, ctx was
 // cancelled (the process tree is killed) or the timeout fired. Otherwise err
 // is nil and the result carries the exit code, which the caller judges (the
-// TS onClose(code) callback).
+// 2.x close callback).
 func (d *Docker) Compose(ctx context.Context, c ComposeCmd) (execx.Result, error) {
 	cmd := execx.Cmd{Args: c.ComposeArgs(), Dir: c.Dir, Timeout: c.Timeout, OnStart: c.OnStart}
 	if c.Output != nil {
@@ -199,7 +199,7 @@ func (d *Docker) ComposeDown(ctx context.Context, c ComposeCmd) DownResult {
 }
 
 // RemoveContainer force-removes a container by name (`docker rm -f`),
-// ignoring the outcome like the TS spawnSync calls with stdio ignored.
+// ignoring the outcome like 2.x did.
 func (d *Docker) RemoveContainer(ctx context.Context, name string) {
 	if strings.TrimSpace(name) == "" {
 		return

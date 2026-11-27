@@ -146,7 +146,7 @@ func (h *HostSource) NetworkStats(ctx context.Context) []NetStat {
 	return []NetStat{h.speed(pick.Name, float64(pick.BytesRecv), float64(pick.BytesSent), time.Now())}
 }
 
-// speed is systeminformation's calcNetworkSpeed: rates are nil on the first
+// speed computes network speed: rates are nil on the first
 // sample of an interface and 0 when a counter went backwards.
 func (h *HostSource) speed(iface string, rx, tx float64, now time.Time) NetStat {
 	h.netMu.Lock()
@@ -197,7 +197,7 @@ func NodeRelease(goos, kernel string) string {
 	return strings.Join(parts, ".")
 }
 
-// LoadAvg implements Source. Node reports zeros on Windows.
+// LoadAvg implements Source. Zeros are reported on Windows.
 func (h *HostSource) LoadAvg(ctx context.Context) [3]float64 {
 	if runtime.GOOS == "windows" {
 		return [3]float64{}

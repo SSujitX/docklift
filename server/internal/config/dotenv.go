@@ -10,8 +10,8 @@ import (
 )
 
 // LoadDotenv applies dir/.env (never overriding variables already set) and
-// then dir/.env.local (overriding), mirroring backend/src/lib/loadEnv.ts which
-// calls dotenv twice with override=false and override=true. Missing files are
+// then dir/.env.local (overriding), like dotenv called twice, with
+// override=false and override=true. Missing files are
 // ignored exactly like dotenv does. It returns the files that were applied.
 func LoadDotenv(dir string) ([]string, error) {
 	var applied []string

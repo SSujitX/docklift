@@ -8,7 +8,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// BcryptCost is the cost the TypeScript backend hashed with.
+// BcryptCost is the cost Docklift 2.x hashed with.
 const BcryptCost = 12
 
 // bcryptMaxBytes is where bcrypt (and node's bcrypt) stops reading the password.
@@ -22,7 +22,7 @@ func HashPassword(password string) (string, error) {
 		return "", fmt.Errorf("hash password: %w", err)
 	}
 	// x/crypto writes the $2a$ identifier for the same algorithm; keep the
-	// stored format identical to hashes created by the TypeScript backend.
+	// stored format identical to hashes created by Docklift 2.x.
 	if bytes.HasPrefix(hash, []byte("$2a$")) {
 		hash[2] = 'b'
 	}

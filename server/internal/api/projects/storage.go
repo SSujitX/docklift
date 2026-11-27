@@ -26,7 +26,7 @@ var (
 	errMountBlocked     = errors.New("This system mount path is not allowed")
 )
 
-// validateMountPath is validateMountPath of projects.ts: the trimmed path
+// validateMountPath checks a mount path: the trimmed path
 // without trailing slashes must be absolute, without ':' or NUL, and not
 // "/" or a blocked system path.
 func validateMountPath(v val) (string, error) {

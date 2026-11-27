@@ -65,7 +65,7 @@ type DNS interface {
 var _ DNS = (*dnscheck.Checker)(nil)
 
 // GitHubApp mints installation tokens for private repositories
-// (getInstallationIdForRepo + getInstallationToken of routes/github.ts);
+// (installation lookup for a repository and installation token minting);
 // *githubapp.App implements it.
 type GitHubApp interface {
 	InstallationIDForRepo(ctx context.Context, owner, repo string) (string, error)
@@ -144,7 +144,7 @@ func NewService(d *app.Deps) *Service {
 
 // SetGitHubApp wires the GitHub App used to refresh installation tokens
 // before pulling GitHub projects. Without one, the pull of a GitHub project
-// logs a token warning and runs unauthenticated, as the TS code did when the
+// logs a token warning and runs unauthenticated, as 2.x did when the
 // App was not configured.
 func (s *Service) SetGitHubApp(a GitHubApp) {
 	s.github.Store(&githubHolder{app: a})

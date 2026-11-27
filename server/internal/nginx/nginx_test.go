@@ -153,7 +153,7 @@ func TestApplyConf(t *testing.T) {
 		t.Fatalf("temp files left: %v", entries)
 	}
 
-	// nginx unreachable: keep the file (TS behaviour); the reload reports it.
+	// nginx unreachable: keep the file (2.x behaviour); the reload reports it.
 	e.docker.test = noDocker
 	if err := r.ApplyConf(ctx, p, "unverified"); err != nil || readFile(t, p) != "unverified" {
 		t.Fatal(err)

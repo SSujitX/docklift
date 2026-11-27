@@ -24,7 +24,7 @@ const KeepScanRows = 100
 // ImageTags is a deployment's service -> image tag map (the image_tags Json
 // column). It keeps JavaScript object key order — array-index keys ("0",
 // "12") ascending first, then the others in insertion order — so stored
-// JSON and iteration order match the TS backend.
+// JSON and iteration order match Docklift 2.x.
 type ImageTags struct {
 	keys []string
 	tags map[string]string

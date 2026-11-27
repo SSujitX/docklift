@@ -27,7 +27,7 @@ type maintenanceBody struct {
 	Maintenance bool   `json:"maintenance"`
 }
 
-// MaintenanceGate is the restore gate of index.ts. While the restore-critical
+// MaintenanceGate is the restore gate. While the restore-critical
 // seal exists only /api/health and the two operator recovery endpoints pass;
 // during plain maintenance /api/health and the active restore stream
 // (/api/backup/restore*) pass. Everything else gets 503.
@@ -55,7 +55,7 @@ func MaintenanceGate(state GateState) func(http.Handler) http.Handler {
 }
 
 // RoutePath is the request path as routing sees it: the escaped form when it
-// differs from the decoded one (chi matches on it), like Express req.path.
+// differs from the decoded one (chi matches on it), like 2.x.
 func RoutePath(r *http.Request) string {
 	if r.URL.RawPath != "" {
 		return r.URL.RawPath
@@ -65,9 +65,9 @@ func RoutePath(r *http.Request) string {
 
 type headKey struct{}
 
-// HeadAsGet serves HEAD requests with the GET handlers, as Express routes do;
+// HeadAsGet serves HEAD requests with the GET handlers, as 2.x routes did;
 // net/http discards the body of HEAD responses. OriginalMethod still reports
-// HEAD for middleware that branched on req.method in Express.
+// HEAD for middleware that branched on req.method in 2.x.
 func HeadAsGet(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodHead {

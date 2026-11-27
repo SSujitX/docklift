@@ -18,7 +18,7 @@ const (
 )
 
 // cappedBuffer is one output stream limited to executeMaxBuffer bytes; the
-// first overflow cancels the command (Node's maxBuffer behaviour).
+// first overflow cancels the command (like exec's maxBuffer).
 type cappedBuffer struct {
 	mu       sync.Mutex
 	buf      bytes.Buffer
@@ -56,7 +56,7 @@ func (b *cappedBuffer) String() string {
 }
 
 // execResult is what exec's callback received: stdout and stderr, and on
-// failure the Error message Node built.
+// failure the error message exec built.
 type execResult struct {
 	Stdout string
 	Stderr string
@@ -83,7 +83,7 @@ func runShell(ctx context.Context, shell, command string) execResult {
 
 	// execx stops the whole process group on timeout or overflow, so
 	// `sleep 600 &` or a pipeline started by the command cannot outlive the
-	// 30-second limit (Node's exec only killed the shell).
+	// 30-second limit (2.x only killed the shell).
 	_, err := execx.Run(runCtx, execx.Cmd{Name: shell, Args: []string{"-c", command}, Stdout: stdout, Stderr: stderr})
 	res := execResult{Stdout: stdout.String(), Stderr: stderr.String()}
 	var startErr *execx.StartError

@@ -30,7 +30,7 @@ import (
 const shutdownTimeout = 10 * time.Second
 
 // loadConfig applies .env/.env.local from the working directory (the role the
-// backend root had for loadEnv.ts) and reads the environment.
+// backend root had) and reads the environment.
 func loadConfig(log *slog.Logger) (*config.Config, error) {
 	wd, err := os.Getwd()
 	if err != nil {
@@ -70,8 +70,8 @@ func migrate(ctx context.Context, log *slog.Logger) error {
 	return database.Close()
 }
 
-// serve is the port of index.ts: ensureDb, secrets and directories, then the
-// startup order of main(), then graceful shutdown on SIGINT/SIGTERM.
+// serve runs the database migrations, secrets and directories, then the
+// startup hooks in order, then graceful shutdown on SIGINT/SIGTERM.
 func serve(ctx context.Context, log *slog.Logger) (err error) {
 	cfg, err := loadConfig(log)
 	if err != nil {
@@ -183,13 +183,13 @@ func newHandler(d *app.Deps) http.Handler {
 	return router.New(d)
 }
 
-// registerStartupHooks wires the service-layer steps of index.ts main():
+// registerStartupHooks wires the service-layer steps of the startup sequence:
 // ensureNetwork, syncNginxConfigs, recoverDeploymentStateOnBoot and
 // startCertRenewWatcher. Route groups add their own hooks from Mount.
 func registerStartupHooks(d *app.Deps) {
 	d.Lifecycle.On(app.PhaseDockerNetwork, "docker-network", d.DockerX.EnsureNetwork)
 	// Before nginx-sync reloads the vhosts: a recreated proxy has lost its
-	// project networks (not a TS step; see ReattachProxyOnBoot).
+	// project networks (not a 2.x step; see ReattachProxyOnBoot).
 	d.Lifecycle.On(app.PhaseAfterListen, "proxy-reattach", d.Deploy.ReattachProxyOnBoot)
 	d.Lifecycle.On(app.PhaseAfterListen, "nginx-sync", d.Edge.Boot)
 	d.Lifecycle.On(app.PhaseRecovery, "deployment-recovery", d.Deploy.RecoverOnBoot)

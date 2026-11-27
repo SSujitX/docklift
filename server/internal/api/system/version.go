@@ -171,7 +171,7 @@ func (v *versionChecker) fetchLatest() (string, bool) {
 		}
 		return v.current, true
 	default:
-		// tag_name?.replace threw on a non-string in TypeScript.
+		// tag_name?.replace threw on a non-string in 2.x.
 		v.log.Warn("[version] GitHub releases/latest error", "error", "tag_name is not a string")
 		return v.current, false
 	}

@@ -1,4 +1,4 @@
-// Package system serves /api/system (the port of backend/src/routes/system.ts):
+// Package system serves /api/system:
 // host statistics, the public IP, the release check, SSE logs of the DockLift
 // containers, the step-up protected host actions (purge, reboot, reset,
 // system update, upgrade) and the password-gated command runner.
@@ -73,7 +73,7 @@ type Options struct {
 	Host Host
 	// Source replaces the host statistics reader.
 	Source sysinfo.Source
-	// GOOS replaces runtime.GOOS (the dev-machine simulations of system.ts).
+	// GOOS replaces runtime.GOOS (the dev-machine simulations).
 	GOOS string
 	// Shell replaces /bin/bash for POST /execute.
 	Shell string
@@ -218,7 +218,7 @@ type failureBody struct {
 	Details string `json:"details"`
 }
 
-// simulate waits like the dev-mode branches of system.ts, then answers msg.
+// simulate waits like the dev-mode branches, then answers msg.
 func (h *handlers) simulate(w http.ResponseWriter, r *http.Request, delay time.Duration, msg string) {
 	if h.delay != nil {
 		delay = *h.delay
@@ -303,7 +303,7 @@ func (h *handlers) pingDocker(ctx context.Context) error {
 
 // restartCoreContainers is `sleep 1 && docker restart <core containers>`,
 // except that this process's own container goes last: restarting it first
-// (as the TypeScript command did) killed the restart before it reached the
+// (as 2.x did) killed the restart before it reached the
 // other containers. Containers that do not exist (for example a certbot
 // container that was never created) are skipped.
 func (h *handlers) restartCoreContainers() {
@@ -405,7 +405,7 @@ func (h *handlers) execute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		// The TypeScript catch block answered every failure as command output.
+		// 2.x answered every failure as command output.
 		h.d.Log.Error("execute: user lookup failed", "error", err)
 		msg := err.Error()
 		httpx.JSON(w, http.StatusOK, executeBody{Output: "", Error: &msg})

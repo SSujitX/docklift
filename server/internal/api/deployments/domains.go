@@ -161,7 +161,7 @@ func (h *handlers) sslRetry(w http.ResponseWriter, r *http.Request) {
 // ownership, the DB write, SSL activity, then the nginx vhost (with
 // issuance) — rolling the DB back when nginx fails. A body without a
 // `domain` field leaves the mapping unchanged; null or "" clears it
-// (deliberate fix 5; TS cleared on a missing field).
+// (deliberate fix 5; 2.x cleared on a missing field).
 func (h *handlers) updateService(w http.ResponseWriter, r *http.Request) {
 	fail := func(err error) {
 		h.d.Log.Error("update service", "error", err)

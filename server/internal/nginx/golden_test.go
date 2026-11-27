@@ -1,21 +1,12 @@
 package nginx
 
 import (
-	"bytes"
-	"context"
-	"encoding/json"
-	"flag"
-	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
-var updateGolden = flag.Bool("update-golden", false, "regenerate testdata/golden from the TypeScript backend (needs node and backend/dist)")
-
-// goldenCase is rendered by both implementations (Name is the golden file).
+// goldenCase is one committed rendering (Name is the golden file).
 type goldenCase struct {
 	Name        string
 	Kind        string
@@ -76,9 +67,9 @@ func renderGo(t *testing.T, e *env, c goldenCase) string {
 	return out
 }
 
-// expectedFromTS maps a TypeScript rendering to what Go must produce: equal,
-// except dashboard panel confs, whose upstream moved to docklift-backend
-// (exactly the boot migration's rewrite).
+// expectedFromTS maps a golden file (the 2.x rendering) to what Go must
+// produce: equal, except dashboard panel confs, whose upstream moved to
+// docklift-backend (exactly the boot migration's rewrite).
 func expectedFromTS(c goldenCase, ts string) string {
 	if c.Kind == "panel" && c.Port == DashboardPort {
 		return rewritePanelUpstream(ts, 8000)
@@ -88,90 +79,8 @@ func expectedFromTS(c goldenCase, ts string) string {
 
 func goldenPath(name string) string { return filepath.Join("testdata", "golden", name+".conf") }
 
-// renderTS runs tsgolden.mjs; it skips when node or backend/dist is missing.
-func renderTS(t *testing.T, le string) []string {
-	t.Helper()
-	node, err := exec.LookPath("node")
-	if err != nil {
-		t.Skip("node not available")
-	}
-	dist, err := filepath.Abs(filepath.Join("..", "..", "..", "backend", "dist"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(filepath.Join(dist, "services", "nginxSsl.js")); err != nil {
-		t.Skip("backend/dist not built")
-	}
-	type tsCase struct {
-		Kind        string   `json:"kind"`
-		ID          string   `json:"id,omitempty"`
-		Name        string   `json:"name,omitempty"`
-		Container   string   `json:"container,omitempty"`
-		Port        int      `json:"port"`
-		Hosts       []string `json:"hosts,omitempty"`
-		Domain      string   `json:"domain,omitempty"`
-		EnableHTTPS bool     `json:"enableHttps"`
-	}
-	in := make([]tsCase, len(goldenCases))
-	for i, c := range goldenCases {
-		in[i] = tsCase{c.Kind, c.ID, c.ServiceName, c.Container, c.Port, c.Hosts, c.Domain, c.EnableHTTPS}
-	}
-	raw, err := json.Marshal(in)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, node, filepath.Join("testdata", "tsgolden.mjs"), dist)
-	cmd.Dir, _ = os.Getwd()
-	cmd.Env = append(os.Environ(), "LETSENCRYPT_PATH="+le, "NODE_ENV=production", "DATABASE_URL=file:"+filepath.ToSlash(filepath.Join(t.TempDir(), "unused.db")))
-	cmd.Stdin = bytes.NewReader(raw)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	out, err := cmd.Output()
-	if err != nil {
-		t.Fatalf("tsgolden.mjs: %v\n%s", err, stderr.String())
-	}
-	var confs []string
-	if err := json.Unmarshal(out, &confs); err != nil {
-		t.Fatalf("tsgolden output: %v\n%s", err, out)
-	}
-	if len(confs) != len(goldenCases) {
-		t.Fatalf("got %d confs", len(confs))
-	}
-	return confs
-}
-
-// TestGoldenMatchesTypeScript renders every case through backend/dist and
-// requires byte equality with Go (and with the committed goldens).
-func TestGoldenMatchesTypeScript(t *testing.T) {
-	e := newEnv(t)
-	goldenCerts(t, e.le)
-	ts := renderTS(t, e.le)
-	if *updateGolden {
-		if err := os.MkdirAll(filepath.Join("testdata", "golden"), 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
-	for i, c := range goldenCases {
-		t.Run(c.Name, func(t *testing.T) {
-			if *updateGolden {
-				if err := os.WriteFile(goldenPath(c.Name), []byte(ts[i]), 0o644); err != nil {
-					t.Fatal(err)
-				}
-			}
-			if golden := readFile(t, goldenPath(c.Name)); golden != ts[i] {
-				t.Fatalf("committed golden differs from TypeScript output; rerun with -update-golden\n--- ts\n%s", ts[i])
-			}
-			if got, want := renderGo(t, e, c), expectedFromTS(c, ts[i]); got != want {
-				t.Fatalf("Go output differs from TypeScript\n--- go\n%s\n--- want\n%s", got, want)
-			}
-		})
-	}
-}
-
-// TestGoldenFiles compares Go with the committed TypeScript renderings, so the
-// byte-equality check also runs where node is unavailable.
+// TestGoldenFiles compares Go with the committed renderings produced by the
+// 2.1.x backend, so existing nginx confs stay byte-identical.
 func TestGoldenFiles(t *testing.T) {
 	e := newEnv(t)
 	goldenCerts(t, e.le)

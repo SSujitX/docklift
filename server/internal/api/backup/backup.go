@@ -1,4 +1,4 @@
-// Package backup serves /api/backup (the port of backend/src/routes/backup.ts):
+// Package backup serves /api/backup:
 // list, create (streamed progress), download, delete and upload of backup
 // archives, the three restore entry points, and the restore-critical
 // operator endpoints. The archive and restore logic lives in
@@ -43,7 +43,7 @@ type Options struct {
 	Now func() time.Time
 }
 
-// restartDelay is the 1 s setTimeout before process.exit in backup.ts.
+// restartDelay is the 1 s delay before the process exits after a restore.
 const restartDelay = time.Second
 
 // Mount registers the /api/backup routes on r, which is already scoped to
@@ -115,7 +115,7 @@ type handlers struct {
 
 func (h *handlers) now() time.Time { return h.o.Now() }
 
-// filenameParam is req.params.filename: decoded once, like Express.
+// filenameParam is the filename path parameter, decoded once.
 func filenameParam(r *http.Request) string {
 	v := chi.URLParam(r, "filename")
 	if r.URL.RawPath != "" {
@@ -346,7 +346,7 @@ func (h *handlers) upload(w http.ResponseWriter, r *http.Request) {
 	}{true, file.name, file.size, "Backup uploaded successfully"})
 }
 
-// uploadFailed answers a rejected multipart body. 2.1.6 sent multer errors
+// uploadFailed answers a rejected multipart body. 2.1.6 sent multipart parser errors
 // of POST /upload to the generic 500 handler; client mistakes are 400 here
 // (deliberate fix 1).
 func (h *handlers) uploadFailed(w http.ResponseWriter, uerr *uploadError) {

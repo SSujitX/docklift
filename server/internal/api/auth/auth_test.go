@@ -174,7 +174,7 @@ func TestSessionRoutes(t *testing.T) {
 			t.Errorf("%s token: %d %+v %v", purpose, r.code, c, err)
 		}
 	}
-	// The TypeScript X-Internal-Secret bypass is gone: the stored internal
+	// The 2.x X-Internal-Secret bypass is gone: the stored internal
 	// secret is not a credential.
 	internal := map[string]string{"X-Internal-Secret": "apptest-internal-secret"}
 	if r := call(t, h, "POST", "/api/auth/sse-token", "", internal); r.code != 401 || r.body["error"] != "Authentication required" {
@@ -278,7 +278,7 @@ func TestClientMistakesAre400(t *testing.T) {
 	}
 }
 
-// Registering the first admin removes the fresh-install restore token (TS
+// Registering the first admin removes the fresh-install restore token (Docklift 2.x
 // left it on disk, valid for the setup-token restore path).
 func TestRegisterConsumesSetupToken(t *testing.T) {
 	d, h, secret := setup(t)
@@ -297,5 +297,23 @@ func TestRegisterConsumesSetupToken(t *testing.T) {
 	}
 	if d.Auth.Bootstrap().ValidateSetupToken(token) {
 		t.Fatal("setup token must no longer validate")
+	}
+}
+
+// A stolen session must not allow unlimited guesses at the current password.
+func TestChangePasswordThrottlesGuesses(t *testing.T) {
+	d, h, _ := setup(t)
+	_, session := apptest.CreateAdmin(t, d, "guess@example.com", "password123")
+	bearer := map[string]string{"Authorization": "Bearer " + session}
+	wrong := `{"currentPassword":"not-the-password","newPassword":"password456"}`
+	for i := 0; i < authsvc.StepUpFailureLimit; i++ {
+		if r := call(t, h, "POST", "/api/auth/change-password", wrong, bearer); r.code != 400 || r.body["error"] != "Invalid current password" {
+			t.Fatalf("attempt %d: %d %v", i, r.code, r.body)
+		}
+	}
+	// Throttled now, even with the right password.
+	r := call(t, h, "POST", "/api/auth/change-password", `{"currentPassword":"password123","newPassword":"password456"}`, bearer)
+	if r.code != 429 || r.body["error"] != authsvc.MsgTooManyPasswordAttempts {
+		t.Fatalf("throttled: %d %v", r.code, r.body)
 	}
 }

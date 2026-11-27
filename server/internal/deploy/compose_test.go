@@ -22,7 +22,6 @@ func writeFile(t *testing.T, path, content string) {
 }
 
 func TestScanDockerfilesDedupesCollidingNames(t *testing.T) {
-	// compose.naming.test.ts
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "a", "b", "Dockerfile"), "FROM scratch\nEXPOSE 3000\n")
 	writeFile(t, filepath.Join(root, "a-b", "Dockerfile"), "FROM scratch\nEXPOSE 4000\n")
@@ -48,7 +47,6 @@ func TestScanDockerfilesDedupesCollidingNames(t *testing.T) {
 }
 
 func TestDedupeScannedServicesRejectsPersistentDuplicates(t *testing.T) {
-	// compose.naming.test.ts
 	df := "a/Dockerfile"
 	services := []ScannedService{
 		{Name: "app", DockerfilePath: df, ContextPath: "a", InternalPort: 3000},
@@ -170,7 +168,6 @@ func TestValidateDockerBuildArgs(t *testing.T) {
 }
 
 func TestDockerfileMountsSecret(t *testing.T) {
-	// compose.defaults.test.ts
 	dir := t.TempDir()
 	df := filepath.Join(dir, "Dockerfile")
 	writeFile(t, df, "FROM node:20\nRUN --mount=type=secret,id=NPM_TOKEN cat /run/secrets/NPM_TOKEN\n")

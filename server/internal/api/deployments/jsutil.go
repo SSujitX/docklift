@@ -11,7 +11,7 @@ import (
 
 // jsObject is a JSON object that keeps JavaScript key order (first
 // assignment fixes the position, a later assignment replaces the value), for
-// the maps the TS routes built with `obj[key] = value`.
+// the maps Docklift 2.x built with `obj[key] = value`.
 type jsObject[V any] struct {
 	keys []string
 	vals map[string]V
@@ -62,7 +62,7 @@ func parseIntParam(s string) (int, bool) {
 	return int(math.Max(math.MinInt32, math.Min(math.MaxInt32, f))), true
 }
 
-// queryString is req.query[key] coerced the way the TS route used it: a
+// queryString is req.query[key] coerced the way Docklift 2.x used it: a
 // repeated parameter is an array, which String() joins with commas.
 func queryString(values []string) (string, bool) {
 	if len(values) == 0 {

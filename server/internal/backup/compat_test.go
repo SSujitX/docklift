@@ -3,8 +3,6 @@ package backup
 import (
 	"context"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -12,102 +10,6 @@ import (
 
 	"docklift/internal/store"
 )
-
-// tsBackend returns the TypeScript backend directory (for the 2.1.6
-// archiver and restore code) and the node binary, or skips.
-func tsBackend(t *testing.T) (dir, node string) {
-	t.Helper()
-	node, err := exec.LookPath("node")
-	if err != nil {
-		t.Skip("node not installed")
-	}
-	dir, err = filepath.Abs(filepath.Join("..", "..", "..", "backend"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, p := range []string{"node_modules/archiver/index.js", "node_modules/unzipper", "dist/lib/safeUnzip.js", "dist/lib/fsCopy.js"} {
-		if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(p))); err != nil {
-			t.Skipf("TypeScript backend not built (%s missing)", p)
-		}
-	}
-	return dir, node
-}
-
-func runNode(t *testing.T, node string, args ...string) {
-	t.Helper()
-	out, err := exec.Command(node, args...).CombinedOutput()
-	if err != nil {
-		t.Fatalf("node %s: %v\n%s", filepath.Base(args[0]), err, out)
-	}
-}
-
-// An archive written by the 2.1.6 code (archiver, same calls as backup.ts)
-// restores on the Go side, links included.
-func TestRestoreArchiveFromTypeScript(t *testing.T) {
-	backend, node := tsBackend(t)
-	f := newFixture(t)
-	snap, err := SnapshotDatabase(context.Background(), f.src.d.DB, f.src.paths.DatabasePath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer removeSnapshot(snap)
-	archive := filepath.Join(t.TempDir(), "ts-backup.zip")
-	runNode(t, node, filepath.Join("testdata", "ts_archive.mjs"), filepath.Join(backend, "node_modules"), archive, snap,
-		f.src.paths.DeploymentsPath, f.src.paths.NginxConfPath, f.src.paths.LetsEncryptPath, f.src.paths.GitHubKeyPath)
-
-	outcome, log := f.dst.restore(archive, Request{Kind: KindBackup})
-	if outcome != OutcomeCommitted {
-		t.Fatalf("outcome %v:\n%s", outcome, log)
-	}
-	f.expectNew(t, "db", "deployments", "nginx", "letsencrypt", "key")
-	f.expectClean(t)
-}
-
-// An archive written by Go restores with the 2.1.6 code (safeExtractZip +
-// replaceDirContents): same trees, a valid database. 2.1.6 writes link
-// entries as files holding the link text, as it does for its own archives.
-func TestTypeScriptRestoresGoArchive(t *testing.T) {
-	backend, node := tsBackend(t)
-	src := newEnv(t)
-	src.seed("src")
-	archive := src.backup()
-	target := t.TempDir()
-	runNode(t, node, filepath.Join("testdata", "ts_extract.mjs"), filepath.Join(backend, "dist", "lib"), archive, t.TempDir(), target)
-
-	for area, dir := range map[string]string{
-		"deployments": src.paths.DeploymentsPath, "nginx-conf": src.paths.NginxConfPath, "letsencrypt": src.paths.LetsEncryptPath,
-	} {
-		want := tree(t, dir)
-		for k, v := range want {
-			// unzipper skips directory entries (empty directories are lost)
-			// and writes links as text files.
-			if strings.HasSuffix(k, "/") {
-				delete(want, k)
-			}
-			if strings.HasPrefix(v, "-> ") {
-				want[k] = strings.TrimPrefix(v, "-> ")
-			}
-		}
-		got := tree(t, filepath.Join(target, area))
-		for k := range got {
-			if strings.HasSuffix(k, "/") {
-				delete(got, k)
-			}
-		}
-		sameTree(t, area, got, want)
-	}
-	if readFile(t, filepath.Join(target, "github-app.pem")) != "KEY src\n" {
-		t.Fatal("github key not restored by 2.1.6")
-	}
-	restored := openDB(t, filepath.Join(target, "docklift.db"))
-	var email string
-	if err := restored.Reader().QueryRow(`SELECT "email" FROM "users" WHERE "role" = 'admin'`).Scan(&email); err != nil || email != "src@example.test" {
-		t.Fatalf("restored database admin %q (%v)", email, err)
-	}
-	if err := checkIntegrity(context.Background(), filepath.Join(target, "docklift.db")); err != nil {
-		t.Fatal(err)
-	}
-}
 
 // DOCKLIFT_REAL_BACKUP=<path to a 2.1.6 production backup> restores it into
 // a temporary installation. Nothing of its content is printed.

@@ -33,7 +33,7 @@ func (s *Store) GetSetting(ctx context.Context, key string) (string, bool, error
 
 // SetSetting creates or updates a setting (prisma.settings.upsert with
 // update {value} / create {key, value}; updated_at is left untouched, as the
-// TypeScript backend never set it).
+// 2.x never set it).
 func (s *Store) SetSetting(ctx context.Context, key, value string) error {
 	_, err := execAffected(ctx, s.writer(), "set setting",
 		`INSERT INTO "settings" ("key", "value") VALUES (?, ?) ON CONFLICT ("key") DO UPDATE SET "value" = excluded."value"`,

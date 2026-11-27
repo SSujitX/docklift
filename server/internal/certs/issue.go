@@ -266,7 +266,7 @@ func (s *Service) IssueCertificate(ctx context.Context, domains []string, opts I
 	res, runErr := s.runner.Run(runCtx, "docker", req.Args()...)
 	cancel()
 	if runErr != nil {
-		// Could not start docker (or timed out): same as a spawn error in TS.
+		// Could not start docker (or timed out): same as a spawn error.
 		res = ExecResult{ExitCode: 1, Stdout: res.Stdout, Stderr: runErr.Error()}
 	}
 

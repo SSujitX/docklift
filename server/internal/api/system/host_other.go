@@ -8,7 +8,7 @@ import (
 )
 
 // unsupportedHost is the Host of non-Linux builds. Windows and macOS never
-// reach it (the routes simulate the action there, as system.ts did).
+// reach it (the routes simulate the action there, as 2.x did).
 type unsupportedHost struct{}
 
 func newHost(context.Context, *slog.Logger) Host { return unsupportedHost{} }

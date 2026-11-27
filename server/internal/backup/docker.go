@@ -94,7 +94,7 @@ func (c DockerCLI) VolumeCreate(ctx context.Context, name string) error {
 	return c.X.VolumeCreate(ctx, name)
 }
 
-// ComposeUp implements Docker with the environment of the TS execAsync call.
+// ComposeUp implements Docker with the environment Docklift 2.x used.
 func (c DockerCLI) ComposeUp(ctx context.Context, file, project, dir string) error {
 	args := dockerx.ComposeCmd{Project: project, Files: []string{file}, Args: []string{"up", "-d"}}.ComposeArgs()
 	res, err := c.run(ctx, execx.Cmd{

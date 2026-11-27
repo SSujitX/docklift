@@ -14,12 +14,12 @@ import (
 	"docklift/internal/httpx"
 )
 
-// Express/WHATWG behaviour the GitHub routes depend on: req.query values,
+// WHATWG and JavaScript behaviour the GitHub routes depend on: req.query values,
 // cookies, URL origins and serialisation, js.EncodeURIComponent and
 // res.redirect.
 
 // queryString is `typeof req.query[key] === 'string' ? req.query[key] : undefined`:
-// a parameter given more than once is an array in Express, not a string.
+// a parameter given more than once is an array in 2.x, not a string.
 func queryString(r *http.Request, key string) (string, bool) {
 	vs := r.URL.Query()[key]
 	if len(vs) != 1 {
@@ -34,7 +34,7 @@ func queryCast(r *http.Request, key string) string {
 	return strings.Join(r.URL.Query()[key], ",")
 }
 
-// readCookie is the hand-rolled cookie reader of github.ts: the first
+// readCookie is a hand-rolled cookie reader: the first
 // `name=value` pair whose trimmed name matches, value decodeURIComponent-ed.
 // A malformed percent-encoding is an error (decodeURIComponent throws).
 func readCookie(r *http.Request, name string) (string, error) {
@@ -111,7 +111,7 @@ func formEncode(s string) string {
 	return b.String()
 }
 
-// encodeURL is the encodeurl package Express applies to Location: characters
+// encodeURL is the encodeurl behaviour applied to Location: characters
 // outside the URL code points are percent-encoded, existing valid %XX escapes
 // are kept and a stray '%' becomes %25. Invalid UTF-8 becomes U+FFFD first.
 func encodeURL(s string) string {
@@ -138,7 +138,7 @@ func encodeURL(s string) string {
 	return b.String()
 }
 
-// redirect is Express res.redirect(url): 302 with an encoded Location and a
+// redirect answers 302 with an encoded Location and a
 // short text or HTML body chosen from Accept (the address is HTML-escaped).
 func redirect(w http.ResponseWriter, r *http.Request, location string) {
 	address := encodeURL(location)
@@ -214,7 +214,7 @@ func negotiateRedirect(accept string) string {
 var forbiddenHost = regexp.MustCompile(`[\x00-\x20"#%/<>?@\[\\\]^|\x7f]`)
 
 // webURL is a parsed absolute http(s) URL with the WHATWG normalisations the
-// TypeScript code relied on (lowercase scheme and host, default port dropped,
+// 2.x relied on (lowercase scheme and host, default port dropped,
 // "/" for an empty path).
 type webURL struct {
 	u *url.URL

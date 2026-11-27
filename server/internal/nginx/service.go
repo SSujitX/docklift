@@ -16,7 +16,7 @@ import (
 )
 
 // ErrCancelled is returned when UpdateOptions.ShouldContinue reports false;
-// the message matches the TypeScript "Deployment cancelled".
+// the message matches the 2.x "Deployment cancelled".
 var ErrCancelled = errors.New("Deployment cancelled")
 
 // ServiceStore is the subset of *store.Store this package uses.
@@ -92,7 +92,7 @@ func (s *Service) ServiceConfPath(serviceID string) (string, error) {
 // UpdateOptions tune UpdateServiceDomain.
 type UpdateOptions struct {
 	// SkipIssue writes the vhost with existing certificates only (no
-	// certbot run). The TypeScript default issues.
+	// certbot run). The 2.x default issues.
 	SkipIssue bool
 	// ForceSSL forces a certificate re-issue (manual retry).
 	ForceSSL bool
@@ -109,7 +109,7 @@ func strVal(p *string) string {
 }
 
 // DomainList splits a comma-separated domain field into trimmed, lowercased,
-// non-empty hostnames (no de-duplication; deployments.ts domainList).
+// non-empty hostnames (no de-duplication).
 func DomainList(domain *string) []string {
 	var out []string
 	for _, d := range strings.Split(strVal(domain), ",") {
@@ -286,7 +286,7 @@ func (s *Service) issueAndEnableHTTPS(ctx context.Context, name, path string, b 
 }
 
 // CleanupServiceDomain removes a service's conf and reloads nginx. Failures
-// are logged, not returned (as in TS).
+// are logged, not returned (as in 2.x).
 func (s *Service) CleanupServiceDomain(ctx context.Context, serviceID string) {
 	path, err := s.ServiceConfPath(serviceID)
 	if err != nil {

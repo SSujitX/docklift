@@ -1,7 +1,6 @@
 // Package config turns the process environment into a Config. It is the single
-// source of truth for every environment variable the TypeScript backend read
-// (backend/src/lib/config.ts plus the scattered process.env reads), with the
-// same names and defaults.
+// source of truth for every environment variable the server reads, with the
+// names and defaults of the 2.x releases.
 package config
 
 import (
@@ -14,8 +13,8 @@ import (
 	"docklift/internal/js"
 )
 
-// DefaultDatabaseURL is used when DATABASE_URL is unset; it is the fallback
-// backend/src/routes/backup.ts used and the value the Docker image sets.
+// DefaultDatabaseURL is used when DATABASE_URL is unset; it is also the value
+// the Docker image sets.
 const DefaultDatabaseURL = "file:/app/data/docklift.db"
 
 // Config holds every setting read from the environment.
@@ -59,7 +58,7 @@ type Config struct {
 	CertbotStaging bool
 
 	// CORSOrigins is CORS_ORIGIN split on commas (entries are not trimmed
-	// here; the origin check trims them, as originCheck.ts does).
+	// here; the origin check trims them).
 	CORSOrigins []string
 	// NginxProxyContainer is NGINX_PROXY_CONTAINER (default docklift-nginx-proxy).
 	NginxProxyContainer string
@@ -67,7 +66,7 @@ type Config struct {
 	TerminalAllowNoOrigin bool
 	// TrustedProxies is TRUSTED_PROXIES (default DefaultTrustedProxies): the
 	// socket peers whose X-Forwarded-For/-Proto/-Host headers are believed.
-	// New in the Go backend; the TypeScript one trusted every peer.
+	// New in the Go backend; 2.x trusted every peer.
 	TrustedProxies ProxyTrust
 
 	// JWTSecret and InternalAPISecret are JWT_SECRET and INTERNAL_API_SECRET.
@@ -82,7 +81,7 @@ type Config struct {
 }
 
 // Load reads the configuration from the process environment. Relative paths
-// resolve against the current working directory, like path.resolve in Node.
+// resolve against the current working directory.
 func Load() (*Config, error) {
 	return FromEnv(os.Getenv)
 }
@@ -159,7 +158,7 @@ func FromEnv(getenv func(string) string) (*Config, error) {
 // resolves relative SQLite paths against the directory holding schema.prisma
 // (`<backend root>/prisma`); the working directory plays the role of the
 // backend root here, so `file:./data/docklift.db` maps to
-// `<cwd>/prisma/data/docklift.db` exactly as it did for the TypeScript backend.
+// `<cwd>/prisma/data/docklift.db` exactly as it did for Docklift 2.x.
 func DatabasePathFromURL(url string) (string, error) {
 	rest, ok := strings.CutPrefix(url, "file:")
 	if !ok {
@@ -183,7 +182,7 @@ func DatabasePathFromURL(url string) (string, error) {
 
 // parseInt mimics JavaScript parseInt: leading whitespace and sign are
 // accepted, parsing stops at the first invalid digit, and a value with no
-// digits is rejected (NaN in JS, which made the Node server fail to listen).
+// digits is rejected (NaN in JS, which made 2.x fail to listen).
 // Without radix10 a 0x prefix selects hexadecimal, as parseInt(s) does.
 func parseInt(name, s string, radix10 bool) (int, error) {
 	n := js.ParseInt(s)

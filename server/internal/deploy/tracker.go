@@ -11,9 +11,9 @@ import (
 // cancelOwnerPrefix marks a project lock held by a cancel teardown.
 const cancelOwnerPrefix = "cancel:"
 
-// Tracker is the in-memory deploy/cancel state of every project — the port
-// of lib/deploymentState.ts plus the activeBuilds / cancelledDeployments
-// registries of routes/deployments.ts. One Tracker is shared by every route
+// Tracker is the in-memory deploy/cancel state of every project, covering the
+// deployment states plus the active-build and cancelled-deployment
+// registries. One Tracker is shared by every route
 // group of the process. It is safe for concurrent use.
 //
 // The project lock is owned by a deployment id (or a cancel sentinel), so a

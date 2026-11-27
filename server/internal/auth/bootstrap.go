@@ -24,8 +24,7 @@ const (
 const SetupTokenHeader = "X-Setup-Token"
 
 // Bootstrap manages the fresh-install bootstrap secret (printed to the logs,
-// never served by a public API) and the restore setup token — the ports of
-// lib/bootstrap.ts and lib/setupRestoreAuth.ts.
+// never served by a public API) and the restore setup token.
 type Bootstrap struct {
 	dataPath string
 	log      *slog.Logger
@@ -227,7 +226,7 @@ func (b *Bootstrap) ConsumeSetupRestoreSecrets() {
 }
 
 // ConsumeSetupToken deletes the setup token (first admin registered, or an
-// install that already has users). TS left it on disk after registration.
+// install that already has users). 2.x left it on disk after registration.
 func (b *Bootstrap) ConsumeSetupToken() {
 	removeIfExists(b.SetupTokenPath())
 }

@@ -27,7 +27,7 @@ import (
 
 func quiet() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
 
-// Fixtures produced by the TypeScript backend's own libraries (jsonwebtoken
+// Fixtures produced by Docklift 2.x's own libraries (jsonwebtoken
 // 9 with Date.now() pinned to 1795000000000, bcrypt 6).
 const (
 	tsSecret       = "test-secret-0123456789"
@@ -291,7 +291,7 @@ func TestRequireSession(t *testing.T) {
 		{"deleted user", map[string]string{"Authorization": "Bearer " + ghost}, 401, errJSON("User not found")},
 		{"valid", map[string]string{"Authorization": "Bearer " + session}, 299, ""},
 		{"trailing segment ignored", map[string]string{"Authorization": "Bearer " + session + " extra"}, 299, ""},
-		// The TypeScript internal-secret bypass is not accepted.
+		// The 2.x internal-secret bypass is not accepted.
 		{"internal secret", map[string]string{"X-Internal-Secret": "internal-secret"}, 401, errJSON("Authentication required")},
 	}
 	for _, c := range cases {
@@ -388,7 +388,7 @@ func TestVerifyPurposeTokenIsSingleUse(t *testing.T) {
 	if _, ok := f.svc.VerifyPurposeToken(context.Background(), second, PurposeTerminal); !ok {
 		t.Fatal("a fresh token must still work")
 	}
-	// A token issued without jti (TypeScript) is tracked by its bytes.
+	// A token issued without jti (2.x) is tracked by its bytes.
 	legacy, _ := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"userId": f.user.ID, "purpose": PurposeTerminal, "pwdv": f.user.PasswordVersion(),
 		"iat": time.Now().Unix(), "exp": time.Now().Add(time.Minute).Unix(),
@@ -584,7 +584,7 @@ func TestStepUpPasswordGuessesAreLimited(t *testing.T) {
 	}
 }
 
-// Ports of backend/src/lib/setupRestoreAuth.test.ts.
+// Setup-token restore authorisation.
 
 func TestValidateSetupTokenDoesNotConsume(t *testing.T) {
 	b := NewBootstrap(t.TempDir(), quiet())

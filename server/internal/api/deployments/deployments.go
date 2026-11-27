@@ -1,5 +1,4 @@
-// Package deployments serves /api/deployments (the port of
-// backend/src/routes/deployments.ts) and owns "deploy a project": the
+// Package deployments serves /api/deployments and owns "deploy a project": the
 // Service type runs the deploy pipeline, stop, restart, cancel and rollback
 // in the background and queues auto-deploys per project, for this route
 // group and for the github and databases groups.
@@ -248,7 +247,7 @@ func (h *handlers) deploy(w http.ResponseWriter, r *http.Request) {
 }
 
 // startLifecycle runs stop or restart. A failure before the row exists is
-// reported like the TS routes did (stop: a 200 text error; restart: 500).
+// reported like Docklift 2.x did (stop: a 200 text error; restart: 500).
 func (h *handlers) startLifecycle(w http.ResponseWriter, r *http.Request,
 	start func(context.Context, string, io.Writer) (*Run, error), failText bool, failMsg string) {
 	c := newClientStream()

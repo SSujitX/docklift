@@ -1,6 +1,5 @@
-// Package backup creates and restores Docklift backup archives: the service
-// half of backend/src/routes/backup.ts and the port of
-// lib/restoreCommitPolicy.ts. The HTTP handlers live in internal/api/backup;
+// Package backup creates and restores Docklift backup archives, including the
+// commit policy of a restore. The HTTP handlers live in internal/api/backup;
 // the maintenance gate, restore lock and restore-critical seal live in
 // internal/maintenance.
 //

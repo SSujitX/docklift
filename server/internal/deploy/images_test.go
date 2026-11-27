@@ -31,7 +31,6 @@ func rawJSON(s string) *db.JSON {
 }
 
 func TestPickTaggedImageMaps(t *testing.T) {
-	// imageCleanup.test.ts
 	a, b, c := `{"api":"docklift-abcdef12-api:aaaaaaaa"}`, `{"api":"docklift-abcdef12-api:bbbbbbbb"}`, `{"api":"docklift-abcdef12-api:cccccccc"}`
 	rows := []*db.JSON{rawJSON(b), nil, rawJSON("null"), rawJSON(a)}
 	maps := PickTaggedImageMaps(rows, 2)

@@ -174,7 +174,7 @@ func (s *Service) writeVerifyError(w http.ResponseWriter, err error) {
 
 // RequireSession is authMiddleware: an `Authorization: Bearer <session JWT>`.
 // Query tokens are never accepted and purpose tokens (sse/terminal) are
-// refused. The X-Internal-Secret header of the TypeScript backend (a
+// refused. The X-Internal-Secret header of Docklift 2.x (a
 // full-admin bypass used only by its webhook-to-deploy HTTP call, which the
 // Go backend makes in process) is no longer accepted.
 func (s *Service) RequireSession(next http.Handler) http.Handler {
@@ -218,7 +218,7 @@ func (s *Service) RequireSSE(next http.Handler) http.Handler {
 			return
 		}
 		if len(tokens) > 1 {
-			// Express parses a repeated parameter as an array, which jsonwebtoken rejects.
+			// A repeated parameter is an array in 2.x, which jsonwebtoken rejects.
 			httpx.Error(w, http.StatusUnauthorized, "Invalid token")
 			return
 		}
@@ -245,7 +245,7 @@ func (s *Service) RequireSSE(next http.Handler) http.Handler {
 // re-send the account password in the JSON body. It writes the 401/403
 // response itself and returns false when the caller must stop. A non-nil
 // error means a database failure; nothing was written and the caller
-// answers as its own error path did in TypeScript.
+// answers as its own error path did in 2.x.
 func (s *Service) RequireStepUpPassword(w http.ResponseWriter, r *http.Request) (bool, error) {
 	password, ok := httpx.BodyFrom(r).Get("password").String()
 	if !ok || password == "" {
@@ -275,22 +275,37 @@ func (s *Service) RequireStepUpPassword(w http.ResponseWriter, r *http.Request) 
 // StepUpFailureLimit times from this client within StepUpFailureWindow
 // (the hash is not even compared), else 403 "Invalid password" on a
 // mismatch. A match resets the count. This throttle is not in the
-// TypeScript backend (owner-approved security fix).
+// Docklift 2.x (owner-approved security fix).
 func (s *Service) VerifyStepUpPassword(w http.ResponseWriter, r *http.Request, userID, hash, password string) bool {
-	key := userID + " " + httpx.RateLimitKey(httpx.ClientIP(r))
-	if wait := s.stepUpFailures.RetryAfter(key); wait > 0 {
-		s.log.Warn("[SECURITY] Step-up password attempts throttled", "userId", userID, "ip", httpx.ClientIP(r))
+	ok, wait := s.CheckAccountPassword(r, userID, hash, password)
+	switch {
+	case wait > 0:
 		w.Header().Set("Retry-After", httpx.RetryAfterSeconds(wait))
 		httpx.JSON(w, http.StatusTooManyRequests, stepUpBody{Error: MsgTooManyPasswordAttempts, RequirePassword: true})
 		return false
-	}
-	if !ComparePassword(hash, password) {
-		s.stepUpFailures.Fail(key)
+	case !ok:
 		httpx.JSON(w, http.StatusForbidden, stepUpBody{Error: "Invalid password", RequirePassword: true})
 		return false
 	}
-	s.stepUpFailures.Reset(key)
 	return true
+}
+
+// CheckAccountPassword compares a re-entered account password with the
+// user's bcrypt hash under the step-up guess limit, without writing a
+// response. wait > 0 means the user is throttled from this client (the hash
+// was not compared) and is the time until the next attempt is allowed.
+func (s *Service) CheckAccountPassword(r *http.Request, userID, hash, password string) (ok bool, wait time.Duration) {
+	key := userID + " " + httpx.RateLimitKey(httpx.ClientIP(r))
+	if wait := s.stepUpFailures.RetryAfter(key); wait > 0 {
+		s.log.Warn("[SECURITY] Account password attempts throttled", "userId", userID, "ip", httpx.ClientIP(r))
+		return false, wait
+	}
+	if !ComparePassword(hash, password) {
+		s.stepUpFailures.Fail(key)
+		return false, 0
+	}
+	s.stepUpFailures.Reset(key)
+	return true, 0
 }
 
 type stepUpBody struct {

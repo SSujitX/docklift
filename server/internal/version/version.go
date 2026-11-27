@@ -5,5 +5,7 @@ package version
 //
 //	go build -ldflags "-X docklift/internal/version.Version=<semver>"
 //
-// and defaults to the version of backend/package.json this port matches.
-var Version = "2.1.6"
+// The root package.json "version" is the source of truth: the Dockerfile and
+// `make build` read it and stamp it in. A plain `go build` reports the
+// development default below.
+var Version = "0.0.0-dev"

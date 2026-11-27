@@ -11,7 +11,7 @@ import (
 )
 
 // certMtimeFile holds the newest fullchain.pem mtime the watcher reloaded
-// nginx for (Unix milliseconds with fraction, as Node's stat mtimeMs).
+// nginx for (Unix milliseconds with fraction, like mtimeMs).
 const certMtimeFile = "ssl-cert-mtime"
 
 // emptyScansBeforeClear: live/ may be briefly unreadable on boot, so the
@@ -48,7 +48,7 @@ func (s *Service) writePersistedCertMtime(stamp float64) {
 	}
 }
 
-// mtimeMs reproduces Node's stat mtimeMs: sec * 1e3 + nsec / 1e6.
+// mtimeMs is the modification time in fractional Unix milliseconds: sec * 1e3 + nsec / 1e6.
 func mtimeMs(t time.Time) float64 {
 	return float64(t.Unix())*1e3 + float64(t.Nanosecond())/1e6
 }
@@ -75,7 +75,7 @@ func (s *Service) scanCertMtimes() float64 {
 	return max
 }
 
-// renewWatcher is the state of startCertRenewWatcher in certs.ts.
+// renewWatcher is the state of the certificate renewal watcher.
 type renewWatcher struct {
 	s          *Service
 	reload     func(context.Context) error

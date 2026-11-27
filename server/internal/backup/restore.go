@@ -270,7 +270,7 @@ func (x *run) prepare(ctx context.Context) error {
 	if err := checkSpace(x.tempDir, need, "extract the backup"); err != nil {
 		return err
 	}
-	// The TS limits for restores: 50 000 files, 2 GiB uncompressed.
+	// The 2.x limits for restores: 50 000 files, 2 GiB uncompressed.
 	if err := safeunzip.Extract(ctx, x.req.ArchivePath, x.tempDir, safeunzip.Options{}); err != nil {
 		return err
 	}
@@ -572,7 +572,7 @@ func (x *run) reconcile(ctx context.Context) bool {
 			continue
 		}
 		x.out("      > Redeploying " + p.Name + " (" + p.ID + ")...\n")
-		// Only the compose file Docklift generated is ever started. TS fell
+		// Only the compose file Docklift generated is ever started. 2.x fell
 		// back to the repository's own docker-compose.yml, which let a
 		// repository start any service (privileged, host mounts) with the
 		// daemon's root rights; such projects are left for a redeploy.
@@ -623,7 +623,7 @@ func (x *run) startProject(ctx context.Context, projectID, composeFile, project,
 		return err
 	}
 	for _, v := range volumes {
-		// Exists-ok; the outcome is ignored as the TS spawnSync was.
+		// Exists-ok; the outcome is ignored as in 2.x.
 		_ = x.r.Docker.VolumeCreate(ctx, v.Name)
 	}
 	return x.r.Docker.ComposeUp(ctx, composeFile, project, dir)

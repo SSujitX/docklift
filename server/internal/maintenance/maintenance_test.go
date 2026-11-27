@@ -45,7 +45,7 @@ func TestRestoreLock(t *testing.T) {
 	}
 }
 
-// Ports of backend/src/lib/restoreCritical.test.ts.
+// The restore-critical seal.
 
 func TestEnterRestoreCriticalPersistsMarkerAndBlocksNewLocks(t *testing.T) {
 	s, dir := newState(t)

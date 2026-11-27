@@ -13,7 +13,7 @@ import (
 	"docklift/internal/store"
 )
 
-// ImageCleanup is the part of lib/imageCleanup.ts that POST /purge needs. It
+// ImageCleanup is the part of image cleanup that POST /purge needs. It
 // is implemented by the image-retention code of internal/deploy (owned by
 // another package) and injected through Options.Images. Errors must wrap the
 // Docker client error (%w) so an unreachable daemon is recognised.
@@ -33,7 +33,7 @@ type ImageCleanup interface {
 	PruneBuildKitAll(ctx context.Context) (ok bool, output string)
 }
 
-// CleanupResult is the CleanupResult of imageCleanup.ts.
+// CleanupResult is the outcome of an image cleanup.
 type CleanupResult struct {
 	Kept         []string
 	Removed      []string
@@ -145,7 +145,7 @@ func (h *handlers) purge(w http.ResponseWriter, r *http.Request) {
 			inUse[ref] = true
 		}
 	}
-	// Hardening over TypeScript, which only protected the images of the
+	// Hardening over 2.x, which only protected the images of the
 	// services' containers: an image any container on the host was created
 	// from (running or stopped, tracked or not) is never force-removed.
 	// Without a complete container list nothing is removed (fail closed).

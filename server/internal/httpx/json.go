@@ -1,6 +1,6 @@
 // Package httpx holds the HTTP plumbing shared by every route group: JSON
-// responses, request-body parsing with Express semantics, and the middleware
-// stack of backend/src/index.ts (security headers, CORS, body limits, rate
+// responses, request-body parsing, and the middleware
+// stack (security headers, CORS, body limits, rate
 // limits, maintenance gate, panic recovery) and the trusted-proxy model that
 // decides when X-Forwarded-* headers are believed (proxy.go).
 package httpx
@@ -18,11 +18,11 @@ type ErrorBody struct {
 	Error string `json:"error"`
 }
 
-// InternalErrorMessage is the body of the Express error handler.
+// InternalErrorMessage is the body of the generic 500 error response.
 const InternalErrorMessage = "Something went wrong!"
 
 // JSON writes v as the response body with the given status, encoded like
-// Express res.json (JSON.stringify: no HTML escaping, no trailing newline,
+// JSON.stringify (no HTML escaping, no trailing newline,
 // `application/json; charset=utf-8`).
 func JSON(w http.ResponseWriter, status int, v any) {
 	body, err := Marshal(v)
@@ -54,7 +54,7 @@ func Error(w http.ResponseWriter, status int, msg string) {
 	JSON(w, status, ErrorBody{Error: msg})
 }
 
-// InternalError writes the Express error-handler response (500
+// InternalError writes the generic error response (500
 // `{"error":"Something went wrong!"}`) after logging err.
 func InternalError(w http.ResponseWriter, r *http.Request, err error) {
 	slog.Error("request failed", "method", r.Method, "path", r.URL.Path, "error", err)

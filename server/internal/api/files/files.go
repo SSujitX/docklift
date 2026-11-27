@@ -1,8 +1,8 @@
 // Package files serves /api/files: the project file tree and the file
-// editor's read and write (the port of backend/src/routes/files.ts).
+// editor's read and write.
 //
 // Containment is checked twice. First lexically: the requested path,
-// resolved like Node's path.resolve (absolute, rooted and drive-qualified
+// resolved like a standard path resolve (absolute, rooted and drive-qualified
 // paths stand on their own), must stay inside the project and must not touch
 // a `.git` segment in any letter case. Then on the opened handle: the
 // kernel's final path of the file (every symlink, junction and mount point
@@ -79,8 +79,8 @@ func Mount(r chi.Router, d *app.Deps) {
 	r.Put("/{projectId}/content", h.write)
 }
 
-// projectPath validates the projectId parameter (decoded once, like Express
-// req.params) and returns deployments/<id>.
+// projectPath validates the projectId parameter (decoded once)
+// and returns deployments/<id>.
 func (h *handlers) projectPath(w http.ResponseWriter, r *http.Request) (string, bool) {
 	id := chi.URLParam(r, "projectId")
 	if r.URL.RawPath != "" {
@@ -306,7 +306,7 @@ func (h *handlers) read(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusRequestEntityTooLarge, "File is too large to open in the editor")
 		return
 	}
-	// Invalid UTF-8 becomes U+FFFD, as Node's 'utf-8' decoding does.
+	// Invalid UTF-8 becomes U+FFFD, as standard UTF-8 decoding does.
 	httpx.JSON(w, http.StatusOK, contentBody{Name: t.name, Content: strings.ToValidUTF8(string(b), "�")})
 }
 

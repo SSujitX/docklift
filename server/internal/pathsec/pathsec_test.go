@@ -42,7 +42,7 @@ func TestTouchesGitDir(t *testing.T) {
 }
 
 func TestTouchesGitDirBackslashSegments(t *testing.T) {
-	// A backslash separates segments on every OS, as in the TS split(/[\\/]+/).
+	// A backslash separates segments on every OS, as in 2.x.
 	if !TouchesGitDir(base, base+string(filepath.Separator)+`sub\.git\config`) {
 		t.Error("backslash-separated .git segment not detected")
 	}

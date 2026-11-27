@@ -31,7 +31,7 @@ const (
 	LogEventError     = "error"
 )
 
-// MarshalJSON writes the exact key set and order of the TS events.
+// MarshalJSON writes the exact key set and order of the 2.x events.
 func (e LogEvent) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)

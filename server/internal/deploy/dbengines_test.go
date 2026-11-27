@@ -1,7 +1,6 @@
 package deploy
 
 import (
-	"encoding/json"
 	"reflect"
 	"regexp"
 	"strings"
@@ -18,7 +17,6 @@ func mustEngine(t *testing.T, id string) Engine {
 }
 
 func TestEngineCatalog(t *testing.T) {
-	// databaseEngines.test.ts
 	if len(ListEngines()) != 5 {
 		t.Fatal("catalog")
 	}
@@ -156,92 +154,4 @@ func envMap(pairs []EnvPair) map[string]string {
 		m[p.Key] = p.Value
 	}
 	return m
-}
-
-type engineParityInput struct {
-	Engine string `json:"engine"`
-	Host   string `json:"host"`
-	User   string `json:"user"`
-	Pass   string `json:"pass"`
-	DB     string `json:"db"`
-	Image  string `json:"image"`
-	Tag    any    `json:"tag"`
-	Marker string `json:"marker"`
-}
-
-type engineParityOutput struct {
-	URL      string            `json:"url"`
-	Env      map[string]string `json:"env"`
-	Cmd      []string          `json:"cmd"`
-	Mount    string            `json:"mount"`
-	Resolved map[string]string `json:"resolved"`
-	Marker   string            `json:"marker"`
-	Managed  string            `json:"managed"`
-}
-
-const engineScript = nodePrelude + `
-const e = await load('lib/databaseEngines.js');
-done({
-  engines: e.listDatabaseEngines(),
-  cases: input.map((c) => {
-    const eng = e.getDatabaseEngine(c.engine);
-    const creds = { username: c.user, password: c.pass, database: c.db };
-    return {
-      url: e.buildConnectionUrl(eng, c.host, creds),
-      env: e.engineRuntimeEnv(eng, creds),
-      cmd: e.engineCommand(eng, creds),
-      mount: e.volumeMountForEngine(eng, c.image),
-      resolved: e.resolveEngineImage(eng, c.tag),
-      marker: e.managedServiceMarker(eng.id, c.image),
-      managed: e.imageForManagedService(eng, c.marker),
-    };
-  }),
-});
-`
-
-// TestEnginesMatchTypeScript compares the engine catalog JSON and the
-// credential/URL helpers with the TS implementation.
-func TestEnginesMatchTypeScript(t *testing.T) {
-	var in []engineParityInput
-	passwords := []string{"s3cret!", "p@ss:w/rd?#[]", "ünï 🚀", "a b+c%d", "~*'()-_.!", "&=;,$"}
-	for i, id := range EngineIDs {
-		for j, pw := range passwords {
-			tag := []any{"15-alpine", "8.4", "11.4", "latest", "8", nil, "nope", "postgres:19", " 7 "}[(i+j)%9]
-			in = append(in, engineParityInput{Engine: id, Host: "dl_x_aaaaaaaa_db", User: "user" + string([]rune(pw)[:1]), Pass: pw, DB: "db/" + pw,
-				Image: []string{"postgres:18", "postgres:16-alpine", "latest", "x:17.2", ""}[j%5], Tag: tag,
-				Marker: []string{"[managed:" + id + "]", "[managed:" + id + "|img:1]", "Dockerfile"}[j%3]})
-		}
-	}
-	var ts struct {
-		Engines json.RawMessage      `json:"engines"`
-		Cases   []engineParityOutput `json:"cases"`
-	}
-	decodeJSON(t, runNode(t, engineScript, in), &ts)
-	goEngines, _ := json.Marshal(ListEngines())
-	var a, b any
-	_ = json.Unmarshal(ts.Engines, &a)
-	_ = json.Unmarshal(goEngines, &b)
-	if !reflect.DeepEqual(a, b) {
-		t.Errorf("engine catalog differs:\nTS %s\nGo %s", ts.Engines, goEngines)
-	}
-	for i, c := range in {
-		e := mustEngine(t, c.Engine)
-		creds := Credentials{Username: c.User, Password: c.Pass, Database: c.DB}
-		got := engineParityOutput{
-			URL: ConnectionURLFor(e, c.Host, creds), Env: envMap(EngineRuntimeEnv(e, creds)), Cmd: EngineCommand(e, creds),
-			Mount: VolumeMountForEngine(e, c.Image), Marker: ManagedServiceMarker(e.ID, c.Image), Managed: ImageForManagedService(e, c.Marker),
-		}
-		var tag *string
-		if s, ok := c.Tag.(string); ok {
-			tag = &s
-		}
-		if res, err := ResolveEngineImage(e, tag, nil); err != nil {
-			got.Resolved = map[string]string{"error": err.Error()}
-		} else {
-			got.Resolved = map[string]string{"image": res.Image, "tag": res.Tag}
-		}
-		if !reflect.DeepEqual(got, ts.Cases[i]) {
-			t.Errorf("case %+v\n got  %+v\n want %+v", c, got, ts.Cases[i])
-		}
-	}
 }

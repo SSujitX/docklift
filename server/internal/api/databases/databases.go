@@ -2,11 +2,11 @@
 // catalog (with live Docker Hub versions), creation of a managed database
 // project (credentials, data volume, service row), its listing and
 // connection info, and links that inject a database's connection URL into an
-// app project (the port of backend/src/routes/databases.ts).
+// app project.
 //
 // Starting, stopping, redeploying and deleting a managed database are not
 // routes of this group: they go through /api/deployments and /api/projects
-// like any other project, exactly as in the TS backend.
+// like any other project, exactly as in Docklift 2.x.
 package databases
 
 import (
@@ -93,7 +93,7 @@ type createdCredentials struct {
 }
 
 // createdDatabase is the 201 body of POST /: the project row followed by the
-// fields the TS route spread onto it.
+// fields Docklift 2.x spread onto it.
 type createdDatabase struct {
 	store.Project
 	Services          []*store.Service          `json:"services"`
@@ -135,7 +135,7 @@ func (h *handlers) create(w http.ResponseWriter, r *http.Request) {
 	// written the create (or its rollback) must run to completion.
 	ctx := context.WithoutCancel(r.Context())
 
-	// The live catalog of this engine only (TS refreshed all five and kept
+	// The live catalog of this engine only (2.x refreshed all five and kept
 	// this one; the selection is the same).
 	liveEngine := engine
 	liveEngine.Versions = h.d.Deploy.Hub.LiveVersions(r.Context(), engine.ID, engine.ImageRepo, engine.Versions)
@@ -278,7 +278,7 @@ func (h *handlers) createRows(ctx context.Context, project *store.Project, engin
 
 // volumeFailed answers a failed `docker volume create`: 503 when the daemon
 // is unreachable (deliberate fix; the dashboard only shows the message),
-// else 500 with docker's stderr or the TS fallback message.
+// else 500 with docker's stderr or the 2.x fallback message.
 func (h *handlers) volumeFailed(ctx context.Context, w http.ResponseWriter, err error) {
 	pingCtx, cancel := context.WithTimeout(ctx, pingTimeout)
 	defer cancel()
@@ -293,7 +293,7 @@ func (h *handlers) volumeFailed(ctx context.Context, w http.ResponseWriter, err 
 
 // volumeErrorMessage is docker's stderr (dockerx.VolumeCreate returns it as
 // the error text) or, when the CLI did not start, timed out or wrote nothing,
-// the TS fallback message.
+// the 2.x fallback message.
 func volumeErrorMessage(err error) string {
 	var startErr *execx.StartError
 	var exitErr *execx.ExitError

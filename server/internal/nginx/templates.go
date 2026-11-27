@@ -1,11 +1,10 @@
-// Package nginx is the port of backend/src/services/nginx.ts, nginxSsl.ts and
-// lib/domainOwnership.ts: it writes the nginx-proxy vhosts for service
+// Package nginx writes the nginx-proxy vhosts for service
 // domains and panel domains (ACME challenge path plus optional HTTPS from
 // Let's Encrypt), reloads nginx-proxy through `docker exec`, keeps the conf
 // directory in sync with the database and enforces that a hostname belongs
 // to one mapping.
 //
-// Generated files are byte-identical to the TypeScript output (existing
+// Generated files are byte-identical to the 2.x output (existing
 // installs keep their files, and markers such as "# docklift-ssl:" and
 // "# docklift-panel-domain" are parsed back out of them), with one deliberate
 // change: a panel domain for the dashboard port proxies to the Go backend
@@ -94,7 +93,7 @@ func BuildServiceProxyLocation(serviceID, containerName string, internalPort int
 }
 
 // dashboardLocation is the panel upstream for DashboardPort. Only the two
-// upstream lines differ from the TypeScript template (which pointed at
+// upstream lines differ from the 2.x template (which pointed at
 // docklift-nginx:80); MigratePanelUpstreams relies on that.
 func dashboardLocation(backendPort int) string {
 	return `

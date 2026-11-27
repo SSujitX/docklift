@@ -1,6 +1,5 @@
 // Package safeunzip extracts ZIP archives with zip-slip rejection and
-// file-count / actual-bytes-written quotas (the port of
-// backend/src/lib/safeUnzip.ts).
+// file-count / actual-bytes-written quotas.
 package safeunzip
 
 import (
@@ -29,7 +28,7 @@ type Options struct {
 	MaxUncompressedBytes int64
 }
 
-// Sentinel errors, matched with errors.Is. The error text is the TS message
+// Sentinel errors, matched with errors.Is. The error text is the 2.x message
 // (callers show it to users), e.g. "Archive contains too many files (max 50000)".
 var (
 	ErrTooManyFiles = errors.New("archive contains too many files")

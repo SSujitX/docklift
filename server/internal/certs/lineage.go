@@ -12,7 +12,7 @@ import (
 )
 
 // readLeaf parses the first certificate of live/<certName>/fullchain.pem (the
-// leaf, as Node's X509Certificate does with a PEM bundle).
+// leaf of a PEM bundle).
 func (s *Service) readLeaf(certName string) (*x509.Certificate, bool) {
 	if !IsValidCertName(certName) {
 		return nil, false
@@ -93,7 +93,7 @@ func (s *Service) liveCertDirNames() []string {
 // scoreCertLineage ranks a lineage for a host set; higher is better. When the
 // overlap ties, covering the UI primary must beat a newer orphan (preferring
 // the folder name used to lose to expiry and HSTS-brick the established host).
-// The arithmetic is float64 in the same order as certs.ts so ties and
+// The arithmetic is float64 in the same order as 2.x so ties and
 // precision behave identically.
 func (s *Service) scoreCertLineage(certName string, hosts []string) float64 {
 	primary := ""

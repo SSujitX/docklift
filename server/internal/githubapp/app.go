@@ -1,10 +1,7 @@
 // Package githubapp is the GitHub App side of Docklift: App credentials kept
 // in the settings table, the RS256 App JWT, cached installation access
 // tokens, the GitHub REST client and the one-time setup states of the App
-// manifest/installation flow. It is the port of the helpers exported by
-// backend/src/routes/github.ts (getSetting, getPrivateKey, getAppId,
-// createJwtToken, getInstallationToken, getInstallationIdForRepo) and of
-// backend/src/lib/githubSetupState.ts.
+// manifest/installation flow.
 package githubapp
 
 import (

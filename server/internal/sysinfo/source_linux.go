@@ -20,7 +20,7 @@ const (
 	commandTimeout       = 10 * time.Second
 )
 
-// nsenterPS runs `ps` in the host namespaces (PID 1). The TypeScript backend
+// nsenterPS runs `ps` in the host namespaces (PID 1). Docklift 2.x
 // piped it through `head -n 15`; ParsePSAux keeps the first 15 lines.
 var nsenterPS = []string{"nsenter", "--target", "1", "--mount", "--uts", "--ipc", "--net", "--pid", "--", "ps", "aux", "--sort=-%cpu"}
 
@@ -38,7 +38,7 @@ func run(ctx context.Context, timeout time.Duration, env []string, argv ...strin
 // hostProcesses is getHostProcesses with its fallback: the host process
 // table via nsenter; when that times out, top inside the container. A failing
 // nsenter yields an empty list (the shell pipeline still exited 0 in
-// TypeScript), which makes the caller use the local process list.
+// 2.x), which makes the caller use the local process list.
 func hostProcesses(ctx context.Context) []Process {
 	out, err := run(ctx, hostProcessesTimeout, nil, nsenterPS...)
 	if errors.Is(err, context.DeadlineExceeded) {
@@ -69,7 +69,7 @@ func procUptime() (float64, bool) {
 	return ParseProcUptime(string(b))
 }
 
-// fsSize is systeminformation's Linux fsSize: `df -kPTx squashfs` with
+// fsSize lists Linux filesystems: `df -kPTx squashfs` with
 // LC_ALL=C, falling back to `df -kPT` (busybox df has no -x).
 func fsSize(ctx context.Context) []FsEntry {
 	out, err := run(ctx, commandTimeout, []string{"LC_ALL=C"}, "df", "-kPTx", "squashfs")

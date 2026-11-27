@@ -1,4 +1,4 @@
-// Package dnscheck is the port of backend/src/services/dnsCheck.ts: a DNS
+// Package dnscheck is a DNS
 // preflight for custom domains that answers "does this hostname point at this
 // server?" before Let's Encrypt is asked for a certificate, so a missing record
 // fails fast with an actionable message instead of burning an ACME failure.
@@ -34,7 +34,7 @@ const (
 	StatusUnknown Status = "unknown"
 )
 
-// Check is one hostname's result; its JSON matches DomainDnsCheck in dnsCheck.ts.
+// Check is one hostname's result.
 type Check struct {
 	Domain   string   `json:"domain"`
 	Status   Status   `json:"status"`
@@ -142,7 +142,7 @@ func New(opts ...Option) *Checker {
 // failures) are cached for IPCacheTTL; the cache is stamped before the request
 // so a server without internet access does not pay the timeout on every
 // certificate attempt. Callers arriving while that request runs wait for it
-// (bounded by their context). TS handed them the previous value, which is
+// (bounded by their context). 2.x handed them the previous value, which is
 // null after a restart: the dns-check route looks the IP up twice
 // concurrently, so its per-domain result said "IP could not be confirmed"
 // (status unknown) next to a top-level serverIp that was known.
@@ -227,7 +227,7 @@ type lookupResult struct {
 }
 
 // lookup queries one address family. A "not found" answer (NXDOMAIN or no
-// record of this type — ENOTFOUND/ENODATA in Node) means the resolver
+// record of this type — ENOTFOUND/ENODATA) means the resolver
 // answered: there is no such record. Anything else (SERVFAIL, timeout, no
 // resolver) is a lookup failure — our problem, not the user's.
 func (c *Checker) lookup(ctx context.Context, host string, family int) lookupResult {

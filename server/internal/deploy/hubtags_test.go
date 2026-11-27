@@ -32,7 +32,6 @@ func recommendedOf(vs []EngineVersion) string {
 }
 
 func TestFilterHubTagsToVersions(t *testing.T) {
-	// dockerHubTags.test.ts
 	versions := FilterHubTagsToVersions("postgres", []string{
 		"latest", "18.4-trixie", "18.4", "18", "18-alpine", "18.4-alpine", "17", "17-alpine",
 		"16-bookworm", "16-alpine", "19beta2-alpine", "15-alpine",
@@ -89,48 +88,6 @@ func TestMatchesEngineTagPattern(t *testing.T) {
 	} {
 		if got := MatchesEngineTagPattern(c.engine, c.tag); got != c.want {
 			t.Errorf("%s %q -> %v", c.engine, c.tag, got)
-		}
-	}
-}
-
-const hubScript = nodePrelude + `
-const h = await load('lib/dockerHubTags.js');
-done(input.map((c) => ({
-  versions: h.filterHubTagsToVersions(c.engine, c.tags, c.rec || undefined),
-  matches: c.tags.map((t) => h.matchesEngineTagPattern(c.engine, t)),
-})));
-`
-
-// TestHubTagsMatchTypeScript feeds a realistic tag soup through the TS and
-// Go filters.
-func TestHubTagsMatchTypeScript(t *testing.T) {
-	soup := []string{"latest", "18", "18-alpine", "18.4", "18.4-alpine", "18-alpine3.22", "18.4-bookworm", "18-trixie", "17", "17.6",
-		"17-alpine", "17.6-alpine", "16", "16.10", "16-alpine", "15", "15-alpine", "14", "13", "12", "11", "10", "9.6", "9.6-alpine",
-		"19beta3", "19rc1-alpine", "8.4", "8.4.6", "8.4-oracle", "8.0", "8.0-oracle", "8.0.43", "9.4", "9", "11.4", "10.11", "10.6", "11.8.3",
-		"8-alpine", "7-alpine", "7.4", "7.4-alpine", "7", "6-alpine", "6.2", "8.0-rc", "8.2-windowsservercore", "7.0-nanoserver",
-		"7.0-jammy", "8.0", "7.0", "6.0", "5.0", "4.4", "8", "6", "5", "4", "08", "8.04", "nightly", "dev-alpine", "18.0", "18.00"}
-	type in struct {
-		Engine string   `json:"engine"`
-		Tags   []string `json:"tags"`
-		Rec    string   `json:"rec"`
-	}
-	type out struct {
-		Versions []EngineVersion `json:"versions"`
-		Matches  []bool          `json:"matches"`
-	}
-	var cases []in
-	for _, id := range EngineIDs {
-		cases = append(cases, in{Engine: id, Tags: soup}, in{Engine: id, Tags: soup, Rec: "7-alpine"}, in{Engine: id, Tags: soup[30:], Rec: "nope"})
-	}
-	var want []out
-	decodeJSON(t, runNode(t, hubScript, cases), &want)
-	for i, c := range cases {
-		got := out{Versions: FilterHubTagsToVersions(c.Engine, c.Tags, c.Rec)}
-		for _, tag := range c.Tags {
-			got.Matches = append(got.Matches, MatchesEngineTagPattern(c.Engine, tag))
-		}
-		if !reflect.DeepEqual(got, want[i]) {
-			t.Errorf("%s rec=%q\n got  %v\n want %v", c.Engine, c.Rec, got, want[i])
 		}
 	}
 }

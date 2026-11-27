@@ -1,4 +1,4 @@
-// Package certs is the port of backend/src/services/certs.ts: Let's Encrypt
+// Package certs manages Let's Encrypt
 // certificates issued by the certbot sidecar (webroot HTTP-01), with the PEM
 // files under LETSENCRYPT_PATH/live/<name>/ as the source of truth.
 //
@@ -39,7 +39,7 @@ const (
 )
 
 // CertificateStatus is the SSL status the API returns for a hostname. Its JSON
-// is exactly CertificateStatus from certs.ts (six keys, null for absent values).
+// is exactly six keys, null for absent values.
 type CertificateStatus struct {
 	Status            SslStatus `json:"status"`
 	Domain            string    `json:"domain"`
@@ -50,7 +50,7 @@ type CertificateStatus struct {
 }
 
 const (
-	// ExpiringWindow is when status turns "expiring" (21 days, as in TS).
+	// ExpiringWindow is when status turns "expiring" (21 days, as in 2.x).
 	ExpiringWindow = 21 * 24 * time.Hour
 	// RenewalOverdueWindow: certbot renews 30 days before expiry, so a
 	// certificate with less than 20 days left has failed to renew for at
@@ -193,7 +193,7 @@ func (s *Service) DiagnosticCommand() string {
 	return "sudo docker exec " + s.cfg.CertbotContainer + " tail -n 100 /var/log/letsencrypt/letsencrypt.log"
 }
 
-// hostnamePattern is DOMAIN_REGEX from routes/domains.ts and deployments.ts:
+// hostnamePattern is the domain-name regex:
 // dot-separated labels of letters, digits and inner hyphens, at least two
 // labels. It admits nothing nginx or a shell would treat specially.
 var hostnamePattern = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)+$`)

@@ -201,7 +201,7 @@ func TestStepUpGuards(t *testing.T) {
 		expect(t, e.do(t, "POST", path, nil), 403, `{"error":"Password confirmation required for this operation","requirePassword":true}`)
 		expect(t, e.do(t, "POST", path, map[string]any{"password": 5}), 403, `{"error":"Password confirmation required for this operation","requirePassword":true}`)
 		expect(t, e.do(t, "POST", path, map[string]any{"password": "nope"}), 403, `{"error":"Invalid password","requirePassword":true}`)
-		// The internal secret of the TypeScript backend is not a credential.
+		// The internal secret of Docklift 2.x is not a credential.
 		expect(t, e.do(t, "POST", path, map[string]any{"password": password}, "Authorization", "", "X-Internal-Secret", e.d.Auth.Secrets().InternalAPISecret),
 			401, `{"error":"Authentication required"}`)
 	}

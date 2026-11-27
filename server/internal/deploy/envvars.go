@@ -56,7 +56,7 @@ type EnvVar struct {
 	IsSecret    bool
 }
 
-// EnvVarsFromStore converts rows with the defaults the TS deploy route
+// EnvVarsFromStore converts rows with the defaults the 2.x deploy route
 // applied: is_build_arg null = false, is_runtime null = true, is_secret
 // null = false.
 func EnvVarsFromStore(rows []*store.EnvVariable) []EnvVar {
@@ -76,7 +76,7 @@ func EnvVarsFromStore(rows []*store.EnvVariable) []EnvVar {
 
 // EnvForService merges shared variables with those scoped to serviceName;
 // a service-scoped key overrides the shared key of the same name. The
-// result keeps first-insertion order of keys, like the TS Map.
+// result keeps first-insertion order of keys, like 2.x.
 func EnvForService(all []EnvVar, serviceName string) []EnvVar {
 	index := map[string]int{}
 	var out []EnvVar

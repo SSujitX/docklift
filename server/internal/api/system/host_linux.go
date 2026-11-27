@@ -12,7 +12,7 @@ import (
 )
 
 // linuxHost runs the host actions with exec (no shell built from input).
-// Host command lines of system.ts. They are constants: nothing from a
+// Host command lines. They are constants: nothing from a
 // request ever reaches them.
 var (
 	rebootCommand = []string{"reboot", "-f"}

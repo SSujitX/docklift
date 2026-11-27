@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-// DefaultBaseURL is the GitHub REST API (GITHUB_API_URL in github.ts).
+// DefaultBaseURL is the GitHub REST API.
 const DefaultBaseURL = "https://api.github.com"
 
 // Limits applied to every GitHub API call.
@@ -32,7 +32,7 @@ const (
 
 // ErrFetchFailed wraps transport failures (DNS, TLS, timeouts, refused
 // redirects). Its message is undici's "fetch failed" so callers that echo
-// error messages to the client, as github.ts did, never expose network details.
+// error messages to the client, as 2.x did, never expose network details.
 var ErrFetchFailed = errors.New("fetch failed")
 
 // ErrResponseTooLarge is returned when a response exceeds MaxResponseBytes.
@@ -45,7 +45,7 @@ type StatusError struct {
 	StatusText string
 	// Body is the start of the response body (at most a few KiB).
 	Body string
-	// msg is the error message, worded like github.ts.
+	// msg is the error message, worded like 2.x.
 	msg string
 }
 

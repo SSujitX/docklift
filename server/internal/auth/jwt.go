@@ -28,7 +28,7 @@ var (
 	ErrInvalidToken = errors.New("invalid token")
 	// ErrTokenExpired is TokenExpiredError.
 	ErrTokenExpired = errors.New("token expired")
-	// ErrTokenNotActive is NotBeforeError, which the TypeScript middleware
+	// ErrTokenNotActive is NotBeforeError, which the 2.x middleware
 	// answered with 500 "Authentication failed".
 	ErrTokenNotActive = errors.New("token not active")
 )
@@ -112,7 +112,7 @@ const (
 	userIDInvalid                    // another truthy type (a database lookup would fail)
 )
 
-// parser accepts HS256 only: every token Docklift issues (TS or Go) is HS256,
+// parser accepts HS256 only: every token Docklift issues (2.x or Go) is HS256,
 // so other HMAC variants are refused rather than verified with the same key.
 var parser = jwt.NewParser(
 	jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}),

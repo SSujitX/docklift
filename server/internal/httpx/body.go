@@ -20,7 +20,7 @@ import (
 	"docklift/internal/js"
 )
 
-// MaxBodyBytes is the express.json / express.urlencoded limit ('10mb').
+// MaxBodyBytes is the JSON and urlencoded body limit (10 MiB).
 const MaxBodyBytes = 10 * 1024 * 1024
 
 // maxURLEncodedParams is body-parser's default parameterLimit.
@@ -28,10 +28,10 @@ const maxURLEncodedParams = 1000
 
 type bodyKey struct{}
 
-// Body is the parsed request body, the equivalent of Express req.body after
-// express.json() and express.urlencoded(). Defined is false when no parser
+// Body is the parsed request body (JSON or urlencoded). Defined is false
+// when no parser
 // ran (no body, or a content type other than JSON/urlencoded), which is when
-// req.body was undefined in Express 5. Raw holds the exact bytes of a JSON
+// the body is undefined. Raw holds the exact bytes of a JSON
 // body (webhook signatures are computed over it).
 type Body struct {
 	Defined bool
@@ -52,7 +52,7 @@ func WithBody(ctx context.Context, b Body) context.Context {
 }
 
 // NewBody returns a defined body holding v, for bodies a handler parses
-// itself (multipart text fields, as multer filled req.body). v must be a
+// itself (multipart text fields). v must be a
 // decoded JSON value: nil, bool, json.Number, string, []any or
 // map[string]any. Raw is empty.
 func NewBody(v any) Body {
@@ -73,9 +73,9 @@ func (b Body) Get(key string) Value {
 	return b.Value().Get(key)
 }
 
-// ParseBody is express.json({limit: '10mb'}) followed by
-// express.urlencoded({extended: true, limit: '10mb'}). Parse failures are the
-// client's mistake and end the request with a 4xx JSON error (Express sent
+// ParseBody is a JSON parse (limit 10mb) followed by
+// a urlencoded parse (extended, limit 10mb). Parse failures are the
+// client's mistake and end the request with a 4xx JSON error (2.x sent
 // every body-parser error to its 500 handler; deliberate fix):
 //
 //	malformed JSON (or a JSON primitive, refused in strict mode)  400 {"error":"Invalid JSON body"}
@@ -453,7 +453,7 @@ func qsDecode(s string) string {
 
 // Value is a request value with JavaScript semantics: it distinguishes
 // undefined (absent) from null, and offers truthiness and typeof checks the
-// TypeScript handlers relied on. Numbers are json.Number.
+// 2.x handlers relied on. Numbers are json.Number.
 type Value struct {
 	v       any
 	defined bool

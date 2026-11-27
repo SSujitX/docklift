@@ -63,8 +63,8 @@ type panelFile struct {
 	content string
 }
 
-// isPanelConf mirrors the filters of routes/domains.ts GET / and
-// domainOwnership.ts panelHostnames.
+// isPanelConf mirrors the 2.x filters of the domain listing and
+// of the panel hostname set.
 func isPanelConf(name, content string) bool {
 	if !strings.HasSuffix(name, ".conf") || name == "default.conf" || strings.HasPrefix(name, "service-") {
 		return false
@@ -252,8 +252,7 @@ func (s *Service) panelHostnames() map[string]bool {
 }
 
 // NormalizeDomainString trims and lowercases the hostnames of a
-// comma-separated string, dropping empties and duplicates
-// (domainOwnership.ts normalizeDomainList).
+// comma-separated string, dropping empties and duplicates.
 func NormalizeDomainString(s string) []string { return certs.CleanHosts(strings.Split(s, ",")) }
 
 // FormatDomainField joins hostnames for the services.domain column; nil when
@@ -266,7 +265,7 @@ func FormatDomainField(hosts []string) *string {
 	return &v
 }
 
-// ValidDomainList is isValidDomainList from deployments.ts: empty is valid,
+// ValidDomainList reports whether a domain field is valid: empty is valid,
 // otherwise every non-empty comma-separated entry must match DOMAIN_REGEX.
 func ValidDomainList(s string) bool {
 	for _, d := range strings.Split(s, ",") {

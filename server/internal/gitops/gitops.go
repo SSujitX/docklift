@@ -1,6 +1,6 @@
 // Package gitops runs the git CLI for project checkouts: clone, pull a
 // branch or tag with fetch + hard reset, read HEAD, roll back to a commit and
-// manage the origin URL (the port of backend/src/services/git.ts).
+// manage the origin URL.
 //
 // Every invocation is hardened: git is executed directly (never through a
 // shell) with a timeout; terminal prompts, credential helpers, hooks and
@@ -350,7 +350,7 @@ func HasCredentials(remote string) bool {
 // GitHubOwnerRepo extracts owner and repository (without .git) from a
 // GitHub repository URL. Only https URLs whose host is exactly github.com
 // (no port, no userinfo) qualify: they are the only URLs an installation
-// token is ever requested for. The TS regex matched "github.com/" anywhere
+// token is ever requested for. The 2.x regex matched "github.com/" anywhere
 // in the string (https://evil.test/github.com/a/b included).
 func GitHubOwnerRepo(raw string) (owner, repo string, ok bool) {
 	u, err := url.Parse(raw)
@@ -696,7 +696,7 @@ func (r *Runner) ScrubOrigin(ctx context.Context, dir, cleanURL string) error {
 
 // VerifyNoCredentials fails with ErrCredentialsRemain when the origin URL
 // still embeds credentials (verifyOriginHasNoCredentials). A missing origin
-// counts as clean, as in TS.
+// counts as clean, as in 2.x.
 func (r *Runner) VerifyNoCredentials(ctx context.Context, dir string) error {
 	u, err := r.OriginURL(ctx, dir)
 	if err != nil {

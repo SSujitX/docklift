@@ -208,7 +208,7 @@ func (s *Service) failDeploy(pid, id string, l *deployLog, err error) {
 	t.ForgetCancelled(id)
 	t.Release(pid, id)
 	// A cancel kills the build through its context; the client is told the
-	// deployment was cancelled (as TS's stillOwns checks threw), not
+	// deployment was cancelled (as 2.x's ownership checks threw), not
 	// "context canceled".
 	if cancelled && errors.Is(err, context.Canceled) {
 		err = errCancelled
@@ -397,7 +397,7 @@ func (s *Service) composeError(pid, id string, l *deployLog, err error) {
 
 // pullGitHub refreshes the installation token and pulls (the token is sent
 // as a request header, never stored in the checkout), then scrubs and
-// verifies the origin remote as the TS code did.
+// verifies the origin remote as 2.x did.
 func (s *Service) pullGitHub(p *store.Project, id string, l *deployLog) error {
 	pid := p.ID
 	projectPath := s.rt.ProjectPath(pid)

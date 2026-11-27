@@ -218,7 +218,7 @@ func TestPullTag(t *testing.T) {
 		t.Errorf("moved tag HEAD = %s", sha)
 	}
 	// A checkout detached on a tag with no ref: the SHA is used, which is
-	// neither a branch nor a tag, so the sync fails closed like TS.
+	// neither a branch nor a tag, so the sync fails closed like 2.x.
 	if err := r.Clone(ctx, u.url, dest, CloneOptions{Ref: "v1"}); err != nil {
 		t.Fatal(err)
 	}
@@ -470,7 +470,7 @@ func TestGitHubOwnerRepo(t *testing.T) {
 			t.Errorf("GitHubOwnerRepo(%q) = %q %q %v", tc.in, o, r, ok)
 		}
 	}
-	// Only https://github.com/<owner>/<repo> qualifies for a token: the TS
+	// Only https://github.com/<owner>/<repo> qualifies for a token: the 2.x
 	// regex matched "github.com/" anywhere in the string.
 	for _, bad := range []string{
 		"https://gitlab.com/a/b",

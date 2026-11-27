@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-// Ensure is the port of backend/src/scripts/ensureDb.ts, run before serving:
+// Ensure prepares the database before serving:
 //
 //  1. dedupe env_variables so the scoped unique index can apply (non-fatal),
 //  2. apply migrations (`migrate deploy`),
@@ -89,7 +89,7 @@ func (d *DB) baselineLegacyIfNeeded(ctx context.Context, log *slog.Logger) error
 	return d.MarkApplied(ctx, BaselineMigration)
 }
 
-// RepairLegacySchema is the idempotent repair pass of ensureDb.ts for installs
+// RepairLegacySchema is the idempotent repair pass for installs
 // that used `db push` before migration history existed.
 func (d *DB) RepairLegacySchema(ctx context.Context, log *slog.Logger) error {
 	w := d.Writer()
@@ -211,10 +211,9 @@ func (d *DB) RepairLegacySchema(ctx context.Context, log *slog.Logger) error {
 }
 
 // DedupeEnvVariables keeps the newest row per (project_id, service_name, key)
-// and deletes the rest, returning how many rows were removed. It is the port
-// of dedupeEnvVariables in backend/src/lib/envVariables.ts (same ordering:
+// and deletes the rest, returning how many rows were removed. Rows are ordered by
 // project_id, service_name, key ascending, created_at descending; the first
-// row of each group survives). It runs before migrations, so it tolerates a
+// row of each group survives. It runs before migrations, so it tolerates a
 // pre-scope table without service_name (treated as the shared scope "").
 func DedupeEnvVariables(ctx context.Context, q Querier) (int, error) {
 	scoped, err := ColumnExists(ctx, q, "env_variables", "service_name")

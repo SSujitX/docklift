@@ -17,7 +17,7 @@ type HostOS struct {
 	Release  string
 }
 
-// ParseOSRelease parses os-release content the way system.ts did: each line
+// ParseOSRelease parses os-release content the way 2.x did: each line
 // is split on "=" and only the first two parts are kept (a value containing
 // "=" is cut there), double quotes are removed.
 func ParseOSRelease(content string) HostOS {
@@ -198,7 +198,7 @@ func field(parts []string, i int) string {
 	return ""
 }
 
-// FsEntry is one filesystem of systeminformation fsSize().
+// FsEntry is one filesystem entry.
 type FsEntry struct {
 	FS        string
 	Type      string
@@ -223,7 +223,7 @@ func isLinuxTmpFs(fsType string) bool {
 	return false
 }
 
-// ParseDF parses `df -kPT` output like systeminformation's fsSize on Linux:
+// ParseDF parses `df -kPT` output the way 2.x did on Linux:
 // header lines are dropped, real devices, the root mount and non-tmpfs types
 // are kept, duplicates (same fs, type and mount) are listed once.
 func ParseDF(out string) []FsEntry {
@@ -309,7 +309,7 @@ var brandReplacements = []struct {
 	{regexp.MustCompile(`CPU+`), ""},
 }
 
-// CPUBrand is systeminformation's brand cleanup of a CPU model line: the part
+// CPUBrand cleans up a CPU model line: the part
 // before "@", (R)/(TM)/(C) turned into symbols, "CPU" removed and the vendor
 // (first word) dropped. "Intel(R) Core(TM) i7-8700 CPU @ 3.20GHz" becomes
 // "Core™ i7-8700".
@@ -338,11 +338,11 @@ func CPUSpeedFromModel(model string) float64 {
 	return v
 }
 
-// LocaleString is new Date().toLocaleString() under Node's default en-US
+// LocaleString is JavaScript's new Date().toLocaleString() under the default en-US
 // ICU locale: "11/27/2026, 3:04:05 PM" in local time. ICU 72+ formats a
-// narrow no-break space before the day period, but V8 (Node 20 and later,
-// the production image runs Node 24) replaces it with a plain space; the
-// live TypeScript backend was checked to answer with U+0020.
+// narrow no-break space before the day period, but V8 (as used by Docklift 2.x)
+// replaces it with a plain space; the
+// live 2.x server was checked to answer with U+0020.
 func LocaleString(t time.Time) string {
 	return t.Format("1/2/2006, 3:04:05 PM")
 }

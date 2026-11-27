@@ -24,7 +24,7 @@ const busyTimeoutMS = 10000
 // connection writer (SQLite allows one writer; serialising in-process avoids
 // SQLITE_BUSY between our own goroutines) and a reader pool for concurrent
 // queries. Reopen swaps both, which the restore flow needs after replacing the
-// database file (the port of reconnectPrisma in backend/src/lib/prisma.ts).
+// database file.
 type DB struct {
 	path string
 

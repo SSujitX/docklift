@@ -126,7 +126,7 @@ type spa struct {
 
 func (s *spa) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	p := r.URL.Path
-	// Express matched routes case-insensitively, so /API/... was an API path too.
+	// 2.x matched routes case-insensitively, so /API/... was an API path too.
 	if lower := strings.ToLower(p); lower == "/api" || lower == "/ws" || strings.HasPrefix(lower, "/api/") || strings.HasPrefix(lower, "/ws/") {
 		httpx.NotFound(w, r)
 		return

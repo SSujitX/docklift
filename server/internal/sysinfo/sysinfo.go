@@ -1,8 +1,7 @@
 // Package sysinfo collects the host statistics served by /api/system/stats
-// and /api/system/quick (the getSystemStats logic of
-// backend/src/routes/system.ts). Source is the systeminformation-equivalent
-// layer (gopsutil, /proc, df, nsenter); Collector combines its readings into
-// the exact JSON shape, rounding and caching of the TypeScript backend.
+// and /api/system/quick. Sources are gopsutil, /proc, df and
+// nsenter; Collector combines the readings into the JSON shape, rounding and
+// caching the dashboard expects.
 package sysinfo
 
 import (
@@ -21,7 +20,7 @@ import (
 	"docklift/internal/js"
 )
 
-// Host files the TypeScript backend read from the bind-mounted host root.
+// Host files 2.x read from the bind-mounted host root.
 const (
 	HostHostnamePath  = "/host/hostname"
 	HostOSReleasePath = "/host/os-release"
@@ -48,7 +47,7 @@ type CPUInfo struct {
 }
 
 // MemInfo is si.mem() in bytes; Used is Total - Free (buffers and cache
-// count as used, as in systeminformation).
+// count as used, as in 2.x).
 type MemInfo struct {
 	Total     float64
 	Free      float64
@@ -213,7 +212,7 @@ type Quick struct {
 }
 
 // Collector caches host statistics like the module-level caches of
-// system.ts: stats for 3 s, the established-connection count for 30 s
+// 2.x: stats for 3 s, the established-connection count for 30 s
 // (refreshed in the background) and the public IP for 5 minutes.
 type Collector struct {
 	src        Source
@@ -242,7 +241,7 @@ type Collector struct {
 
 // Options configure a Collector; zero fields take production defaults.
 type Options struct {
-	// GOOS replaces runtime.GOOS (platform branches of system.ts).
+	// GOOS replaces runtime.GOOS (platform branches).
 	GOOS string
 	// Now replaces time.Now.
 	Now func() time.Time

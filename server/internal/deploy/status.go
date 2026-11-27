@@ -171,7 +171,7 @@ func (r *Runtime) RecoverOnBoot(ctx context.Context) error {
 // FailDeployment marks a deployment failed (with logs when non-nil) unless it
 // was cancelled meanwhile — an intentional cancel is never overwritten — and
 // then sets the project and its services to "error" (failDeploymentState).
-// Errors are swallowed like the TS .catch(() => {}) calls; the result
+// Errors are swallowed; the result
 // reports whether the row was marked failed.
 func (r *Runtime) FailDeployment(ctx context.Context, projectID, deploymentID string, logs *string) bool {
 	now := db.Now()

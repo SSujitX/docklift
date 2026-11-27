@@ -2,7 +2,7 @@
 // runner with timeouts, environment control, stdin, captured or streamed
 // output, exit codes and process-tree termination on cancel.
 //
-// It replaces the child_process spawn/spawnSync calls of the TypeScript
+// It replaces the child_process spawn/spawnSync calls of the previous
 // backend. Arguments are passed to the program as-is (exec.Command semantics),
 // never through `sh -c`, so user input cannot inject shell syntax.
 //
@@ -23,7 +23,7 @@ import (
 )
 
 // DefaultKillGrace is how long a cancelled process tree gets between the
-// polite stop signal and the hard kill (the TS code waited 2-3 s).
+// polite stop signal and the hard kill (2.x waited 2-3 s).
 const DefaultKillGrace = 3 * time.Second
 
 // ErrTimeout is returned (wrapped) when Cmd.Timeout elapsed before the

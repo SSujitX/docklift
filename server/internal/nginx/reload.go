@@ -19,7 +19,7 @@ import (
 const execTimeout = 30 * time.Second
 
 // ReloadError is a failed nginx reload or configuration test. Its message
-// keeps the TypeScript prefix "Nginx reload failed: " (the API returns it).
+// keeps the 2.x prefix "Nginx reload failed: " (the API returns it).
 type ReloadError struct {
 	// Detail is the spawn error, nginx's stderr, or "exit code N".
 	Detail string
@@ -150,7 +150,7 @@ func (r *Reloader) Test(ctx context.Context) (testVerdict, string) {
 // rejects the configuration — after one self-heal attempt for an unrelated
 // broken service conf — the previous content is restored (or the new file
 // removed) and a *ReloadError with RolledBack is returned. When nginx cannot
-// be run at all the new file is kept, as the TypeScript backend did; the
+// be run at all the new file is kept, as 2.x did; the
 // following Reload reports that failure. Reloading is left to the caller.
 func (r *Reloader) ApplyConf(ctx context.Context, path, content string) error {
 	prev, readErr := os.ReadFile(path)

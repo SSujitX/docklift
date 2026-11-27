@@ -139,7 +139,7 @@ func TestParseBodyNoBody(t *testing.T) {
 	var e echo
 	_ = json.NewDecoder(resp.Body).Decode(&e)
 	// net/http sends Content-Length: 0 for a POST without body, which
-	// type-is counts as a body: express.json yields {}.
+	// type-is counts as a body: the JSON parser yields {}.
 	if !e.Defined {
 		t.Errorf("POST with Content-Length: 0 must parse as {}: %+v", e)
 	}

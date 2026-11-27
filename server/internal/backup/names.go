@@ -72,7 +72,7 @@ func ISO(t time.Time) string {
 
 var byteUnits = []string{"B", "KB", "MB", "GB", "TB"}
 
-// FormatBytes is the human-readable size of the TS formatBytes helper:
+// FormatBytes is the human-readable size of a byte count:
 // parseFloat((bytes / 1024^i).toFixed(2)) + ' ' + unit.
 func FormatBytes(n int64) string {
 	if n == 0 {

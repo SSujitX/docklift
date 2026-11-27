@@ -29,7 +29,7 @@ var repoNameRe = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
 
 func jsonNumber(s string) json.Number { return json.Number(s) }
 
-// clientMessage is the error text github.ts echoed to the client
+// clientMessage is the error text echoed to the client
 // (error.message), without transport details.
 func clientMessage(err error) string {
 	if errors.Is(err, githubapp.ErrFetchFailed) {
@@ -91,7 +91,7 @@ func jsTruthyString(v any) (string, bool) {
 	return s, ok && s != ""
 }
 
-// mapRepo is mapRepo of github.ts.
+// mapRepo reduces a GitHub API repository to the fields the dashboard uses.
 func mapRepo(repo map[string]any) mappedRepo {
 	owner := ""
 	if o, ok := repo["owner"].(map[string]any); ok {

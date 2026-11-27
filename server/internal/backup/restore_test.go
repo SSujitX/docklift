@@ -536,7 +536,7 @@ func TestCheckSpace(t *testing.T) {
 }
 
 // A project whose backup has no Docklift runtime compose is skipped: the
-// repository's own docker-compose.yml is never started (TS fell back to it),
+// repository's own docker-compose.yml is never started (2.x fell back to it),
 // and compose never runs inside the checkout.
 func TestReconcileNeverStartsRepositoryCompose(t *testing.T) {
 	src, dst := newEnv(t), newEnv(t)

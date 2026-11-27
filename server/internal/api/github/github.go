@@ -1,4 +1,4 @@
-// Package github serves /api/github (the port of backend/src/routes/github.ts):
+// Package github serves /api/github:
 // the GitHub App manifest flow, installation callbacks, connection status,
 // repository/branch/tag listing and the push webhook that triggers
 // auto-deploys. App credentials, JWTs, tokens and setup states live in
@@ -141,7 +141,7 @@ func clearStateCookie(w http.ResponseWriter) {
 // and /setup): the `state` query parameter GitHub echoes back must be
 // present, equal (constant time) to the HttpOnly cookie set in the browser
 // that started the flow, and name a valid unexpired state. It returns that
-// state. TS (requireGithubSetupState) accepted the query OR the cookie, so a
+// state. Docklift 2.x accepted the query OR the cookie, so a
 // link carrying an attacker's own state, or the victim's cookie alone,
 // passed: a login-CSRF that could bind an attacker's App or installation.
 func (h *handlers) requireState(r *http.Request) (string, bool, error) {
@@ -251,7 +251,7 @@ func (h *handlers) manifest(w http.ResponseWriter, r *http.Request) {
 		SetupURL:       serverURL + "/api/github/setup",
 		HookAttributes: manifestHook{URL: serverURL + "/api/github/webhook", Active: true},
 		DefaultEvents:  []string{"push"},
-		// Public, as in TS: the App is created on the user's personal account,
+		// Public, as in 2.x: the App is created on the user's personal account,
 		// and only a public App can be installed on other accounts (the
 		// "Add Account" flow for organisations). Anyone may therefore install
 		// it, so installations are only bound through a matching setup state
@@ -451,7 +451,7 @@ func (h *handlers) checkInstallation(w http.ResponseWriter, r *http.Request) {
 	}
 	// Keep the saved installation when it is still present, else take the
 	// installation on the account that owns the App. Never fall back to
-	// installations[0] as TS did: the App is public, so anyone can install it
+	// installations[0] as 2.x did: the App is public, so anyone can install it
 	// on their own account, and that installation must not become ours.
 	existing, err := h.setting(ctx, githubapp.KeyInstallationID)
 	if err != nil {

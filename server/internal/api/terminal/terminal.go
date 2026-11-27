@@ -1,6 +1,5 @@
-// Package terminal serves the WebSocket terminal at /ws/terminal (the
-// upgrade listener of backend/src/services/terminal.ts). The sessions
-// themselves run in internal/terminal.
+// Package terminal serves the WebSocket terminal at /ws/terminal. The
+// sessions themselves run in internal/terminal.
 package terminal
 
 import (
@@ -22,7 +21,7 @@ import (
 // Path is the only path that accepts a WebSocket upgrade.
 const Path = "/ws/terminal"
 
-// Attach installs the upgrade handler on the root router r. Like the Node
+// Attach installs the upgrade handler on the root router r. Like an HTTP
 // 'upgrade' listener it sees every upgrade request, before the HTTP
 // middleware stack (body parsing, rate limits, maintenance gate): an upgrade
 // on any other path is dropped without a response; on /ws/terminal the
@@ -55,7 +54,7 @@ type upgrader struct {
 	ws websocket.Upgrader
 }
 
-// isUpgrade is Node's upgrade detection: an Upgrade header together with a
+// isUpgrade detects an upgrade request: an Upgrade header together with a
 // Connection header listing the "upgrade" token.
 func isUpgrade(r *http.Request) bool {
 	if len(r.Header.Values("Upgrade")) == 0 {
@@ -126,7 +125,7 @@ func (u *upgrader) allowedOrigin(r *http.Request) bool {
 }
 
 // refuse writes a raw status line (or nothing) on the bare connection and
-// destroys it, as the Node listener did with socket.write + socket.destroy.
+// destroys it, as 2.x did with socket.write + socket.destroy.
 func refuse(w http.ResponseWriter, statusLine string) {
 	conn, buf, err := http.NewResponseController(w).Hijack()
 	if err != nil {

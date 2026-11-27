@@ -131,63 +131,6 @@ func (c parityCase) goInputs() ([]RuntimeService, []EnvVar, RuntimeComposeOption
 	return svcs, env, RuntimeComposeOptions{ProjectID: c.Options.ProjectID, PublishHostPort: c.Options.PublishHostPort, MemLimit: c.Options.MemLimit, CPUs: c.Options.CPUs}
 }
 
-const composeScript = nodePrelude + `
-import os from 'os';
-import path from 'path';
-const { generateRuntimeCompose } = await load('services/compose.js');
-const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'parity-'));
-const out = [];
-input.forEach((c, i) => {
-  const p = path.join(dir, 'c' + i + '.yml');
-  const opts = { ...c.options };
-  if (!opts.projectId) delete opts.projectId;
-  generateRuntimeCompose(p, c.services, c.env || undefined, opts);
-  out.push(fs.readFileSync(p, 'utf8'));
-});
-fs.rmSync(dir, { recursive: true, force: true });
-done(out);
-`
-
-// TestRuntimeComposeMatchesTypeScript generates the same fixtures with the
-// TS generateRuntimeCompose (js-yaml dump) and with RenderRuntimeCompose and
-// compares the parsed documents node by node: same structure, same resolved
-// tags, same values.
-func TestRuntimeComposeMatchesTypeScript(t *testing.T) {
-	cases := parityFixture()
-	var tsDocs []string
-	decodeJSON(t, runNode(t, composeScript, cases), &tsDocs)
-	if len(tsDocs) != len(cases) {
-		t.Fatalf("node returned %d documents", len(tsDocs))
-	}
-	for i, c := range cases {
-		svcs, env, opts := c.goInputs()
-		goDoc, err := RenderRuntimeCompose(svcs, env, opts)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var tsNode, goNode yaml.Node
-		if err := yaml.Unmarshal([]byte(tsDocs[i]), &tsNode); err != nil {
-			t.Fatalf("case %d: parse TS output: %v", i, err)
-		}
-		if err := yaml.Unmarshal(goDoc, &goNode); err != nil {
-			t.Fatalf("case %d: parse Go output: %v\n%s", i, err, goDoc)
-		}
-		if diff := compareNodes("$", &tsNode, &goNode); diff != "" {
-			t.Errorf("case %d: %s\n--- TS ---\n%s\n--- Go ---\n%s", i, diff, tsDocs[i], goDoc)
-		}
-		var tsAny, goAny any
-		if err := yaml.Unmarshal([]byte(tsDocs[i]), &tsAny); err != nil {
-			t.Fatal(err)
-		}
-		if err := yaml.Unmarshal(goDoc, &goAny); err != nil {
-			t.Fatal(err)
-		}
-		if !reflect.DeepEqual(tsAny, goAny) {
-			t.Errorf("case %d: decoded documents differ", i)
-		}
-	}
-}
-
 // TestRuntimeComposeRoundTripsEveryValue checks independently of node that
 // every awkward env value and command argument parses back as the identical
 // string.
@@ -262,7 +205,7 @@ func TestWriteRuntimeCompose(t *testing.T) {
 		t.Fatal(err)
 	}
 	app := generated.Services["app"]
-	// compose.defaults.test.ts: no cap_drop, no hard mem/cpu caps by default.
+	// Defaults: no cap_drop, no hard mem/cpu caps by default.
 	for _, k := range []string{"cap_drop", "mem_limit", "cpus", "ports", "volumes", "command"} {
 		if _, ok := app[k]; ok {
 			t.Errorf("unexpected %s", k)

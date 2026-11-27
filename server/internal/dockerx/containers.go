@@ -24,7 +24,7 @@ type ContainerStatus struct {
 }
 
 // StatusNotFound is the Status of a container that does not exist (or when
-// Docker cannot be reached, exactly like the TS code).
+// Docker cannot be reached, exactly like 2.x).
 const StatusNotFound = "not_found"
 
 // ContainerStatus inspects a container by exact name and falls back to a
@@ -113,7 +113,7 @@ func demuxFrames(buf *[]byte) [][]byte {
 }
 
 // ContainerStats is the formatted one-shot stats object of
-// getContainerStats (all values are strings, like the TS toFixed output).
+// a container (all values are strings, fixed-point formatted).
 type ContainerStats struct {
 	CPUPercent    string `json:"cpu_percent"`
 	MemoryUsage   string `json:"memory_usage"`
@@ -122,8 +122,8 @@ type ContainerStats struct {
 }
 
 // ContainerStats samples a container once (with the previous CPU sample, as
-// dockerode's stream:false did) and formats it; nil means the stats could
-// not be read (the TS null).
+// a one-shot stats call returns) and formats it; nil means the stats could
+// not be read (2.x returned null).
 func (d *Docker) ContainerStats(ctx context.Context, name string) *ContainerStats {
 	if d.Engine == nil {
 		return nil
@@ -140,8 +140,7 @@ func (d *Docker) ContainerStats(ctx context.Context, name string) *ContainerStat
 	return FormatStats(&s)
 }
 
-// FormatStats computes the CPU and memory figures exactly like
-// getContainerStats in docker.ts.
+// FormatStats computes the CPU and memory figures exactly as 2.x did.
 func FormatStats(s *container.StatsResponse) *ContainerStats {
 	cpuDelta := float64(s.CPUStats.CPUUsage.TotalUsage) - float64(s.PreCPUStats.CPUUsage.TotalUsage)
 	systemDelta := float64(s.CPUStats.SystemUsage) - float64(s.PreCPUStats.SystemUsage)

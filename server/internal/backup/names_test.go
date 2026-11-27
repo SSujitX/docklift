@@ -95,8 +95,8 @@ func TestFormatBytes(t *testing.T) {
 	}
 }
 
-// The cases of backend/src/lib/restoreCommitPolicy.test.ts, plus the
-// authenticated no-admin and no-database cases.
+// The restore commit policy, including the authenticated no-admin and
+// no-database cases.
 func TestDecideCommit(t *testing.T) {
 	for _, tc := range []struct {
 		name string

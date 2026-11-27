@@ -69,11 +69,11 @@ func (l logWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// Stream is streamContainerLogs of services/docker.ts: an SSE response that
+// Stream is an SSE response that
 // reports `status` when the container is not running, otherwise `connected`
 // followed by one `log` event per log frame (stdout and stderr, with Docker
 // timestamps) until the stream `end`s or fails (`error`). Docker errors are
-// events on a 200 stream, as in TypeScript: the dashboard's EventSource shows
+// events on a 200 stream, as in 2.x: the dashboard's EventSource shows
 // their message, which a non-200 status would hide. The stream stops when
 // the client disconnects.
 func Stream(w http.ResponseWriter, r *http.Request, docker Docker, name, tail string) {

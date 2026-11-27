@@ -13,8 +13,8 @@ import (
 const forcedExitAfter = 30 * time.Second
 
 // restartProcess ends the process after a committed restore so Docker's
-// restart policy starts it again on the restored data (2.1.6 called
-// process.exit(0)). It sends itself SIGTERM, which runs the normal graceful
+// restart policy starts it again on the restored data (2.1.6 exited
+// immediately). It sends itself SIGTERM, which runs the normal graceful
 // shutdown (requests drained, shutdown hooks, database closed) and exits 0;
 // if that does not finish in time the process exits anyway.
 func restartProcess(log *slog.Logger) {

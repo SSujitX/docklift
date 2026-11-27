@@ -10,7 +10,6 @@ import (
 )
 
 func TestEnvForService(t *testing.T) {
-	// envVariables.test.ts
 	rows := []EnvVar{
 		{Key: "SHARED", Value: "a", ServiceName: SharedEnvService},
 		{Key: "API_ONLY", Value: "b", ServiceName: "api"},

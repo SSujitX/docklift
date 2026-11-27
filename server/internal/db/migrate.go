@@ -127,7 +127,7 @@ type MigrateResult struct {
 	Applied []string
 }
 
-// Migrate is the port of `prisma migrate deploy`: it creates the ledger on an
+// Migrate behaves like `prisma migrate deploy` (the ledger format is Prisma's): it creates the ledger on an
 // empty database (refusing a non-empty schema without one, P3005), refuses to
 // continue past a failed migration (P3009), and applies each embedded
 // migration whose name is not recorded as finished. Each attempt is recorded
@@ -215,7 +215,7 @@ func applyMigration(ctx context.Context, conn *sql.Conn, m Migration) error {
 	return nil
 }
 
-// MarkApplied is the port of `prisma migrate resolve --applied <name>`: it
+// MarkApplied behaves like `prisma migrate resolve --applied <name>`: it
 // creates the ledger if needed and records the migration as applied without
 // running it (started_at = finished_at = now, empty logs, applied_steps_count 0).
 func (d *DB) MarkApplied(ctx context.Context, name string) error {

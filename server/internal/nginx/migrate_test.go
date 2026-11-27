@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// legacyInstall writes confs exactly as the TypeScript backend left them.
+// legacyInstall writes confs exactly as Docklift 2.x left them.
 func legacyInstall(t *testing.T, e *env) map[string]string {
 	t.Helper()
 	if err := os.MkdirAll(e.confDir, 0o755); err != nil {

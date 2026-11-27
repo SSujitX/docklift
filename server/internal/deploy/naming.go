@@ -5,12 +5,8 @@
 // allocation, env variable scoping, and managed databases (engines,
 // connection URLs, link env sync, Docker Hub tags).
 //
-// It is the port of backend/src/services/{compose,buildResolver,buildRunner}.ts
-// and backend/src/lib/{naming,deploymentState,deploymentRecovery,
-// projectStatusSync,imageCleanup,portAllocation,envVariables,databaseEngines,
-// databaseLinks,dockerHubTags}.ts. Names, tags and compose output match the
-// TypeScript rules byte for byte, because existing installs have Docker
-// objects named by them.
+// Names, tags and compose output keep the rules of the 2.x releases byte for
+// byte, because existing installs have Docker objects named by them.
 package deploy
 
 import (
@@ -104,7 +100,7 @@ func StorageVolumeComposeKey(serviceName string, mountIndex int, volumeDockerNam
 
 // PersistentVolumeName is the Docker volume name of a persistent storage
 // entry: dl-<id8>-<label slug, 28>-<hash of the label>. Hashing the original
-// label keeps "a-b" and "a_b" apart (routes/projects.ts, routes/databases.ts).
+// label keeps "a-b" and "a_b" apart.
 func PersistentVolumeName(projectID, label string) string {
 	return "dl-" + ShortProjectID(projectID) + "-" + DockerSlug(label, 28) + "-" + ShortPathHash(label)
 }
@@ -113,7 +109,7 @@ func PersistentVolumeName(projectID, label string) string {
 const ManagedDatabaseVolumeLabel = "com.docklift.role=managed-database"
 
 // VolumeLabels returns the labels of a Docklift-created Docker volume, in the
-// order the TS routes passed them: the compose project label,
+// order 2.x passed them: the compose project label,
 // com.docklift.project, then extra (e.g. ManagedDatabaseVolumeLabel).
 func VolumeLabels(projectName, projectID string, extra ...string) []string {
 	return append([]string{

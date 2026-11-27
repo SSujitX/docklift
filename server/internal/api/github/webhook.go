@@ -23,11 +23,11 @@ const deployCooldown = 10 * time.Second
 
 // webhookBody reads webhook payloads. GitHub caps deliveries at 25 MB, but a
 // push payload lists at most 20 commits and is a few kilobytes in practice;
-// the 10 MB of express.json in github.ts is kept, from the budget shared by
+// the 10 MB limit of 2.x is kept, from the budget shared by
 // unauthenticated routes so anonymous posts cannot starve the dashboard.
 var webhookBody = httpx.BodyOptions{Limit: httpx.MaxBodyBytes, Budget: httpx.PublicBodyBudget, ReadTimeout: time.Minute}
 
-// cooldown is the recentDeploys map of github.ts.
+// cooldown records the last deploy time per repository.
 type cooldown struct {
 	mu   sync.Mutex
 	last map[string]time.Time
@@ -65,7 +65,7 @@ func validSignature(payload []byte, signature, secret string) bool {
 	return hmac.Equal([]byte(signature), []byte(digest))
 }
 
-// headerValue is a request header as Node exposes it (repeats joined).
+// headerValue is a request header with repeats joined.
 func headerValue(r *http.Request, name string) (string, bool) {
 	vs := r.Header.Values(name)
 	if len(vs) == 0 {
@@ -164,7 +164,7 @@ func (h *handlers) webhook(w http.ResponseWriter, r *http.Request) {
 	}
 	repoURL, isString := repoValue.String()
 	if !isString {
-		// repoUrl.replace on a non-string threw in github.ts.
+		// repoUrl.replace on a non-string threw in 2.x.
 		h.fail(w, "Webhook error", "Webhook processing failed", errNonStringRepoURL)
 		return
 	}

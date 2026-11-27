@@ -16,7 +16,7 @@ const (
 	LevelError   EventLevel = "error"
 )
 
-// Event is one SSL activity line; JSON {at, level, message} as in certs.ts.
+// Event is one SSL activity line; JSON {at, level, message}.
 type Event struct {
 	At      string     `json:"at"`
 	Level   EventLevel `json:"level"`

@@ -1,4 +1,4 @@
-// Package js reproduces the JavaScript coercions the TypeScript backend
+// Package js reproduces the JavaScript coercions the 2.x backend
 // relied on (String(), truthiness, trim, parseInt/parseFloat, toFixed,
 // UTF-16 string indices), so ported handlers produce byte-identical output.
 // Values are those decoded from JSON: nil, bool, string, json.Number (what
@@ -37,7 +37,7 @@ func Lower(s string) string {
 
 // Slice is s.slice(0, n) on UTF-16 code units. When n falls inside a
 // surrogate pair, the lone high surrogate that JavaScript keeps is written
-// as U+FFFD, as Node encodes it to UTF-8.
+// as U+FFFD, as UTF-8 encoding does.
 func Slice(s string, n int) string {
 	units := 0
 	for i, r := range s {

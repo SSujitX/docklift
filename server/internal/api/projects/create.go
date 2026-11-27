@@ -62,7 +62,7 @@ const (
 
 var errUploadTooLarge = errors.New("upload too large")
 
-// readUpload parses a multipart body the way multer.single('files') with
+// readUpload parses a multipart body the way a multipart upload with
 // {fileSize: 100 MiB, files: 1} did: text parts become fields (a repeated
 // name becomes an array), the one file part named "files" is streamed to a
 // temporary file under DATA_PATH/uploads. Any other file part, a second
@@ -194,7 +194,7 @@ func (h *handlers) createBody(w http.ResponseWriter, r *http.Request) (fields, s
 // or www.github.com (default port only) with at least owner and repository
 // path segments. URLs with embedded credentials are refused, so a token can
 // never be stored in github_url or the checkout's origin. Plain http, which
-// TS accepted, is refused: the installation token must never travel in the
+// 2.x accepted, is refused: the installation token must never travel in the
 // clear.
 func validGithubRepoURL(raw string) bool {
 	u, err := url.Parse(raw)
@@ -303,7 +303,7 @@ func (h *handlers) create(w http.ResponseWriter, r *http.Request) {
 		}
 		in.GithubURL, in.WebhookSecret = &githubURL, &secret
 	}
-	// Clone and extraction continue if the client disconnects, as in TS.
+	// Clone and extraction continue if the client disconnects, as in 2.x.
 	ctx := h.d.Background
 	project, err := h.d.Store.CreateProject(ctx, in)
 	if err != nil {
@@ -371,7 +371,7 @@ func (h *handlers) cloneProject(ctx context.Context, dir, repoURL, ref string) (
 
 // cloneCredentials looks up an installation token for a GitHub URL: the
 // repository's installation, else the saved github_installation_id. Any
-// failure falls back to an anonymous clone, as in TS.
+// failure falls back to an anonymous clone, as in 2.x.
 func (h *handlers) cloneCredentials(ctx context.Context, repoURL string) *gitops.Credentials {
 	if h.github == nil {
 		return nil

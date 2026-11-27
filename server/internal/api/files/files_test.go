@@ -165,7 +165,7 @@ func TestTree(t *testing.T) {
 		code, body = f.do(t, "GET", "/"+bad, "")
 		expectErr(t, code, body, 400, "Invalid project ID")
 	}
-	// Params are decoded once, like Express.
+	// Params are decoded once.
 	if code, _ := f.do(t, "GET", "/%41bc", ""); code != 404 {
 		t.Errorf("%%41bc = %d, want 404 (decoded to Abc)", code)
 	}
@@ -393,7 +393,7 @@ func TestDirLinkEscape(t *testing.T) {
 }
 
 func TestLocaleCompare(t *testing.T) {
-	// Reference order produced by Node (ICU) with names.sort((a, b) => a.localeCompare(b)).
+	// Reference order produced by ICU with names.sort((a, b) => a.localeCompare(b)).
 	want := []string{"_a", "-a", ".a", ".env", ".gitignore", "(x)", "[x]", "{x}", "@x", "#x", "+x", "=x", "~x", "$x", "1", "10", "2",
 		"a", "A", "a b", "a,b", "a;b", "a.b", "a10", "a2", "ab", "ab", "aB", "Ab", "AB", "b", "B", "Dockerfile", "e", "é", "f",
 		"file_a.txt", "file-a.txt", "file.txt", "index.html", "logo.png", "package.json", "readme.md", "README.md", "x!", "x?", "z", "Z"}

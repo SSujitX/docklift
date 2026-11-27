@@ -18,15 +18,15 @@ import (
 )
 
 // shellCommand and shellDir are what `script -q -c /bin/bash /dev/null` ran
-// in the TypeScript backend.
+// in Docklift 2.x.
 const (
 	shellCommand = "/bin/bash"
 	shellDir     = "/root"
 )
 
-// shellEnv is the environment the TypeScript backend gave the shell, on top
+// shellEnv is the environment Docklift 2.x gave the shell, on top
 // of the server's own environment (later entries win) minus the backend's
-// secrets (execx.Environ), which TypeScript passed on.
+// secrets (execx.Environ), which 2.x passed on.
 func shellEnv(cols, rows int) []string {
 	return append(execx.Environ(),
 		"TERM=xterm-256color",
@@ -85,7 +85,7 @@ func (s *ptyShell) Wait() int {
 
 // Close hangs the terminal up: SIGHUP to the shell's process group (bash
 // passes it on to its background jobs, as when `script` was killed and its
-// PTY closed in TypeScript) and the PTY master is closed. A shell still
+// PTY closed in 2.x) and the PTY master is closed. A shell still
 // alive after killGrace gets SIGKILL.
 func (s *ptyShell) Close() {
 	s.closeOnce.Do(func() {

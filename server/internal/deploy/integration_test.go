@@ -163,7 +163,7 @@ func TestDockerIntegrationDeployLifecycle(t *testing.T) {
 	if err != nil || res.ExitCode != 0 {
 		t.Fatalf("compose up: %v code %d\n%s", err, res.ExitCode, upLog.String())
 	}
-	// Compose interpolates $ in values exactly as it did for the TS-written
+	// Compose interpolates $ in values exactly as it did for the 2.x-written
 	// file: ${NOT_SET} becomes empty and $$ a single $.
 	if env := e.cli("exec", containerName, "printenv", "AWKWARD"); strings.TrimRight(env, "\r\n") != "yes:  $ 0123" {
 		t.Fatalf("env round trip through compose: %q", env)

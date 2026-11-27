@@ -72,11 +72,11 @@ func detectPortFromDockerfile(path string) int {
 }
 
 // ScanDockerfiles finds files named exactly "Dockerfile" up to maxDepth
-// directories below projectPath (2 in the TS default), skipping symlinks and
+// directories below projectPath (2 in the 2.x default), skipping symlinks and
 // scanIgnoreDirs, and names each service after its directory ("app" at the
 // root, "a/b" -> "a-b"). Colliding names are deduplicated with
 // DedupeScannedServices. Directory entries are visited in byte order, as
-// Node's readdir returns them.
+// readdir returns them.
 func ScanDockerfiles(projectPath string, maxDepth int) ([]ScannedService, error) {
 	var services []ScannedService
 	var scan func(dir string, depth int)
@@ -92,7 +92,7 @@ func ScanDockerfiles(projectPath string, maxDepth int) ([]ScannedService, error)
 			itemPath := filepath.Join(dir, e.Name())
 			info, err := os.Lstat(itemPath)
 			if err != nil {
-				return // the TS try/catch abandoned the rest of the directory
+				return // 2.x abandoned the rest of the directory
 			}
 			if info.Mode()&os.ModeSymlink != 0 {
 				continue
@@ -184,7 +184,7 @@ type RuntimeService struct {
 // RuntimeComposeOptions are the project-level compose settings.
 type RuntimeComposeOptions struct {
 	// ProjectID labels everything and names the project network ("unknown"
-	// when empty, like the TS default).
+	// when empty, like the 2.x default).
 	ProjectID       string
 	PublishHostPort bool
 	// MemLimit sets mem_limit when non-empty; CPUs sets cpus when non-nil.
@@ -238,7 +238,7 @@ func WriteRuntimeCompose(composePath string, services []RuntimeService, envVars 
 }
 
 // RenderRuntimeCompose builds the runtime compose document. It is
-// semantically identical to the js-yaml dump of the TS code: same keys and
+// semantically identical to the js-yaml dump of 2.x: same keys and
 // values, every string a YAML string. Dynamic strings (env values, names,
 // images, ports) are always double-quoted so no YAML 1.1 or 1.2 parser
 // reads them as numbers, booleans, null, dates or sexagesimals.
@@ -345,7 +345,7 @@ func RenderRuntimeCompose(services []RuntimeService, envVars []EnvVar, opts Runt
 }
 
 // setMapping sets key in a mapping node, replacing an existing entry in place
-// (a later service with the same name overwrote the earlier one in TS).
+// (a later service with the same name overwrote the earlier one in 2.x).
 func setMapping(m *yaml.Node, key string, value *yaml.Node) {
 	for i := 0; i+1 < len(m.Content); i += 2 {
 		if m.Content[i].Value == key {
@@ -418,7 +418,7 @@ var secretTypeRe = regexp.MustCompile(`(?i)type` + jsSpace + `*=` + jsSpace + `*
 
 // DockerfileMountsSecret reports whether a line of the Dockerfile mounts the
 // BuildKit secret secretID (RUN --mount=type=secret,id=<id>), matching
-// case-insensitively like the TS check. Unlike the TS regex the id must end
+// case-insensitively like the 2.x check. Unlike the 2.x regex the id must end
 // at a delimiter (NPM_TOKEN does not match id=NPM_TOKEN_2), "id" must be its
 // own option (not uid=...), and type/id may come in either order.
 func DockerfileMountsSecret(dockerfilePath, secretID string) bool {

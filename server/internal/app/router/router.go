@@ -1,6 +1,5 @@
 // Package router assembles the HTTP handler: the middleware stack and mount
-// table of backend/src/index.ts, the WebSocket terminal and the embedded
-// dashboard.
+// table, the WebSocket terminal and the embedded dashboard.
 package router
 
 import (
@@ -30,7 +29,7 @@ import (
 	"docklift/web"
 )
 
-// Rate-limit settings of index.ts.
+// Rate-limit settings.
 const (
 	authWindow = 15 * time.Minute
 	authLimit  = 100
@@ -66,7 +65,7 @@ func New(d *app.Deps) http.Handler {
 	root.NotFound(httpx.NotFound)
 	root.MethodNotAllowed(httpx.NotFound)
 
-	// The Node upgrade listener handled /ws/terminal outside Express.
+	// The upgrade listener handles /ws/terminal outside the HTTP routes.
 	terminal.Attach(root, d)
 
 	allow := append(append([]string(nil), d.Config.CORSOrigins...), d.Config.FrontendURL)
@@ -82,7 +81,7 @@ func apiRouter(d *app.Deps) http.Handler {
 	r := chi.NewRouter()
 	r.NotFound(httpx.NotFound)
 	r.MethodNotAllowed(httpx.NotFound)
-	// StripSlashes changes only the routing path, so like Express (strict
+	// StripSlashes changes only the routing path, so as in 2.x (strict
 	// routing off) /api/health/ reaches /api/health while the gate, limiters
 	// and guards still see the request path as sent. Bodies are parsed only
 	// inside each group, after its rate limiter and auth guard, so an
@@ -148,7 +147,7 @@ func apiRouter(d *app.Deps) http.Handler {
 	return r
 }
 
-// relPath is Express req.path inside a mount: the route path below prefix.
+// relPath is the request path inside a mount: the route path below prefix.
 func relPath(r *http.Request, prefix string) string {
 	rel := strings.TrimPrefix(httpx.RoutePath(r), prefix)
 	if rel == "" {

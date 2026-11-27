@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-// SecurityHeaders sets the headers of the first middleware in index.ts. HSTS
+// SecurityHeaders sets the headers of the first middleware. HSTS
 // is sent only when the request is HTTPS: from a trusted proxy, the raw
 // X-Forwarded-Proto header equals "https" (or, without that header, the
 // connection uses TLS); from any other peer, the connection uses TLS.
@@ -36,7 +36,7 @@ func SecurityHeaders(next http.Handler) http.Handler {
 // corsMethods is the cors package default methods list.
 const corsMethods = "GET,HEAD,PUT,PATCH,POST,DELETE"
 
-// CORS reproduces cors({origin: callback, credentials: true}) from index.ts.
+// CORS reproduces cors({origin: callback, credentials: true}).
 // Requests without Origin are allowed (the JWT is still the gate) and get
 // Vary/credentials headers but no Allow-Origin; trusted origins are
 // reflected; untrusted origins get no CORS headers and continue unchanged.
@@ -88,7 +88,7 @@ func addVary(h http.Header, field string) {
 	h.Set("Vary", current+", "+field)
 }
 
-// Recover turns a handler panic into the Express error-handler response
+// Recover turns a handler panic into the generic 500 error response
 // (500 `{"error":"Something went wrong!"}`), logging the stack.
 func Recover(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

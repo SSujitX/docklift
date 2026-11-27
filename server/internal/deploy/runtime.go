@@ -117,7 +117,7 @@ func (r *Runtime) ConnectProxyToProjectNetwork(ctx context.Context, projectID st
 // proxy container: when install or upgrade recreates docklift-nginx-proxy
 // (the Go compose file gives it fixed addresses, so the first upgrade from
 // 2.1.x always does), every app domain answered 502 until its project was
-// redeployed. TS had no such step (found on a real 2.1.6 → Go upgrade).
+// redeployed. 2.x had no such step (found on a real 2.1.6 → Go upgrade).
 // Projects without a network (never deployed, stopped) are skipped; other
 // failures are logged and do not stop the boot.
 func (r *Runtime) ReattachProxyOnBoot(ctx context.Context) error {

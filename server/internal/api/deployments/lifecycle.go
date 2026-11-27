@@ -20,7 +20,7 @@ var (
 	ErrStopWhileDeploying    = reqErr(http.StatusConflict, "Cannot stop while a deployment is running; cancel it first")
 	ErrRestartWhileDeploying = reqErr(http.StatusConflict, "Cannot restart while a deployment is running")
 	ErrCancelInProgress      = reqErr(http.StatusConflict, "A cancel is already in progress for this project")
-	// ErrNotDeployed answers stop/restart before the first deploy (the TS
+	// ErrNotDeployed answers stop/restart before the first deploy (2.x
 	// routes answered a 200 text error and a 500; deliberate fix 8).
 	ErrNotDeployed = reqErr(http.StatusBadRequest, deploy.ErrRuntimeMissing.Error())
 	// ErrDockerUnavailable is deliberate fix 9.

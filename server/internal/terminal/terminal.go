@@ -1,9 +1,9 @@
 // Package terminal runs the interactive shell sessions of the WebSocket
-// terminal (the session logic of backend/src/services/terminal.ts): the
+// terminal: the
 // password prompt with per-session and per-client failure limits, at most
 // three concurrent sessions, the PTY shell, resize, the 30-minute idle
 // timeout, and the shutdown of every session when the server stops. Not in
-// TypeScript: a session must pass the password step within AuthTimeout, and
+// 2.x: a session must pass the password step within AuthTimeout, and
 // it ends when its context ends (the user's password changed).
 //
 // The HTTP upgrade (path, Origin and token checks) lives in
@@ -27,8 +27,8 @@ import (
 	"docklift/internal/store"
 )
 
-// Limits of a Manager. DefaultLimits are the values of terminal.ts plus the
-// transport bounds the Node ws server did not have.
+// Limits of a Manager. DefaultLimits are the values of 2.x plus the
+// transport bounds the 2.x server did not have.
 type Limits struct {
 	MaxSessions     int
 	MaxAuthAttempts int
@@ -163,7 +163,7 @@ func (m *Manager) Serve(ctx context.Context, conn *websocket.Conn, user User, cl
 
 // admit registers s as a session, or rejects the connection when the server
 // is stopping, the session limit is reached or the client is rate-limited
-// (checked in that order, like terminal.ts).
+// (checked in that order, like 2.x).
 func (m *Manager) admit(s *session) bool {
 	m.mu.Lock()
 	closed, full := m.closed, len(m.sessions) >= m.limits.MaxSessions
@@ -471,7 +471,7 @@ func (s *session) authenticate(msg map[string]any, helpers *sync.WaitGroup) {
 		return
 	}
 	if err != nil {
-		// The TypeScript handler swallowed every failure without answering.
+		// The 2.x handler swallowed every failure without answering.
 		s.m.log.Error("[TERMINAL] user lookup failed", "error", err)
 		return
 	}

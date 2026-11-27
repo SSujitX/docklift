@@ -1,6 +1,5 @@
 // Package app holds the dependencies shared by every route group (Deps) and
-// the process lifecycle hooks that reproduce the startup order of main() in
-// backend/src/index.ts. Router assembly lives in internal/app/router so that
+// the process lifecycle hooks that run at startup and shutdown. Router assembly lives in internal/app/router so that
 // route packages can import this package without a cycle.
 package app
 
@@ -55,7 +54,7 @@ type Deps struct {
 	Lifecycle *Lifecycle
 }
 
-// Phase is a step of the startup sequence of index.ts main(), in order.
+// Phase is a step of the startup sequence, in order.
 type Phase int
 
 const (

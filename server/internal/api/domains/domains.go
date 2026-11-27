@@ -1,12 +1,12 @@
 // Package domains serves /api/domains: panel (dashboard) custom domains with
 // their Let's Encrypt certificates, DNS checks, SSL status and activity, and
-// the ACME account email (the port of backend/src/routes/domains.ts).
+// the ACME account email.
 //
 // Every hostname from the URL or the body is trimmed, lowercased and checked
 // against the hostname grammar before it reaches the nginx and certs
 // services, which validate again before touching a file or running a
 // program. Provisioning (writing the conf, reloading nginx, certbot) runs on
-// a context derived from the server's background context: like the Express
+// a context derived from the server's background context: like the 2.x
 // handlers it keeps going when the client disconnects, and stops on
 // shutdown.
 package domains
@@ -102,8 +102,8 @@ func (h *handlers) opContext() (context.Context, context.CancelFunc) {
 	return context.WithCancel(h.d.Background)
 }
 
-// domainParam is the :domain path parameter, decoded once (as Express
-// req.params) and normalised like the TypeScript handlers.
+// domainParam is the :domain path parameter, decoded once
+// and normalised like the 2.x handlers.
 func domainParam(r *http.Request) string {
 	raw := chi.URLParam(r, "domain")
 	if r.URL.RawPath != "" {

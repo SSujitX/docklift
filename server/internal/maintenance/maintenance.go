@@ -1,6 +1,5 @@
 // Package maintenance holds the process-wide maintenance gate, the global
-// restore lock and the persistent restore-critical seal (ports of
-// backend/src/lib/maintenance.ts, restoreLock.ts and restoreCritical.ts).
+// restore lock and the persistent restore-critical seal.
 // The HTTP gate reads it; the backup/restore flow drives it.
 package maintenance
 

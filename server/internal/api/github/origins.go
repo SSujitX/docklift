@@ -49,7 +49,7 @@ func (h *handlers) publicBaseURL(r *http.Request) string {
 // allowedReturnOrigins is allowedGithubReturnOrigins: the configured
 // frontend, this request's own origin and the CORS_ORIGIN entries, with
 // loopback origins expanded to localhost/127.0.0.1/[::1] on the same port.
-// Only http(s) origins are added (the TypeScript code also admitted the
+// Only http(s) origins are added (2.x also admitted the
 // opaque "null" origin of other schemes).
 func (h *handlers) allowedReturnOrigins(r *http.Request) map[string]bool {
 	origins := map[string]bool{}

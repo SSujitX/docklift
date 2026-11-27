@@ -1,5 +1,5 @@
 // Package pathsec holds the path-containment checks shared by the file
-// editor, uploads and restores (the port of backend/src/lib/pathSecurity.ts),
+// editor, uploads and restores,
 // plus the handle-based real-path resolution the file editor uses so that
 // symlinks, NTFS junctions and swaps between check and use cannot lead
 // outside a project.
@@ -42,7 +42,7 @@ func rel(base, candidate string) (string, bool) {
 // IsInside reports whether candidate is exactly base or a path inside it,
 // after resolving both to absolute clean paths. It rejects `..` escapes,
 // absolute escapes and sibling prefixes (`/a/b-evil` is not inside `/a/b`).
-// On Windows the comparison ignores letter case, like Node's path.relative.
+// On Windows the comparison ignores letter case.
 func IsInside(base, candidate string) bool {
 	r, ok := rel(base, candidate)
 	if !ok {
@@ -89,7 +89,7 @@ func isGitSegment(seg string, windows bool) bool {
 	return seg == ".git"
 }
 
-// Resolve is Node's path.resolve(base, p): an absolute p (or, on Windows, a
+// Resolve resolves p against base: an absolute p (or, on Windows, a
 // rooted or drive-qualified one such as `\x` or `C:x`) is resolved on its
 // own; anything else is joined to base. The result is absolute and clean.
 func Resolve(base, p string) string {

@@ -17,7 +17,7 @@ import (
 	"docklift/internal/httpx"
 )
 
-// Upload limits of the multer instance in backup.ts.
+// Upload limits of the backup upload.
 const (
 	// MaxUploadBytes is the largest accepted backup (aligned with nginx
 	// client_max_body_size).
@@ -37,7 +37,7 @@ const (
 	uploadReadTimeout = 30 * time.Minute
 )
 
-// Client-facing multipart errors (multer / busboy messages).
+// Client-facing multipart errors (multipart parser messages).
 const (
 	msgUnexpectedFile   = "Unexpected file field"
 	msgOnlyZip          = "Only ZIP files are allowed"
@@ -74,7 +74,7 @@ type uploadedFile struct {
 	size int64
 }
 
-// readUpload parses a multipart body the way multer.single('backup') with
+// readUpload parses a multipart body the way a single-file upload with
 // {fileSize: 500 MiB} and the ZIP fileFilter did:
 //
 //   - a non-multipart request is not touched (no file, no fields);
@@ -246,7 +246,7 @@ func (h *handlers) storeUpload(part io.Reader, dir string) (*uploadedFile, strin
 }
 
 // withFields puts the multipart text fields on the request as its parsed
-// body (multer filled req.body), so the step-up check reads the password
+// body (as 2.x did), so the step-up check reads the password
 // from the form.
 func withFields(r *http.Request, fields map[string]any) *http.Request {
 	return r.WithContext(httpx.WithBody(r.Context(), httpx.NewBody(fields)))

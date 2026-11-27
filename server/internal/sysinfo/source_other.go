@@ -20,7 +20,7 @@ func hostProcesses(context.Context) []Process { return nil }
 const routeProbeAddr = "192.0.2.1:9"
 
 // defaultInterface is the interface of the default route, like
-// systeminformation's networkInterfaceDefault (which parses the routing
+// 2.x's default-interface lookup (which parses the routing
 // table): the interface owning the source address the OS chooses for an
 // outbound connection. Without a default route it is the first interface
 // that is up, not a loopback and has an address.
@@ -67,7 +67,7 @@ func interfaceWithIP(ifaces []net.Interface, ip net.IP) string {
 
 func procUptime() (float64, bool) { return 0, false }
 
-// fsSize lists mounted drives with their usage, like systeminformation's
+// fsSize lists mounted drives with their usage, like 2.x's
 // Windows (Win32_LogicalDisk) and macOS (df) readers.
 func fsSize(ctx context.Context) []FsEntry {
 	parts, err := disk.PartitionsWithContext(ctx, false)
@@ -87,7 +87,7 @@ func fsSize(ctx context.Context) []FsEntry {
 	return data
 }
 
-// gpu is not probed outside Linux (the TypeScript backend skipped it on
+// gpu is not probed outside Linux (2.x skipped it on
 // Windows and ran in a Linux container in production).
 func gpu(context.Context) *GPUController { return nil }
 

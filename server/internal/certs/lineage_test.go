@@ -17,7 +17,7 @@ func fixturePEM(t testing.TB, name string) string {
 	return string(raw)
 }
 
-// coveringFixture reproduces certs.covering.test.ts: live/a has SANs a+b,
+// coveringFixture builds a layout where live/a has SANs a+b,
 // live/b is an orphan with b only.
 func coveringFixture(t *testing.T) *fixture {
 	t.Helper()

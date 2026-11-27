@@ -1,6 +1,6 @@
 // Package ports serves /api/ports: the host-port pool with its allocations,
 // the live projects that run without a host port, and manual release of an
-// allocation (the port of backend/src/routes/ports.ts).
+// allocation.
 package ports
 
 import (
@@ -159,7 +159,7 @@ func hasHostPort(services []*store.ActiveProjectService) bool {
 var digits = regexp.MustCompile(`^[0-9]+$`)
 
 // parsePort parses a port path parameter strictly: decimal digits only, so
-// `77abc` and `-1` are rejected (TS parseInt accepted numeric prefixes).
+// `77abc` and `-1` are rejected (2.x parseInt accepted numeric prefixes).
 func parsePort(s string) (int, bool) {
 	if !digits.MatchString(s) {
 		return 0, false

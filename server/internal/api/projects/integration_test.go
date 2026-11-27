@@ -95,7 +95,7 @@ func TestIntegrationDeleteTearsDownCompose(t *testing.T) {
 
 	f.do("DELETE", "/"+id, nil).expect(t, 200)
 
-	// The container's anonymous volume goes with it (TS leaked these).
+	// The container's anonymous volume goes with it (2.x leaked these).
 	if _, err := execx.Run(ctx, execx.Cmd{Name: "docker", Args: []string{"volume", "inspect", anon}, Timeout: 30 * time.Second}); err == nil {
 		t.Fatalf("anonymous volume %s must be removed", anon)
 	}

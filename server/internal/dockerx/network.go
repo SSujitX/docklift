@@ -11,7 +11,7 @@ import (
 )
 
 // EnsureNetwork creates the control-plane bridge network (ControlNetwork)
-// when inspecting it fails (ensureNetwork in docker.ts).
+// when inspecting it fails.
 func (d *Docker) EnsureNetwork(ctx context.Context) error {
 	if d.Engine == nil {
 		return ErrUnavailable
@@ -71,7 +71,7 @@ func (d *Docker) connect(ctx context.Context, network, container string, logFail
 }
 
 // DisconnectContainer force-detaches container from network, ignoring every
-// error (not connected, network gone, daemon down) like the TS best-effort
+// error (not connected, network gone, daemon down) like the 2.x best-effort
 // helpers.
 func (d *Docker) DisconnectContainer(ctx context.Context, network, container string) {
 	if d.Engine == nil || strings.TrimSpace(container) == "" {

@@ -14,7 +14,6 @@ import (
 )
 
 func TestAggregateProjectStatus(t *testing.T) {
-	// projectStatusSync.test.ts plus edges.
 	cases := []struct {
 		in   []string
 		want string

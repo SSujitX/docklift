@@ -1,6 +1,5 @@
 // Package fscopy is the cross-platform recursive directory copy and the
-// content-level replace used by restores (the port of
-// backend/src/lib/fsCopy.ts). It never shells out to `cp`.
+// content-level replace used by restores. It never shells out to `cp`.
 //
 // Restore targets (/deployments, /nginx-conf, /etc/letsencrypt) are Docker
 // bind mounts. Renaming those directories (or renaming staging onto the

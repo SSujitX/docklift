@@ -13,8 +13,7 @@ type Image struct {
 	Tags []string
 }
 
-// ListImages lists every local image (all: true, like dockerode
-// listImages({all: true})).
+// ListImages lists every local image (all: true).
 func (d *Docker) ListImages(ctx context.Context) ([]Image, error) {
 	if d.Engine == nil {
 		return nil, ErrUnavailable

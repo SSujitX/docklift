@@ -1,6 +1,6 @@
 // Package auth serves /api/auth: setup status, first-admin registration,
 // login, profile, password change, the restore setup token and short-lived
-// SSE/terminal tokens (the port of backend/src/routes/auth.ts).
+// SSE/terminal tokens.
 package auth
 
 import (
@@ -325,7 +325,13 @@ func (h *handlers) changePassword(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, failMsg, err)
 		return
 	}
-	if !authsvc.ComparePassword(user.Password, current) {
+	// Guesses at the current password share the step-up limit: a stolen
+	// session must not allow unlimited attempts.
+	if ok, wait := h.d.Auth.CheckAccountPassword(r, user.ID, user.Password, current); wait > 0 {
+		w.Header().Set("Retry-After", httpx.RetryAfterSeconds(wait))
+		httpx.Error(w, http.StatusTooManyRequests, authsvc.MsgTooManyPasswordAttempts)
+		return
+	} else if !ok {
 		httpx.Error(w, http.StatusBadRequest, "Invalid current password")
 		return
 	}

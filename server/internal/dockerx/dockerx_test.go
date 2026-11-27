@@ -21,7 +21,6 @@ import (
 )
 
 func TestIsAlreadyConnectedError(t *testing.T) {
-	// Cases of docker.proxy.test.ts.
 	cases := []struct {
 		err  error
 		want bool
@@ -470,7 +469,6 @@ func TestComposeArgsAndExitCodes(t *testing.T) {
 }
 
 func TestIsComposeTeardownOK(t *testing.T) {
-	// Cases of composeTeardown.test.ts.
 	empty := func() ComposeResources { return ComposeResources{} }
 	left := func() ComposeResources { return ComposeResources{ContainerIDs: []string{"abc"}} }
 	leftNet := func() ComposeResources { return ComposeResources{NetworkIDs: []string{"n"}} }

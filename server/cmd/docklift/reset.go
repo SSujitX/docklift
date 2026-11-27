@@ -14,8 +14,8 @@ import (
 	"docklift/internal/store"
 )
 
-// resetPassword is the port of scripts/reset-password.ts: give the first
-// admin a random 16-character password and print it. Unlike the script, it
+// resetPassword gives the first
+// admin a random 16-character password and prints it. It
 // also bumps passwordChangedAt so sessions issued before the reset stop
 // working (the reason an operator resets a password).
 func resetPassword(ctx context.Context, log *slog.Logger) error {

@@ -14,7 +14,7 @@ type Shell interface {
 	// Resize sets the terminal size.
 	Resize(cols, rows int) error
 	// Wait blocks until the shell exits and returns its exit code (0 when
-	// it was killed by a signal, like Node's `code || 0`).
+	// it was killed by a signal).
 	Wait() int
 	// Close kills the shell and everything it started, and releases the
 	// terminal. It is safe to call more than once.

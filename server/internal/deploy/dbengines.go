@@ -32,7 +32,7 @@ type EngineVersion struct {
 }
 
 // Engine describes a managed database engine. The JSON form is the engine
-// object the TS API returned (keys in the same order).
+// object the 2.x API returned (keys in the same order).
 type Engine struct {
 	ID          string `json:"id"`
 	Label       string `json:"label"`

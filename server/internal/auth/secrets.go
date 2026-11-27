@@ -1,4 +1,4 @@
-// Package auth ports the TypeScript authentication layer: persisted secrets,
+// Package auth implements the authentication layer: persisted secrets,
 // jsonwebtoken-compatible session and purpose tokens, bcrypt passwords, the
 // Bearer / SSE-query-token / internal-secret middleware, password step-up,
 // the fresh-install bootstrap secret and the restore setup token.
@@ -23,12 +23,12 @@ type Secrets struct {
 	InternalAPISecret string `json:"internalApiSecret"`
 }
 
-// LoadOrCreateSecrets resolves the secrets with the priority of
-// authMiddleware.ts: (1) JWT_SECRET and INTERNAL_API_SECRET both set in the
+// LoadOrCreateSecrets resolves the secrets with this priority:
+// (1) JWT_SECRET and INTERNAL_API_SECRET both set in the
 // environment; (2) DATA_PATH/.secrets when it holds both values; (3) newly
 // generated values (an env value still wins for its half), persisted to
 // DATA_PATH/.secrets with mode 0600. A failed write only costs session
-// persistence across restarts, as in TypeScript; a failure to create
+// persistence across restarts, as in 2.x; a failure to create
 // randomness or the data directory is returned.
 func LoadOrCreateSecrets(dataPath, envJWT, envInternal string, log *slog.Logger) (Secrets, error) {
 	if envJWT != "" && envInternal != "" {

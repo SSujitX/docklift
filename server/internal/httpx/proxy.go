@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-// TrustedProxies decides whose forwarded headers are believed. Express ran
+// TrustedProxies decides whose forwarded headers are believed. 2.x ran
 // with `trust proxy` = 1, which trusts X-Forwarded-* from every socket peer;
 // the Go binary is reachable both through docklift-nginx-proxy and directly
 // on the published dashboard port, so a direct client could forge its address
@@ -86,8 +86,8 @@ func peerAddr(r *http.Request) netip.Addr {
 	return addr
 }
 
-// PeerIP is the socket peer address without the port (Node's
-// req.socket.remoteAddress), regardless of forwarded headers.
+// PeerIP is the socket peer address without the port (the socket's
+// remote address), regardless of forwarded headers.
 func PeerIP(r *http.Request) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
@@ -96,7 +96,7 @@ func PeerIP(r *http.Request) string {
 	return host
 }
 
-// ClientIP is the client address (Express req.ip). From a trusted proxy it is
+// ClientIP is the client address. From a trusted proxy it is
 // the last X-Forwarded-For entry (one proxy hop: the address the proxy itself
 // saw), normalised; when the peer is not trusted, or the header is absent or
 // its last entry is not an IP address, it is the socket peer address.
@@ -175,7 +175,7 @@ func connProtocol(r *http.Request) string {
 	return "http"
 }
 
-// RequestProtocol is Express req.protocol: from a trusted proxy the first
+// RequestProtocol is the request scheme: from a trusted proxy the first
 // X-Forwarded-Proto value, otherwise (or when that is empty) "https" for TLS
 // connections and "http" for plain ones.
 func RequestProtocol(r *http.Request) string {

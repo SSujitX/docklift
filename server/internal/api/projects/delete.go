@@ -154,7 +154,7 @@ func (s *Service) DeleteProject(ctx context.Context, projectID string) error {
 // Each must be verified gone; on the first failure the proxy and linked
 // databases are re-attached (best-effort) and a *ConflictError returned.
 //
-// Compose runs in rt.ComposeWorkDir, never in the checkout (TS ran it there,
+// Compose runs in rt.ComposeWorkDir, never in the checkout (2.x ran it there,
 // so a legacy alias without -f loaded the repository's own compose file and
 // .env, and `--rmi all` removed every image that file named). Images are
 // removed afterwards by Docklift tag only: docklift-<project8>-* tags, never
@@ -162,7 +162,7 @@ func (s *Service) DeleteProject(ctx context.Context, projectID string) error {
 //
 // --volumes removes the anonymous volumes of the project's containers (an
 // image VOLUME no Docklift volume is mounted on, such as mongo's
-// /data/configdb). TS left them behind on every delete (found on a real
+// /data/configdb). 2.x left them behind on every delete (found on a real
 // daemon); the persistent volumes are external in the runtime compose, so
 // compose never removes them — they are removed by name after this.
 func (s *Service) composeDown(ctx context.Context, project *store.Project, isDatabase bool) error {

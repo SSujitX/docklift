@@ -1,9 +1,6 @@
 // Package dockerx is Docklift's access to Docker: the Engine API (through the
-// official moby client, where the TS backend used dockerode) and the docker
-// CLI (compose, buildx, pull, volume, builder prune — where the TS backend
-// spawned `docker`). It is the port of backend/src/services/docker.ts,
-// backend/src/lib/runCompose.ts, backend/src/lib/composeTeardown.ts and the
-// Docker half of backend/src/lib/imageCleanup.ts.
+// official moby client) and the docker CLI (compose, buildx, pull, volume,
+// builder prune).
 //
 // Both Docker channels sit behind interfaces (Engine, Runner) so the logic is
 // unit-tested without a daemon. Functions take Docker names (networks,

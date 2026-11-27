@@ -317,7 +317,7 @@ func (l *deployLog) startSync(ctx context.Context, st *store.Store, deploymentID
 }
 
 // syncNow persists the log now (syncLogsToDb(true)). Errors are ignored like
-// the TS .catch.
+// a best-effort catch.
 func (l *deployLog) syncNow() {
 	l.syncMu.Lock()
 	defer l.syncMu.Unlock()

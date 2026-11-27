@@ -7,10 +7,10 @@ import (
 	"docklift/internal/js"
 )
 
-// val is one request field with the JavaScript semantics the TS handlers
+// val is one request field with the JavaScript semantics the 2.x handlers
 // relied on (undefined vs null, truthiness, String()). JSON bodies give
 // decoded JSON values; multipart bodies give strings, or []any for a
-// repeated field, as multer did.
+// repeated field, as 2.x did.
 type val struct {
 	v       any
 	defined bool
@@ -24,7 +24,7 @@ func (f fields) get(key string) val {
 	return val{v: v, defined: ok}
 }
 
-// jsonFields is req.body after express.json: an object's keys, or no keys
+// jsonFields is the parsed JSON body: an object's keys, or no keys
 // for anything else (undefined body, arrays), so destructuring never throws.
 func jsonFields(b httpx.Body) fields {
 	if m, ok := b.Value().Raw().(map[string]any); ok {

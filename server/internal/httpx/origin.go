@@ -94,7 +94,7 @@ func sameOrigin(a, b *Origin) bool {
 	return a.Port == defaultPort(a.Scheme) && b.Port == defaultPort(b.Scheme)
 }
 
-// IsTrustedOrigin is the port of originCheck.ts isTrustedOrigin: true when
+// IsTrustedOrigin reports true when
 // origin is the dashboard itself (same scheme, host and port as this request)
 // or exactly matches an allowlisted origin (CORS_ORIGIN entries and allow).
 func IsTrustedOrigin(origin string, r *http.Request, fallbackProto string, allow []string) bool {

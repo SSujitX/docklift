@@ -17,7 +17,7 @@ import (
 	"docklift/internal/js"
 )
 
-// Docker Hub catalog limits (dockerHubTags.ts).
+// Docker Hub catalog limits.
 const (
 	HubTTL           = 6 * time.Hour
 	HubIncompleteTTL = 5 * time.Minute

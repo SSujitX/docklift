@@ -1,7 +1,7 @@
 // Package projects serves /api/projects: project CRUD with the Docker status
 // sync on read, creation from a GitHub repository or a ZIP upload, build
 // detection, persistent storage, env variables, auto-deploy settings and the
-// full project teardown on delete (the port of backend/src/routes/projects.ts).
+// full project teardown on delete.
 //
 // Deleting a project is owned here and exported as Service.DeleteProject so
 // other route groups can call it.
@@ -31,8 +31,8 @@ import (
 )
 
 // GitHubApp is the GitHub App surface project creation uses to clone
-// private repositories (getInstallationIdForRepo and getInstallationToken of
-// routes/github.ts).
+// private repositories (installation lookup for a repository and installation token
+// minting).
 type GitHubApp interface {
 	// InstallationIDForRepo returns the App installation that covers
 	// owner/repo (falling back to the saved global installation id).
@@ -44,7 +44,7 @@ type GitHubApp interface {
 // Options are the optional collaborators of MountWith.
 type Options struct {
 	// GitHub authenticates clones of private repositories. Nil clones
-	// anonymously, which is what the TS code fell back to whenever the App
+	// anonymously, which is what 2.x fell back to whenever the App
 	// was not configured.
 	GitHub GitHubApp
 }
@@ -58,7 +58,7 @@ const (
 	pingTimeout        = 5 * time.Second
 )
 
-// domainRe is DOMAIN_REGEX of projects.ts.
+// domainRe validates a domain name.
 var domainRe = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)+$`)
 
 // validDomainList is isValidDomainList: every non-empty comma-separated
@@ -102,7 +102,7 @@ func MountWith(r chi.Router, d *app.Deps, o Options) {
 }
 
 // param is req.params[name]: chi matches on the escaped path when it has
-// escapes, so decode once like Express.
+// escapes, so decode once.
 func param(r *http.Request, name string) string {
 	v := chi.URLParam(r, name)
 	if r.URL.RawPath != "" {
@@ -237,8 +237,8 @@ func truthyString(w http.ResponseWriter, v val, field string) (string, bool) {
 }
 
 // checkDomain validates a domain field the way `domain &&
-// !isValidDomainList(domain)` did; a truthy non-string (which made the TS
-// code throw) is the same format error.
+// !isValidDomainList(domain)` did; a truthy non-string (which made 2.x
+// throw) is the same format error.
 func checkDomain(w http.ResponseWriter, v val) bool {
 	if !v.truthy() {
 		return true
@@ -289,7 +289,7 @@ func (h *handlers) update(w http.ResponseWriter, r *http.Request) {
 		}
 		*f.dst = store.Some(s)
 	}
-	// github_url is validated as on create (TS stored any string, so a PATCH
+	// github_url is validated as on create (2.x stored any string, so a PATCH
 	// could point the next deploy's token at another host); "" still clears.
 	if u := upd.GithubURL; u.Set && u.Value != nil && js.Trim(*u.Value) != "" {
 		trimmed := js.Trim(*u.Value)

@@ -380,7 +380,7 @@ func TestCheckInstallationAndInstallations(t *testing.T) {
 	}
 	e.configureApp()
 	// Nothing saved and no installation on the App owner's account: none is
-	// picked (TS took installations[0], which anyone can create on a public App).
+	// picked (2.x took installations[0], which anyone can create on a public App).
 	e.set(githubapp.KeyUsername, "owner1")
 	got := e.json(e.do("POST", "/check-installation", nil))
 	if got["found"] != false || got["message"] != msgUnmatchedInstallation || e.setting(githubapp.KeyInstallationID) != "" {
