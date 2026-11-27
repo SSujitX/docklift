@@ -38,12 +38,16 @@ const config = {
         changelogFile: 'CHANGELOG.md',
       },
     ],
-    '@semantic-release/npm', // Updates root package.json
+    // Root package.json is the single source of the release version: the
+    // Docker build (Dockerfile, VERSION build arg default) and `make build`
+    // read it and stamp it into the Go binary via -ldflags.
+    '@semantic-release/npm',
     [
       '@semantic-release/exec',
       {
+        // The dashboard shows its own package version (__APP_VERSION__); keep it in step.
         prepareCmd:
-          'npm version ${nextRelease.version} --no-git-tag-version --allow-same-version --prefix frontend && npm version ${nextRelease.version} --no-git-tag-version --allow-same-version --prefix backend',
+          'npm version ${nextRelease.version} --no-git-tag-version --allow-same-version --prefix frontend',
       },
     ],
     [
@@ -55,9 +59,6 @@ const config = {
           'package-lock.json',
           'npm-shrinkwrap.json',
           'frontend/package.json',
-          'frontend/package-lock.json',
-          'backend/package.json',
-          'backend/package-lock.json',
         ],
         message: 'chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}',
       },

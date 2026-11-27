@@ -1,5 +1,8 @@
-# Install smoke test — full install.sh on a clean runner.
-# Matrix is Ubuntu-only today; add debian/alma rows later (often via container:).
+# Install smoke test — full install.sh on a clean runner, then upgrade.sh over it.
+#   fresh:        install.sh (this commit) → first admin via bootstrap secret → checks
+#                 → upgrade.sh (this commit, rebuild path) → same admin still logs in
+#   from-release: install.sh of the latest GitHub release → first admin → upgrade.sh to
+#                 this commit → same admin still logs in (data kept, obsolete containers gone)
 name: Install
 # Quote the whole value — bare `#{0}` is a YAML comment and truncates `${{ }}`.
 run-name: "Install · ${{ github.event_name == 'pull_request' && format('PR {0}', github.event.pull_request.number) || github.ref_name }}"
@@ -18,77 +21,98 @@ on:
   workflow_dispatch:
   workflow_call:
 
+permissions:
+  contents: read
+
 jobs:
   install:
-    name: ${{ matrix.distro }}
+    name: ${{ matrix.scenario }}
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - distro: ubuntu
-            # Future examples (uncomment / extend when ready):
-            # - distro: debian
-            #   container: debian:bookworm
-            # - distro: alma
-            #   container: almalinux:9
-
-    # container: ${{ matrix.container || '' }}  — enable when non-Ubuntu rows need it
-
+        scenario: [fresh, from-release]
+    env:
+      DOCKLIFT_ADMIN_EMAIL: admin@docklift.test
+      DOCKLIFT_ADMIN_PASSWORD: Smoke-Test-Password-1
     steps:
       - uses: actions/checkout@v6
+        with:
+          # upgrade.sh (DOCKLIFT_CI_LOCAL) fetches this commit into /opt/docklift
+          fetch-depth: 0
 
-      - name: Preparing System
-        id: setup
-        run: |
-          ST=$(date +%s)
-          sudo apt-get update -qq && sudo apt-get install -y -qq curl sudo
-          echo "duration=$(($(date +%s) - ST))" >> $GITHUB_OUTPUT
+      - name: Preparing system
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq curl
 
-      - name: Installing Docklift
-        id: install
+      - name: Install (this commit)
+        if: matrix.scenario == 'fresh'
         run: |
-          ST=$(date +%s)
           chmod +x install.sh
-          sudo CI=true DOCKLIFT_CI_LOCAL=true ./install.sh 2>&1 | tee install_output_txt
-          echo "duration=$(($(date +%s) - ST))" >> $GITHUB_OUTPUT
-          echo "exit_code=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
-        continue-on-error: true
+          sudo CI=true DOCKLIFT_CI_LOCAL=true ./install.sh 2>&1 | tee install_output.txt
+          exit "${PIPESTATUS[0]}"
 
-      - name: Verifying Services
-        id: verify
+      - name: Install (latest release)
+        if: matrix.scenario == 'from-release'
         run: |
-          c() { sudo docker ps | grep -q "$1" && echo "✅ Running" || echo "❌ Not Running"; }
-          {
-            echo "backend=$(c docklift-backend)"
-            echo "frontend=$(c docklift-frontend)"
-            echo "nginx=$(c docklift-nginx)"
-            echo "proxy=$(c docklift-nginx-proxy)"
-            [ -d "/opt/docklift" ] && echo "dir=✅ Created" || echo "dir=❌ Missing"
-            v=$(grep -o '"version": *"[^"]*"' /opt/docklift/backend/package.json 2>/dev/null | head -1 | cut -d'"' -f4 || echo "Unknown")
-            echo "version=$v"
-          } >> $GITHUB_OUTPUT
+          tag=$(curl -fsS -H "Authorization: Bearer ${{ github.token }}" \
+            https://api.github.com/repos/SSujitX/docklift/releases/latest | grep '"tag_name"' | head -1 | cut -d'"' -f4)
+          echo "Latest release: $tag"
+          curl -fsSL "https://raw.githubusercontent.com/SSujitX/docklift/${tag}/install.sh" -o release-install.sh
+          sudo CI=true bash release-install.sh "v=${tag}" 2>&1 | tee install_output.txt
+          exit "${PIPESTATUS[0]}"
 
-      - name: Generate Summary
+      - name: Wait for health
+        run: |
+          for _ in $(seq 1 90); do
+            curl -fsS http://127.0.0.1:8080/api/health && exit 0
+            sleep 2
+          done
+          sudo docker ps -a
+          sudo docker logs docklift-backend 2>&1 | tail -80
+          exit 1
+
+      - name: First admin + checks
+        if: matrix.scenario == 'fresh'
+        run: sudo -E bash scripts/smoke.sh register
+
+      - name: First admin (latest release)
+        if: matrix.scenario == 'from-release'
+        run: |
+          secret=$(sudo cat /opt/docklift/data/.bootstrap-secret | tr -d '\n\r')
+          code=$(curl -sS -o /dev/null -w '%{http_code}' -H 'content-type: application/json' \
+            -H "x-bootstrap-secret: $secret" \
+            -d "{\"email\":\"$DOCKLIFT_ADMIN_EMAIL\",\"password\":\"$DOCKLIFT_ADMIN_PASSWORD\",\"name\":\"Smoke Admin\"}" \
+            http://127.0.0.1:8080/api/auth/register)
+          test "$code" = 201
+
+      - name: Upgrade to this commit
+        run: |
+          sudo DOCKLIFT_CI_LOCAL=true bash upgrade.sh 2>&1 | tee upgrade_output.txt
+          exit "${PIPESTATUS[0]}"
+
+      - name: Checks after upgrade
+        run: sudo -E bash scripts/smoke.sh check
+
+      - name: Diagnostics
+        if: failure()
+        run: |
+          sudo docker ps -a || true
+          sudo docker logs docklift-backend 2>&1 | tail -100 || true
+          sudo tail -100 /opt/docklift/upgrade.log || true
+
+      - name: Summary
         if: always()
         run: |
-          CODE=${{ steps.install.outputs.exit_code }}
           {
-            echo "### $([ "$CODE" = "0" ] && echo "✅ Success" || echo "❌ Failed"): Docklift Installation (${{ matrix.distro }})"
-            echo "- **Version:** \`${{ steps.verify.outputs.version }}\` | **Path:** \`/opt/docklift\` (${{ steps.verify.outputs.dir }})"
-            echo "| Service | Status |" ; echo "|---|---|"
-            echo "| Backend | ${{ steps.verify.outputs.backend }} |"
-            echo "| Frontend | ${{ steps.verify.outputs.frontend }} |"
-            echo "| Web UI | ${{ steps.verify.outputs.nginx }} |"
-            echo "| Proxy | ${{ steps.verify.outputs.proxy }} |"
-            echo "\n**Timing:** Setup: ${{ steps.setup.outputs.duration }}s \| Install: ${{ steps.install.outputs.duration }}s"
-            if [ "$CODE" != "0" ]; then
-              echo "\n### ❌ Error Logs\n\`\`\`bash"
-              tail -50 install_output_txt || echo "No logs"
-              echo "\`\`\`"
-            fi
-          } >> $GITHUB_STEP_SUMMARY
-
-      - name: Fail check
-        if: steps.install.outputs.exit_code != '0'
-        run: exit 1
+            echo "### Docklift install (${{ matrix.scenario }}): ${{ job.status }}"
+            echo "| Container | Status |"
+            echo "|---|---|"
+            for c in docklift-backend docklift-nginx-proxy docklift-certbot; do
+              echo "| $c | $(sudo docker inspect -f '{{.State.Status}} {{if .State.Health}}({{.State.Health.Status}}){{end}}' "$c" 2>/dev/null || echo missing) |"
+            done
+            echo ""
+            echo "Health: \`$(curl -fsS http://127.0.0.1:8080/api/health 2>/dev/null || echo unavailable)\`"
+            echo ""
+            echo "Image: \`$(sudo docker image ls docklift-backend:latest --format '{{.Size}}' 2>/dev/null)\`"
+          } >> "$GITHUB_STEP_SUMMARY"
