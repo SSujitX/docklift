@@ -37,7 +37,7 @@ jobs:
       DOCKLIFT_ADMIN_EMAIL: admin@docklift.test
       DOCKLIFT_ADMIN_PASSWORD: Smoke-Test-Password-1
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           # upgrade.sh (DOCKLIFT_CI_LOCAL) fetches this commit into /opt/docklift
           fetch-depth: 0
@@ -93,6 +93,25 @@ jobs:
 
       - name: Checks after upgrade
         run: sudo -E bash scripts/smoke.sh check
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        if: matrix.scenario == 'fresh'
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: tests/e2e/go.sum
+
+      # Full user flow against the real install: deploys, databases, volumes,
+      # terminal, backup/restore, purge, teardown (tests/e2e/README.md).
+      - name: End-to-end suite
+        if: matrix.scenario == 'fresh'
+        working-directory: tests/e2e
+        env:
+          DOCKLIFT_E2E_URL: http://127.0.0.1:8080
+          DOCKLIFT_E2E_ADMIN_EMAIL: ${{ env.DOCKLIFT_ADMIN_EMAIL }}
+          DOCKLIFT_E2E_ADMIN_PASSWORD: ${{ env.DOCKLIFT_ADMIN_PASSWORD }}
+        run: |
+          go test -c -o "$RUNNER_TEMP/e2e.test" .
+          sudo -E "$RUNNER_TEMP/e2e.test" -test.count=1 -test.timeout=90m -test.v
 
       - name: Diagnostics
         if: failure()
