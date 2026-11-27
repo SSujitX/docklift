@@ -164,7 +164,7 @@ Dashboard → **Logs** (SSE live stream of the platform containers).
 | `docklift-nginx-proxy` | User app domains, panel domain, HTTPS | **80**, **443** | `nginx-proxy/nginx.conf`, `nginx-proxy/conf.d/*.conf` |
 | `docklift-certbot` | Let's Encrypt ACME | — | `nginx-proxy/certbot/` |
 
-A panel domain (Settings → Domain) proxies to `docklift-backend:8000`. Confs written by 2.1.x (upstream `docklift-nginx:80`) are rewritten once when the new backend boots, then nginx is reloaded.
+A panel domain (Settings → Domain) proxies to `docklift-backend.docklift_network:8000` (network-qualified, so a project network cannot answer for the name). Confs written by 2.1.x (upstream `docklift-nginx:80`) or by an earlier 3.0 build (`docklift-backend:8000`) are rewritten once when the new backend boots, then nginx is reloaded.
 
 `docklift-nginx-proxy` has fixed addresses on `docklift_network` (`172.28.255.254`, `fd12:3456:789a::ffff:fffe`); the backend trusts `X-Forwarded-*` only from those and loopback (`TRUSTED_PROXIES`).
 
@@ -412,7 +412,8 @@ Set in `docker-compose.yml` (values in `${…}` can be overridden from the shell
 | `LETSENCRYPT_PATH` | `/etc/letsencrypt` | Certificates (shared with certbot / nginx-proxy) |
 | `DOCKER_NETWORK` | `docklift_network` | Control-plane network |
 | `PORT_RANGE_START` / `PORT_RANGE_END` | `5500` / `5600` | Host port pool for apps |
-| `JWT_SECRET` / `INTERNAL_API_SECRET` | empty | Empty = generated and kept in `DATA_PATH/.secrets` |
+| `JWT_SECRET` | empty | Empty = generated and kept in `DATA_PATH/.secrets` |
+| `INTERNAL_API_SECRET` | empty | Unused (the `X-Internal-Secret` header is no longer accepted); still kept in `.secrets` for compatibility |
 | `CORS_ORIGIN` | empty | Extra allowed browser origins (comma-separated) |
 | `TRUSTED_PROXIES` | loopback + nginx-proxy's fixed IPs | Peers whose `X-Forwarded-*` headers are believed (`none` = never) |
 | `DOCKLIFT_FRONTEND_URL` | `http://localhost:8080` | Dashboard URL used for GitHub App redirects |

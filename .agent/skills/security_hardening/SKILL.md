@@ -52,9 +52,9 @@ This skill documents all security patterns implemented in Docklift. Follow these
 | `/api/backup/restore-upload` with valid setup token | Public (one-time restore) |
 | All other `/api/*` routes | Requires JWT via `authMiddleware` |
 
-### Internal API Secret
--   `X-Internal-Secret` header used for backend-to-backend calls (e.g., webhook → deploy).
--   Stored in `INTERNAL_API_SECRET` env var.
+### Internal API Secret (removed)
+-   The `X-Internal-Secret` full-admin header of the TypeScript backend is no longer accepted: the webhook starts deploys in process.
+-   `INTERNAL_API_SECRET` / `internalApiSecret` in `.secrets` is still read and generated so existing files load and a rollback works, but it grants nothing.
 
 ## Origin Validation (CORS & WebSocket)
 

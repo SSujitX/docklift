@@ -320,8 +320,9 @@ re-run `docker compose up -d` from that directory to apply changes:
 | `CERTBOT_STAGING` | `false` | Use the staging CA while testing, to avoid rate limits |
 | `CORS_ORIGIN` | — | Extra allowed browser origins, if the panel isn't same-origin |
 | `DOCKLIFT_FRONTEND_URL` | `http://localhost:8080` | Public dashboard URL, used for GitHub App callbacks |
-| `JWT_SECRET` / `INTERNAL_API_SECRET` | auto-generated | Override only if you manage secrets yourself |
-| `TRUSTED_PROXIES` | loopback + `docklift_network` minus its gateway | Comma-separated IPs/CIDRs whose `X-Forwarded-For/-Proto/-Host` headers are believed (client IP for login rate limits, HTTPS detection, same-origin checks). `!addr` excludes an address; `none` trusts no peer. The default trusts `127.0.0.0/8`, `::1`, `172.28.0.0/16` and `fd12:3456:789a::/64` except the gateways `172.28.0.1` / `fd12:3456:789a::1`, which is how clients of the published dashboard port appear. Requests from any other peer have those headers ignored. |
+| `JWT_SECRET` | auto-generated | Override only if you manage secrets yourself |
+| `INTERNAL_API_SECRET` | auto-generated | Unused since 3.0 (the `X-Internal-Secret` header is no longer accepted); still read and kept in `.secrets` for compatibility |
+| `TRUSTED_PROXIES` | loopback + nginx-proxy's fixed IPs | Comma-separated IPs/CIDRs whose `X-Forwarded-For/-Proto/-Host` headers are believed (client IP for login rate limits, HTTPS detection, same-origin checks). `!addr` excludes an address; `none` trusts no peer. The default trusts `127.0.0.0/8`, `::1` and `docklift-nginx-proxy`'s fixed addresses `172.28.255.254` / `fd12:3456:789a::ffff:fffe` only, so other containers on `docklift_network` (deployed apps) cannot forge them. Requests from any other peer have those headers ignored. |
 
 ---
 

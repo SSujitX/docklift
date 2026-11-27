@@ -55,7 +55,7 @@ only the backend and certbot write there.
 | Var | Purpose |
 |-----|---------|
 | `JWT_SECRET` | Auth token signing (auto-generated + persisted on first run if empty) |
-| `INTERNAL_API_SECRET` | Backend-to-backend auth (webhook → deploy) |
+| `INTERNAL_API_SECRET` | Unused (kept in `.secrets` for compatibility; no longer a credential) |
 | `DATABASE_URL` | `file:/app/data/docklift.db` |
 | `PORT_RANGE_START` / `_END` | Host port pool when `publish_host_port` is enabled (default `5500`–`5600`) |
 | `DASHBOARD_BIND` | Panel listen address (default `0.0.0.0`) |

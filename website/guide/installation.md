@@ -143,6 +143,7 @@ Create `/opt/docklift/.env` and re-run `docker compose up -d` from that director
 | `CERTBOT_STAGING` | `false` | Staging CA while testing (avoid rate limits) |
 | `CORS_ORIGIN` | — | Extra allowed browser origins |
 | `DOCKLIFT_FRONTEND_URL` | `http://localhost:8080` | Public dashboard URL (GitHub App callbacks) |
-| `JWT_SECRET` / `INTERNAL_API_SECRET` | auto-generated | Override only if you manage secrets yourself |
+| `JWT_SECRET` | auto-generated | Override only if you manage secrets yourself |
+| `INTERNAL_API_SECRET` | auto-generated | Unused since 3.0; still kept in `.secrets` for compatibility |
 
 Secrets auto-generate and persist under `data/.secrets`.
