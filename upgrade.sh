@@ -417,7 +417,8 @@ else
     BACKUP_FILE=""
 fi
 
-# The new backend rewrites panel-domain confs (docklift-nginx:80 → docklift-backend:8000)
+# The new backend rewrites panel-domain confs at boot
+# (docklift-nginx:80 → docklift-backend.docklift_network:8000)
 if [ -d "$INSTALL_DIR/nginx-proxy/conf.d" ]; then
     CONF_SNAPSHOT="$BACKUP_DIR/nginx-conf_${STAMP}.tar.gz"
     tar -czf "$CONF_SNAPSHOT" -C "$INSTALL_DIR/nginx-proxy" conf.d
@@ -469,6 +470,13 @@ echo -e "\n  ${CYAN}[3/6]${NC} Building Docklift..."
 echo -e "        ${DIM}This may take a few minutes...${NC}"
 if ! docker compose build >>"$LOG" 2>&1; then
     echo -e "        ${RED}Build failed${NC}"
+    rollback_upgrade
+    exit 1
+fi
+# The proxy and certbot images are pinned in docker-compose.yml; fetch the
+# pinned tags now so the container swap below never waits on (or fails at) a pull.
+if ! docker compose pull nginx-proxy certbot >>"$LOG" 2>&1; then
+    echo -e "        ${RED}Pulling nginx-proxy/certbot images failed${NC}"
     rollback_upgrade
     exit 1
 fi

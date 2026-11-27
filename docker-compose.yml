@@ -68,7 +68,7 @@ services:
       - nginx-proxy
 
   nginx-proxy:
-    image: nginx:stable-alpine
+    image: nginx:1.30.8-alpine  # nginx stable; bump deliberately (upgrade.sh pulls it)
     container_name: docklift-nginx-proxy
     restart: unless-stopped
     extra_hosts:
@@ -93,7 +93,7 @@ services:
 
   # Let's Encrypt ACME sidecar (webroot). Backend triggers issue via docker exec.
   certbot:
-    image: certbot/certbot
+    image: certbot/certbot:v5.10.0  # bump deliberately (upgrade.sh pulls it)
     container_name: docklift-certbot
     restart: unless-stopped
     entrypoint: /bin/sh

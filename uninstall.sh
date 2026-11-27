@@ -20,7 +20,8 @@ PROJECT_RE='^dl-'
 
 # Base images DockLift pulls. Removed without -f so Docker refuses while another
 # workload still uses them.
-BASE_IMAGES=(nginx:stable-alpine certbot/certbot)
+# Pinned tags from docker-compose.yml, plus the unpinned tags of 2.x installs.
+BASE_IMAGES=(nginx:1.30.8-alpine certbot/certbot:v5.10.0 nginx:stable-alpine certbot/certbot)
 
 echo -e "${RED}${BOLD}⚠️  THIS WILL DELETE ALL DOCKLIFT DATA, PROJECTS, AND DATABASES! ⚠️${NC}"
 
