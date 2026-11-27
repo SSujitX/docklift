@@ -191,7 +191,7 @@ export default function PortsPage() {
       <div className="mb-2 flex shrink-0 items-center justify-between gap-3 sm:mb-3">
         <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-brand/20 bg-brand/10 sm:h-10 sm:w-10 sm:rounded-2xl">
-            <Anchor className="h-4 w-4 text-brand sm:h-[1.125rem] sm:w-[1.125rem]" />
+            <Anchor className="h-4 w-4 text-brand sm:h-4.5 sm:w-4.5" />
           </span>
           <div className="min-w-0">
             <h1 className="truncate text-lg font-bold tracking-tight sm:text-xl">
@@ -260,7 +260,7 @@ export default function PortsPage() {
       {/* Filters + pool meta — one row */}
       <div className="mb-2 flex shrink-0 flex-wrap items-center gap-2 sm:mb-3">
         <div
-          className="flex min-w-0 flex-1 gap-1.5 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          className="flex min-w-0 flex-1 gap-1.5 overflow-x-auto [-ms-overflow-style:none] scrollbar-none [&::-webkit-scrollbar]:hidden"
           role="group"
           aria-label="Filter ports"
         >
@@ -363,7 +363,7 @@ export default function PortsPage() {
                       className={cn(
                         "flex items-center gap-3 px-3 py-2.5",
                         clickable &&
-                          "cursor-pointer hover:bg-secondary/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand/40",
+                          "cursor-pointer hover:bg-secondary/30 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand/40",
                       )}
                     >
                       <span
@@ -410,7 +410,7 @@ export default function PortsPage() {
 
               {/* Desktop */}
               <table className="hidden w-full text-left text-sm md:table">
-                <thead className="sticky top-0 z-10 bg-secondary/95 backdrop-blur-sm">
+                <thead className="sticky top-0 z-10 bg-secondary/95 backdrop-blur-xs">
                   <tr className="border-b border-border/60 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
                     <th className="px-4 py-2.5 font-semibold">Port</th>
                     <th className="px-4 py-2.5 font-semibold">Status</th>
@@ -440,7 +440,7 @@ export default function PortsPage() {
                         className={cn(
                           "border-b border-border/40 last:border-b-0",
                           clickable &&
-                            "cursor-pointer hover:bg-secondary/40 focus-visible:bg-secondary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand/40",
+                            "cursor-pointer hover:bg-secondary/40 focus-visible:bg-secondary/40 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand/40",
                         )}
                       >
                         <td className="px-4 py-2">
@@ -527,7 +527,7 @@ export default function PortsPage() {
                   <ChevronLeft className="h-3.5 w-3.5" />
                   <span className="hidden sm:inline">Prev</span>
                 </Button>
-                <span className="min-w-[3.5rem] text-center text-[11px] tabular-nums text-muted-foreground">
+                <span className="min-w-14 text-center text-[11px] tabular-nums text-muted-foreground">
                   {safePage + 1}/{pageCount}
                 </span>
                 <Button

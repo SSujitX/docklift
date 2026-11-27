@@ -38,7 +38,7 @@ function ShellFrame() {
 
       <div
         className={cn(
-          "fixed inset-0 z-50 bg-background/70 backdrop-blur-sm transition-opacity duration-200 lg:hidden",
+          "fixed inset-0 z-50 bg-background/70 backdrop-blur-xs transition-opacity duration-200 lg:hidden",
           mobileOpen ? "opacity-100" : "pointer-events-none opacity-0",
         )}
         onClick={() => setMobileOpen(false)}
@@ -47,7 +47,7 @@ function ShellFrame() {
       <aside
         ref={mobileDrawerRef}
         className={cn(
-          "fixed inset-y-0 left-0 z-50 w-[17rem] max-w-[85vw] transition-transform duration-200 ease-out lg:hidden",
+          "fixed inset-y-0 left-0 z-50 w-68 max-w-[85vw] transition-transform duration-200 ease-out lg:hidden",
           // `invisible` keeps the closed drawer out of the tab order.
           mobileOpen ? "visible translate-x-0" : "invisible -translate-x-full",
         )}

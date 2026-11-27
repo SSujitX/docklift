@@ -169,12 +169,12 @@ export function CommandPalette() {
   let lastGroup = "";
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-start justify-center p-4 pt-[12vh]">
+    <div className="fixed inset-0 z-100 flex items-start justify-center p-4 pt-[12vh]">
       <button
         type="button"
         aria-label="Close command palette"
         onClick={() => setPaletteOpen(false)}
-        className="absolute inset-0 cursor-default bg-background/70 backdrop-blur-sm animate-in fade-in duration-150"
+        className="absolute inset-0 cursor-default bg-background/70 backdrop-blur-xs animate-in fade-in duration-150"
       />
 
       <div
@@ -192,7 +192,7 @@ export function CommandPalette() {
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search pages, projects and actions…"
-            className="h-14 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+            className="h-14 flex-1 bg-transparent text-sm outline-hidden placeholder:text-muted-foreground"
           />
           <kbd className="rounded border border-border bg-secondary/60 px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">
             Esc

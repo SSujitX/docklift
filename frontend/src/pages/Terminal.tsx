@@ -14,7 +14,7 @@ function TerminalContent() {
     >
       <div className="mb-2 flex shrink-0 items-center gap-2.5 sm:mb-3 sm:gap-3">
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-brand/20 bg-brand/10 sm:h-10 sm:w-10 sm:rounded-2xl">
-          <SquareTerminal className="h-4 w-4 text-brand sm:h-[1.125rem] sm:w-[1.125rem]" />
+          <SquareTerminal className="h-4 w-4 text-brand sm:h-4.5 sm:w-4.5" />
         </span>
         <div className="min-w-0">
           <h1 className="truncate text-lg font-bold tracking-tight sm:text-xl">

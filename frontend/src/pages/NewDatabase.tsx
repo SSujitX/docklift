@@ -369,7 +369,7 @@ export default function NewDatabasePage() {
           </div>
         </Card>
 
-        <div className="pointer-events-none fixed inset-x-0 bottom-0 z-20 lg:left-[var(--shell-rail,17rem)]">
+        <div className="pointer-events-none fixed inset-x-0 bottom-0 z-20 lg:left-(--shell-rail,17rem)">
           <div className="pointer-events-auto border-t border-border/60 bg-background/90 px-3 py-3 backdrop-blur-xl sm:px-4 md:px-8">
             <div className="mx-auto flex w-full max-w-7xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
               <div className="min-w-0">
@@ -395,7 +395,7 @@ export default function NewDatabasePage() {
                 disabled={
                   creating || loadingEngines || !name.trim() || !versionTag
                 }
-                className="h-11 w-full shrink-0 bg-brand px-6 font-semibold text-brand-foreground shadow-lg shadow-brand/20 hover:brightness-110 sm:w-auto sm:min-w-[11rem]"
+                className="h-11 w-full shrink-0 bg-brand px-6 font-semibold text-brand-foreground shadow-lg shadow-brand/20 hover:brightness-110 sm:w-auto sm:min-w-44"
               >
                 {creating ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />

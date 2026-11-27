@@ -192,9 +192,9 @@ export default function SetupPage() {
   // Show restore progress/complete view
   if (restoring || restoreComplete) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-amber-950/20 p-4">
+      <div className="min-h-screen flex items-center justify-center bg-linear-to-br/srgb from-background via-background to-amber-950/20 p-4">
         <div className="w-full max-w-2xl">
-          <Card className="p-8 border-amber-500/20 shadow-2xl bg-card/80 backdrop-blur-sm">
+          <Card className="p-8 border-amber-500/20 shadow-2xl bg-card/80 backdrop-blur-xs">
             <div className="flex items-center gap-3 mb-6">
               <div className="p-3 rounded-xl bg-amber-500/10">
                 <RotateCcw className={`h-6 w-6 text-amber-500 ${restoring ? 'animate-spin' : ''}`} />
@@ -226,7 +226,7 @@ export default function SetupPage() {
                 </div>
                 <Button
                   onClick={() => navigate('/sign-in')}
-                  className="w-full h-11 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white font-bold"
+                  className="w-full h-11 bg-linear-to-r/srgb from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white font-bold"
                 >
                   Go to Sign In
                 </Button>
@@ -239,23 +239,23 @@ export default function SetupPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-cyan-950/20 p-4">
+    <div className="min-h-screen flex items-center justify-center bg-linear-to-br/srgb from-background via-background to-cyan-950/20 p-4">
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="flex flex-col items-center mb-8">
           <div className="relative mb-4">
-            <div className="absolute inset-0 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-2xl blur-xl opacity-50" />
-            <div className="relative bg-gradient-to-br from-cyan-500 to-blue-600 p-4 rounded-2xl shadow-2xl">
+            <div className="absolute inset-0 bg-linear-to-br/srgb from-cyan-500 to-blue-600 rounded-2xl blur-xl opacity-50" />
+            <div className="relative bg-linear-to-br/srgb from-cyan-500 to-blue-600 p-4 rounded-2xl shadow-2xl">
               <Container className="h-10 w-10 text-white" strokeWidth={2.5} />
             </div>
           </div>
-          <h1 className="text-4xl font-black tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-foreground to-foreground/70">
+          <h1 className="text-4xl font-black tracking-tight bg-clip-text text-transparent bg-linear-to-r/srgb from-foreground to-foreground/70">
             Docklift
           </h1>
         </div>
 
         {mode === 'register' ? (
-          <Card className="p-8 border-border/50 shadow-2xl bg-card/80 backdrop-blur-sm">
+          <Card className="p-8 border-border/50 shadow-2xl bg-card/80 backdrop-blur-xs">
             <div className="mb-6">
               <h2 className="text-2xl font-bold tracking-tight">Create an account</h2>
               <p className="text-sm text-cyan-500 mt-1 font-medium">
@@ -372,7 +372,7 @@ export default function SetupPage() {
               <Button
                 type="submit"
                 disabled={loading || !isPasswordValid || !passwordsMatch || !formData.name || !formData.email || !formData.bootstrapSecret.trim()}
-                className="w-full h-11 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white font-bold"
+                className="w-full h-11 bg-linear-to-r/srgb from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white font-bold"
               >
                 {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
                 Register
@@ -406,7 +406,7 @@ export default function SetupPage() {
             </p>
           </Card>
         ) : (
-          <Card className="p-8 border-amber-500/20 shadow-2xl bg-card/80 backdrop-blur-sm">
+          <Card className="p-8 border-amber-500/20 shadow-2xl bg-card/80 backdrop-blur-xs">
             <button
               onClick={() => setMode('register')}
               className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-4 transition-colors"

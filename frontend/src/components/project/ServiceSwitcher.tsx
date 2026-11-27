@@ -99,7 +99,7 @@ export function ServiceSwitcher({
   if (services.length <= 1) return null;
 
   const chipBase =
-    "inline-flex shrink-0 items-center gap-1.5 rounded-xl border px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40 sm:gap-2 sm:px-3 sm:py-2.5";
+    "inline-flex shrink-0 items-center gap-1.5 rounded-xl border px-2.5 py-2 text-left transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-brand/40 sm:gap-2 sm:px-3 sm:py-2.5";
 
   return (
     <div className={cn("flex min-w-0 flex-col gap-2.5 sm:gap-3", className)}>
@@ -126,7 +126,7 @@ export function ServiceSwitcher({
               tabIndex={canScrollLeft ? 0 : -1}
               onClick={() => scrollByAmount(-1)}
               className={cn(
-                "absolute left-0 top-1/2 z-10 hidden h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-border/60 bg-background/95 text-foreground shadow-md backdrop-blur-sm transition-opacity hover:bg-secondary disabled:pointer-events-none sm:flex",
+                "absolute left-0 top-1/2 z-10 hidden h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-border/60 bg-background/95 text-foreground shadow-md backdrop-blur-xs transition-opacity hover:bg-secondary disabled:pointer-events-none sm:flex",
                 canScrollLeft ? "opacity-100" : "opacity-0",
               )}
             >
@@ -139,7 +139,7 @@ export function ServiceSwitcher({
               tabIndex={canScrollRight ? 0 : -1}
               onClick={() => scrollByAmount(1)}
               className={cn(
-                "absolute right-0 top-1/2 z-10 hidden h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-border/60 bg-background/95 text-foreground shadow-md backdrop-blur-sm transition-opacity hover:bg-secondary disabled:pointer-events-none sm:flex",
+                "absolute right-0 top-1/2 z-10 hidden h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-border/60 bg-background/95 text-foreground shadow-md backdrop-blur-xs transition-opacity hover:bg-secondary disabled:pointer-events-none sm:flex",
                 canScrollRight ? "opacity-100" : "opacity-0",
               )}
             >
@@ -154,7 +154,7 @@ export function ServiceSwitcher({
           aria-label="All services or one service workspace"
           className={cn(
             "flex max-w-full gap-2 overflow-x-auto scroll-smooth py-0.5",
-            "[-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+            "[-ms-overflow-style:none] scrollbar-none [&::-webkit-scrollbar]:hidden",
             hasOverflow ? "sm:px-10" : "px-0",
           )}
         >
@@ -166,7 +166,7 @@ export function ServiceSwitcher({
             className={cn(
               chipBase,
               workspace === "project"
-                ? "border-brand/40 bg-brand/10 text-foreground shadow-sm"
+                ? "border-brand/40 bg-brand/10 text-foreground shadow-xs"
                 : "border-border/60 bg-secondary/40 text-muted-foreground hover:border-border hover:bg-secondary hover:text-foreground",
             )}
           >
@@ -195,9 +195,9 @@ export function ServiceSwitcher({
                 onClick={() => onSelectService(svc.id)}
                 className={cn(
                   chipBase,
-                  "max-w-[12rem] sm:max-w-[16rem]",
+                  "max-w-48 sm:max-w-[16rem]",
                   active
-                    ? "border-brand/40 bg-brand/10 text-foreground shadow-sm"
+                    ? "border-brand/40 bg-brand/10 text-foreground shadow-xs"
                     : "border-border/60 bg-secondary/40 text-muted-foreground hover:border-border hover:bg-secondary hover:text-foreground",
                 )}
               >

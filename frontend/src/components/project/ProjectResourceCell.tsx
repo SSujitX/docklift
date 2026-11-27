@@ -21,7 +21,7 @@ function Meter({
 }) {
   const width = value == null ? 0 : Math.min(100, Math.max(0, value));
   return (
-    <div className="min-w-[7.5rem]">
+    <div className="min-w-30">
       <div className="mb-0.5 flex items-center justify-between gap-2 text-[10px] font-medium tabular-nums">
         <span className="text-muted-foreground">{label}</span>
         <span

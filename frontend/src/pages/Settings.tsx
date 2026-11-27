@@ -723,12 +723,12 @@ function SettingsContent() {
             {activeTab === 'github' && (
               <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
                 <div className="relative group">
-                  <div className="absolute inset-0 bg-gradient-to-r from-cyan-500/20 to-blue-500/20 rounded-3xl blur-xl opacity-75" />
-                  <Card className="relative p-6 border-cyan-500/20 bg-card/50 backdrop-blur-sm">
+                  <div className="absolute inset-0 bg-linear-to-r/srgb from-cyan-500/20 to-blue-500/20 rounded-3xl blur-xl opacity-75" />
+                  <Card className="relative p-6 border-cyan-500/20 bg-card/50 backdrop-blur-xs">
                     <div className="flex flex-col sm:flex-row items-center gap-6">
                       <div className="relative shrink-0">
                         <div className="absolute inset-0 bg-cyan-500/20 blur-xl rounded-full" />
-                        <div className="relative p-4 rounded-2xl bg-gradient-to-br from-zinc-900 to-black border border-zinc-800 shadow-xl">
+                        <div className="relative p-4 rounded-2xl bg-linear-to-br/srgb from-zinc-900 to-black border border-zinc-800 shadow-xl">
                           <GithubIcon className="h-8 w-8 text-white" />
                         </div>
                       </div>
@@ -828,7 +828,7 @@ function SettingsContent() {
                           <Button 
                             onClick={handleConnectGitHub}
                             size="lg"
-                            className="gap-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white shadow-lg shadow-cyan-500/25"
+                            className="gap-2 bg-linear-to-r/srgb from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white shadow-lg shadow-cyan-500/25"
                           >
                             <Sparkles className="h-4 w-4" />
                             Connect GitHub

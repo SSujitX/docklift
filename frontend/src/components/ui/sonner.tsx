@@ -53,28 +53,28 @@ const Toaster = ({ ...props }: ToasterProps) => {
             "group-[.toaster]:ring-1 group-[.toaster]:ring-black/5 " +
             "dark:group-[.toaster]:ring-white/10",
           success:
-            "group-[.toaster]:!bg-emerald-50 group-[.toaster]:dark:!bg-emerald-950/90 " +
-            "group-[.toaster]:!border-emerald-500/40 group-[.toaster]:!text-emerald-900 " +
-            "group-[.toaster]:dark:!text-emerald-50 " +
-            "group-[.toaster]:!shadow-[0_12px_36px_-10px_rgba(16,185,129,0.45)]",
+            "group-[.toaster]:bg-emerald-50! dark:group-[.toaster]:bg-emerald-950/90! " +
+            "group-[.toaster]:border-emerald-500/40! group-[.toaster]:text-emerald-900! " +
+            "dark:group-[.toaster]:text-emerald-50! " +
+            "group-[.toaster]:shadow-[0_12px_36px_-10px_rgba(16,185,129,0.45)]!",
           error:
-            "group-[.toaster]:!bg-red-50 group-[.toaster]:dark:!bg-red-950/90 " +
-            "group-[.toaster]:!border-red-500/45 group-[.toaster]:!text-red-950 " +
-            "group-[.toaster]:dark:!text-red-50 " +
-            "group-[.toaster]:!shadow-[0_12px_36px_-10px_rgba(239,68,68,0.45)]",
+            "group-[.toaster]:bg-red-50! dark:group-[.toaster]:bg-red-950/90! " +
+            "group-[.toaster]:border-red-500/45! group-[.toaster]:text-red-950! " +
+            "dark:group-[.toaster]:text-red-50! " +
+            "group-[.toaster]:shadow-[0_12px_36px_-10px_rgba(239,68,68,0.45)]!",
           warning:
-            "group-[.toaster]:!bg-amber-50 group-[.toaster]:dark:!bg-amber-950/90 " +
-            "group-[.toaster]:!border-amber-500/45 group-[.toaster]:!text-amber-950 " +
-            "group-[.toaster]:dark:!text-amber-50 " +
-            "group-[.toaster]:!shadow-[0_12px_36px_-10px_rgba(245,158,11,0.4)]",
+            "group-[.toaster]:bg-amber-50! dark:group-[.toaster]:bg-amber-950/90! " +
+            "group-[.toaster]:border-amber-500/45! group-[.toaster]:text-amber-950! " +
+            "dark:group-[.toaster]:text-amber-50! " +
+            "group-[.toaster]:shadow-[0_12px_36px_-10px_rgba(245,158,11,0.4)]!",
           info:
-            "group-[.toaster]:!bg-sky-50 group-[.toaster]:dark:!bg-sky-950/90 " +
-            "group-[.toaster]:!border-sky-500/40 group-[.toaster]:!text-sky-950 " +
-            "group-[.toaster]:dark:!text-sky-50 " +
-            "group-[.toaster]:!shadow-[0_12px_36px_-10px_rgba(14,165,233,0.4)]",
+            "group-[.toaster]:bg-sky-50! dark:group-[.toaster]:bg-sky-950/90! " +
+            "group-[.toaster]:border-sky-500/40! group-[.toaster]:text-sky-950! " +
+            "dark:group-[.toaster]:text-sky-50! " +
+            "group-[.toaster]:shadow-[0_12px_36px_-10px_rgba(14,165,233,0.4)]!",
           loading:
-            "group-[.toaster]:!bg-secondary/95 group-[.toaster]:!border-brand/35 " +
-            "group-[.toaster]:!text-foreground",
+            "group-[.toaster]:bg-secondary/95! group-[.toaster]:border-brand/35! " +
+            "group-[.toaster]:text-foreground!",
           title:
             "group-[.toast]:text-[13px] group-[.toast]:font-semibold group-[.toast]:leading-snug " +
             "group-[.toast]:tracking-tight",
@@ -88,8 +88,8 @@ const Toaster = ({ ...props }: ToasterProps) => {
             "group-[.toast]:text-xs group-[.toast]:font-medium group-[.toast]:text-muted-foreground",
           closeButton:
             "group-[.toast]:border-border/60 group-[.toast]:bg-background/90 " +
-            "group-[.toast]:text-muted-foreground group-[.toast]:hover:text-foreground " +
-            "group-[.toast]:hover:bg-secondary",
+            "group-[.toast]:text-muted-foreground hover:group-[.toast]:text-foreground " +
+            "hover:group-[.toast]:bg-secondary",
           icon: "group-[.toast]:mt-0.5",
         },
       }}

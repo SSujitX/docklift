@@ -371,7 +371,7 @@ export function LogViewer({
                 placeholder="Find in logs"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="bg-transparent text-[12px] text-zinc-200 placeholder-zinc-600 outline-none w-[150px] font-mono"
+                className="bg-transparent text-[12px] text-zinc-200 placeholder-zinc-600 outline-hidden w-[150px] font-mono"
               />
               {searchQuery && (
                 <span className="text-[10px] text-zinc-500 font-mono">{matchCount}</span>
@@ -457,7 +457,7 @@ export function LogViewer({
               return (
                 <div
                   key={i}
-                  className="flex items-start hover:bg-white/[0.02] px-4 py-[1px] group transition-colors"
+                  className="flex items-start hover:bg-white/2 px-4 py-px group transition-colors"
                 >
                   {/* Timestamp */}
                   {timestamp && (

@@ -870,7 +870,7 @@ export function TerminalView({ className }: { className?: string }) {
         <p className="hidden shrink-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground sm:block">
           Host
         </p>
-        <div className="-mx-1 flex min-w-0 flex-1 gap-1 overflow-x-auto px-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="-mx-1 flex min-w-0 flex-1 gap-1 overflow-x-auto px-1 [-ms-overflow-style:none] scrollbar-none [&::-webkit-scrollbar]:hidden">
           <Button
             variant="ghost"
             size="sm"

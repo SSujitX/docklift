@@ -532,7 +532,7 @@ export function PanelDomainCard({
                 placeholder="panel.example.com"
                 spellCheck={false}
                 autoComplete="off"
-                className="h-11 w-full rounded-lg border border-input bg-background pl-[4.75rem] pr-3 font-mono text-sm ring-offset-background transition-colors placeholder:font-sans placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
+                className="h-11 w-full rounded-lg border border-input bg-background pl-19 pr-3 font-mono text-sm ring-offset-background transition-colors placeholder:font-sans placeholder:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
               />
             </div>
             <input
@@ -711,7 +711,7 @@ export function PanelDomainCard({
                   </div>
 
                   {dns && (
-                    <p className={cn("text-[11px] break-words", DNS_STYLES[dns.status])}>
+                    <p className={cn("text-[11px] wrap-break-word", DNS_STYLES[dns.status])}>
                       {dns.message}
                     </p>
                   )}
@@ -723,7 +723,7 @@ export function PanelDomainCard({
                         {fix.title}
                       </p>
                       {ssl?.error && (
-                        <p className="text-[11px] text-muted-foreground break-words">{ssl.error}</p>
+                        <p className="text-[11px] text-muted-foreground wrap-break-word">{ssl.error}</p>
                       )}
                       <ol className="space-y-1">
                         {fix.steps.map((step, i) => (
@@ -792,7 +792,7 @@ export function PanelDomainCard({
                         second: "2-digit",
                       })}
                     </span>
-                    <span className={cn("min-w-0 break-words", LEVEL_STYLES[event.level])}>
+                    <span className={cn("min-w-0 wrap-break-word", LEVEL_STYLES[event.level])}>
                       {event.message}
                     </span>
                   </div>

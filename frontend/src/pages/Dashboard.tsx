@@ -274,7 +274,7 @@ export default function Dashboard() {
       />
 
       <div
-        className="-mx-4 mb-4 flex gap-2 overflow-x-auto px-4 pb-1 [-ms-overflow-style:none] [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0 [&::-webkit-scrollbar]:hidden"
+        className="-mx-4 mb-4 flex gap-2 overflow-x-auto px-4 pb-1 [-ms-overflow-style:none] scrollbar-none sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0 [&::-webkit-scrollbar]:hidden"
         role="group"
         aria-label="Filter projects by status"
       >
@@ -370,7 +370,7 @@ export default function Dashboard() {
                       navigate(`/projects/${project.id}`),
                     )
                   }
-                  className="rounded-2xl border border-border/60 bg-card p-4 shadow-sm transition-colors hover:bg-secondary/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
+                  className="rounded-2xl border border-border/60 bg-card p-4 shadow-xs transition-colors hover:bg-secondary/30 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-brand/40"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex min-w-0 items-start gap-3">
@@ -478,7 +478,7 @@ export default function Dashboard() {
                             navigate(`/projects/${project.id}`),
                           )
                         }
-                        className="cursor-pointer border-b border-border/40 transition-colors last:border-b-0 hover:bg-secondary/40 focus-visible:bg-secondary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
+                        className="cursor-pointer border-b border-border/40 transition-colors last:border-b-0 hover:bg-secondary/40 focus-visible:bg-secondary/40 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-brand/40"
                       >
                         <td className="px-4 py-3.5">
                           <div className="flex min-w-0 items-center gap-3">
@@ -486,7 +486,7 @@ export default function Dashboard() {
                               className={cn(
                                 "h-2 w-2 shrink-0 rounded-full",
                                 project.status === "running"
-                                  ? "bg-emerald-500 shadow-sm shadow-emerald-500/50"
+                                  ? "bg-emerald-500 shadow-xs shadow-emerald-500/50"
                                   : project.status === "building"
                                     ? "animate-pulse bg-amber-500"
                                     : project.status === "error"
@@ -591,7 +591,7 @@ export default function Dashboard() {
             >
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <span className="min-w-[4.5rem] text-center text-xs font-medium tabular-nums text-muted-foreground">
+            <span className="min-w-18 text-center text-xs font-medium tabular-nums text-muted-foreground">
               {safePage + 1} / {pageCount}
             </span>
             <Button

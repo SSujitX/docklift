@@ -118,7 +118,7 @@ export function BranchSelector({
                 className={cn(
                   "inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-xs font-semibold transition-colors sm:text-sm",
                   active
-                    ? "bg-brand/10 text-brand shadow-sm"
+                    ? "bg-brand/10 text-brand shadow-xs"
                     : "text-muted-foreground hover:text-foreground",
                   tabDisabled && "cursor-not-allowed opacity-40 hover:text-muted-foreground",
                 )}
@@ -185,7 +185,7 @@ export function BranchSelector({
         </button>
 
         {isOpen && (
-          <div className="absolute left-0 right-0 z-[100] mt-1.5 overflow-hidden rounded-xl border border-border/60 bg-popover shadow-xl shadow-black/10">
+          <div className="absolute left-0 right-0 z-100 mt-1.5 overflow-hidden rounded-xl border border-border/60 bg-popover shadow-xl shadow-black/10">
             <div className="border-b border-border/50 p-2">
               <div className="relative">
                 <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -194,7 +194,7 @@ export function BranchSelector({
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder={kind === "tag" ? "Filter tags…" : "Filter branches…"}
-                  className="h-9 w-full rounded-lg border-0 bg-secondary/50 pl-8 pr-8 text-sm outline-none placeholder:text-muted-foreground/60 focus:ring-2 focus:ring-brand/20"
+                  className="h-9 w-full rounded-lg border-0 bg-secondary/50 pl-8 pr-8 text-sm outline-hidden placeholder:text-muted-foreground/60 focus:ring-2 focus:ring-brand/20"
                 />
                 {search && (
                   <button

@@ -89,7 +89,7 @@ const HISTORY_PAGE_SIZE = 6;
 
 /** Operate-mode project chrome — neutrals first; brand only for the primary deploy action. */
 const PROJECT_TAB_TRIGGER =
-  "gap-1.5 sm:gap-2 rounded-lg px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium transition-colors border border-transparent text-muted-foreground hover:bg-secondary/70 hover:text-foreground whitespace-nowrap data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:border-border data-[state=active]:shadow-sm";
+  "gap-1.5 sm:gap-2 rounded-lg px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium transition-colors border border-transparent text-muted-foreground hover:bg-secondary/70 hover:text-foreground whitespace-nowrap data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:border-border data-[state=active]:shadow-xs";
 
 const PROJECT_ACTION_PRIMARY =
   "bg-brand text-brand-foreground border-transparent hover:bg-brand hover:brightness-110 hover:text-brand-foreground shadow-none";
@@ -311,7 +311,7 @@ function ContainerLogsPanel({
               className={cn(
                 "flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all duration-300 border",
                 activeContainer === svc.container_name
-                  ? "bg-emerald-500/15 text-emerald-500 border-emerald-500/30 shadow-sm"
+                  ? "bg-emerald-500/15 text-emerald-500 border-emerald-500/30 shadow-xs"
                   : "bg-secondary/50 text-muted-foreground border-border/50 hover:bg-secondary hover:text-foreground"
               )}
             >
@@ -1329,7 +1329,7 @@ export default function ProjectDetail() {
           )}
 
           {/* Match AppShell padding (px-3 / sm:px-4) — old -mx-4 overflowed phones */}
-          <div className="sticky top-14 z-10 -mx-3 min-w-0 overflow-x-auto px-3 [-ms-overflow-style:none] [scrollbar-width:none] sm:-mx-4 sm:px-4 md:mx-0 md:overflow-visible md:px-0 md:flex md:justify-center [&::-webkit-scrollbar]:hidden">
+          <div className="sticky top-14 z-10 -mx-3 min-w-0 overflow-x-auto px-3 [-ms-overflow-style:none] scrollbar-none sm:-mx-4 sm:px-4 md:mx-0 md:overflow-visible md:px-0 md:flex md:justify-center [&::-webkit-scrollbar]:hidden">
             <TabsList className="inline-flex w-max max-w-none items-center justify-start gap-0.5 rounded-xl border border-border/60 bg-secondary/40 p-1 md:justify-center">
               <TabsTrigger value="overview" className={PROJECT_TAB_TRIGGER}>
                 <LayoutDashboard className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
@@ -1485,7 +1485,7 @@ export default function ProjectDetail() {
                                 "flex min-w-0 items-start gap-3 sm:items-center sm:gap-4",
                                 multiService &&
                                   workspace === "project" &&
-                                  "cursor-pointer rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                                  "cursor-pointer rounded-lg outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
                               )}
                               role={
                                 multiService && workspace === "project"
@@ -1834,13 +1834,13 @@ export default function ProjectDetail() {
                       onClick={() => handleAutoDeployToggle(!autoDeploy)}
                       disabled={autoDeployLoading}
                       className={cn(
-                        "relative h-6 w-11 rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 shrink-0 self-end sm:self-auto",
+                        "relative h-6 w-11 rounded-full transition-colors duration-200 focus:outline-hidden focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 shrink-0 self-end sm:self-auto",
                         autoDeploy ? "bg-emerald-500" : "bg-secondary",
                       )}
                     >
                       <span
                         className={cn(
-                          "absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200",
+                          "absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow-xs transition-transform duration-200",
                           autoDeploy ? "translate-x-5" : "translate-x-0",
                         )}
                       />
@@ -2043,7 +2043,7 @@ export default function ProjectDetail() {
                         <ChevronLeft className="h-3.5 w-3.5" />
                         Prev
                       </Button>
-                      <span className="text-[11px] font-medium tabular-nums text-muted-foreground order-first w-full text-center sm:order-none sm:w-auto">
+                      <span className="text-[11px] font-medium tabular-nums text-muted-foreground order-first w-full text-center sm:order-0 sm:w-auto">
                         Page {historyPage + 1} of {historyPageCount}
                       </span>
                       <Button
@@ -2309,7 +2309,7 @@ export default function ProjectDetail() {
                         workspace === "service" ||
                         !multiService
                       }
-                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
                     >
                       {services.length === 0 && <option value="">No services available</option>}
                       {services.map((service) => (

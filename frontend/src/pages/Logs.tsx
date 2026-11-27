@@ -73,7 +73,7 @@ export default function LogsPage() {
       {/* Compact header */}
       <div className="mb-2 flex shrink-0 items-center gap-2.5 sm:mb-3 sm:gap-3">
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-brand/20 bg-brand/10 sm:h-10 sm:w-10 sm:rounded-2xl">
-          <ScrollText className="h-4 w-4 text-brand sm:h-[1.125rem] sm:w-[1.125rem]" />
+          <ScrollText className="h-4 w-4 text-brand sm:h-4.5 sm:w-4.5" />
         </span>
         <div className="min-w-0">
           <h1 className="truncate text-lg font-bold tracking-tight sm:text-xl">
@@ -87,7 +87,7 @@ export default function LogsPage() {
 
       {/* Service picker — horizontal scroll on small screens */}
       <div
-        className="-mx-3 mb-2 flex shrink-0 gap-1.5 overflow-x-auto px-3 pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] sm:mx-0 sm:mb-3 sm:flex-wrap sm:gap-2 sm:overflow-visible sm:px-0 [&::-webkit-scrollbar]:hidden"
+        className="-mx-3 mb-2 flex shrink-0 gap-1.5 overflow-x-auto px-3 pb-0.5 [-ms-overflow-style:none] scrollbar-none sm:mx-0 sm:mb-3 sm:flex-wrap sm:gap-2 sm:overflow-visible sm:px-0 [&::-webkit-scrollbar]:hidden"
         role="tablist"
         aria-label="Docklift services"
       >

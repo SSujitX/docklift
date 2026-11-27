@@ -51,22 +51,22 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-cyan-950/20 p-4">
+    <div className="min-h-screen flex items-center justify-center bg-linear-to-br/srgb from-background via-background to-cyan-950/20 p-4">
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="flex flex-col items-center mb-8">
           <div className="relative mb-4">
-            <div className="absolute inset-0 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-2xl blur-xl opacity-50" />
-            <div className="relative bg-gradient-to-br from-cyan-500 to-blue-600 p-4 rounded-2xl shadow-2xl">
+            <div className="absolute inset-0 bg-linear-to-br/srgb from-cyan-500 to-blue-600 rounded-2xl blur-xl opacity-50" />
+            <div className="relative bg-linear-to-br/srgb from-cyan-500 to-blue-600 p-4 rounded-2xl shadow-2xl">
               <Container className="h-10 w-10 text-white" strokeWidth={2.5} />
             </div>
           </div>
-          <h1 className="text-4xl font-black tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-foreground to-foreground/70">
+          <h1 className="text-4xl font-black tracking-tight bg-clip-text text-transparent bg-linear-to-r/srgb from-foreground to-foreground/70">
             Docklift
           </h1>
         </div>
 
-        <Card className="p-8 border-border/50 shadow-2xl bg-card/80 backdrop-blur-sm">
+        <Card className="p-8 border-border/50 shadow-2xl bg-card/80 backdrop-blur-xs">
           <div className="mb-6">
             <h2 className="text-2xl font-bold tracking-tight">Welcome back</h2>
             <p className="text-sm text-muted-foreground mt-1">
@@ -118,7 +118,7 @@ export default function LoginPage() {
             <Button
               type="submit"
               disabled={loading || !formData.email || !formData.password}
-              className="w-full h-11 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white font-bold gap-2"
+              className="w-full h-11 bg-linear-to-r/srgb from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white font-bold gap-2"
             >
               {loading ? (
                 <Loader2 className="h-4 w-4 animate-spin" />

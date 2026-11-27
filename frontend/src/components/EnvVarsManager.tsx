@@ -257,7 +257,7 @@ SESSION_SECRET=your-secret-here
 # Lines starting with # are ignored`}
                   value={bulkContent}
                   onChange={(e) => setBulkContent(e.target.value)}
-                  className="w-full h-40 p-4 font-mono text-sm bg-background/50 border border-border/60 rounded-xl resize-none focus:outline-none focus:border-cyan-500/50"
+                  className="w-full h-40 p-4 font-mono text-sm bg-background/50 border border-border/60 rounded-xl resize-none focus:outline-hidden focus:border-cyan-500/50"
                 />
               </div>
               

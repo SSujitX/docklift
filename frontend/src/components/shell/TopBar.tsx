@@ -58,7 +58,7 @@ export function TopBar() {
         className="flex min-w-0 items-center gap-2 lg:hidden"
         aria-label="Docklift home"
       >
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-brand to-blue-600">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-linear-to-br/srgb from-brand to-blue-600">
           <Container className="h-4 w-4 text-white" strokeWidth={2.5} />
         </span>
         <span className="truncate text-sm font-semibold tracking-tight">
@@ -109,7 +109,7 @@ export function TopBar() {
           type="button"
           onClick={() => setPaletteOpen(true)}
           aria-label="Open command palette"
-          className="flex h-9 w-9 items-center justify-center rounded-xl border border-border/60 bg-secondary/30 text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground sm:w-auto sm:min-w-[14rem] sm:gap-2 sm:px-3 md:min-w-[16rem] lg:min-w-[18rem]"
+          className="flex h-9 w-9 items-center justify-center rounded-xl border border-border/60 bg-secondary/30 text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground sm:w-auto sm:min-w-56 sm:gap-2 sm:px-3 md:min-w-[16rem] lg:min-w-[18rem]"
         >
           <Search className="h-4 w-4 shrink-0" />
           <span className="hidden flex-1 text-left text-xs font-medium sm:inline">

@@ -236,7 +236,7 @@ export function GitHubConnect({ open, onOpenChange, onConnected }: GitHubConnect
               </div>
 
               <Button
-                className="w-full bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700"
+                className="w-full bg-linear-to-r/srgb from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700"
                 onClick={handleAddAccount}
                 disabled={loading}
               >
@@ -302,7 +302,7 @@ export function GitHubConnect({ open, onOpenChange, onConnected }: GitHubConnect
                   </div>
                   
                   <Button
-                    className="w-full bg-gradient-to-r from-gray-800 to-gray-900 hover:from-gray-700 hover:to-gray-800"
+                    className="w-full bg-linear-to-r/srgb from-gray-800 to-gray-900 hover:from-gray-700 hover:to-gray-800"
                     onClick={handleInstall}
                   >
                     <ExternalLink className="h-4 w-4 mr-2" />
@@ -356,7 +356,7 @@ export function GitHubConnect({ open, onOpenChange, onConnected }: GitHubConnect
               </div>
 
               <Button
-                className="w-full bg-gradient-to-r from-gray-800 to-gray-900 hover:from-gray-700 hover:to-gray-800"
+                className="w-full bg-linear-to-r/srgb from-gray-800 to-gray-900 hover:from-gray-700 hover:to-gray-800"
                 onClick={handleCreateApp}
                 disabled={loading || !appName.trim()}
               >

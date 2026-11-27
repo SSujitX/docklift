@@ -29,11 +29,11 @@ export function ProjectCard({ project, onRefresh }: ProjectCardProps) {
           handleCardClick();
         }
       }}
-      className="group relative flex flex-col gap-4 rounded-xl border border-border/60 bg-card p-3 shadow-sm transition-all duration-200 hover:border-foreground/20 hover:bg-secondary/40 hover:shadow-md dark:border-white/5 dark:hover:border-white/20 sm:p-4 md:flex-row md:items-center md:justify-between"
+      className="group relative flex flex-col gap-4 rounded-xl border border-border/60 bg-card p-3 shadow-xs transition-all duration-200 hover:border-foreground/20 hover:bg-secondary/40 hover:shadow-md dark:border-white/5 dark:hover:border-white/20 sm:p-4 md:flex-row md:items-center md:justify-between"
     >
       <div className="flex min-w-0 flex-1 items-center gap-4">
         <div
-          className={`h-2 w-2 shrink-0 rounded-full shadow-sm ${
+          className={`h-2 w-2 shrink-0 rounded-full shadow-xs ${
             project.status === "running"
               ? "bg-emerald-500 shadow-emerald-500/50"
               : project.status === "building"

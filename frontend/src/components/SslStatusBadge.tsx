@@ -74,7 +74,7 @@ export function SslStatusBadge({
       </div>
       {status === "failed" && ssl?.error && (
         <div className="space-y-1.5">
-          <p className="text-xs text-red-500/90 break-words">{ssl.error}</p>
+          <p className="text-xs text-red-500/90 wrap-break-word">{ssl.error}</p>
           {ssl.diagnosticCommand && (
             <div className="space-y-1">
               <p className="text-[11px] text-muted-foreground">Full error on server:</p>

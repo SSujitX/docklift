@@ -80,7 +80,7 @@ export function AccountMenu() {
           open ? "bg-secondary/70" : "hover:bg-secondary/50",
         )}
       >
-        <span className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-brand to-blue-600 text-[11px] font-bold text-white">
+        <span className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-linear-to-br/srgb from-brand to-blue-600 text-[11px] font-bold text-white">
           {initials(user.name, user.email)}
           <span className="absolute -bottom-px -right-px h-2 w-2 rounded-full border-2 border-background bg-emerald-500" />
         </span>
@@ -93,7 +93,7 @@ export function AccountMenu() {
         >
           <div className="border-b border-border/60 px-3 py-3">
             <div className="flex items-center gap-3">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-brand to-blue-600 text-xs font-bold text-white">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-linear-to-br/srgb from-brand to-blue-600 text-xs font-bold text-white">
                 {initials(user.name, user.email)}
               </span>
               <div className="min-w-0 flex-1">

@@ -405,7 +405,7 @@ export function SystemOverview() {
       <div className="flex items-start justify-between gap-3 sm:items-center">
         <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-brand/20 bg-brand/10 sm:h-10 sm:w-10 sm:rounded-2xl">
-            <Gauge className="h-4 w-4 text-brand sm:h-[1.125rem] sm:w-[1.125rem]" />
+            <Gauge className="h-4 w-4 text-brand sm:h-4.5 sm:w-4.5" />
           </span>
           <div className="min-w-0">
             <h1 className="truncate text-lg font-bold tracking-tight sm:text-xl">
@@ -451,7 +451,7 @@ export function SystemOverview() {
       {/* Main Stats Grid */}
       <div className="grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-4">
         {/* CPU Card */}
-        <div className="rounded-xl border border-border/50 bg-card p-3 shadow-sm sm:rounded-2xl sm:p-5">
+        <div className="rounded-xl border border-border/50 bg-card p-3 shadow-xs sm:rounded-2xl sm:p-5">
           <div className="mb-2.5 flex items-center gap-2 sm:mb-3">
             <div className="rounded-lg bg-cyan-500/10 p-1.5 sm:p-2">
               <Cpu className="h-3.5 w-3.5 text-cyan-500 sm:h-4 sm:w-4" />
@@ -488,7 +488,7 @@ export function SystemOverview() {
         </div>
 
         {/* Memory Card */}
-        <div className="rounded-xl border border-border/50 bg-card p-3 shadow-sm sm:rounded-2xl sm:p-5">
+        <div className="rounded-xl border border-border/50 bg-card p-3 shadow-xs sm:rounded-2xl sm:p-5">
           <div className="mb-2.5 flex items-center gap-2 sm:mb-3">
             <div className="rounded-lg bg-purple-500/10 p-1.5 sm:p-2">
               <CircuitBoard className="h-3.5 w-3.5 text-purple-500 sm:h-4 sm:w-4" />
@@ -523,7 +523,7 @@ export function SystemOverview() {
         </div>
 
         {/* Primary Disk Card */}
-        <div className="rounded-xl border border-border/50 bg-card p-3 shadow-sm sm:rounded-2xl sm:p-5">
+        <div className="rounded-xl border border-border/50 bg-card p-3 shadow-xs sm:rounded-2xl sm:p-5">
           <div className="mb-2.5 flex items-center gap-2 sm:mb-3">
             <div className="rounded-lg bg-amber-500/10 p-1.5 sm:p-2">
               <HardDrive className="h-3.5 w-3.5 text-amber-500 sm:h-4 sm:w-4" />
@@ -561,7 +561,7 @@ export function SystemOverview() {
         </div>
 
         {/* Network Card */}
-        <div className="rounded-xl border border-border/50 bg-card p-3 shadow-sm sm:rounded-2xl sm:p-5">
+        <div className="rounded-xl border border-border/50 bg-card p-3 shadow-xs sm:rounded-2xl sm:p-5">
           <div className="mb-2.5 flex items-center gap-2 sm:mb-3">
             <div className="rounded-lg bg-emerald-500/10 p-1.5 sm:p-2">
               <Wifi className="h-3.5 w-3.5 text-emerald-500 sm:h-4 sm:w-4" />
@@ -597,7 +597,7 @@ export function SystemOverview() {
       </div>
 
       {/* Server Details - Full Width Two Column Layout */}
-      <div className="rounded-xl border border-border/50 bg-card p-3 shadow-sm sm:rounded-2xl sm:p-5">
+      <div className="rounded-xl border border-border/50 bg-card p-3 shadow-xs sm:rounded-2xl sm:p-5">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2 sm:mb-4">
           <div className="flex items-center gap-2">
             <div className="rounded-lg bg-rose-500/10 p-1.5 sm:p-2">
@@ -605,7 +605,7 @@ export function SystemOverview() {
             </div>
             <h3 className="text-sm font-semibold sm:text-base">Server Details</h3>
           </div>
-          <div className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/20 bg-gradient-to-r from-emerald-500/10 to-cyan-500/10 px-2.5 py-1 sm:rounded-full sm:px-3 sm:py-1.5">
+          <div className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/20 bg-linear-to-r/srgb from-emerald-500/10 to-cyan-500/10 px-2.5 py-1 sm:rounded-full sm:px-3 sm:py-1.5">
             <Clock className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
             <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 sm:text-xs">
               {stats.server.uptimeFormatted}

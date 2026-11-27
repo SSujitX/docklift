@@ -33,7 +33,7 @@ export function DnsGuideCard({ serverIP }: { serverIP: string }) {
   return (
     <Card className="overflow-hidden border-border/50">
       {/* Highlighted Point DNS header */}
-      <div className="border-b border-brand/15 bg-gradient-to-br from-brand/10 via-brand/5 to-transparent px-4 py-4 sm:px-6 sm:py-5">
+      <div className="border-b border-brand/15 bg-linear-to-br/srgb from-brand/10 via-brand/5 to-transparent px-4 py-4 sm:px-6 sm:py-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <h3 className="flex items-center gap-2 text-base font-bold tracking-tight sm:text-lg">
@@ -52,7 +52,7 @@ export function DnsGuideCard({ serverIP }: { serverIP: string }) {
             type="button"
             onClick={handleCopy}
             disabled={!hasIP}
-            className="group flex items-center gap-3 rounded-xl border border-brand/25 bg-background/80 px-3 py-2 text-left shadow-sm transition-colors hover:border-brand/50 disabled:cursor-default disabled:opacity-70"
+            className="group flex items-center gap-3 rounded-xl border border-brand/25 bg-background/80 px-3 py-2 text-left shadow-xs transition-colors hover:border-brand/50 disabled:cursor-default disabled:opacity-70"
           >
             <span className="flex flex-col">
               <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">

@@ -86,9 +86,9 @@ export function Terminal({ logs, isBuilding, className }: TerminalProps) {
   };
 
   return (
-    <div id="terminal-wrapper" className={cn("flex flex-col bg-[#09090b] rounded-2xl border border-white/[0.08] dark:border-white/[0.05] overflow-hidden shadow-2xl", className)}>
+    <div id="terminal-wrapper" className={cn("flex flex-col bg-[#09090b] rounded-2xl border border-white/8 dark:border-white/5 overflow-hidden shadow-2xl", className)}>
       {/* Terminal Header */}
-      <div className="flex items-center justify-between px-4 py-3 bg-zinc-900/50 border-b border-white/[0.05] backdrop-blur-md">
+      <div className="flex items-center justify-between px-4 py-3 bg-zinc-900/50 border-b border-white/5 backdrop-blur-md">
         <div className="flex items-center gap-3">
           <div className="flex gap-1.5 px-0.5">
             <div className="w-2.5 h-2.5 rounded-full bg-red-500/80" />

@@ -176,7 +176,7 @@ export function Sidebar({
           )}
           onClick={() => isMobile && setMobileOpen(false)}
         >
-          <span className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand to-blue-600 shadow-lg shadow-brand/20 transition-transform duration-300 group-hover:scale-105">
+          <span className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-linear-to-br/srgb from-brand to-blue-600 shadow-lg shadow-brand/20 transition-transform duration-300 group-hover:scale-105">
             <Container className="h-[18px] w-[18px] text-white" strokeWidth={2.5} />
           </span>
           {!isCollapsed && (
