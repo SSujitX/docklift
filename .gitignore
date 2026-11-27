@@ -94,3 +94,4 @@ backend/data/
 .cursor/
 # Local dev/test notes and credentials (never commit)
 .devlocal/
+!server/internal/api/logs/
