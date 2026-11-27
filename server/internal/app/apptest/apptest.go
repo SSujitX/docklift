@@ -1,6 +1,8 @@
 // Package apptest builds real dependencies on a temporary data directory for
 // route-group tests: a migrated SQLite database, the auth service and the
-// maintenance state. There is no Docker client (Deps.Docker is nil).
+// maintenance state. There is no Engine client (Deps.Docker is nil); DockerX,
+// Deploy, Edge and Git are real but talk to no daemon unless a test swaps
+// their runners.
 package apptest
 
 import (
@@ -14,7 +16,11 @@ import (
 	"docklift/internal/auth"
 	"docklift/internal/config"
 	"docklift/internal/db"
+	"docklift/internal/deploy"
+	"docklift/internal/dockerx"
+	"docklift/internal/gitops"
 	"docklift/internal/maintenance"
+	"docklift/internal/nginx"
 	"docklift/internal/store"
 )
 
@@ -56,7 +62,12 @@ func NewDeps(t testing.TB) *app.Deps {
 	}
 	st := store.New(database)
 	secrets := auth.Secrets{JWTSecret: "apptest-jwt-secret", InternalAPISecret: "apptest-internal-secret"}
+	dockerX := dockerx.New(nil, cfg.DockerNetwork, cfg.NginxProxyContainer, log)
 	return &app.Deps{
+		DockerX:     dockerX,
+		Deploy:      deploy.NewRuntime(cfg, st, dockerX, log),
+		Edge:        nginx.NewStack(cfg, st, log),
+		Git:         &gitops.Runner{},
 		Config:      cfg,
 		Log:         log,
 		DB:          database,

@@ -18,7 +18,11 @@ import (
 	"docklift/internal/auth"
 	"docklift/internal/config"
 	"docklift/internal/db"
+	"docklift/internal/deploy"
+	"docklift/internal/dockerx"
+	"docklift/internal/gitops"
 	"docklift/internal/maintenance"
+	"docklift/internal/nginx"
 	"docklift/internal/store"
 )
 
@@ -99,6 +103,7 @@ func serve(ctx context.Context, log *slog.Logger) (err error) {
 	defer cancelBackground()
 
 	st := store.New(database)
+	dockerX := dockerx.New(docker, cfg.DockerNetwork, cfg.NginxProxyContainer, log)
 	d := &app.Deps{
 		Config:      cfg,
 		Log:         log,
@@ -107,10 +112,15 @@ func serve(ctx context.Context, log *slog.Logger) (err error) {
 		Auth:        auth.New(st, secrets, cfg.DataPath, log),
 		Maintenance: maintenance.New(cfg.DataPath, log),
 		Docker:      docker,
+		DockerX:     dockerX,
+		Deploy:      deploy.NewRuntime(cfg, st, dockerX, log),
+		Edge:        nginx.NewStack(cfg, st, log),
+		Git:         &gitops.Runner{},
 		InstanceID:  db.NewID(),
 		Background:  background,
 		Lifecycle:   app.NewLifecycle(),
 	}
+	registerStartupHooks(d)
 	handler := router.New(d)
 
 	// Re-seal critical restore state from disk before accepting traffic.
@@ -165,6 +175,19 @@ func serve(ctx context.Context, log *slog.Logger) (err error) {
 		log.Info("🛑 Signal received — shutting down gracefully...")
 		return shutdown(srv, d, cancelBackground, nil)
 	}
+}
+
+// registerStartupHooks wires the service-layer steps of index.ts main():
+// ensureNetwork, syncNginxConfigs, recoverDeploymentStateOnBoot and
+// startCertRenewWatcher. Route groups add their own hooks from Mount.
+func registerStartupHooks(d *app.Deps) {
+	d.Lifecycle.On(app.PhaseDockerNetwork, "docker-network", d.DockerX.EnsureNetwork)
+	d.Lifecycle.On(app.PhaseAfterListen, "nginx-sync", d.Edge.Boot)
+	d.Lifecycle.On(app.PhaseRecovery, "deployment-recovery", d.Deploy.RecoverOnBoot)
+	d.Lifecycle.On(app.PhaseWatchers, "cert-renew-watcher", func(context.Context) error {
+		d.Edge.StartWatchers(d.Background)
+		return nil
+	})
 }
 
 // shutdown stops background work (which also ends streaming requests, whose

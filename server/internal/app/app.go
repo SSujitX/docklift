@@ -16,7 +16,11 @@ import (
 	"docklift/internal/auth"
 	"docklift/internal/config"
 	"docklift/internal/db"
+	"docklift/internal/deploy"
+	"docklift/internal/dockerx"
+	"docklift/internal/gitops"
 	"docklift/internal/maintenance"
+	"docklift/internal/nginx"
 	"docklift/internal/store"
 )
 
@@ -32,6 +36,16 @@ type Deps struct {
 	// Docker is the Engine API client configured from DOCKER_HOST & co. It
 	// does not connect until first used.
 	Docker *client.Client
+	// DockerX wraps the Engine client and the docker CLI (compose, buildx).
+	DockerX *dockerx.Docker
+	// Deploy owns deploy locks, runtime compose state, ports and image
+	// retention. There is exactly one per process (one lock Tracker).
+	Deploy *deploy.Runtime
+	// Edge is the nginx/certificate/DNS stack. There is exactly one per
+	// process so every route shares the same SSL event log.
+	Edge *nginx.Stack
+	// Git runs git with the hardened defaults of internal/gitops.
+	Git *gitops.Runner
 	// InstanceID is a random UUID generated once per process (/api/health).
 	InstanceID string
 	// Background is cancelled when the server shuts down; long-running work
