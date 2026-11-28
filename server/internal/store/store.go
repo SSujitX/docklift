@@ -140,12 +140,14 @@ type Order struct{ sql string }
 var (
 	// OrderNone keeps SQLite's natural order, as Prisma does without orderBy.
 	OrderNone = Order{}
+	// Rows written in the same millisecond share a timestamp; rowid (insertion
+	// order) breaks the tie so lists are stable.
 	// OrderCreatedAsc orders by created_at ascending.
-	OrderCreatedAsc = Order{`"created_at" ASC`}
+	OrderCreatedAsc = Order{`"created_at" ASC, rowid ASC`}
 	// OrderCreatedDesc orders by created_at descending.
-	OrderCreatedDesc = Order{`"created_at" DESC`}
+	OrderCreatedDesc = Order{`"created_at" DESC, rowid DESC`}
 	// OrderUpdatedDesc orders by updated_at descending (projects).
-	OrderUpdatedDesc = Order{`"updated_at" DESC`}
+	OrderUpdatedDesc = Order{`"updated_at" DESC, rowid DESC`}
 	// OrderServiceKey orders env variables by service_name then key.
 	OrderServiceKey = Order{`"service_name" ASC, "key" ASC`}
 )
