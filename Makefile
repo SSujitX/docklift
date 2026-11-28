@@ -65,6 +65,7 @@ lint:
 	@if command -v shellcheck >/dev/null; then shellcheck $(SHELL_SCRIPTS); else echo "shellcheck not installed; skipped"; fi
 	@if command -v actionlint >/dev/null; then actionlint; else echo "actionlint not installed; skipped"; fi
 	bash scripts/test-upgrade-backend-run-state.sh
+	bash scripts/test-ui-helpers.sh
 	@if docker compose version >/dev/null 2>&1; then docker compose -f docker-compose.yml config --quiet; else echo "docker compose not installed; compose check skipped"; fi
 
 vuln:
