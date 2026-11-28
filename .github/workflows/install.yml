@@ -37,7 +37,7 @@ jobs:
       DOCKLIFT_ADMIN_EMAIL: admin@docklift.test
       DOCKLIFT_ADMIN_PASSWORD: Smoke-Test-Password-1
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # upgrade.sh (DOCKLIFT_CI_LOCAL) fetches this commit into /opt/docklift
           fetch-depth: 0
@@ -94,7 +94,7 @@ jobs:
       - name: Checks after upgrade
         run: sudo -E bash scripts/smoke.sh check
 
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         if: matrix.scenario == 'fresh'
         with:
           go-version-file: server/go.mod

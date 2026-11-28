@@ -29,9 +29,9 @@ jobs:
     name: Go (fmt, vet, test, vulncheck)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: server/go.mod
           cache-dependency-path: |
@@ -62,9 +62,9 @@ jobs:
     name: Contract suite (Go binary)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: server/go.mod
           cache-dependency-path: |
@@ -86,7 +86,7 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
@@ -111,7 +111,7 @@ jobs:
     name: Shell scripts, compose, regressions
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: bash -n + shellcheck
         run: |
@@ -159,8 +159,8 @@ jobs:
           forbid -qE '^[[:space:]]*backend_run_state[[:space:]]*$' upgrade.sh
           grep -q 'arm_rollback' upgrade.sh
           grep -q 'remove_obsolete_containers' upgrade.sh
-          grep -qE 'actions/checkout@[0-9a-f]{40} # v6.' .github/workflows/ci.yml
-          forbid -qE 'actions/checkout@[0-9a-f]{40} # v7.' .github/workflows/*.yml
+          grep -qE 'actions/checkout@[0-9a-f]{40} # v7.' .github/workflows/ci.yml
+          forbid -qE 'actions/checkout@[0-9a-f]{40} # v6.' .github/workflows/*.yml
           grep -q 'oven/bun:1.4.5-alpine' Dockerfile
           grep -q 'golang:1.27.4-alpine' Dockerfile
           forbid -rF 'docker image prune' server/internal --include='*.go' --exclude='*_test.go'
@@ -170,9 +170,9 @@ jobs:
     name: Docker image + Docker-gated tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: server/go.mod
           cache-dependency-path: |

@@ -144,7 +144,7 @@ release upgraded to this commit). The `fresh` scenario also runs the end-to-end 
 (`tests/e2e`, see its README) against the install. `release.yml` and `docs.yml` are covered in
 `release_process`.
 
-All third-party actions are pinned by commit SHA. Keep `actions/checkout` at v6 (the shell job
+All third-party actions are pinned by commit SHA. Keep `actions/checkout` at v7 in every workflow (the shell job
 greps for it).
 
 ## Build Commands
