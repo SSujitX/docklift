@@ -38,13 +38,13 @@ Docklift itself is three containers:
 | `docklift-nginx-proxy` | nginx on ports `80` and `443` for your app domains and the optional panel domain. |
 | `docklift-certbot` | Requests and renews Let's Encrypt certificates (HTTP-01). |
 
-![Docklift Dashboard](screenshots/project.png)
+![Docklift Dashboard](screenshots/projects.png)
 
 <details>
 <summary>More screenshots</summary>
 
 Project detail:
-![Project detail](screenshots/inside%20projects.png)
+![Project detail](screenshots/project-detail.png)
 
 Live logs of the platform containers:
 ![Logs](screenshots/logs.png)
