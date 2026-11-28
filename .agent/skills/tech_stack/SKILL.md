@@ -33,9 +33,9 @@ quoting a version elsewhere.
 Built with Bun 1.4.5 (`oven/bun:1.4.5-alpine` in the `Dockerfile`, same pin in CI) and embedded in
 the Go binary (`server/web`, `go:embed`).
 
--   **Bundler / dev server**: [Vite](https://vite.dev/) 6 (dev server on `:3600`, proxies `/api` and `/ws` to `127.0.0.1:8000`)
+-   **Bundler / dev server**: [Vite](https://vite.dev/) 8 (Rolldown bundler, Oxc transforms, Lightning CSS minification) with `@vitejs/plugin-react` 6 (Oxc Fast Refresh, no Babel); dev server on `:3600`, proxies `/api` and `/ws` to `127.0.0.1:8000`
 -   **UI**: [React](https://react.dev/) 19 + [React Router](https://reactrouter.com/) 7 (`react-router-dom`)
--   **Language**: [TypeScript](https://www.typescriptlang.org/) 5.9 (`tsconfig.app.json` is the app project)
+-   **Language**: [TypeScript](https://www.typescriptlang.org/) 7 (the native `tsc` from the `typescript` package; typecheck only, Vite strips types). `tsconfig.app.json` is the app project; no `baseUrl` (removed in 7), `paths` are relative to the tsconfig. TypeScript 7 ships no JS API, so editors use its own language server (VS Code: "TypeScript Native Preview")
 -   **Styling**: [Tailwind CSS](https://tailwindcss.com/) 4 through `@tailwindcss/vite`, configured in CSS (`@theme` in `src/styles/globals.css`, no `tailwind.config.ts`); `tw-animate-css`, `class-variance-authority`, `clsx`, `tailwind-merge`
 -   **Components**: shadcn-style files in `src/components/ui/` on [Radix UI](https://www.radix-ui.com/) (`react-dialog`, `react-slot`, `react-tabs`)
 -   **Data**: React hooks, native `fetch` through `authFetch()` in `src/lib/auth.ts`, `EventSource` for SSE logs
@@ -66,6 +66,6 @@ The backend image also carries `docker-cli`, `docker-cli-buildx`, `docker-cli-co
 -   **CI**: GitHub Actions in `.github/workflows/` (`ci.yml`, `install.yml`, `release.yml`, `docs.yml`); actions are pinned by commit SHA
 -   **Frontend checks**: `bunx tsc -p tsconfig.app.json --noEmit`, `bunx vite build`, `bun audit --prod`
 -   **Shell scripts**: `bash -n` and shellcheck on `install.sh`, `install-dev.sh`, `upgrade.sh`, `uninstall.sh`, `scripts/*.sh`
--   **Releases**: [semantic-release](https://semantic-release.gitbook.io/) (Node 24 in the workflow), configured in `release.config.cjs`
+-   **Releases**: [semantic-release](https://semantic-release.gitbook.io/) 26 (Node 26 in the workflow; semantic-release 26 needs Node >= 26.13), configured in `release.config.cjs`
 -   **Docs site**: [VitePress](https://vitepress.dev/) in `website/`, deployed to GitHub Pages (https://docklift.dev)
 -   **Local entry points**: `Makefile` (`make build`, `test`, `contract`, `frontend`, `lint`, `vuln`, `docker`, `dev`)

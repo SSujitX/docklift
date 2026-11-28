@@ -176,6 +176,8 @@ cd server && go vet ./... && go test ./...
 | `railpack: not found` or checksum failure | Railpack download failed or the checksum does not match | Check that `RAILPACK_VERSION` publishes a musl tarball for that arch and update the matching `RAILPACK_SHA256_*` |
 | `bun install --frozen-lockfile` fails | `bun.lock` out of sync with `package.json` | Run `bun install` in `frontend/` and commit the lockfile |
 | `bun audit --prod` fails | Vulnerable transitive dependency | Bump it or pin a fixed version in `frontend/package.json` `overrides` |
+| `error TS5102: Option 'baseUrl' has been removed` (or another removed option) | TypeScript 7 turned the 6.0 deprecations into errors | Drop the option (`paths` resolve relative to the tsconfig); see the TypeScript 7 release notes |
+| `Cannot find native binding` / missing `@rolldown/binding-*` or `lightningcss-*` | Vite 8 (Rolldown, Lightning CSS) uses per-platform native packages; `node_modules` was copied from another OS or installed without optional dependencies | Reinstall with `bun install --frozen-lockfile` on that platform |
 | `cannot determine version` in the Docker build | Root `package.json` has no `version` and no `VERSION` arg | Pass `--build-arg VERSION=...` |
 | Dashboard is the placeholder page | `frontend/dist` was not copied into `server/web/dist` before `go build` | Use `make build` or the Docker build |
 | `go: updates to go.mod needed` | Dependency change not committed in `go.mod`/`go.sum` | `cd server && go mod tidy`, commit both |

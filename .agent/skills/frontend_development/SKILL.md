@@ -114,7 +114,8 @@ elements and `top-20` for spaced ones.
 - Default port: **3600** (`PORT` in `frontend/.env`, bound to `127.0.0.1`, `strictPort`)
 - Proxy (`vite.config.ts`): `/api` -> `http://127.0.0.1:8000`, `/ws` -> `ws://127.0.0.1:8000`; the
   `/api` proxy forwards `X-Forwarded-Host` / `X-Forwarded-Proto: http` so cookies and the GitHub
-  `setup_url` stay on the Vite origin
+  `setup_url` stay on the Vite origin, and uses its own keep-alive `http.Agent` (without one the
+  proxy sends `Connection: close` on a reused keep-alive socket: intermittent `ECONNRESET` / 502)
 - Leave `VITE_API_URL` empty for same-origin / proxy (the production build does the same)
 - `__APP_VERSION__` is injected from `frontend/package.json` (shown in the sidebar footer)
 - Path alias: `@/` -> `frontend/src/`
@@ -129,13 +130,14 @@ bunx vite build                           # production build into dist/ (CI)
 bun audit --prod                          # must be clean (CI)
 ```
 
-`bun run build` runs the typecheck and the build together. Overrides in `package.json`
-(`dompurify`, `nanoid`, `postcss`) pin transitive security fixes; keep them when updating.
+`bun run build` runs the typecheck and the build together. `tsc` is TypeScript 7's native compiler
+(about a second for the app). `package.json` has no `overrides`: add one only to pin a transitive
+security fix that `bun audit` reports, and drop it once the parent's own range includes the fix.
 
 ## Production
 
-- The root `Dockerfile` runs `bunx vite build` (stage `web`, no typecheck: CI runs tsc, and tsc + vite
-  do not fit in 1 GB RAM) with `VITE_API_URL` empty, copies `dist/`
+- The root `Dockerfile` runs `bunx vite build` (stage `web`, no typecheck: CI runs tsc) with
+  `VITE_API_URL` empty, copies `dist/`
   into `server/web/dist`, and `go build` embeds it. `make build` does the same locally.
 - `server/web/dist/index.html` is a tracked placeholder so the Go module always compiles; never
   commit real build output there (`dist/` contents other than the placeholder are gitignored).

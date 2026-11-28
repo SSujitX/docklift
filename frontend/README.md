@@ -1,6 +1,6 @@
 # Docklift dashboard
 
-React 19 + Vite + Tailwind CSS 4 + React Router. The production build is embedded in the Go binary
+React 19 + Vite 8 + TypeScript 7 + Tailwind CSS 4 + React Router. The production build is embedded in the Go binary
 (`server/web`), which serves it on the same port as the API and the WebSocket terminal.
 
 ## Development

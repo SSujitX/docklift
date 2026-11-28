@@ -20,8 +20,8 @@ RUN --mount=type=cache,target=/root/.bun/install/cache \
 COPY frontend/ ./
 # Same-origin API and WebSocket: the Go server serves both.
 ENV VITE_API_URL=
-# Vite only: CI typechecks (tsc), and tsc + vite together need more memory
-# than a 1 GB server has (killed with exit 137).
+# Vite only: CI typechecks (tsc), so the image build skips it and stays light
+# on 1 GB servers.
 RUN bunx vite build
 
 # --- 2. Go server --------------------------------------------------------------

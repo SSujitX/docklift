@@ -330,7 +330,7 @@ Versions are the ones in `server/go.mod`, `frontend/package.json`, `Dockerfile` 
 | Layer | Components |
 |-------|------------|
 | Backend | Go 1.27 (toolchain 1.27.4), [chi](https://github.com/go-chi/chi) v5.5, SQLite through [modernc.org/sqlite](https://pkg.go.dev/modernc.org/sqlite) v1.63 (pure Go, no cgo, WAL), [golang-jwt](https://github.com/golang-jwt/jwt) v5.3, gorilla/websocket, moby Docker Engine client (`moby/moby/client` v0.6), Docker CLI with compose and buildx plugins, [Railpack](https://railpack.com/) 0.33.0, gopsutil v4.26, creack/pty v1.1, `golang.org/x/crypto` (bcrypt), yaml.v3 |
-| Frontend | React 19.3, Vite 6.4, TypeScript 5.9, Tailwind CSS 4.3, Radix UI, React Router 7, Monaco editor, xterm.js 6, lucide, sonner. Built by Bun 1.4.5 and embedded in the Go binary with `go:embed`. |
+| Frontend | React 19.3, Vite 8.4 (Rolldown), TypeScript 7.0 (native `tsc`), Tailwind CSS 4.3, Radix UI, React Router 7, Monaco editor, xterm.js 6, lucide, sonner. Built by Bun 1.4.5 and embedded in the Go binary with `go:embed`. |
 | Edge | nginx 1.30.8 (reverse proxy), certbot v5.10.0 (Let's Encrypt) |
 | Runtime | 3 containers: `docklift-backend` (alpine 3.24 image with the docker CLI, git, bash, Railpack), `docklift-nginx-proxy`, `docklift-certbot` |
 | Tooling | GitHub Actions (gofmt, go vet, go test, govulncheck, contract suite, frontend typecheck/build/audit, image build, install and upgrade test, end-to-end suite), semantic-release, VitePress docs |

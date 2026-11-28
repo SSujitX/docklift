@@ -135,6 +135,9 @@ cd server && go vet ./...
 cd frontend && bunx tsc -p tsconfig.app.json --noEmit
 ```
 
+`tsc` is TypeScript 7 (native); it has no `tsserver.js`, so an editor pointed at the workspace
+TypeScript needs the TypeScript 7 language server (VS Code: "TypeScript Native Preview").
+
 ## Architecture Notes
 
 - **One binary**: `docklift serve` serves `/api`, the `/ws/terminal` WebSocket and the embedded

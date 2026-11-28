@@ -9,7 +9,7 @@ Docklift uses a modern UI stack built on standards-compliant technologies.
 
 ## Tech Stack
 
--   **Framework**: Tailwind CSS 4 via `@tailwindcss/vite`, with `tw-animate-css` for animation utilities (no `tailwindcss-animate`, no PostCSS config)
+-   **Framework**: Tailwind CSS 4 via `@tailwindcss/vite` (Vite 8), with `tw-animate-css` for animation utilities (no `tailwindcss-animate`, no PostCSS config). Production CSS is minified by Lightning CSS (Vite 8 default): values containing `var()` keep their spaces, so the CSS is slightly larger than with esbuild, and it targets Chrome/Edge 111, Firefox 114, Safari 16.4
 -   **Component Library**: shadcn-style components (headless Radix UI + Tailwind), copied into the repo
 -   **Icons**: Lucide React
 -   **Theming**: Custom `ThemeProvider` (`frontend/src/lib/theme.tsx`)

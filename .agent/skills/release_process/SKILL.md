@@ -28,7 +28,7 @@ Homepage preview + `/changelog` sync from root `CHANGELOG.md` at VitePress build
 | File | Purpose |
 |------|---------|
 | `release.config.cjs` | semantic-release config (plugins, release rules, assets) |
-| `.github/workflows/release.yml` | Manual **Release** (semantic-release + Docs) |
+| `.github/workflows/release.yml` | Manual **Release** (semantic-release + Docs); Node 26 (semantic-release 26 requires >= 26.13) |
 | `.github/workflows/install.yml` | Install smoke matrix (`fresh`, `from-release`; the `fresh` cell also runs `tests/e2e`) |
 | `.github/workflows/ci.yml` | Go fmt/vet/test/govulncheck, contract suite, frontend checks, shell checks, image build + smoke test |
 | `.github/workflows/docs.yml` | VitePress → GitHub Pages |
