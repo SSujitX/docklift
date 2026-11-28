@@ -46,7 +46,16 @@ export default defineConfig({
   markdown: { html: false },
   head: [
     ["link", { rel: "icon", href: "/favicon.svg" }],
-    ["meta", { name: "theme-color", content: "#0891b2" }],
+    ["meta", { name: "theme-color", content: "#107480" }],
+    ["link", { rel: "preconnect", href: "https://fonts.googleapis.com" }],
+    ["link", { rel: "preconnect", href: "https://fonts.gstatic.com", crossorigin: "" }],
+    [
+      "link",
+      {
+        rel: "stylesheet",
+        href: "https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap",
+      },
+    ],
     [
       "meta",
       {
