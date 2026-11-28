@@ -15,18 +15,17 @@ function loadMore() {
 </script>
 
 <template>
-  <section class="dl-changelog" aria-labelledby="dl-changelog-heading">
-    <div class="dl-changelog__header">
+  <section class="dl-section dl-changelog" aria-labelledby="dl-changelog-heading">
+    <div class="dl-section__head">
       <h2 id="dl-changelog-heading">Changelog</h2>
-      <a class="dl-changelog__all" href="/changelog">View full changelog →</a>
+      <a class="dl-more" href="/changelog">Full changelog →</a>
     </div>
-    <p class="dl-changelog__lead">
-      Latest releases from the repository
-      <code>CHANGELOG.md</code> (updated automatically on each release).
+    <p class="dl-section__lead">
+      The latest releases, generated from the repository on every release.
     </p>
 
     <div v-if="releases.length === 0" class="dl-changelog__empty">
-      No release notes found yet.
+      No release notes yet.
     </div>
 
     <div v-else class="dl-changelog__panel">
@@ -49,9 +48,7 @@ function loadMore() {
           Load more
           <span class="dl-changelog__more-count">({{ remaining }} left)</span>
         </button>
-        <a v-else class="dl-changelog__all" href="/changelog">
-          Open full changelog →
-        </a>
+        <a v-else class="dl-more" href="/changelog">Open the full changelog →</a>
       </div>
     </div>
   </section>
