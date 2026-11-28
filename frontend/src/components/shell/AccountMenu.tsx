@@ -85,7 +85,7 @@ export function AccountMenu() {
           open ? "bg-secondary" : "hover:bg-secondary",
         )}
       >
-        <span className="flex size-[26px] shrink-0 items-center justify-center rounded-full border border-border bg-secondary text-[11.5px] font-semibold text-foreground">
+        <span className="flex size-[26px] shrink-0 items-center justify-center rounded-full bg-brand text-[11.5px] font-semibold text-brand-foreground ring-2 ring-brand/25">
           {initials(user.name, user.email)}
         </span>
       </button>
