@@ -71,6 +71,14 @@ Host monitoring:
 ## Requirements
 
 - A Linux server (amd64 or arm64) with root access and ports `80`, `443` and `8080` reachable.
+- Memory: 1 GB RAM is the minimum, 2 GB or more is recommended. The installer and `upgrade.sh`
+  build the Docklift image on the server, which needs about 2 GB of RAM + swap at its peak. On a
+  smaller host they add a temporary swap file (`/var/tmp/docklift-build.swap`) for the build and
+  remove it when they exit; `/etc/fstab` and existing swap are not touched. The build is slower
+  then, and building your own apps on a 1 GB server can still run out of memory. Set
+  `DOCKLIFT_NO_SWAP=1` to skip the swap file.
+- Disk: at least 5 GB free for Docker, the build and its cache (10 GB or more once you deploy
+  apps), plus about 2 GB while the temporary swap file exists.
 - Docker Engine and git. The installer installs both if they are missing.
 - For HTTPS: a domain whose A record points at the server.
 
@@ -85,7 +93,9 @@ curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh 
 ```
 
 The installer clones the latest release into `/opt/docklift`, builds the image, starts the stack
-and prints the dashboard URL and a setup code. To install a specific release, pass the version to
+and prints the dashboard URL and a setup code. It shows a progress bar and the running step; if a
+step fails it prints the last lines of that step's output and the full log
+(`/var/log/docklift-install.log`). To install a specific release, pass the version to
 bash (not in the URL):
 
 ```bash
@@ -391,7 +401,8 @@ contract` also runs the tests that need a Docker daemon.
 
 - **CI** (`.github/workflows/ci.yml`): gofmt, `go vet`, `go test` and govulncheck; the contract
   suite against the built binary; frontend typecheck, build and `bun audit --prod`; `bash -n` and
-  shellcheck on the scripts, the upgrade-script regression test, `docker compose config` and layout
+  shellcheck on the scripts, the upgrade-script regression test, the check that the scripts' shared
+  progress helpers are identical and behave (`scripts/test-ui-helpers.sh`), `docker compose config` and layout
   checks; the image build with a smoke test (health, embedded dashboard, required tools), then the
   Docker-gated Go and contract tests.
 - **Install** (`.github/workflows/install.yml`): `install.sh` on a clean runner, first admin,
@@ -436,6 +447,7 @@ See [commands.md](commands.md#6-version-check--release).
 | "A deployment is already running" | Cancel the running build first; deploys are serialized per project. |
 | Deploy refused: service name is reserved | Names starting with `docklift` belong to Docklift; rename the directory with the Dockerfile. |
 | Login rate limits hit everyone behind a proxy | Add the proxy to `TRUSTED_PROXIES`. |
+| Install or upgrade build "ran out of memory" (exit 137, `Killed`) | Less than ~2 GB RAM + swap and no room for the temporary swap file: free disk space or add swap, then rerun. See [Requirements](#requirements). |
 
 Logs: `docker logs docklift-backend -f`, `docker logs docklift-nginx-proxy -f`,
 `docker logs docklift-certbot -f`; app containers are named `dl_<project>_<id>_<service>`

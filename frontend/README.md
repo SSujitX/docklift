@@ -29,6 +29,6 @@ bun run build                           # typecheck + production build into dist
 
 ## Production
 
-The root `Dockerfile` builds this directory with Bun (`bun run build`), copies `dist/` into
+The root `Dockerfile` builds this directory with Bun (`bunx vite build`; CI runs the typecheck), copies `dist/` into
 `server/web/dist` and compiles it into the `docklift` binary with `go:embed`. There is no separate
 frontend container. `make build` does the same without Docker and writes `bin/docklift`.

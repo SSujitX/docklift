@@ -87,7 +87,7 @@ always affect the whole compose stack.
 One image, three stages plus the runtime stage:
 
 ```dockerfile
-FROM --platform=$BUILDPLATFORM oven/bun:1.4.5-alpine AS web      # bun install --frozen-lockfile; bun run build
+FROM --platform=$BUILDPLATFORM oven/bun:1.4.5-alpine AS web      # bun install --frozen-lockfile; bunx vite build
 FROM --platform=$BUILDPLATFORM golang:1.27.4-alpine3.24 AS server # go build -> /out/docklift
 FROM alpine:3.24.4                                                # runtime
 ```

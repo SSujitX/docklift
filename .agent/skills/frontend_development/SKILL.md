@@ -128,7 +128,8 @@ bun audit --prod                          # must be clean (CI)
 
 ## Production
 
-- The root `Dockerfile` runs `bun run build` (stage `web`) with `VITE_API_URL` empty, copies `dist/`
+- The root `Dockerfile` runs `bunx vite build` (stage `web`, no typecheck: CI runs tsc, and tsc + vite
+  do not fit in 1 GB RAM) with `VITE_API_URL` empty, copies `dist/`
   into `server/web/dist`, and `go build` embeds it. `make build` does the same locally.
 - `server/web/dist/index.html` is a tracked placeholder so the Go module always compiles; never
   commit real build output there (`dist/` contents other than the placeholder are gitignored).
