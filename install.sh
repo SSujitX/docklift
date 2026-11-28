@@ -426,7 +426,9 @@ print_access_info() {
         echo -e "  ${DIM}  # or: cat $INSTALL_DIR/data/.bootstrap-secret${NC}"
     fi
     echo -e "\n  ${DIM}HTTP on a public IP is convenient for first setup — not encrypted.${NC}"
-    echo -e "  ${DIM}After login: Settings → Domain for HTTPS, or firewall / DASHBOARD_BIND=127.0.0.1.${NC}\n"
+    echo -e "  ${DIM}After login: Settings → Domain → add a panel domain (HTTPS), open the dashboard there${NC}"
+    echo -e "  ${DIM}and turn on \"Only allow access through the domain\" so :8080 stops answering.${NC}"
+    echo -e "  ${DIM}To close port 8080 entirely: DASHBOARD_BIND=127.0.0.1 in $INSTALL_DIR/.env (or a firewall).${NC}\n"
 }
 
 # Installs Docker with Docker's own script (runs under ui_run). A freshly booted

@@ -907,10 +907,18 @@ if [ -n "${BACKUP_FILE}" ]; then
     echo -e "  ${DIM}DB snapshot: $BACKUP_FILE${NC}\n"
 fi
 
+# "Only allow access through the domain" closes :8080: name the domain instead.
+PANEL_ONLY=$(docker exec docklift-backend docklift panel-access status 2>/dev/null \
+    | sed -n 's|.*only through \(https://[^ ]*\).*|\1|p' | head -n 1 || true)
 PUB4=$(curl -4 -s --connect-timeout 2 https://api.ipify.org 2>/dev/null || echo "")
-if [ -n "$PUB4" ]; then
-    echo -e "  ${BOLD}Access Docklift:${NC} http://${PUB4}:8080"
+if [ -n "$PANEL_ONLY" ]; then
+    echo -e "  ${BOLD}Access Docklift:${NC} ${PANEL_ONLY}"
+    echo -e "  ${DIM}(:8080 only answers through the domain; to reopen it: docker exec docklift-backend docklift panel-access open)${NC}\n"
 else
-    echo -e "  ${BOLD}Access Docklift:${NC} http://SERVER_IP:8080"
+    if [ -n "$PUB4" ]; then
+        echo -e "  ${BOLD}Access Docklift:${NC} http://${PUB4}:8080"
+    else
+        echo -e "  ${BOLD}Access Docklift:${NC} http://SERVER_IP:8080"
+    fi
+    echo -e "  ${DIM}(Optional: HTTPS panel domain in Settings → Domain, then \"Only allow access through the domain\"; or DASHBOARD_BIND=127.0.0.1)${NC}\n"
 fi
-echo -e "  ${DIM}(Optional: HTTPS panel domain in Settings, or DASHBOARD_BIND=127.0.0.1)${NC}\n"

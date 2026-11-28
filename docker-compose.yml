@@ -19,7 +19,8 @@ services:
     restart: unless-stopped
     # Dashboard on :8080 — public by default so install can open http://SERVER_IP:8080.
     # First account still requires the server-printed bootstrap secret.
-    # Harden later: Settings → Domain (HTTPS), firewall, or DASHBOARD_BIND=127.0.0.1.
+    # Harden later: Settings → Domain (HTTPS) with "Only allow access through the domain",
+    # a firewall, or DASHBOARD_BIND=127.0.0.1.
     ports:
       - "${DASHBOARD_BIND:-0.0.0.0}:8080:8000"
     # privileged + host PID: nsenter into host PID 1 (system update / reboot / upgrade)
