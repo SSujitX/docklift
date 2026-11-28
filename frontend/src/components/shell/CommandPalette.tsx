@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  ArrowRight,
   Container,
   Database,
   LogOut,
@@ -174,7 +173,7 @@ export function CommandPalette() {
         type="button"
         aria-label="Close command palette"
         onClick={() => setPaletteOpen(false)}
-        className="absolute inset-0 cursor-default bg-background/70 backdrop-blur-xs animate-in fade-in duration-150"
+        className="absolute inset-0 cursor-default bg-black/50 animate-in fade-in-0 duration-150"
       />
 
       <div
@@ -183,25 +182,25 @@ export function CommandPalette() {
         aria-modal="true"
         aria-label="Command palette"
         onKeyDown={onKeyDown}
-        className="relative w-full max-w-xl overflow-hidden rounded-2xl border border-border bg-card shadow-2xl shadow-black/30 animate-in fade-in zoom-in-95 duration-150"
+        className="relative w-full max-w-xl overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-popover animate-in fade-in-0 slide-in-from-top-1 duration-150"
       >
-        <div className="flex items-center gap-3 border-b border-border px-4">
-          <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+        <div className="flex items-center gap-2.5 border-b border-border px-3">
+          <Search className="size-4 shrink-0 text-subtle" />
           <input
             ref={inputRef}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search pages, projects and actions…"
-            className="h-14 flex-1 bg-transparent text-sm outline-hidden placeholder:text-muted-foreground"
+            className="h-12 min-w-0 flex-1 bg-transparent text-sm text-foreground outline-hidden placeholder:text-subtle"
           />
-          <kbd className="rounded border border-border bg-secondary/60 px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">
+          <kbd className="rounded-sm border border-border px-1 font-mono text-[11px] leading-4 text-subtle">
             Esc
           </kbd>
         </div>
 
-        <div ref={listRef} className="shell-scroll max-h-[52vh] overflow-y-auto p-2">
+        <div ref={listRef} className="shell-scroll max-h-[52vh] overflow-y-auto p-1.5">
           {results.length === 0 ? (
-            <p className="px-3 py-8 text-center text-sm text-muted-foreground">
+            <p className="px-3 py-8 text-center text-[13px] text-muted-foreground">
               Nothing matches “{query}”.
             </p>
           ) : (
@@ -212,7 +211,7 @@ export function CommandPalette() {
               return (
                 <div key={command.id}>
                   {showGroup && (
-                    <p className="px-3 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/70">
+                    <p className="px-2 pb-1 pt-2.5 text-xs leading-4 text-subtle">
                       {command.group}
                     </p>
                   )}
@@ -222,27 +221,32 @@ export function CommandPalette() {
                     onMouseEnter={() => setSelected(index)}
                     onClick={command.run}
                     className={cn(
-                      "flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors",
-                      !isSelected && "hover:bg-secondary/60",
+                      "flex h-9 w-full items-center gap-2.5 rounded-md px-2 text-left transition-colors duration-100 pointer-coarse:h-11",
+                      "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring",
+                      isSelected && "bg-secondary",
                     )}
                   >
                     <command.icon
                       className={cn(
-                        "h-4 w-4 shrink-0",
-                        isSelected ? "text-brand" : "text-muted-foreground",
+                        "size-4 shrink-0",
+                        isSelected ? "text-foreground" : "text-subtle",
                       )}
                     />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium">
-                        {command.label}
-                      </span>
-                      <span className="block truncate text-xs text-muted-foreground">
-                        {command.hint}
-                      </span>
+                    <span className="min-w-0 shrink truncate text-[13.5px] font-medium text-foreground">
+                      {command.label}
                     </span>
-                    {isSelected && (
-                      <ArrowRight className="h-3.5 w-3.5 shrink-0 text-brand" />
-                    )}
+                    <span className="ml-auto min-w-0 max-w-[55%] truncate text-xs text-muted-foreground">
+                      {command.hint}
+                    </span>
+                    <kbd
+                      aria-hidden="true"
+                      className={cn(
+                        "w-3 shrink-0 text-center font-mono text-xs text-subtle",
+                        !isSelected && "invisible",
+                      )}
+                    >
+                      ↵
+                    </kbd>
                   </button>
                 </div>
               );
