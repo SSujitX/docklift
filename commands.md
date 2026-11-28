@@ -199,8 +199,8 @@ cd server
 DATA_PATH=../data DATABASE_URL=file:$(pwd)/../data/docklift.db go run ./cmd/docklift reset-password
 ```
 
-Other subcommands: `docklift serve` (default), `docklift migrate` (apply database migrations and exit)
-and `docklift panel-access` (below).
+Other subcommands: `docklift serve` (default), `docklift migrate` (apply database migrations and exit),
+`docklift panel-access` and `docklift api-token` (below).
 
 ### Dashboard access by IP (`panel-access`)
 
@@ -218,6 +218,23 @@ docker exec docklift-backend docklift panel-access close panel.example.com   # w
 
 `open` is the way back in when the domain stops working. The running server picks up the change
 within 2 seconds; no restart. `close` refuses when no panel domain with HTTPS is configured.
+
+### API tokens (`api-token`)
+
+Bearer tokens for scripts, CI and AI agents (the REST API and the MCP endpoint `/mcp`). The same
+tokens as **API & MCP** in the dashboard; only a SHA-256 hash is stored and the token is printed once.
+
+```bash
+docker exec docklift-backend docklift api-token create ci-deploy                  # full access, no expiry
+docker exec docklift-backend docklift api-token create grafana --read --expires 90d
+docker exec docklift-backend docklift api-token create ops-agent --allow-dangerous # may roll back, restore, reboot, run commands
+docker exec docklift-backend docklift api-token list                              # never shows the token itself
+docker exec docklift-backend docklift api-token revoke <id|dl_prefix>              # stops working at once
+```
+
+`create` makes the token for the first admin; scope is full unless `--read` (GET requests only).
+Changing the account password (also `reset-password`) revokes every token created before it.
+Guides: [API Reference](https://docklift.dev/guide/api), [AI Agents (MCP)](https://docklift.dev/guide/mcp).
 
 ---
 
@@ -456,6 +473,7 @@ Set in `docker-compose.yml` (values in `${…}` can be overridden from the shell
 | Reload domain nginx | `docker exec docklift-nginx-proxy nginx -s reload` |
 | Reset password | `docker exec -it docklift-backend docklift reset-password` |
 | Reopen `:8080` (domain-only on) | `docker exec docklift-backend docklift panel-access open` |
+| New API token (scripts, MCP) | `docker exec docklift-backend docklift api-token create <name>` |
 | Check version | `grep '"version"' package.json` / `docker exec docklift-backend wget -qO- http://127.0.0.1:8000/api/health` |
 | Run everything CI runs | `make lint test contract frontend docker` |
 | Ship a release | green CI + Install → Actions → **Release** |

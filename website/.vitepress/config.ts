@@ -27,6 +27,7 @@ const operate = [
   { text: "Profile", link: "/guide/profile" },
   { text: "Reset Password", link: "/guide/reset-password" },
   { text: "API Reference", link: "/guide/api" },
+  { text: "AI Agents (MCP)", link: "/guide/mcp" },
   { text: "Troubleshooting", link: "/guide/troubleshooting" },
 ];
 

@@ -223,6 +223,33 @@ password. On a fresh install, choose restore on the setup screen instead of crea
 setup code authorises that one restore. Backups made by 2.1.x restore on 3.x. Projects without a
 Docklift-generated compose file are not started and need a redeploy.
 
+### API tokens and AI agents (MCP)
+
+Scripts, CI jobs and AI agents can do what you do in the dashboard with an API token instead of
+your password. Create one under **API & MCP** (asks for your password, shows the token once) or on
+the server:
+
+```bash
+docker exec docklift-backend docklift api-token create ci-deploy           # full access
+docker exec docklift-backend docklift api-token create agent --read        # GET requests only
+docker exec docklift-backend docklift api-token list
+docker exec docklift-backend docklift api-token revoke <id|prefix>
+```
+
+Send it as `Authorization: Bearer dl_...`. `GET /api/openapi.json` lists every endpoint. Actions
+that ask for the password in the dashboard (rollback, restore, purge, reboot, shell commands) work
+with a token only when it was created with **allow dangerous actions**; token management, password
+and profile changes, the terminal and the domain-only switch never work with a token.
+
+The same server is an MCP server at `/mcp` (Streamable HTTP, bearer token):
+
+```bash
+claude mcp add --transport http docklift https://panel.example.com/mcp --header "Authorization: Bearer dl_..."
+```
+
+Every tool call runs through the normal API with the token's permissions. See the
+[API guide](https://docklift.dev/guide/api) and the [MCP guide](https://docklift.dev/guide/mcp).
+
 ### Upgrade
 
 ```bash
@@ -355,6 +382,12 @@ The trust model, in short:
 - **Tokens.** Sessions are HS256 JWTs checked against the password version, so changing the password
   invalidates old tokens and closes open log streams and terminals. Terminal tokens are single use
   and the terminal must authenticate within 60 seconds. Log streams use short-lived SSE tokens.
+- **API tokens.** `dl_` plus 256 random bits; only the SHA-256 is stored. Read tokens may only send
+  GET requests; step-up actions need a token created with "allow dangerous actions"; a token never
+  reaches token management, password or profile changes, the terminal or the domain-only switch.
+  A password change revokes every token created before it. 20 invalid tokens from one address in
+  15 minutes give 429. A full token can deploy containers, and so is close to root on the host
+  even without "allow dangerous actions": hand out read tokens where that is enough.
 - **`TRUSTED_PROXIES`.** `X-Forwarded-For`, `-Proto` and `-Host` are believed only when the socket
   peer matches this list. The default is `127.0.0.0/8`, `::1/128` and nginx-proxy's fixed addresses
   `172.28.255.254` and `fd12:3456:789a::ffff:fffe`. Other containers on `docklift_network`, which

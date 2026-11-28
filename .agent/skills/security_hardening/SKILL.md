@@ -30,6 +30,22 @@ The backend can control the host, so anything that reaches the API with a valid 
 -   **Request bodies are parsed only after rate limiting and authentication.** Each route group in `server/internal/app/router/router.go` applies limiter, guard, then body parser. Never add a body parser in front of a guard.
 -   Backup downloads use `fetch` with the Bearer header and a blob. Never put a token in a URL except the 5 minute purpose tokens.
 
+## API Tokens and the MCP Endpoint
+
+Details in the `authentication` skill (API Tokens). The rules that matter when adding code:
+
+-   `Bearer dl_...` API tokens pass `RequireSession`. Scope `read` is GET/HEAD only. A route no token may reach, whatever its flags, gets `r.With(auth.SessionOnly)`; a GET a read token must not use gets `r.With(auth.FullScopeOnly)`. Both run after routing, so they cannot be bypassed by path spelling.
+-   A step-up check must go through `RequireStepUpPassword` / `VerifyStepUpPassword` (or call `TokenStepUp` first, as `/api/system/execute` does). Comparing the password yourself would let every token fail or, worse, skip the check. Tokens pass step-up only with `allow_dangerous`.
+-   Only the SHA-256 of a token is stored; the plain token appears in exactly one response (create) and never in logs.
+-   A full token can deploy any repository and so control the host, even without `allow_dangerous`. `allow_dangerous` only adds the step-up actions (restore, rollback, purge, reboot, reset, update, upgrade, shell commands).
+
+**MCP** (`/mcp`, `server/internal/api/mcp`, official Go SDK, stateless Streamable HTTP, JSON responses):
+
+-   Registered on the root router inside the `SecurityHeaders`/`CORS` group, so the trusted-proxy and domain-only middleware run first. API token only (`RequireAPIToken`), checked before the body is read; body limit 4 MiB. A browser `Origin` that is not the dashboard or an allowlisted origin gets 403 (DNS-rebinding rule of the transport). GET and DELETE answer 405.
+-   Every tool call is one or more requests built in process and served by the **root handler** (`router.New`), with only `Authorization`, `X-Forwarded-*`, `User-Agent`, the socket address, host and TLS state of the MCP request, on a fresh context (nothing from the MCP request's context leaks in). So scope, `allow_dangerous`, `SessionOnly`, validation, rate limits, the maintenance gate and audit logs are exactly those of HTTP.
+-   The generic `docklift_api_request` tool accepts only clean `/api/...` paths (no `..`, empty segments or encoded slashes), so it cannot call `/mcp` itself or the dashboard.
+-   Streams are followed until they end or a wait limit (default 10 min, max 30), keeping the last 64 KiB; JSON answers are cut after 256 KiB.
+
 ## Password Step-up
 
 `Service.RequireStepUpPassword` (`server/internal/auth/service.go`) re-verifies the account password from the JSON body.
@@ -49,6 +65,7 @@ All limits are per client address, fixed 15 minute windows, in memory (`server/i
 | `/api/auth/register`, `/api/auth/setup-token` | also 10 requests |
 | `/api/auth/me`, `/sse-token`, `/terminal-token` | own limiter, 1000 requests (not in the shared auth limit) |
 | step-up password failures | 10 per user and address |
+| invalid API tokens | 20 per address (a valid token does not reset it) |
 | terminal password failures | 5 per session, 20 per address and user |
 
 IPv6 clients are keyed by their `/56`.
@@ -181,7 +198,9 @@ All programs (docker, compose, buildx, railpack, git, the terminal shell, `/api/
 
 -   [ ] The route sits in a group whose guard is `RequireSession` (or has a written reason to be public) and a rate limiter if public.
 -   [ ] No body parsing before the guard; unauthenticated bodies use `publicBody`.
--   [ ] Dangerous host or data operations call `RequireStepUpPassword`.
+-   [ ] Dangerous host or data operations call `RequireStepUpPassword` (which also applies the API-token `allow_dangerous` rule).
+-   [ ] Account, token-management and lock-out switches are `auth.SessionOnly`; GETs that leak every secret (backup download) are `auth.FullScopeOnly`.
+-   [ ] The route is in `server/internal/api/openapi/routes.go` with accurate body fields (`TestOpenAPITableMatchesRouter` fails otherwise) and in `tests/contract/ROUTES.md`.
 -   [ ] Error responses are fixed strings; details are logged.
 -   [ ] Paths use `pathsec` and real-path checks; archives use `safeunzip`.
 -   [ ] Child processes go through `execx` with an argument array; new secrets are added to `IsSensitiveEnv`.

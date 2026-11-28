@@ -114,6 +114,7 @@ In the container: `docker exec docklift-backend docklift migrate`. Password rese
 | `ports` | Host port pool (`is_locked`); used only when a project has `publish_host_port` on |
 | `settings` | Key/value system settings (GitHub App credentials, ACME email, panel domain) |
 | `database_links` | Managed database -> app links: which env key is injected into which service; unique `(database_project_id, app_project_id, service_name, env_key)` and `(app_project_id, service_name, env_key)` |
+| `api_tokens` | API tokens for scripts and AI agents (migration `20261128120000_api_tokens`): `name`, `token_hash` (hex SHA-256, unique), `prefix`, `user_id` (cascade on user delete), `scope` (`read`/`full`), `allow_dangerous`, `created_at`, `last_used_at`, `expires_at`. Never holds the plain token. A 2.x install ignores the table, but its Prisma ledger then lists a migration 2.x does not know |
 | `_prisma_migrations` | Migration ledger (see above) |
 
 ### Build and storage fields on `projects`

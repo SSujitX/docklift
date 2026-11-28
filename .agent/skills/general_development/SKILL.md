@@ -20,10 +20,12 @@ local setup and the day-to-day workflow; the other skills go deep on individual 
 
 ```
 server/                  Go module `docklift` (go.mod)
-  cmd/docklift/          main.go: subcommands serve (default), migrate, reset-password, panel-access
+  cmd/docklift/          main.go: subcommands serve (default), migrate, reset-password, panel-access, api-token
   internal/
     api/<group>/         One package per route group (auth, projects, deployments, databases,
-                         domains, files, github, health, logs, ports, system, terminal, backup)
+                         domains, files, github, health, logs, ports, system, terminal, backup, tokens)
+    api/openapi/         The route table (every route, request shapes) and GET /api/openapi.json
+    api/mcp/             The MCP server at /mcp (tool calls dispatched through the router)
     app/                 Deps (shared dependencies) and lifecycle; app/router/router.go is the mount table
     auth/                JWT, passwords, persisted secrets, bootstrap/setup tokens
     backup/              Backup and restore archives
@@ -172,7 +174,14 @@ TypeScript needs the TypeScript 7 language server (VS Code: "TypeScript Native P
    `group("/name", pkg.Mount, session, body)` (`session` is `d.Auth.RequireSession`). Public routes,
    SSE-token routes and step-up routes follow the guards already defined in that file; read the
    `security_hardening` skill before adding one.
-5. Add a handler test using `apptest.NewDeps(t)` (`server/internal/app/apptest`), list the route in
+5. Add the route to `server/internal/api/openapi/routes.go` with its real request shape (body keys,
+   query parameters, step-up, streaming, `SessionOnly`/`FullScope`): `TestOpenAPITableMatchesRouter`
+   fails until the router and the table agree. That table is `GET /api/openapi.json`, the dashboard's
+   endpoint browser and the MCP `docklift_list_endpoints` tool.
+6. Decide what an API token may do: nothing to add for normal routes (read tokens are GET-only); add
+   `r.With(auth.SessionOnly)` for account, token or lock-out routes, `auth.FullScopeOnly` for a GET
+   that returns every secret. A dangerous route calls `RequireStepUpPassword`.
+7. Add a handler test using `apptest.NewDeps(t)` (`server/internal/app/apptest`), list the route in
    `tests/contract/ROUTES.md`, and cover it in `tests/contract`.
 
 ## Adding a store query

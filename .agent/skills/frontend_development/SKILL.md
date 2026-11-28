@@ -27,6 +27,7 @@ production it is a static SPA that is built into `frontend/dist` and **embedded 
 | `/databases/new` | `pages/NewDatabase.tsx` | Full-width create + sticky CTA (matches New Project) |
 | — | `components/databases/*` | Connection, link, attach panels |
 | `/settings` | `pages/Settings.tsx` | Settings + GitHub |
+| `/developer` | `pages/Developer.tsx` | API & MCP: API tokens (create with password, shown once; revoke with password), "Connect an AI" snippets, endpoint browser from `/api/openapi.json`. Pure helpers in `lib/developer.ts` (tested) |
 | `/docs`, `/docs/*` | redirect | `DocsRedirect` sends the browser to https://docklift.dev (VitePress site in `website/`) |
 
 Router: `src/app/router.tsx` (lazy route chunks). `/sign-in` and `/setup` render

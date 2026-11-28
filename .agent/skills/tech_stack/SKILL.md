@@ -18,6 +18,7 @@ quoting a version elsewhere.
 -   **Migrations**: embedded SQL files in `internal/db/migrations`, tracked in the `_prisma_migrations` table (kept so 2.x databases upgrade in place)
 -   **Auth**: [`golang-jwt/jwt/v5`](https://github.com/golang-jwt/jwt) for tokens, bcrypt from `golang.org/x/crypto`
 -   **WebSocket**: [`gorilla/websocket`](https://github.com/gorilla/websocket) (web terminal)
+-   **MCP**: the official Go SDK [`modelcontextprotocol/go-sdk`](https://github.com/modelcontextprotocol/go-sdk) v1.8 (`internal/api/mcp`): Streamable HTTP, stateless, JSON responses; serves both the `2026-07-28` and the `initialize`-based protocol revisions
 -   **Terminal PTY**: [`creack/pty`](https://github.com/creack/pty)
 -   **Docker Engine API**: the moby Go client (`github.com/moby/moby/client`, `github.com/moby/moby/api`) for inspect, logs and stats
 -   **Docker CLI**: `docker` with the compose and buildx plugins, run through `internal/dockerx` and `internal/execx` for builds and `compose up/down`
