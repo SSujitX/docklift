@@ -8,12 +8,13 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Server, Network, Container, Info, Loader2, Check, X, Sparkles, Globe, Plus, Trash2, Copy, AlertTriangle, Lock, ShieldCheck, KeyRound, Mail, UserCircle, HardDrive, Download, RotateCcw, Archive, Upload, FileUp, SlidersHorizontal } from "lucide-react";
+import { Loader2, Check, X, Plus, Trash2, Copy, Download, RotateCcw, Upload, FileUp, Eye, EyeOff, ExternalLink } from "lucide-react";
 import { GithubIcon } from "@/components/icons/GithubIcon";
 import { toast } from "sonner";
-import { API_URL, copyToClipboard } from "@/lib/utils";
+import { API_URL, cn, copyToClipboard } from "@/lib/utils";
 import { GitHubConnect } from "@/components/GitHubConnect";
-import { authFetch, startGithubInstallAndNavigate } from "@/lib/auth";
+import { apiCache, authFetch, startGithubInstallAndNavigate } from "@/lib/auth";
+import { API } from "@/lib/prefetch";
 import { useAuth } from "@/components/AuthProvider";
 import type { SslInfo } from "@/components/SslStatusBadge";
 import { DnsGuideCard } from "@/components/domains/DnsGuideCard";
@@ -53,9 +54,14 @@ interface BackupInfo {
 }
 
 function SettingsContent() {
-  const [githubStatus, setGithubStatus] = useState<GitHubStatus | null>(null);
-  const [githubInstallations, setGithubInstallations] = useState<GitHubInstallation[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Every tab starts from its last known data (memory cache) and refreshes when opened.
+  const [githubStatus, setGithubStatus] = useState<GitHubStatus | null>(
+    () => apiCache.peek<GitHubStatus>(API.githubStatus) ?? null,
+  );
+  const [githubInstallations, setGithubInstallations] = useState<GitHubInstallation[]>(
+    () => apiCache.peek<{ installations?: GitHubInstallation[] }>(API.githubInstallations)?.installations || [],
+  );
+  const [loading, setLoading] = useState(() => apiCache.peek(API.githubStatus) === undefined);
   const [disconnecting, setDisconnecting] = useState(false);
   const [showGitHubConnect, setShowGitHubConnect] = useState(false);
   const [activeTab, setActiveTab] = useState('profile');
@@ -72,15 +78,26 @@ function SettingsContent() {
   const [showNewPassword, setShowNewPassword] = useState(false);
   
   // Domain State
-  const [domains, setDomains] = useState<DomainConfig[]>([]);
+  const [domains, setDomains] = useState<DomainConfig[]>(
+    () => apiCache.peek<DomainConfig[]>(API.domains) ?? [],
+  );
   const [loadingDomains, setLoadingDomains] = useState(false);
-  const [serverIP, setServerIP] = useState<string>('...');
-  const [acmeEmail, setAcmeEmail] = useState('');
+  const [serverIP, setServerIP] = useState<string>(() => {
+    const cached = apiCache.peek<{ ip?: string }>(API.systemIP);
+    return cached ? cached.ip || 'N/A' : '...';
+  });
+  const [acmeEmail, setAcmeEmail] = useState(
+    () => apiCache.peek<{ email?: string }>(API.sslEmail)?.email || '',
+  );
   const [savingAcmeEmail, setSavingAcmeEmail] = useState(false);
 
   // Backup State
-  const [backups, setBackups] = useState<BackupInfo[]>([]);
-  const [uploadedFiles, setUploadedFiles] = useState<BackupInfo[]>([]);
+  const [backups, setBackups] = useState<BackupInfo[]>(
+    () => apiCache.peek<BackupInfo[]>(API.backups) ?? [],
+  );
+  const [uploadedFiles, setUploadedFiles] = useState<BackupInfo[]>(
+    () => apiCache.peek<BackupInfo[]>(API.backupUploads) ?? [],
+  );
   const [loadingBackups, setLoadingBackups] = useState(false);
   const [loadingUploads, setLoadingUploads] = useState(false);
   const [creatingBackup, setCreatingBackup] = useState(false);
@@ -119,7 +136,7 @@ function SettingsContent() {
     }
 
     if (searchParams.get("github") === "connected") {
-      toast.success("GitHub account connected successfully!");
+      toast.success("GitHub account connected");
       navigate("/settings?tab=github", { replace: true });
     }
   }, [searchParams, navigate]);
@@ -148,7 +165,7 @@ function SettingsContent() {
 
   const fetchServerIP = async () => {
     try {
-      const res = await authFetch(`${API_URL}/api/system/ip`);
+      const res = await apiCache.fetch(API.systemIP);
       if (res.ok) {
         const data = await res.json();
         setServerIP(data.ip || 'N/A');
@@ -159,28 +176,36 @@ function SettingsContent() {
   };
 
   const fetchGitHubStatus = async () => {
+    const loadInstallations = () =>
+      apiCache
+        .fetch(API.githubInstallations)
+        .then(async (instRes) => {
+          if (!instRes.ok) return null;
+          const instData = await instRes.json();
+          return (instData.installations || []) as GitHubInstallation[];
+        })
+        .catch(() => null); // Ignore installation fetch errors
+    // The installations request does not need the status answer, so both go out together when
+    // GitHub was connected at the last look. Otherwise it waits for the status: the endpoint
+    // answers with an error while GitHub is not connected.
+    const lastStatus = apiCache.peek<{ connected?: boolean }>(API.githubStatus);
+    let installationsRequest = lastStatus?.connected ? loadInstallations() : null;
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
-      
-      const res = await authFetch(`${API_URL}/api/github/status`, {
+
+      const res = await apiCache.fetch(API.githubStatus, {
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
       const data = await res.json();
       setGithubStatus(data);
 
-      // Also fetch all installations if connected
+      // Show all installations if connected
       if (data.connected) {
-        try {
-          const instRes = await authFetch(`${API_URL}/api/github/installations`);
-          if (instRes.ok) {
-            const instData = await instRes.json();
-            setGithubInstallations(instData.installations || []);
-          }
-        } catch {
-          // Ignore installation fetch errors
-        }
+        installationsRequest ??= loadInstallations();
+        const installations = await installationsRequest;
+        if (installations) setGithubInstallations(installations);
       }
     } catch {
       setGithubStatus({ connected: false });
@@ -215,9 +240,15 @@ function SettingsContent() {
   };
 
   const fetchDomains = async (opts?: { silent?: boolean }): Promise<boolean> => {
-    if (!opts?.silent) setLoadingDomains(true);
+    // Spinner only when there is nothing to show yet; cached domains stay up while refreshing.
+    const showSpinner = !opts?.silent && apiCache.peek(API.domains) === undefined;
+    if (showSpinner) setLoadingDomains(true);
     try {
-      const res = await authFetch(`${API_URL}/api/domains`);
+      // Both requests go out together; the email is still applied only after domains loaded.
+      const domainsRequest = apiCache.fetch(API.domains);
+      const emailRequest = apiCache.fetch(API.sslEmail);
+      emailRequest.catch(() => {}); // handled below; avoids an unhandled rejection if domains fail first
+      const res = await domainsRequest;
       if (res.ok) {
         const data = await res.json();
         setDomains(data);
@@ -225,7 +256,7 @@ function SettingsContent() {
         if (!opts?.silent) toast.error("Failed to load domains");
         return false;
       }
-      const emailRes = await authFetch(`${API_URL}/api/domains/ssl/email`);
+      const emailRes = await emailRequest;
       if (emailRes.ok) {
         const emailData = await emailRes.json();
         setAcmeEmail(emailData.email || '');
@@ -235,7 +266,7 @@ function SettingsContent() {
       if (!opts?.silent) toast.error("Failed to load domains");
       return false;
     } finally {
-      if (!opts?.silent) setLoadingDomains(false);
+      if (showSpinner) setLoadingDomains(false);
     }
   };
 
@@ -319,9 +350,9 @@ function SettingsContent() {
 
   // Backup Functions
   const fetchBackups = async () => {
-    setLoadingBackups(true);
+    if (apiCache.peek(API.backups) === undefined) setLoadingBackups(true);
     try {
-      const res = await authFetch(`${API_URL}/api/backup`);
+      const res = await apiCache.fetch(API.backups);
       if (res.ok) {
         const data = await res.json();
         setBackups(data);
@@ -334,9 +365,9 @@ function SettingsContent() {
   };
 
   const fetchUploadedFiles = async () => {
-    setLoadingUploads(true);
+    if (apiCache.peek(API.backupUploads) === undefined) setLoadingUploads(true);
     try {
-      const res = await authFetch(`${API_URL}/api/backup/uploads`);
+      const res = await apiCache.fetch(API.backupUploads);
       if (res.ok) {
         const data = await res.json();
         setUploadedFiles(data);
@@ -578,812 +609,572 @@ function SettingsContent() {
       <div>
         <PageHeader
           title={settingsSectionLabel(activeTab)}
-          description="Manage your account, server, integrations, and domains."
-          icon={SlidersHorizontal}
+          description={TAB_DESCRIPTIONS[activeTab] ?? "Settings for this Docklift server."}
         />
 
-        <div className="min-w-0 overflow-x-auto">
+        <div className="min-w-0 space-y-5">
             {/* Profile */}
             {activeTab === 'profile' && (
-              <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                <div className="grid gap-4">
-                  <Card className="rounded-2xl border-border/60 p-5 sm:p-6">
-                    <div className="mb-5 flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-border bg-secondary/40">
-                        <UserCircle className="h-5 w-5 text-muted-foreground" />
-                      </div>
-                      <div>
-                        <h2 className="text-lg font-semibold tracking-tight">Account profile</h2>
-                        <p className="text-sm text-muted-foreground">Name and email for this Docklift account.</p>
-                      </div>
-                    </div>
-                    
-                    <form onSubmit={handleUpdateProfile} className="space-y-4">
-                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                        <div className="space-y-2">
-                          <label className="text-xs font-medium text-muted-foreground">Full name</label>
-                          <Input 
+              <>
+                <Panel title="Account profile" description="Name and email for this Docklift account.">
+                  <form onSubmit={handleUpdateProfile}>
+                    <PanelBody>
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <Field label="Full name">
+                          <Input
                             value={profileData.name}
                             onChange={(e) => setProfileData({ ...profileData, name: e.target.value })}
                             placeholder="John Doe"
-                            className="h-10"
                           />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-xs font-medium text-muted-foreground">Email address</label>
-                          <div className="relative">
-                            <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/60" />
-                            <Input 
-                              type="email"
-                              value={profileData.email}
-                              onChange={(e) => setProfileData({ ...profileData, email: e.target.value })}
-                              placeholder="john@example.com"
-                              className="h-10 pl-10"
-                            />
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex justify-end pt-1">
-                        <Button 
-                          type="submit" 
-                          disabled={updatingProfile}
-                          className="h-10 bg-brand px-5 font-semibold text-brand-foreground hover:brightness-110"
-                        >
-                          {updatingProfile ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}
-                          Update profile
-                        </Button>
-                      </div>
-                    </form>
-                  </Card>
-
-                  <Card className="rounded-2xl border-border/60 p-5 sm:p-6">
-                    <div className="mb-5 flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-border bg-secondary/40">
-                        <ShieldCheck className="h-5 w-5 text-muted-foreground" />
-                      </div>
-                      <div>
-                        <h2 className="text-lg font-semibold tracking-tight">Security</h2>
-                        <p className="text-sm text-muted-foreground">Change the password used to sign in.</p>
-                      </div>
-                    </div>
-
-                    <form onSubmit={handleChangePassword} className="space-y-4">
-                      <div className="space-y-2">
-                        <label className="text-xs font-medium text-muted-foreground">Current password</label>
-                        <div className="relative">
-                          <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/60" />
-                          <Input 
-                            type={showCurrentPassword ? "text" : "password"}
-                            value={passwordData.currentPassword}
-                            onChange={(e) => setPasswordData({ ...passwordData, currentPassword: e.target.value })}
-                            placeholder="Current password"
-                            className="h-10 pl-10 pr-10"
+                        </Field>
+                        <Field label="Email address">
+                          <Input
+                            type="email"
+                            value={profileData.email}
+                            onChange={(e) => setProfileData({ ...profileData, email: e.target.value })}
+                            placeholder="john@example.com"
                           />
-                          <button 
-                            type="button" 
-                            onClick={() => setShowCurrentPassword(!showCurrentPassword)}
-                            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
-                          >
-                            {showCurrentPassword ? <Lock className="h-4 w-4" /> : <ShieldCheck className="h-4 w-4" />}
-                          </button>
-                        </div>
+                        </Field>
                       </div>
-                      
-                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                        <div className="space-y-2">
-                          <label className="text-xs font-medium text-muted-foreground">New password</label>
+                    </PanelBody>
+                    <PanelFooter>
+                      <Button type="submit" disabled={updatingProfile}>
+                        {updatingProfile && <Loader2 className="animate-spin" />}
+                        Save profile
+                      </Button>
+                    </PanelFooter>
+                  </form>
+                </Panel>
+
+                <Panel title="Password" description="Change the password used to sign in. This session stays signed in.">
+                  <form onSubmit={handleChangePassword}>
+                    <PanelBody>
+                      <div className="space-y-4">
+                        <Field label="Current password">
                           <div className="relative">
-                            <KeyRound className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/60" />
-                            <Input 
-                              type={showNewPassword ? "text" : "password"}
-                              value={passwordData.newPassword}
-                              onChange={(e) => setPasswordData({ ...passwordData, newPassword: e.target.value })}
-                              placeholder="New password"
-                              className="h-10 pl-10 pr-10"
+                            <Input
+                              type={showCurrentPassword ? "text" : "password"}
+                              value={passwordData.currentPassword}
+                              onChange={(e) => setPasswordData({ ...passwordData, currentPassword: e.target.value })}
+                              placeholder="Current password"
+                              className="pr-10"
                             />
-                            <button 
-                              type="button" 
-                              onClick={() => setShowNewPassword(!showNewPassword)}
-                              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
+                            <button
+                              type="button"
+                              onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                              className="absolute right-1 top-1/2 inline-flex size-7 -translate-y-1/2 items-center justify-center rounded-md text-subtle transition-colors duration-150 hover:bg-secondary hover:text-foreground"
                             >
-                              {showNewPassword ? <Lock className="h-4 w-4" /> : <ShieldCheck className="h-4 w-4" />}
+                              {showCurrentPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                              <span className="sr-only">{showCurrentPassword ? "Hide password" : "Show password"}</span>
                             </button>
                           </div>
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-xs font-medium text-muted-foreground">Confirm new password</label>
-                          <div className="relative">
-                            <KeyRound className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/60" />
-                            <Input 
+                        </Field>
+
+                        <div className="grid gap-4 sm:grid-cols-2">
+                          <Field label="New password">
+                            <div className="relative">
+                              <Input
+                                type={showNewPassword ? "text" : "password"}
+                                value={passwordData.newPassword}
+                                onChange={(e) => setPasswordData({ ...passwordData, newPassword: e.target.value })}
+                                placeholder="New password"
+                                className="pr-10"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setShowNewPassword(!showNewPassword)}
+                                className="absolute right-1 top-1/2 inline-flex size-7 -translate-y-1/2 items-center justify-center rounded-md text-subtle transition-colors duration-150 hover:bg-secondary hover:text-foreground"
+                              >
+                                {showNewPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                                <span className="sr-only">{showNewPassword ? "Hide password" : "Show password"}</span>
+                              </button>
+                            </div>
+                          </Field>
+                          <Field label="Confirm new password">
+                            <Input
                               type="password"
                               value={passwordData.confirmPassword}
                               onChange={(e) => setPasswordData({ ...passwordData, confirmPassword: e.target.value })}
                               placeholder="Confirm password"
-                              className="h-10 pl-10"
                             />
-                          </div>
+                          </Field>
                         </div>
                       </div>
-
-                      <div className="flex justify-end pt-1">
-                        <Button 
-                          type="submit" 
-                          disabled={updatingPassword || !passwordData.newPassword}
-                          className="h-10 bg-brand px-5 font-semibold text-brand-foreground hover:brightness-110"
-                        >
-                          {updatingPassword ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldCheck className="mr-2 h-4 w-4" />}
-                          Change password
-                        </Button>
-                      </div>
-                    </form>
-                  </Card>
-                </div>
-              </div>
+                    </PanelBody>
+                    <PanelFooter>
+                      <Button type="submit" disabled={updatingPassword || !passwordData.newPassword}>
+                        {updatingPassword && <Loader2 className="animate-spin" />}
+                        Change password
+                      </Button>
+                    </PanelFooter>
+                  </form>
+                </Panel>
+              </>
             )}
 
             {/* GitHub Tab */}
             {activeTab === 'github' && (
-              <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <div className="relative group">
-                  <div className="absolute inset-0 bg-linear-to-r/srgb from-cyan-500/20 to-blue-500/20 rounded-3xl blur-xl opacity-75" />
-                  <Card className="relative p-6 border-cyan-500/20 bg-card/50 backdrop-blur-xs">
-                    <div className="flex flex-col sm:flex-row items-center gap-6">
-                      <div className="relative shrink-0">
-                        <div className="absolute inset-0 bg-cyan-500/20 blur-xl rounded-full" />
-                        <div className="relative p-4 rounded-2xl bg-linear-to-br/srgb from-zinc-900 to-black border border-zinc-800 shadow-xl">
-                          <GithubIcon className="h-8 w-8 text-white" />
-                        </div>
-                      </div>
-                      
-                      <div className="flex-1 text-center sm:text-left space-y-1">
-                        <h2 className="text-xl font-bold">GitHub Integration</h2>
-                        {githubStatus?.app_name && (
-                          <p className="text-sm text-foreground/80">
-                            App{' '}
-                            {githubStatus.app_slug ? (
-                              <a
-                                href={`https://github.com/apps/${githubStatus.app_slug}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="font-medium text-cyan-600 hover:underline dark:text-cyan-400"
-                              >
-                                {githubStatus.app_name}
-                              </a>
-                            ) : (
-                              <span className="font-medium">{githubStatus.app_name}</span>
-                            )}
-                          </p>
-                        )}
-                        <p className="text-muted-foreground">
-                          Connect to automatically deploy public and private repositories.
-                        </p>
-                      </div>
+              <Panel
+                title="GitHub App"
+                description="Connect to automatically deploy public and private repositories."
+              >
+                <dl className="divide-y divide-border">
+                  <DefRow label="Status">
+                    {loading ? (
+                      <span className="inline-flex items-center gap-2 text-muted-foreground">
+                        <Loader2 className="size-3.5 animate-spin" />
+                        Checking…
+                      </span>
+                    ) : githubStatus?.connected ? (
+                      <StatusDot tone="ok">Connected</StatusDot>
+                    ) : (
+                      <StatusDot tone="none">Not connected</StatusDot>
+                    )}
+                  </DefRow>
 
-                      <div className="shrink-0 pt-4 sm:pt-0">
-                        {loading ? (
-                          <div className="flex items-center gap-2 text-muted-foreground px-4 py-2 bg-secondary/50 rounded-lg">
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                            <span>Checking...</span>
-                          </div>
-                        ) : githubStatus?.connected ? (
-                          <div className="flex flex-col items-center sm:items-end gap-3 w-full sm:w-auto">
-                            {/* Multi-account list */}
-                            <div className="flex flex-col gap-2 w-full sm:w-auto">
-                              {githubInstallations.length > 0 ? (
-                                githubInstallations.map((inst) => (
-                                  <div 
-                                    key={inst.id} 
-                                    className="flex items-center gap-3 bg-green-500/10 border border-green-500/20 px-4 py-2.5 rounded-xl"
-                                  >
-                                    {inst.avatar_url ? (
-                                      <img src={inst.avatar_url} alt={inst.login} className="h-8 w-8 rounded-lg border border-green-500/20" />
-                                    ) : (
-                                      <div className="h-8 w-8 rounded-lg bg-green-500/20 flex items-center justify-center font-bold text-green-500 text-sm">
-                                        {inst.login?.charAt(0).toUpperCase()}
-                                      </div>
-                                    )}
-                                    <div className="flex flex-col">
-                                      <span className="text-sm font-medium">@{inst.login}</span>
-                                      <span className="text-xs text-muted-foreground">
-                                        {inst.type === 'Organization' ? '🏢 Organization' : '👤 Personal'}
-                                      </span>
-                                    </div>
-                                    <Check className="h-4 w-4 text-green-500 ml-auto" />
-                                  </div>
-                                ))
-                              ) : (
-                                <div className="flex items-center gap-3 bg-green-500/10 border border-green-500/20 px-4 py-2.5 rounded-xl">
-                                  <Check className="h-5 w-5 text-green-500" />
-                                  <span className="text-sm font-medium text-green-500">Connected</span>
-                                </div>
-                              )}
-                            </div>
-                            
-                            <div className="flex items-center gap-2">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="h-9 px-3 rounded-xl border-cyan-500/20 text-cyan-500 hover:text-cyan-600 hover:bg-cyan-500/10"
-                                title="Add another account or organization — repos will be combined"
-                                onClick={handleAddGithubAccount}
-                              >
-                                <Plus className="h-4 w-4 mr-1.5" />
-                                Add Account
-                              </Button>
-                              <Button 
-                                variant="destructive" 
-                                size="sm"
-                                onClick={handleDisconnectGitHub}
-                                disabled={disconnecting}
-                                className="h-9 px-4 text-xs font-semibold shadow-lg shadow-red-500/20 hover:bg-red-600 transition-all rounded-xl"
-                              >
-                                {disconnecting ? (
-                                  <Loader2 className="h-3.5 w-3.5 animate-spin mr-2" />
-                                ) : (
-                                  <X className="h-3.5 w-3.5 mr-2" />
-                                )}
-                                Disconnect
-                              </Button>
-                            </div>
-                          </div>
-                        ) : (
-                          <Button 
-                            onClick={handleConnectGitHub}
-                            size="lg"
-                            className="gap-2 bg-linear-to-r/srgb from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white shadow-lg shadow-cyan-500/25"
-                          >
-                            <Sparkles className="h-4 w-4" />
-                            Connect GitHub
-                          </Button>
-                        )}
-                        <GitHubConnect 
-                          open={showGitHubConnect} 
-                          onOpenChange={setShowGitHubConnect}
-                          onConnected={fetchGitHubStatus}
-                        />
-                      </div>
-                    </div>
-                  </Card>
-                </div>
-              </div>
+                  {githubStatus?.app_name && (
+                    <DefRow label="App">
+                      {githubStatus.app_slug ? (
+                        <a
+                          href={`https://github.com/apps/${githubStatus.app_slug}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 font-mono text-[13px] text-brand underline-offset-4 hover:underline"
+                        >
+                          {githubStatus.app_name}
+                          <ExternalLink className="size-3.5" />
+                        </a>
+                      ) : (
+                        <span className="font-mono text-[13px]">{githubStatus.app_name}</span>
+                      )}
+                    </DefRow>
+                  )}
+
+                  {!loading && githubStatus?.connected && githubInstallations.length > 0 && (
+                    <DefRow label="Accounts">
+                      <ul className="space-y-2">
+                        {githubInstallations.map((inst) => (
+                          <li key={inst.id} className="flex min-w-0 items-center gap-2.5">
+                            {inst.avatar_url ? (
+                              <img src={inst.avatar_url} alt={inst.login} className="size-5 shrink-0 rounded-sm" />
+                            ) : (
+                              <span className="flex size-5 shrink-0 items-center justify-center rounded-sm bg-secondary text-xs font-semibold text-muted-foreground">
+                                {inst.login?.charAt(0).toUpperCase()}
+                              </span>
+                            )}
+                            <span className="truncate font-mono text-[13px]">@{inst.login}</span>
+                            <span className="shrink-0 text-xs text-muted-foreground">
+                              {inst.type === 'Organization' ? 'Organization' : 'Personal'}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </DefRow>
+                  )}
+                </dl>
+
+                {!loading && (
+                  <PanelFooter>
+                    {githubStatus?.connected ? (
+                      <>
+                        <Button
+                          variant="outline"
+                          className="text-danger"
+                          onClick={handleDisconnectGitHub}
+                          disabled={disconnecting}
+                        >
+                          {disconnecting ? <Loader2 className="animate-spin" /> : <X />}
+                          Disconnect
+                        </Button>
+                        <Button
+                          variant="outline"
+                          title="Add another account or organization — repos will be combined"
+                          onClick={handleAddGithubAccount}
+                        >
+                          <Plus className="text-subtle" />
+                          Add account
+                        </Button>
+                      </>
+                    ) : (
+                      <Button onClick={handleConnectGitHub}>
+                        <GithubIcon className="size-4" />
+                        Connect GitHub
+                      </Button>
+                    )}
+                  </PanelFooter>
+                )}
+                <GitHubConnect
+                  open={showGitHubConnect}
+                  onOpenChange={setShowGitHubConnect}
+                  onConnected={fetchGitHubStatus}
+                />
+              </Panel>
             )}
 
             {/* Server Tab */}
             {activeTab === 'server' && (
-              <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <Card className="p-6">
-                  <div className="flex items-center gap-3 mb-6">
-                    <div className="p-3 rounded-xl bg-primary/10">
-                      <Server className="h-6 w-6 text-primary" />
-                    </div>
-                    <div>
-                      <h2 className="text-xl font-semibold">Server Configuration</h2>
-                      <p className="text-sm text-muted-foreground">Core system and API settings</p>
-                    </div>
-                  </div>
-                  <div className="grid gap-6">
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Server IP Address</label>
-                      <div className="flex gap-2">
-                        <Input 
-                          value={serverIP} 
-                          disabled 
-                          className="bg-secondary/50 font-mono" 
-                        />
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          onClick={() => {
-                            copyToClipboard(serverIP);
-                            toast.success('IP copied!');
-                          }}
-                        >
-                          <Copy className="h-4 w-4" />
-                        </Button>
-                      </div>
-                      <p className="text-xs text-muted-foreground">Your server&apos;s public IP address.</p>
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Docklift Panel URL</label>
-                      <div className="flex gap-2">
-                        <Input 
-                          value={`http://${serverIP}:8080`} 
-                          disabled 
-                          className="bg-secondary/50 font-mono" 
-                        />
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          onClick={() => {
-                            copyToClipboard(`http://${serverIP}:8080`);
-                            toast.success('URL copied!');
-                          }}
-                        >
-                          <Copy className="h-4 w-4" />
-                        </Button>
-                      </div>
-                      <p className="text-xs text-muted-foreground">Access Docklift at this URL (Frontend port 8080).</p>
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Backend API URL</label>
-                      <div className="flex gap-2">
-                        <Input 
-                          value={`http://${serverIP}:4000`} 
-                          disabled 
-                          className="bg-secondary/50 font-mono" 
-                        />
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          onClick={() => {
-                            copyToClipboard(`http://${serverIP}:4000`);
-                            toast.success('URL copied!');
-                          }}
-                        >
-                          <Copy className="h-4 w-4" />
-                        </Button>
-                      </div>
-                      <p className="text-xs text-muted-foreground">Backend API endpoint (Port 4000).</p>
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Deployments Directory</label>
-                      <div className="flex gap-2">
-                        <Input value="/deployments" disabled className="bg-secondary/50 font-mono" />
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          onClick={() => {
-                            copyToClipboard('/deployments');
-                            toast.success('Path copied!');
-                          }}
-                        >
-                          <Copy className="h-4 w-4" />
-                        </Button>
-                      </div>
-                      <p className="text-xs text-muted-foreground">Absolute path where project files are stored on the host.</p>
-                    </div>
-                  </div>
-                </Card>
-              </div>
+              <Panel title="Addresses" description="Where this Docklift installation answers and stores its files.">
+                <dl className="divide-y divide-border">
+                  <CopyRow
+                    label="Server IP address"
+                    value={serverIP}
+                    help="Your server's public IP address."
+                    onCopy={() => {
+                      copyToClipboard(serverIP);
+                      toast.success('IP copied');
+                    }}
+                  />
+                  <CopyRow
+                    label="Docklift panel URL"
+                    value={`http://${serverIP}:8080`}
+                    help="Access Docklift at this URL (frontend port 8080)."
+                    onCopy={() => {
+                      copyToClipboard(`http://${serverIP}:8080`);
+                      toast.success('URL copied');
+                    }}
+                  />
+                  <CopyRow
+                    label="Backend API URL"
+                    value={`http://${serverIP}:4000`}
+                    help="Backend API endpoint (port 4000)."
+                    onCopy={() => {
+                      copyToClipboard(`http://${serverIP}:4000`);
+                      toast.success('URL copied');
+                    }}
+                  />
+                  <CopyRow
+                    label="Deployments directory"
+                    value="/deployments"
+                    help="Absolute path where project files are stored on the host."
+                    onCopy={() => {
+                      copyToClipboard('/deployments');
+                      toast.success('Path copied');
+                    }}
+                  />
+                </dl>
+              </Panel>
             )}
 
             {/* Port Tab */}
             {activeTab === 'port' && (
-              <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <Card className="p-6">
-                  <div className="flex items-center gap-3 mb-6">
-                    <div className="p-3 rounded-xl bg-emerald-500/10">
-                      <Network className="h-6 w-6 text-emerald-500" />
-                    </div>
-                    <div>
-                      <h2 className="text-xl font-semibold">Port Allocation</h2>
-                      <p className="text-sm text-muted-foreground">Manage the range of ports available for deployments</p>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Start Port</label>
-                      <Input type="number" value="3001" disabled className="bg-secondary/50 font-mono" />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">End Port</label>
-                      <Input type="number" value="3100" disabled className="bg-secondary/50 font-mono" />
-                    </div>
-                  </div>
-                  <div className="mt-4 p-4 bg-secondary/30 rounded-lg text-sm text-muted-foreground">
-                    <p>Docklift automatically assigns the next available port from this pool when creating new deployments.</p>
-                  </div>
-                </Card>
-              </div>
+              <Panel title="Port allocation" description="The range of host ports available for deployments.">
+                <dl className="divide-y divide-border">
+                  <DefRow label="Start port">
+                    <span className="font-mono text-[13px]">3001</span>
+                  </DefRow>
+                  <DefRow label="End port">
+                    <span className="font-mono text-[13px]">3100</span>
+                  </DefRow>
+                </dl>
+                <p className="border-t border-border px-4 py-3 text-[13px] leading-5 text-muted-foreground sm:px-5">
+                  Docklift automatically assigns the next available port from this pool when creating
+                  new deployments.
+                </p>
+              </Panel>
             )}
 
             {/* Docker Tab */}
             {activeTab === 'docker' && (
-              <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <Card className="p-6">
-                  <div className="flex items-center gap-3 mb-6">
-                    <div className="p-3 rounded-xl bg-blue-500/10">
-                      <Container className="h-6 w-6 text-blue-500" />
-                    </div>
-                    <div>
-                      <h2 className="text-xl font-semibold">Docker Network</h2>
-                      <p className="text-sm text-muted-foreground">Container orchestration settings</p>
-                    </div>
-                  </div>
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Network Bridge</label>
-                      <Input value="docklift_network" disabled className="bg-secondary/50 font-mono" />
-                      <p className="text-xs text-muted-foreground">
-                        All application containers are attached to this bridge network to allow internal communication.
-                      </p>
-                    </div>
-                  </div>
-                </Card>
-              </div>
+              <Panel title="Docker network" description="Container networking used by every application.">
+                <dl className="divide-y divide-border">
+                  <DefRow
+                    label="Network bridge"
+                    help="All application containers are attached to this bridge network to allow internal communication."
+                  >
+                    <span className="font-mono text-[13px]">docklift_network</span>
+                  </DefRow>
+                </dl>
+              </Panel>
             )}
 
             {/* Domain Tab — same layout/copy as project Domain (guide + card + activity) */}
             {activeTab === 'domain' && (
-              <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <>
                 <DnsGuideCard serverIP={serverIP} />
 
-                <Card className="border-border/50 p-4 sm:p-6">
-                  <label className="flex items-center gap-2 text-sm font-medium">
-                    <Mail className="h-4 w-4 text-muted-foreground" />
-                    Let&apos;s Encrypt / ACME email
-                    <span className="text-xs font-normal text-muted-foreground">(optional)</span>
-                  </label>
-                  <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-                    <Input
-                      type="email"
-                      value={acmeEmail}
-                      onChange={(e) => setAcmeEmail(e.target.value)}
-                      placeholder="admin@example.com"
-                      className="flex-1"
-                    />
+                <Panel
+                  title="Certificate email"
+                  description="Let's Encrypt / ACME account email. Optional."
+                >
+                  <PanelBody>
+                    <Field
+                      label="Email"
+                      help="Optional. Used for certificate expiry notices. If empty, Docklift uses your admin account email."
+                    >
+                      <Input
+                        type="email"
+                        value={acmeEmail}
+                        onChange={(e) => setAcmeEmail(e.target.value)}
+                        placeholder="admin@example.com"
+                      />
+                    </Field>
+                  </PanelBody>
+                  <PanelFooter>
                     <Button
                       type="button"
                       variant="outline"
                       onClick={() => void handleSaveAcmeEmail()}
                       disabled={savingAcmeEmail || !acmeEmail.includes("@")}
                     >
-                      {savingAcmeEmail && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                      {savingAcmeEmail && <Loader2 className="animate-spin" />}
                       Save
                     </Button>
-                  </div>
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    Optional. Used for certificate expiry notices. If empty, Docklift uses your admin account email.
-                  </p>
-                </Card>
+                  </PanelFooter>
+                </Panel>
 
-                <div className="space-y-3">
-                  <div>
-                    <h3 className="flex items-center gap-2 text-lg font-semibold tracking-tight sm:text-xl">
-                      <Globe className="h-5 w-5 text-muted-foreground" />
-                      Panel domain
-                    </h3>
-                    <p className="mt-1 text-xs text-muted-foreground sm:text-sm">
-                      Maps a hostname to this Docklift dashboard, wires the reverse proxy, and
-                      requests a certificate.
-                    </p>
-                  </div>
-
-                  {loadingDomains ? (
-                    <div className="flex justify-center p-8">
-                      <Loader2 className="h-8 w-8 animate-spin text-brand" />
+                {loadingDomains ? (
+                  <Panel title="Panel domain" description="Maps a hostname to this Docklift dashboard, wires the reverse proxy, and requests a certificate.">
+                    <div className="flex justify-center py-14">
+                      <Loader2 className="size-5 animate-spin text-subtle" />
                     </div>
-                  ) : (
-                    <PanelDomainCard
-                      domains={domains}
-                      serverIP={serverIP}
-                      onUpdate={() => fetchDomains({ silent: true })}
-                    />
-                  )}
-                </div>
-              </div>
+                  </Panel>
+                ) : (
+                  <PanelDomainCard
+                    domains={domains}
+                    serverIP={serverIP}
+                    onUpdate={() => fetchDomains({ silent: true })}
+                  />
+                )}
+              </>
             )}
 
             {/* Backup Tab */}
             {activeTab === 'backup' && (
-              <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <Card className="p-4 sm:p-6 border-emerald-500/20">
-                  <div className="flex items-center gap-3 mb-6">
-                    <div className="p-2 sm:p-3 rounded-xl bg-emerald-500/10 shrink-0">
-                      <Archive className="h-5 w-5 sm:h-6 sm:w-6 text-emerald-500" />
-                    </div>
-                    <div className="min-w-0">
-                      <h2 className="text-lg sm:text-xl font-semibold">Create Backup</h2>
-                      <p className="text-xs sm:text-sm text-muted-foreground">Create a full system backup with all your data</p>
-                    </div>
-                  </div>
+              <>
+                <Panel title="Create backup" description="A full system backup with all your data, saved on this server.">
+                  <PanelBody>
+                    <div className="space-y-5">
+                      <Field
+                        label="Name"
+                        optional
+                        help={
+                          <>
+                            Output:{" "}
+                            <span className="font-mono text-foreground">
+                              {backupName.trim() ? `${backupName.trim().replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 50)}` : 'docklift'}-backup-[timestamp].zip
+                            </span>
+                          </>
+                        }
+                      >
+                        <Input
+                          placeholder="e.g. before-migration, v1.0"
+                          value={backupName}
+                          onChange={(e) => setBackupName(e.target.value)}
+                          disabled={creatingBackup}
+                        />
+                      </Field>
 
-                  {/* Backup name input */}
-                  <div className="flex flex-col sm:flex-row gap-3 mb-6">
-                    <div className="flex-1">
-                      <Input
-                        placeholder="Backup name (optional) - e.g., before-migration, v1.0"
-                        value={backupName}
-                        onChange={(e) => setBackupName(e.target.value)}
-                        className="bg-secondary/30 h-11 border border-emerald-500/30 focus:border-emerald-500/60 focus:ring-1 focus:ring-emerald-500/20 transition-all"
-                        disabled={creatingBackup}
-                      />
-                      <p className="text-xs text-muted-foreground mt-1.5 ml-1">
-                        Output: <span className="font-mono text-emerald-500">{backupName.trim() ? `${backupName.trim().replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 50)}` : 'docklift'}-backup-[timestamp].zip</span>
-                      </p>
+                      <div className="text-[13px] leading-5">
+                        <p className="font-medium">Backups include</p>
+                        <ul className="mt-1 list-disc space-y-0.5 pl-5 text-muted-foreground marker:text-subtle">
+                          <li>Database (projects, deployments, users, settings, env vars)</li>
+                          <li>All project files from <span className="font-mono text-xs">/deployments/</span></li>
+                          <li>Nginx configurations</li>
+                          <li>GitHub App key (if configured)</li>
+                        </ul>
+                      </div>
+
+                      <Callout tone="info" title="Migration tip">
+                        If you use a <span className="font-medium text-foreground">domain name</span> (e.g.
+                        docklift.yourdomain.com) instead of an IP address for your GitHub App webhook URL,
+                        migrating to a new server becomes seamless — just update DNS and restore. No need to
+                        reconfigure the GitHub App.
+                      </Callout>
                     </div>
-                    <Button
-                      onClick={handleCreateBackup}
-                      disabled={creatingBackup}
-                      className="bg-emerald-600 hover:bg-emerald-700 h-11 px-6 shrink-0"
-                    >
-                      {creatingBackup ? (
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      ) : (
-                        <Archive className="h-4 w-4 mr-2" />
-                      )}
-                      Create Backup
+                  </PanelBody>
+                  <PanelFooter>
+                    <Button onClick={handleCreateBackup} disabled={creatingBackup}>
+                      {creatingBackup && <Loader2 className="animate-spin" />}
+                      Create backup
                     </Button>
-                  </div>
-
-                  {/* Backup includes info */}
-                  <div className="p-3 rounded-lg bg-secondary/30 border border-border/50 text-sm">
-                    <p className="font-medium mb-2">Backups include:</p>
-                    <ul className="list-disc list-inside text-muted-foreground space-y-1">
-                      <li>Database (projects, deployments, users, settings, env vars)</li>
-                      <li>All project files from /deployments/</li>
-                      <li>Nginx configurations</li>
-                      <li>GitHub App key (if configured)</li>
-                    </ul>
-                  </div>
-
-                  <div className="mt-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-sm">
-                    <p className="font-medium text-amber-500 mb-1">Migration Tip</p>
-                    <p className="text-muted-foreground text-xs">
-                      If you use a <span className="text-foreground font-medium">domain name</span> (e.g., docklift.yourdomain.com)
-                      instead of IP address for your GitHub App webhook URL, migrating to a new server becomes seamless -
-                      just update DNS and restore. No need to reconfigure the GitHub App.
-                    </p>
-                  </div>
-                </Card>
+                  </PanelFooter>
+                </Panel>
 
                 {/* Server Backups List */}
-                <Card className="p-4 sm:p-6 border-emerald-500/10">
-                  <div className="flex items-center gap-3 mb-4">
-                    <HardDrive className="h-5 w-5 text-emerald-500" />
-                    <h3 className="font-semibold">Server Backups</h3>
-                  </div>
-
+                <Panel
+                  title="Server backups"
+                  description="Backups stored on this server."
+                  meta={!loadingBackups && backups.length > 0 ? backups.length : undefined}
+                >
                   {loadingBackups ? (
-                    <div className="flex justify-center p-8">
-                      <Loader2 className="h-8 w-8 animate-spin text-emerald-500" />
+                    <div className="flex justify-center py-14">
+                      <Loader2 className="size-5 animate-spin text-subtle" />
                     </div>
                   ) : backups.length > 0 ? (
-                    <div className="rounded-xl border border-border/50 overflow-hidden">
-                      <table className="w-full text-left text-sm">
-                        <thead className="bg-secondary/50 font-medium text-muted-foreground">
-                          <tr>
-                            <th className="px-4 py-3">Backup</th>
-                            <th className="px-4 py-3 hidden sm:table-cell">Size</th>
-                            <th className="px-4 py-3 hidden md:table-cell">Created</th>
-                            <th className="px-4 py-3 text-right">Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-border/50">
-                          {backups.map((backup) => (
-                            <tr key={backup.filename} className="hover:bg-secondary/20">
-                              <td className="px-4 py-3">
-                                <span className="font-medium font-mono text-xs block truncate max-w-[200px]">
-                                  {backup.filename}
-                                </span>
-                                <span className="text-xs text-muted-foreground sm:hidden">
-                                  {formatBytes(backup.size)}
-                                </span>
-                              </td>
-                              <td className="px-4 py-3 text-muted-foreground hidden sm:table-cell">
-                                {formatBytes(backup.size)}
-                              </td>
-                              <td className="px-4 py-3 text-muted-foreground hidden md:table-cell">
-                                {new Date(backup.created_at).toLocaleString()}
-                              </td>
-                              <td className="px-4 py-3 text-right space-x-1">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="text-emerald-500 hover:text-emerald-600 hover:bg-emerald-500/10"
-                                  onClick={() => handleDownloadBackup(backup.filename)}
-                                  title="Download"
-                                >
-                                  <Download className="h-4 w-4" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="text-red-500 hover:text-red-600 hover:bg-red-500/10"
-                                  onClick={() => {
-                                    setBackupToDelete(backup.filename);
-                                    setShowDeleteBackupConfirm(true);
-                                  }}
-                                  title="Delete"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                    <FileTable
+                      nameHead="Backup"
+                      dateHead="Created"
+                      rows={backups}
+                      formatBytes={formatBytes}
+                      renderActions={(backup) => (
+                        <>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="text-subtle"
+                            onClick={() => handleDownloadBackup(backup.filename)}
+                            title="Download"
+                          >
+                            <Download />
+                            <span className="sr-only">Download</span>
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="text-subtle hover:text-danger"
+                            onClick={() => {
+                              setBackupToDelete(backup.filename);
+                              setShowDeleteBackupConfirm(true);
+                            }}
+                            title="Delete"
+                          >
+                            <Trash2 />
+                            <span className="sr-only">Delete</span>
+                          </Button>
+                        </>
+                      )}
+                    />
                   ) : (
-                    <div className="rounded-xl border border-border/50 overflow-hidden">
-                      <div className="p-6 text-center bg-secondary/20">
-                        <Archive className="h-8 w-8 text-muted-foreground/50 mx-auto mb-2" />
-                        <p className="text-muted-foreground text-sm">No backups yet. Create your first backup above.</p>
-                      </div>
-                    </div>
+                    <EmptyState title="No backups yet" line="Create your first backup above." />
                   )}
-                </Card>
-              </div>
+                </Panel>
+              </>
             )}
 
             {/* Restore Tab */}
             {activeTab === 'restore' && (
-              <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <>
                 {/* Warning Banner */}
-                <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20">
-                  <div className="flex items-start gap-3">
-                    <AlertTriangle className="h-5 w-5 text-red-500 mt-0.5 shrink-0" />
-                    <div>
-                      <p className="font-semibold text-red-500">Warning: Restore replaces all data</p>
-                      <p className="text-sm text-muted-foreground mt-1">Restoring from a backup will replace all current projects, deployments, settings, users, and environment variables.</p>
-                    </div>
-                  </div>
-                </div>
+                <Callout tone="danger" title="Restore replaces all data">
+                  Restoring from a backup will replace all current projects, deployments, settings,
+                  users, and environment variables.
+                </Callout>
 
                 {/* Upload and Restore */}
-                <Card className="p-4 sm:p-6 border-amber-500/20">
-                  <div className="flex items-center gap-3 mb-6">
-                    <div className="p-2 sm:p-3 rounded-xl bg-amber-500/10 shrink-0">
-                      <Upload className="h-5 w-5 sm:h-6 sm:w-6 text-amber-500" />
-                    </div>
-                    <div className="min-w-0">
-                      <h2 className="text-lg sm:text-xl font-semibold">Restore from File</h2>
-                      <p className="text-xs sm:text-sm text-muted-foreground">Upload a backup file from your computer</p>
-                    </div>
-                  </div>
-
-                  <div
-                    className={`p-6 rounded-lg border-2 border-dashed transition-all ${
-                      isDragging
-                        ? 'border-amber-500 bg-amber-500/10 scale-[1.02]'
-                        : 'border-amber-500/30 bg-amber-500/5'
-                    }`}
-                    onDragOver={handleDragOver}
-                    onDragLeave={handleDragLeave}
-                    onDrop={handleDrop}
-                  >
-                    <div className="flex flex-col items-center gap-4 text-center">
-                      <div className={`p-4 rounded-full transition-all ${isDragging ? 'bg-amber-500/20 scale-110' : 'bg-amber-500/10'}`}>
-                        <FileUp className={`h-8 w-8 text-amber-500 ${isDragging ? 'animate-bounce' : ''}`} />
+                <Panel title="Restore from file" description="Upload a backup file from your computer.">
+                  <PanelBody>
+                    <div className="space-y-5">
+                      <div
+                        className={cn(
+                          'flex flex-col items-center gap-3 rounded-md border border-dashed px-4 py-8 text-center transition-colors duration-150',
+                          isDragging ? 'border-brand bg-brand/5' : 'border-input',
+                        )}
+                        onDragOver={handleDragOver}
+                        onDragLeave={handleDragLeave}
+                        onDrop={handleDrop}
+                      >
+                        <FileUp className={cn('size-5', isDragging ? 'text-brand' : 'text-subtle')} />
+                        <div>
+                          <p className="text-sm font-medium">
+                            {isDragging ? 'Drop your backup file here' : 'Drag and drop or select a backup file'}
+                          </p>
+                          <p className="mt-0.5 text-[13px] text-muted-foreground">
+                            {isDragging ? 'Release to upload' : 'Select a .zip backup file from your computer'}
+                          </p>
+                        </div>
+                        <label className="cursor-pointer">
+                          <input
+                            type="file"
+                            accept=".zip"
+                            onChange={handleUploadFileSelect}
+                            className="hidden"
+                            disabled={uploadingBackup || restoringBackup}
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            disabled={uploadingBackup || restoringBackup}
+                            asChild
+                          >
+                            <span>
+                              {uploadingBackup ? (
+                                <Loader2 className="animate-spin" />
+                              ) : (
+                                <Upload className="text-subtle" />
+                              )}
+                              Select backup file
+                            </span>
+                          </Button>
+                        </label>
                       </div>
-                      <div>
-                        <p className="font-medium">
-                          {isDragging ? 'Drop your backup file here' : 'Drag & drop or select a backup file'}
-                        </p>
-                        <p className="text-sm text-muted-foreground mt-1">
-                          {isDragging ? 'Release to upload' : 'Select a .zip backup file from your computer'}
-                        </p>
-                      </div>
-                      <label className="cursor-pointer">
-                        <input
-                          type="file"
-                          accept=".zip"
-                          onChange={handleUploadFileSelect}
-                          className="hidden"
-                          disabled={uploadingBackup || restoringBackup}
-                        />
-                        <Button
-                          type="button"
-                          className="bg-amber-600 hover:bg-amber-700"
-                          disabled={uploadingBackup || restoringBackup}
-                          asChild
-                        >
-                          <span>
-                            {uploadingBackup ? (
-                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                            ) : (
-                              <Upload className="h-4 w-4 mr-2" />
-                            )}
-                            Select Backup File
-                          </span>
-                        </Button>
-                      </label>
-                    </div>
-                  </div>
 
-                  <div className="mt-4 p-3 rounded-lg bg-secondary/30 border border-border/50 text-sm">
-                    <p className="font-medium mb-2">After restore:</p>
-                    <ul className="list-disc list-inside text-muted-foreground space-y-1 text-xs">
-                      <li>Sign in with credentials from the backup</li>
-                      <li>Redeploy each project (containers need rebuilding)</li>
-                      <li>Update DNS if server IP changed</li>
-                      <li>GitHub App works automatically if using domain-based webhook URL</li>
-                    </ul>
-                  </div>
-                </Card>
+                      <div className="text-[13px] leading-5">
+                        <p className="font-medium">After restore</p>
+                        <ul className="mt-1 list-disc space-y-0.5 pl-5 text-muted-foreground marker:text-subtle">
+                          <li>Sign in with credentials from the backup</li>
+                          <li>Redeploy each project (containers need rebuilding)</li>
+                          <li>Update DNS if the server IP changed</li>
+                          <li>The GitHub App works automatically if it uses a domain-based webhook URL</li>
+                        </ul>
+                      </div>
+                    </div>
+                  </PanelBody>
+                </Panel>
 
                 {/* Uploaded Files List */}
-                <Card className="p-4 sm:p-6 border-amber-500/10">
-                  <div className="flex items-center gap-3 mb-4">
-                    <FileUp className="h-5 w-5 text-amber-500" />
-                    <h3 className="font-semibold">Uploaded Restore Files</h3>
-                  </div>
-
+                <Panel
+                  title="Uploaded restore files"
+                  description="Backup files uploaded to this server."
+                  meta={!loadingUploads && uploadedFiles.length > 0 ? uploadedFiles.length : undefined}
+                >
                   {loadingUploads ? (
-                    <div className="flex justify-center p-8">
-                      <Loader2 className="h-8 w-8 animate-spin text-amber-500" />
+                    <div className="flex justify-center py-14">
+                      <Loader2 className="size-5 animate-spin text-subtle" />
                     </div>
                   ) : uploadedFiles.length > 0 ? (
-                    <div className="rounded-xl border border-border/50 overflow-hidden">
-                      <table className="w-full text-left text-sm">
-                        <thead className="bg-secondary/50 font-medium text-muted-foreground">
-                          <tr>
-                            <th className="px-4 py-3">File</th>
-                            <th className="px-4 py-3 hidden sm:table-cell">Size</th>
-                            <th className="px-4 py-3 hidden md:table-cell">Uploaded</th>
-                            <th className="px-4 py-3 text-right">Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-border/50">
-                          {uploadedFiles.map((file) => {
-                            const isRestored = file.filename.includes('.restored-');
-                            return (
-                            <tr key={file.filename} className="hover:bg-secondary/20">
-                              <td className="px-4 py-3">
-                                <div className="flex items-center gap-2">
-                                  <span className="font-medium font-mono text-xs block truncate max-w-[180px]">
-                                    {file.filename}
-                                  </span>
-                                  {isRestored && (
-                                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 whitespace-nowrap">
-                                      Restored
-                                    </span>
-                                  )}
-                                </div>
-                                <span className="text-xs text-muted-foreground sm:hidden">
-                                  {formatBytes(file.size)}
-                                </span>
-                              </td>
-                              <td className="px-4 py-3 text-muted-foreground hidden sm:table-cell">
-                                {formatBytes(file.size)}
-                              </td>
-                              <td className="px-4 py-3 text-muted-foreground hidden md:table-cell">
-                                {new Date(file.created_at).toLocaleString()}
-                              </td>
-                              <td className="px-4 py-3 text-right space-x-1">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="text-amber-500 hover:text-amber-600 hover:bg-amber-500/10"
-                                  onClick={() => {
-                                    setUploadToRestore(file.filename);
-                                    setShowRestoreUploadConfirm(true);
-                                  }}
-                                  title="Restore"
-                                  disabled={restoringBackup}
-                                >
-                                  <RotateCcw className="h-4 w-4" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="text-red-500 hover:text-red-600 hover:bg-red-500/10"
-                                  onClick={() => {
-                                    setUploadToDelete(file.filename);
-                                    setShowDeleteUploadConfirm(true);
-                                  }}
-                                  title="Delete"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </td>
-                            </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
+                    <FileTable
+                      nameHead="File"
+                      dateHead="Uploaded"
+                      rows={uploadedFiles}
+                      formatBytes={formatBytes}
+                      renderTag={(file) =>
+                        file.filename.includes('.restored-') ? (
+                          <span className="inline-flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+                            <span aria-hidden="true" className="size-1.5 rounded-full bg-ok" />
+                            Restored
+                          </span>
+                        ) : null
+                      }
+                      renderActions={(file) => (
+                        <>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="text-danger"
+                            onClick={() => {
+                              setUploadToRestore(file.filename);
+                              setShowRestoreUploadConfirm(true);
+                            }}
+                            title="Restore"
+                            disabled={restoringBackup}
+                          >
+                            <RotateCcw />
+                            <span className="max-sm:sr-only">Restore</span>
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="text-subtle hover:text-danger"
+                            onClick={() => {
+                              setUploadToDelete(file.filename);
+                              setShowDeleteUploadConfirm(true);
+                            }}
+                            title="Delete"
+                          >
+                            <Trash2 />
+                            <span className="sr-only">Delete</span>
+                          </Button>
+                        </>
+                      )}
+                    />
                   ) : (
-                    <div className="rounded-xl border border-border/50 overflow-hidden">
-                      <div className="p-6 text-center bg-secondary/20">
-                        <FileUp className="h-8 w-8 text-muted-foreground/50 mx-auto mb-2" />
-                        <p className="text-muted-foreground text-sm">No uploaded files. Upload a backup file above to restore.</p>
-                      </div>
-                    </div>
+                    <EmptyState
+                      title="No uploaded files"
+                      line="Upload a backup file above to restore."
+                    />
                   )}
-                </Card>
-
-              </div>
+                </Panel>
+              </>
             )}
 
         </div>
@@ -1391,18 +1182,16 @@ function SettingsContent() {
 
       {/* Delete Backup Confirmation Dialog */}
       <Dialog open={showDeleteBackupConfirm} onOpenChange={setShowDeleteBackupConfirm}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-red-500">
-              <AlertTriangle className="h-5 w-5" />
-              Delete Backup
-            </DialogTitle>
-            <DialogDescription className="pt-2">
-              Are you sure you want to delete <span className="font-mono font-bold text-foreground">{backupToDelete}</span>?
-              This action cannot be undone.
+            <DialogTitle>Delete backup</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete{" "}
+              <span className="font-mono text-foreground break-all">{backupToDelete}</span>? This
+              action cannot be undone.
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter className="gap-2 sm:gap-0">
+          <DialogFooter>
             <Button variant="outline" onClick={() => setShowDeleteBackupConfirm(false)}>
               Cancel
             </Button>
@@ -1411,12 +1200,8 @@ function SettingsContent() {
               onClick={handleDeleteBackup}
               disabled={deletingBackup}
             >
-              {deletingBackup ? (
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              ) : (
-                <Trash2 className="h-4 w-4 mr-2" />
-              )}
-              Delete Backup
+              {deletingBackup && <Loader2 className="animate-spin" />}
+              Delete backup
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1424,20 +1209,17 @@ function SettingsContent() {
 
       {/* Upload Restore Confirmation Dialog */}
       <Dialog open={showUploadRestoreConfirm} onOpenChange={setShowUploadRestoreConfirm}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-amber-500">
-              <AlertTriangle className="h-5 w-5" />
-              Restore from Uploaded Backup
-            </DialogTitle>
-            <DialogDescription className="pt-2">
-              <span className="font-bold text-red-500 block mb-2">Warning: This will replace all current data!</span>
-              Are you sure you want to restore from <span className="font-mono font-bold text-foreground">{selectedUploadFile?.name}</span>?
+            <DialogTitle>Restore from uploaded backup</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to restore from{" "}
+              <span className="font-mono text-foreground break-all">{selectedUploadFile?.name}</span>?
               All current projects, deployments, and configurations will be replaced.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-2 py-2">
-            <label className="text-sm font-medium">Confirm with account password</label>
+          <Callout tone="danger">This will replace all current data.</Callout>
+          <Field label="Confirm with account password">
             <Input
               type="password"
               value={restorePassword}
@@ -1445,8 +1227,8 @@ function SettingsContent() {
               placeholder="Your DockLift password"
               autoComplete="current-password"
             />
-          </div>
-          <DialogFooter className="gap-2 sm:gap-0">
+          </Field>
+          <DialogFooter>
             <Button variant="outline" onClick={() => {
               setShowUploadRestoreConfirm(false);
               setSelectedUploadFile(null);
@@ -1455,16 +1237,12 @@ function SettingsContent() {
               Cancel
             </Button>
             <Button
+              variant="destructive"
               onClick={handleUploadRestore}
               disabled={uploadingBackup || !restorePassword.trim()}
-              className="bg-amber-600 hover:bg-amber-700"
             >
-              {uploadingBackup ? (
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              ) : (
-                <RotateCcw className="h-4 w-4 mr-2" />
-              )}
-              Restore Backup
+              {uploadingBackup && <Loader2 className="animate-spin" />}
+              Restore backup
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1472,18 +1250,16 @@ function SettingsContent() {
 
       {/* Delete Uploaded File Confirmation Dialog */}
       <Dialog open={showDeleteUploadConfirm} onOpenChange={setShowDeleteUploadConfirm}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-red-500">
-              <AlertTriangle className="h-5 w-5" />
-              Delete Uploaded File
-            </DialogTitle>
-            <DialogDescription className="pt-2">
-              Are you sure you want to delete <span className="font-mono font-bold text-foreground">{uploadToDelete}</span>?
-              This action cannot be undone.
+            <DialogTitle>Delete uploaded file</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete{" "}
+              <span className="font-mono text-foreground break-all">{uploadToDelete}</span>? This
+              action cannot be undone.
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter className="gap-2 sm:gap-0">
+          <DialogFooter>
             <Button variant="outline" onClick={() => setShowDeleteUploadConfirm(false)}>
               Cancel
             </Button>
@@ -1492,12 +1268,8 @@ function SettingsContent() {
               onClick={handleDeleteUpload}
               disabled={deletingUpload}
             >
-              {deletingUpload ? (
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              ) : (
-                <Trash2 className="h-4 w-4 mr-2" />
-              )}
-              Delete File
+              {deletingUpload && <Loader2 className="animate-spin" />}
+              Delete file
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1505,20 +1277,17 @@ function SettingsContent() {
 
       {/* Restore from Uploaded File Confirmation Dialog */}
       <Dialog open={showRestoreUploadConfirm} onOpenChange={setShowRestoreUploadConfirm}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-amber-500">
-              <AlertTriangle className="h-5 w-5" />
-              Restore from Uploaded File
-            </DialogTitle>
-            <DialogDescription className="pt-2">
-              <span className="font-bold text-red-500 block mb-2">Warning: This will replace all current data!</span>
-              Are you sure you want to restore from <span className="font-mono font-bold text-foreground">{uploadToRestore}</span>?
-              All current projects, deployments, and configurations will be replaced.
+            <DialogTitle>Restore from uploaded file</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to restore from{" "}
+              <span className="font-mono text-foreground break-all">{uploadToRestore}</span>? All
+              current projects, deployments, and configurations will be replaced.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-2 py-2">
-            <label className="text-sm font-medium">Confirm with account password</label>
+          <Callout tone="danger">This will replace all current data.</Callout>
+          <Field label="Confirm with account password">
             <Input
               type="password"
               value={restorePassword}
@@ -1526,8 +1295,8 @@ function SettingsContent() {
               placeholder="Your DockLift password"
               autoComplete="current-password"
             />
-          </div>
-          <DialogFooter className="gap-2 sm:gap-0">
+          </Field>
+          <DialogFooter>
             <Button variant="outline" onClick={() => {
               setShowRestoreUploadConfirm(false);
               setUploadToRestore(null);
@@ -1536,16 +1305,12 @@ function SettingsContent() {
               Cancel
             </Button>
             <Button
+              variant="destructive"
               onClick={handleRestoreFromUpload}
               disabled={restoringBackup || !restorePassword.trim()}
-              className="bg-amber-600 hover:bg-amber-700"
             >
-              {restoringBackup ? (
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              ) : (
-                <RotateCcw className="h-4 w-4 mr-2" />
-              )}
-              Restore Backup
+              {restoringBackup && <Loader2 className="animate-spin" />}
+              Restore backup
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1553,25 +1318,21 @@ function SettingsContent() {
 
       {/* Backup Progress Dialog */}
       <Dialog open={showBackupProgress} onOpenChange={(open) => !creatingBackup && setShowBackupProgress(open)}>
-        <DialogContent className="sm:max-w-2xl max-h-[80vh]">
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               {creatingBackup ? (
-                <Loader2 className="h-5 w-5 animate-spin text-emerald-500" />
+                <Loader2 className="size-4 animate-spin text-subtle" />
               ) : (
-                <Check className="h-5 w-5 text-emerald-500" />
+                <Check className="size-4 text-ok" />
               )}
-              {creatingBackup ? 'Creating Backup...' : 'Backup Complete'}
+              {creatingBackup ? 'Creating backup…' : 'Backup complete'}
             </DialogTitle>
           </DialogHeader>
-          <div className="bg-black/90 rounded-lg p-4 font-mono text-xs text-green-400 max-h-[400px] overflow-y-auto">
-            {backupProgress.map((line, i) => (
-              <div key={i} className="whitespace-pre-wrap">{line}</div>
-            ))}
-          </div>
+          <LogBox lines={backupProgress} />
           {!creatingBackup && (
             <DialogFooter>
-              <Button onClick={() => setShowBackupProgress(false)}>Close</Button>
+              <Button variant="outline" onClick={() => setShowBackupProgress(false)}>Close</Button>
             </DialogFooter>
           )}
         </DialogContent>
@@ -1579,25 +1340,21 @@ function SettingsContent() {
 
       {/* Restore Progress Dialog */}
       <Dialog open={showRestoreProgress} onOpenChange={(open) => !(restoringBackup || uploadingBackup) && setShowRestoreProgress(open)}>
-        <DialogContent className="sm:max-w-2xl max-h-[80vh]">
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               {(restoringBackup || uploadingBackup) ? (
-                <Loader2 className="h-5 w-5 animate-spin text-amber-500" />
+                <Loader2 className="size-4 animate-spin text-subtle" />
               ) : (
-                <Check className="h-5 w-5 text-emerald-500" />
+                <Check className="size-4 text-ok" />
               )}
-              {(restoringBackup || uploadingBackup) ? 'Restoring Backup...' : 'Restore Complete'}
+              {(restoringBackup || uploadingBackup) ? 'Restoring backup…' : 'Restore complete'}
             </DialogTitle>
           </DialogHeader>
-          <div className="bg-black/90 rounded-lg p-4 font-mono text-xs text-green-400 max-h-[400px] overflow-y-auto">
-            {restoreProgress.map((line, i) => (
-              <div key={i} className="whitespace-pre-wrap">{line}</div>
-            ))}
-          </div>
+          <LogBox lines={restoreProgress} />
           {!(restoringBackup || uploadingBackup) && (
             <DialogFooter>
-              <Button onClick={() => setShowRestoreProgress(false)}>Close</Button>
+              <Button variant="outline" onClick={() => setShowRestoreProgress(false)}>Close</Button>
             </DialogFooter>
           )}
         </DialogContent>
@@ -1611,10 +1368,252 @@ export default function SettingsPage() {
   return (
     <Suspense fallback={
       <div className="flex min-h-[60vh] items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-brand" />
+        <Loader2 className="size-5 animate-spin text-subtle" />
       </div>
     }>
       <SettingsContent />
     </Suspense>
+  );
+}
+
+/* ---------- presentational helpers (layout only, no state) ---------- */
+
+const TAB_DESCRIPTIONS: Record<string, string> = {
+  profile: "Your name, email and sign-in password for this Docklift account.",
+  github: "The GitHub App Docklift uses to list and deploy repositories.",
+  server: "Addresses and storage path of this Docklift installation.",
+  port: "Host ports Docklift assigns to new deployments.",
+  docker: "The Docker network application containers join.",
+  domain: "Serve the dashboard at a hostname with a Let's Encrypt certificate.",
+  backup: "Create, download and delete full backups of this server's Docklift data.",
+  restore: "Replace all Docklift data on this server with an uploaded backup.",
+};
+
+function Panel({
+  title,
+  description,
+  meta,
+  children,
+}: {
+  title: string;
+  description?: string;
+  meta?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <Card>
+      <div className="border-b border-border px-4 py-3 sm:px-5">
+        <h2 className="flex items-baseline gap-2 text-[15px] font-semibold leading-5">
+          {title}
+          {meta !== undefined && (
+            <span className="font-mono text-[13px] font-normal text-subtle tabular-nums">{meta}</span>
+          )}
+        </h2>
+        {description && (
+          <p className="mt-0.5 text-[13px] leading-5 text-muted-foreground">{description}</p>
+        )}
+      </div>
+      {children}
+    </Card>
+  );
+}
+
+function PanelBody({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="p-4 sm:p-5">
+      <div className="max-w-xl">{children}</div>
+    </div>
+  );
+}
+
+function PanelFooter({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col-reverse gap-2 border-t border-border px-4 py-3 sm:flex-row sm:items-center sm:justify-end sm:px-5">
+      {children}
+    </div>
+  );
+}
+
+function Field({
+  label,
+  help,
+  optional,
+  children,
+}: {
+  label: string;
+  help?: React.ReactNode;
+  optional?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="block space-y-1.5">
+      <span className="block text-[13px] font-medium leading-5">
+        {label}
+        {optional && <span className="ml-1.5 font-normal text-subtle">Optional</span>}
+      </span>
+      {children}
+      {help && <span className="block text-xs leading-[1.125rem] text-muted-foreground">{help}</span>}
+    </label>
+  );
+}
+
+function DefRow({
+  label,
+  help,
+  children,
+}: {
+  label: string;
+  help?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="grid gap-1 px-4 py-3 sm:grid-cols-[12rem_1fr] sm:gap-4 sm:px-5">
+      <dt className="text-[13px] leading-5 text-muted-foreground">{label}</dt>
+      <dd className="min-w-0 text-[13px] leading-5">
+        {children}
+        {help && <p className="mt-1 text-xs leading-[1.125rem] text-muted-foreground">{help}</p>}
+      </dd>
+    </div>
+  );
+}
+
+function CopyRow({
+  label,
+  value,
+  help,
+  onCopy,
+}: {
+  label: string;
+  value: string;
+  help: string;
+  onCopy: () => void;
+}) {
+  return (
+    <div className="grid gap-1 px-4 py-3 sm:grid-cols-[12rem_1fr] sm:gap-4 sm:px-5">
+      <dt className="text-[13px] leading-5 text-muted-foreground">{label}</dt>
+      <dd className="flex min-w-0 items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="font-mono text-[13px] leading-5 break-all text-foreground">{value}</p>
+          <p className="mt-1 text-xs leading-[1.125rem] text-muted-foreground">{help}</p>
+        </div>
+        <Button variant="ghost" size="icon" className="-my-1.5 shrink-0 text-subtle" onClick={onCopy}>
+          <Copy />
+          <span className="sr-only">Copy {label}</span>
+        </Button>
+      </dd>
+    </div>
+  );
+}
+
+function StatusDot({ tone, children }: { tone: "ok" | "none"; children: React.ReactNode }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 text-[13px] font-medium",
+        tone === "ok" ? "text-foreground" : "text-muted-foreground",
+      )}
+    >
+      <span
+        aria-hidden="true"
+        className={cn("size-2 rounded-full", tone === "ok" ? "bg-ok" : "bg-subtle")}
+      />
+      {children}
+    </span>
+  );
+}
+
+function Callout({
+  tone,
+  title,
+  children,
+}: {
+  tone: "info" | "warn" | "danger";
+  title?: string;
+  children: React.ReactNode;
+}) {
+  const border = { info: "border-info/40", warn: "border-warn/40", danger: "border-danger/40" }[tone];
+  return (
+    <div className={cn("rounded-md border bg-secondary/60 px-3 py-2.5 text-[13px] leading-5", border)}>
+      {title && (
+        <p className={cn("font-medium", tone === "danger" ? "text-danger" : "text-foreground")}>{title}</p>
+      )}
+      <div className={cn(title ? "mt-0.5 text-muted-foreground" : "text-foreground")}>{children}</div>
+    </div>
+  );
+}
+
+function EmptyState({ title, line }: { title: string; line: string }) {
+  return (
+    <div className="px-4 py-14 text-center">
+      <p className="text-[15px] font-semibold">{title}</p>
+      <p className="mx-auto mt-1 max-w-sm text-[13.5px] text-muted-foreground">{line}</p>
+    </div>
+  );
+}
+
+function FileTable({
+  nameHead,
+  dateHead,
+  rows,
+  formatBytes,
+  renderTag,
+  renderActions,
+}: {
+  nameHead: string;
+  dateHead: string;
+  rows: BackupInfo[];
+  formatBytes: (bytes: number) => string;
+  renderTag?: (row: BackupInfo) => React.ReactNode;
+  renderActions: (row: BackupInfo) => React.ReactNode;
+}) {
+  return (
+    <table className="w-full table-fixed text-left text-[13px]">
+      <thead>
+        <tr className="h-9 text-xs text-muted-foreground">
+          <th className="px-4 font-medium sm:pl-5">{nameHead}</th>
+          <th className="hidden w-28 px-3 font-medium sm:table-cell">Size</th>
+          <th className="hidden w-48 px-3 font-medium md:table-cell">{dateHead}</th>
+          <th className="w-28 px-4 text-right font-medium sm:w-36 sm:pr-5">
+            <span className="sr-only sm:not-sr-only">Actions</span>
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row) => (
+          <tr key={row.filename} className="h-11 border-t border-border transition-colors duration-150 hover:bg-secondary/50">
+            <td className="px-4 py-2 sm:pl-5">
+              <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-0.5">
+                <span className="min-w-0 font-mono text-[13px] text-foreground max-sm:break-all sm:truncate" title={row.filename}>
+                  {row.filename}
+                </span>
+                {renderTag?.(row)}
+              </div>
+              <span className="font-mono text-xs text-muted-foreground sm:hidden">
+                {formatBytes(row.size)}
+              </span>
+            </td>
+            <td className="hidden px-3 font-mono text-xs text-muted-foreground tabular-nums sm:table-cell">
+              {formatBytes(row.size)}
+            </td>
+            <td className="hidden px-3 text-[13px] text-muted-foreground md:table-cell">
+              {new Date(row.created_at).toLocaleString()}
+            </td>
+            <td className="px-4 sm:pr-5">
+              <div className="flex items-center justify-end gap-1">{renderActions(row)}</div>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function LogBox({ lines }: { lines: string[] }) {
+  return (
+    <div className="shell-scroll max-h-[400px] min-h-24 overflow-y-auto rounded-lg border border-border bg-[#0f1215] px-4 py-3 font-mono text-xs leading-5 text-white/85">
+      {lines.map((line, i) => (
+        <div key={i} className="whitespace-pre-wrap">{line}</div>
+      ))}
+    </div>
   );
 }

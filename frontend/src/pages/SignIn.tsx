@@ -5,7 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Container, Eye, EyeOff, Loader2, AlertCircle, LogIn } from "lucide-react";
+import { Container, Eye, EyeOff, Loader2, AlertCircle } from "lucide-react";
 import { API_URL } from "@/lib/utils";
 import { useAuth } from "@/components/AuthProvider";
 
@@ -51,51 +51,44 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-linear-to-br/srgb from-background via-background to-cyan-950/20 p-4">
-      <div className="w-full max-w-md">
-        {/* Logo */}
-        <div className="flex flex-col items-center mb-8">
-          <div className="relative mb-4">
-            <div className="absolute inset-0 bg-linear-to-br/srgb from-cyan-500 to-blue-600 rounded-2xl blur-xl opacity-50" />
-            <div className="relative bg-linear-to-br/srgb from-cyan-500 to-blue-600 p-4 rounded-2xl shadow-2xl">
-              <Container className="h-10 w-10 text-white" strokeWidth={2.5} />
-            </div>
-          </div>
-          <h1 className="text-4xl font-black tracking-tight bg-clip-text text-transparent bg-linear-to-r/srgb from-foreground to-foreground/70">
-            Docklift
-          </h1>
+    <div className="flex min-h-screen items-center justify-center bg-background px-4 pt-10 pb-[12vh]">
+      <div className="w-full max-w-[360px]">
+        <div className="mb-6 flex items-center justify-center gap-2">
+          <span className="flex size-7 items-center justify-center rounded-md bg-brand">
+            <Container className="size-4 text-brand-foreground" />
+          </span>
+          <span className="text-[15px] font-semibold text-foreground">Docklift</span>
         </div>
 
-        <Card className="p-8 border-border/50 shadow-2xl bg-card/80 backdrop-blur-xs">
-          <div className="mb-6">
-            <h2 className="text-2xl font-bold tracking-tight">Welcome back</h2>
-            <p className="text-sm text-muted-foreground mt-1">
+        <Card className="p-5 sm:p-6">
+          <div className="mb-5">
+            <h1 className="text-xl font-semibold leading-7 tracking-[-0.01em]">Sign in</h1>
+            <p className="mt-0.5 text-[13.5px] leading-5 text-muted-foreground">
               Sign in to access your dashboard.
             </p>
           </div>
 
           {error && (
-            <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 flex items-center gap-2 text-red-500 text-sm">
-              <AlertCircle className="h-4 w-4 shrink-0" />
+            <div className="mb-4 flex items-start gap-2 rounded-md border border-danger/40 bg-secondary/60 px-3 py-2.5 text-[13px] leading-5 text-foreground">
+              <AlertCircle className="mt-0.5 size-4 shrink-0 text-danger" />
               {error}
             </div>
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="text-sm font-medium mb-1.5 block">Email</label>
+              <label className="mb-1.5 block text-[13px] font-medium">Email</label>
               <Input
                 type="email"
                 value={formData.email}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                 placeholder="admin@example.com"
                 required
-                className="h-11"
               />
             </div>
 
             <div>
-              <label className="text-sm font-medium mb-1.5 block">Password</label>
+              <label className="mb-1.5 block text-[13px] font-medium">Password</label>
               <div className="relative">
                 <Input
                   type={showPassword ? "text" : "password"}
@@ -103,29 +96,26 @@ export default function LoginPage() {
                   onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                   placeholder="••••••••"
                   required
-                  className="h-11 pr-10"
+                  className="pr-10"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  className="absolute right-1 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-sm text-subtle transition-colors duration-150 hover:text-foreground pointer-coarse:size-9"
                 >
-                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                 </button>
               </div>
             </div>
 
             <Button
               type="submit"
+              size="lg"
               disabled={loading || !formData.email || !formData.password}
-              className="w-full h-11 bg-linear-to-r/srgb from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white font-bold gap-2"
+              className="w-full"
             >
-              {loading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <LogIn className="h-4 w-4" />
-              )}
-              Sign In
+              {loading && <Loader2 className="animate-spin" />}
+              Sign in
             </Button>
           </form>
         </Card>

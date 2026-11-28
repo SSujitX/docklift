@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { ChevronUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -28,16 +27,21 @@ export function ScrollToTop() {
   };
 
   return (
-    <div className={cn(
-      "fixed bottom-6 right-6 z-50 transition-all duration-300 transform",
-      isVisible ? "translate-y-0 opacity-100 pointer-events-auto" : "translate-y-10 opacity-0 pointer-events-none"
-    )}>
+    <div
+      className={cn(
+        "fixed bottom-4 right-4 z-50 transition-[opacity,translate] duration-150 motion-reduce:transition-none sm:bottom-6 sm:right-6",
+        isVisible ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-1 opacity-0",
+      )}
+    >
       <Button
         onClick={scrollToTop}
+        variant="outline"
         size="icon"
-        className="h-12 w-12 rounded-full shadow-2xl bg-zinc-900 dark:bg-zinc-100 hover:bg-zinc-800 dark:hover:bg-zinc-200 border border-white/20 dark:border-zinc-300 flex items-center justify-center group transition-all"
+        title="Scroll to top"
+        tabIndex={isVisible ? undefined : -1}
+        className="size-9 text-muted-foreground shadow-popover hover:text-foreground pointer-coarse:size-10"
       >
-        <ChevronUp className="h-6 w-6 text-white dark:text-zinc-900 transition-transform group-hover:-translate-y-1" />
+        <ChevronUp className="size-4" />
       </Button>
     </div>
   );

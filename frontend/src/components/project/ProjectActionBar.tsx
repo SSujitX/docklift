@@ -2,31 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import {
-  Loader2,
-  Play,
-  RotateCw,
-  Square,
-  Trash2,
-  XCircle,
-} from "lucide-react";
-
-const ACTION =
-  "h-10 gap-1.5 rounded-xl px-3 text-xs sm:h-9 sm:text-sm font-semibold shadow-none border transition-colors";
-
-const ACTION_PRIMARY =
-  `${ACTION} bg-brand text-brand-foreground border-transparent hover:bg-brand hover:brightness-110 hover:text-brand-foreground`;
-
-const ACTION_SECONDARY =
-  `${ACTION} bg-background text-foreground border-border/60 hover:bg-secondary hover:text-foreground`;
-
-/** Quiet danger (Delete) — visible border + tint, not ghost-grey. */
-const ACTION_DANGER =
-  `${ACTION} border-destructive/45 bg-destructive/10 text-destructive hover:border-destructive/60 hover:text-destructive`;
-
-/** Solid danger (Cancel Build) — must read clearly while a build is running. */
-const ACTION_DANGER_SOLID =
-  `${ACTION} border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/90 hover:text-destructive-foreground`;
+import { Loader2 } from "lucide-react";
 
 export type ProjectLifecycleStatus =
   | "running"
@@ -48,6 +24,10 @@ interface ProjectActionBarProps {
   /** Optional tooltip / title on the action group. */
   title?: string;
   className?: string;
+}
+
+function Spinner() {
+  return <Loader2 className="animate-spin" />;
 }
 
 export function ProjectActionBar({
@@ -72,24 +52,11 @@ export function ProjectActionBar({
     <div
       className={cn(
         isHeader
-          ? "flex w-full flex-col items-stretch gap-2 sm:items-end md:max-w-md"
+          ? "flex flex-col items-start gap-1.5 md:items-end"
           : "flex items-center justify-center",
         className,
       )}
     >
-      {isHeader && (
-        <p className="text-left text-[11px] leading-snug text-muted-foreground sm:max-w-sm sm:text-right">
-          {multiService ? (
-            <>
-              Redeploy, restart, and stop apply to{" "}
-              <span className="font-medium text-foreground/80">every service</span>
-              {" "}in this project — not only the one selected in Workspace.
-            </>
-          ) : (
-            <>Redeploy, restart, and stop control this project’s containers.</>
-          )}
-        </p>
-      )}
       <div
         role="group"
         title={groupTitle}
@@ -99,113 +66,78 @@ export function ProjectActionBar({
             : "Project actions"
         }
         className={cn(
-          isHeader
-            ? "grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:justify-end"
-            : "flex w-full flex-wrap items-center justify-center gap-2",
+          "flex flex-wrap items-center gap-2",
+          isHeader ? "justify-start md:justify-end" : "justify-center",
         )}
       >
         {isLive ? (
           <>
             <Button
               type="button"
-              variant="bare"
-              size="sm"
               onClick={() => onAction("redeploy")}
               disabled={actionLoading}
-              className={cn(ACTION_PRIMARY, "w-full sm:w-auto")}
             >
-              {currentAction === "redeploy" ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Play className="h-3.5 w-3.5 fill-current" />
-              )}
+              {currentAction === "redeploy" && <Spinner />}
               Redeploy
             </Button>
             <Button
               type="button"
-              variant="bare"
-              size="sm"
+              variant="outline"
               onClick={() => onAction("restart")}
               disabled={actionLoading}
-              className={cn(ACTION_SECONDARY, "w-full sm:w-auto")}
             >
-              {currentAction === "restart" ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <RotateCw className="h-3.5 w-3.5" />
-              )}
+              {currentAction === "restart" && <Spinner />}
               Restart
             </Button>
             <Button
               type="button"
-              variant="bare"
-              size="sm"
+              variant="outline"
               onClick={() => onAction("stop")}
               disabled={actionLoading}
-              className={cn(ACTION_SECONDARY, "w-full sm:w-auto")}
             >
-              {currentAction === "stop" ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Square className="h-3.5 w-3.5 fill-current" />
-              )}
+              {currentAction === "stop" && <Spinner />}
               Stop
             </Button>
           </>
         ) : status === "building" ? (
           <Button
             type="button"
-            variant="bare"
-            size="sm"
+            variant="outline"
+            className="text-danger"
             onClick={() => onAction("cancel")}
             disabled={currentAction === "cancel"}
-            className={cn(
-              ACTION_DANGER_SOLID,
-              "col-span-2 w-full sm:col-span-1 sm:w-auto",
-            )}
           >
-            {currentAction === "cancel" ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <XCircle className="h-3.5 w-3.5" />
-            )}
-            Cancel Build
+            {currentAction === "cancel" && <Spinner />}
+            Cancel build
           </Button>
         ) : (
           <Button
             type="button"
-            variant="bare"
-            size="sm"
             onClick={() => onAction("deploy")}
             disabled={actionLoading}
-            className={cn(ACTION_PRIMARY, "w-full sm:w-auto")}
           >
-            {currentAction === "deploy" ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Play className="h-3.5 w-3.5 fill-current" />
-            )}
-            Deploy Now
+            {currentAction === "deploy" && <Spinner />}
+            Deploy
           </Button>
         )}
 
         <Button
           type="button"
-          variant="bare"
-          size="sm"
+          variant="outline"
+          className="text-danger"
           onClick={() => onAction("delete")}
           disabled={actionLoading}
-          className={cn(ACTION_DANGER, "w-full sm:w-auto")}
           title="Delete project"
         >
-          {currentAction === "delete" ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Trash2 className="h-3.5 w-3.5" />
-          )}
+          {currentAction === "delete" && <Spinner />}
           Delete
         </Button>
       </div>
+      {isHeader && multiService && (
+        <p className="text-xs text-muted-foreground">
+          Applies to every service in this project.
+        </p>
+      )}
     </div>
   );
 }

@@ -14,7 +14,6 @@ import {
   Trash2,
   ArrowDown,
   Loader2,
-  ScrollText,
   Maximize2,
   Minimize2,
   Copy,
@@ -57,12 +56,34 @@ function parseTimestamp(line: string): { timestamp: string | null; content: stri
   return { timestamp: null, content: line };
 }
 
-// Color mapping for ANSI codes
+// The log viewer is a fixed dark surface in both themes, so its colours cannot
+// come from the theme tokens (which are dark-on-light in light mode). This is
+// the single place they are defined; levels mirror ok / warn / danger / info.
+const LOG = {
+  surface: "#0f1215",
+  toolbar: "#151a1e",
+  border: "#232a30",
+  borderStrong: "#2f373e",
+  text: "#d3d9de",
+  dim: "#8a949c",
+  faint: "#5a646c",
+  ok: "#5cc596",
+  warn: "#e6b35c",
+  danger: "#f0857a",
+  info: "#82adeb",
+  markBg: "rgba(230, 179, 92, 0.28)",
+  markText: "#f6e2bd",
+} as const;
+
+const TOOL_BTN =
+  "size-7 rounded-md text-white/50 hover:bg-white/10 hover:text-white/90 pointer-coarse:size-9";
+
+// Color mapping for ANSI codes (bright variants share the base level colour)
 const ANSI_COLORS: Record<number, string> = {
-  30: "#6b7280", 31: "#f87171", 32: "#4ade80", 33: "#fbbf24",
-  34: "#60a5fa", 35: "#c084fc", 36: "#22d3ee", 37: "#e5e7eb",
-  90: "#9ca3af", 91: "#fca5a5", 92: "#86efac", 93: "#fde68a",
-  94: "#93c5fd", 95: "#d8b4fe", 96: "#67e8f9", 97: "#f9fafb",
+  30: LOG.faint, 31: LOG.danger, 32: LOG.ok, 33: LOG.warn,
+  34: LOG.info, 35: LOG.info, 36: LOG.info, 37: LOG.text,
+  90: LOG.dim, 91: LOG.danger, 92: LOG.ok, 93: LOG.warn,
+  94: LOG.info, 95: LOG.info, 96: LOG.info, 97: LOG.text,
 };
 
 function AnsiLine({ text, highlight }: { text: string; highlight?: string }) {
@@ -92,17 +113,17 @@ function AnsiLine({ text, highlight }: { text: string; highlight?: string }) {
         segments.forEach((seg, j) => {
           if (seg && seg.toLowerCase() === needle) {
             elements.push(
-              <mark key={`${i}-${j}`} className="bg-yellow-500/30 text-yellow-200 rounded-[2px] px-0.5">{seg}</mark>
+              <mark key={`${i}-${j}`} className="rounded-sm px-0.5" style={{ backgroundColor: LOG.markBg, color: LOG.markText }}>{seg}</mark>
             );
           } else if (seg) {
             elements.push(
-              <span key={`${i}-${j}`} style={{ color: currentColor || undefined, fontWeight: isBold ? 700 : undefined }}>{seg}</span>
+              <span key={`${i}-${j}`} style={{ color: currentColor || undefined, fontWeight: isBold ? 600 : undefined }}>{seg}</span>
             );
           }
         });
       } else {
         elements.push(
-          <span key={i} style={{ color: currentColor || undefined, fontWeight: isBold ? 700 : undefined }}>{part}</span>
+          <span key={i} style={{ color: currentColor || undefined, fontWeight: isBold ? 600 : undefined }}>{part}</span>
         );
       }
     }
@@ -118,22 +139,22 @@ function getLineColor(text: string): string | null {
   const lower = text.toLowerCase();
 
   // Errors — red
-  if (lower.includes("error") || lower.includes("fatal") || lower.includes("panic") || lower.includes("fail") || lower.includes("❌")) return "#f87171";
+  if (lower.includes("error") || lower.includes("fatal") || lower.includes("panic") || lower.includes("fail") || lower.includes("❌")) return LOG.danger;
 
   // Warnings — amber
-  if (lower.includes("warn") || lower.includes("⚠")) return "#fbbf24";
+  if (lower.includes("warn") || lower.includes("⚠")) return LOG.warn;
 
   // Success — green
-  if (lower.includes("✓") || lower.includes("✅") || lower.includes("success") || lower.includes("ready") || lower.includes("loaded") || lower.includes("running at")) return "#4ade80";
+  if (lower.includes("✓") || lower.includes("✅") || lower.includes("success") || lower.includes("ready") || lower.includes("loaded") || lower.includes("running at")) return LOG.ok;
 
   // Info markers — blue
-  if (lower.includes("info") || lower.includes("🚀") || lower.includes("starting")) return "#60a5fa";
+  if (lower.includes("info") || lower.includes("🚀") || lower.includes("starting")) return LOG.info;
 
   // Separators / borders — dim
-  if (/^[═╔╗╚╝║─┌┐└┘│├┤┬┴┼\-=*]{3,}/.test(text.trim())) return "#525252";
+  if (/^[═╔╗╚╝║─┌┐└┘│├┤┬┴┼\-=*]{3,}/.test(text.trim())) return LOG.faint;
 
   // Docker build steps
-  if (/^#\d+\s/.test(text.trim()) || /^step\s+\d+/i.test(text.trim())) return "#93c5fd";
+  if (/^#\d+\s/.test(text.trim()) || /^step\s+\d+/i.test(text.trim())) return LOG.info;
 
   return null; // no override, use default white
 }
@@ -324,111 +345,123 @@ export function LogViewer({
   return (
     <div
       className={cn(
-        "relative flex flex-col overflow-hidden rounded-xl border border-[#232323] bg-[#0c0c0c]",
+        "relative flex flex-col overflow-hidden rounded-lg border",
         isFullscreen
-          ? "fixed inset-0 z-50 h-screen rounded-none"
+          ? "fixed inset-0 z-50 h-screen rounded-none border-0"
           : cn(
               // Parent-driven fill (Logs page) must not force a tall min-height
               height.includes("h-full") ? "min-h-0" : "min-h-[280px]",
               height,
             ),
       )}
+      style={{ backgroundColor: LOG.surface, borderColor: LOG.border }}
     >
-      {/* ─── Header ─── */}
-      <div className="flex items-center justify-between px-4 py-2.5 bg-[#141414] border-b border-[#232323] shrink-0">
+      {/* ─── Toolbar ─── */}
+      <div
+        className="flex min-h-9 shrink-0 items-center justify-between gap-2 border-b pl-3 pr-1"
+        style={{ backgroundColor: LOG.toolbar, borderColor: LOG.border }}
+      >
         {/* Left: status + title */}
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="flex items-center gap-2">
-            <div
-              className={cn(
-                "h-2 w-2 rounded-full shrink-0",
-                connected
-                  ? "bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.5)]"
-                  : "bg-zinc-600"
-              )}
-            />
-            <span className="text-[13px] font-semibold text-zinc-200">{title}</span>
-            {connected && (
-              <span className="text-[10px] font-medium text-emerald-400/80 tracking-wide">LIVE</span>
-            )}
-          </div>
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span
+            className="size-2 shrink-0 rounded-full"
+            style={{ backgroundColor: connected ? LOG.ok : LOG.faint }}
+          />
+          <span className="truncate text-[13px] font-medium" style={{ color: LOG.text }}>
+            {title}
+          </span>
+          {connected && (
+            <span className="text-xs" style={{ color: LOG.ok }}>
+              Live
+            </span>
+          )}
           {subtitle && (
-            <span className="text-[11px] font-mono text-zinc-600 hidden sm:inline truncate max-w-[180px]">
+            <span
+              className="hidden max-w-[220px] truncate font-mono text-xs sm:inline"
+              style={{ color: LOG.dim }}
+            >
               {subtitle}
             </span>
           )}
         </div>
 
         {/* Right: search + actions */}
-        <div className="flex items-center gap-1 shrink-0">
+        <div className="flex shrink-0 items-center gap-0.5">
           {/* Inline search */}
           {showSearch && (
-            <div className="flex items-center gap-1.5 mr-2 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-2 py-1">
-              <Search className="h-3 w-3 text-zinc-500" />
+            <div
+              className="mr-1 flex h-7 items-center gap-1.5 rounded-md border px-2"
+              style={{ borderColor: LOG.border, backgroundColor: LOG.surface }}
+            >
+              <Search className="size-3.5 shrink-0" style={{ color: LOG.dim }} />
               <input
                 ref={searchInputRef}
                 type="text"
                 placeholder="Find in logs"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="bg-transparent text-[12px] text-zinc-200 placeholder-zinc-600 outline-hidden w-[150px] font-mono"
+                className="w-[120px] bg-transparent font-mono text-xs outline-hidden placeholder:text-white/35 sm:w-[160px]"
+                style={{ color: LOG.text }}
               />
               {searchQuery && (
-                <span className="text-[10px] text-zinc-500 font-mono">{matchCount}</span>
+                <span className="font-mono text-xs tabular-nums" style={{ color: LOG.dim }}>
+                  {matchCount}
+                </span>
               )}
               <button
                 onClick={() => { setSearchQuery(""); setShowSearch(false); }}
-                className="text-zinc-500 hover:text-zinc-300"
+                className="text-white/45 transition-colors hover:text-white/85"
               >
-                <X className="h-3 w-3" />
+                <X className="size-3.5" />
               </button>
             </div>
           )}
 
           <Button
             variant="ghost" size="icon"
-            className={cn("h-7 w-7 text-zinc-500 hover:text-zinc-200 hover:bg-white/5", showSearch && "text-zinc-200 bg-white/5")}
+            className={cn(TOOL_BTN, showSearch && "bg-white/10 text-white/90")}
             onClick={() => { setShowSearch(!showSearch); if (showSearch) setSearchQuery(""); }}
             title="Find in logs"
           >
-            <Search className="h-3.5 w-3.5" />
+            <Search className="size-3.5" />
           </Button>
           <Button
             variant="ghost" size="icon"
-            className="h-7 w-7 text-zinc-500 hover:text-zinc-200 hover:bg-white/5"
+            className={TOOL_BTN}
             onClick={() => setIsFullscreen(!isFullscreen)}
             title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
           >
-            {isFullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+            {isFullscreen ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
           </Button>
           <Button
             variant="ghost" size="icon"
-            className={cn(
-              "h-7 w-7 text-zinc-500 hover:text-zinc-200 hover:bg-white/5",
-              copied && "text-emerald-400 hover:text-emerald-400",
-            )}
+            className={TOOL_BTN}
             onClick={handleCopy}
             title={copyAriaLabel}
             aria-label={copyAriaLabel}
             disabled={logs.length === 0}
           >
-            {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+            {copied ? (
+              <Check className="size-3.5" style={{ color: LOG.ok }} />
+            ) : (
+              <Copy className="size-3.5" />
+            )}
           </Button>
           <Button
             variant="ghost" size="icon"
-            className="h-7 w-7 text-zinc-500 hover:text-zinc-200 hover:bg-white/5"
+            className={TOOL_BTN}
             onClick={handleDownload}
             title="Download"
           >
-            <Download className="h-3.5 w-3.5" />
+            <Download className="size-3.5" />
           </Button>
           <Button
             variant="ghost" size="icon"
-            className="h-7 w-7 text-zinc-500 hover:text-zinc-200 hover:bg-white/5"
+            className={TOOL_BTN}
             onClick={onClear}
             title="Clear"
           >
-            <Trash2 className="h-3.5 w-3.5" />
+            <Trash2 className="size-3.5" />
           </Button>
         </div>
       </div>
@@ -436,19 +469,18 @@ export function LogViewer({
       {/* ─── Log Lines ─── */}
       <div
         ref={scrollRef}
-        className="flex-1 overflow-y-auto font-mono text-[12.5px] leading-[1.7] custom-scrollbar"
+        className="custom-scrollbar flex-1 overflow-y-auto font-mono text-[12.5px] leading-[1.65]"
         tabIndex={0}
       >
         {logs.length === 0 ? (
-          <div className="flex items-center justify-center h-full text-zinc-600">
-            <div className="text-center">
-              <ScrollText className="h-8 w-8 mx-auto mb-3 opacity-20" />
-              <p className="text-[13px]">{connected ? "Waiting for logs..." : "Connecting..."}</p>
-              {!connected && <Loader2 className="h-4 w-4 animate-spin mx-auto mt-2 opacity-40" />}
+          <div className="flex h-full items-center justify-center" style={{ color: LOG.dim }}>
+            <div className="flex items-center gap-2 text-[13px]">
+              {!connected && <Loader2 className="size-3.5 animate-spin" />}
+              {connected ? "Waiting for logs…" : "Connecting…"}
             </div>
           </div>
         ) : (
-          <div className="py-1">
+          <div className="py-2">
             {logs.map((rawLine, i) => {
               const { timestamp, content } = parseTimestamp(rawLine);
               const hasAnsi = HAS_ANSI.test(content);
@@ -457,11 +489,14 @@ export function LogViewer({
               return (
                 <div
                   key={i}
-                  className="flex items-start hover:bg-white/2 px-4 py-px group transition-colors"
+                  className="group flex items-baseline px-3 py-px hover:bg-white/[0.03] sm:px-4"
                 >
                   {/* Timestamp */}
                   {timestamp && (
-                    <span className="shrink-0 text-zinc-600 select-none mr-2 text-[12px] tabular-nums">
+                    <span
+                      className="mr-3 shrink-0 select-none text-xs tabular-nums"
+                      style={{ color: LOG.faint }}
+                    >
                       {timestamp}
                     </span>
                   )}
@@ -469,7 +504,7 @@ export function LogViewer({
                   {/* Content */}
                   <span
                     className="flex-1 whitespace-pre-wrap break-all"
-                    style={smartColor && !hasAnsi ? { color: smartColor } : { color: "#d4d4d8" }}
+                    style={smartColor && !hasAnsi ? { color: smartColor } : { color: LOG.text }}
                   >
                     {hasAnsi ? (
                       <AnsiLine text={content} highlight={searchQuery} />
@@ -488,7 +523,7 @@ export function LogViewer({
         )}
       </div>
 
-      {/* ─── Scroll-to-bottom FAB ─── */}
+      {/* ─── Resume following ─── */}
       {!autoScroll && logs.length > 0 && (
         <button
           type="button"
@@ -505,11 +540,12 @@ export function LogViewer({
               programmaticScrollRef.current = false;
             });
           }}
-          className="absolute bottom-4 right-4 flex h-8 items-center gap-1.5 rounded-full border border-zinc-700 bg-zinc-800 px-3 text-zinc-300 shadow-lg transition-all hover:bg-zinc-700 hover:text-white"
+          className="absolute bottom-3 right-3 flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium text-white/80 shadow-popover transition-colors hover:text-white"
+          style={{ backgroundColor: LOG.toolbar, borderColor: LOG.borderStrong }}
           title="Resume following the newest logs"
         >
-          <ArrowDown className="h-3.5 w-3.5" />
-          <span className="text-[11px] font-semibold">Latest</span>
+          <ArrowDown className="size-3.5" />
+          Latest
         </button>
       )}
     </div>

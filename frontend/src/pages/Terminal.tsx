@@ -1,30 +1,21 @@
 // Terminal page — one-viewport layout; xterm fills remaining height.
 
 import { Suspense } from "react";
-import { Loader2, SquareTerminal } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { TerminalView } from "@/components/TerminalView";
+import { PageHeader } from "@/components/shell/PageHeader";
+
+// main has py-6 (3rem total) under the 48px top bar
+const FILL_VIEWPORT = "h-[calc(100dvh-var(--shell-topbar)-3rem)] min-h-[26rem]";
 
 function TerminalContent() {
   return (
-    <div
-      className={
-        "flex h-[calc(100dvh-var(--shell-topbar)-2.5rem)] flex-col " +
-        "sm:h-[calc(100dvh-var(--shell-topbar)-4rem)]"
-      }
-    >
-      <div className="mb-2 flex shrink-0 items-center gap-2.5 sm:mb-3 sm:gap-3">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-brand/20 bg-brand/10 sm:h-10 sm:w-10 sm:rounded-2xl">
-          <SquareTerminal className="h-4 w-4 text-brand sm:h-4.5 sm:w-4.5" />
-        </span>
-        <div className="min-w-0">
-          <h1 className="truncate text-lg font-bold tracking-tight sm:text-xl">
-            Terminal
-          </h1>
-          <p className="truncate text-[11px] text-muted-foreground sm:text-xs">
-            Root shell on this host · packages, upgrade, purge, reboot
-          </p>
-        </div>
-      </div>
+    <div className={`flex flex-col ${FILL_VIEWPORT}`}>
+      <PageHeader
+        title="Terminal"
+        description="Root shell on this host. Host actions ask for your account password."
+        className="mb-4 shrink-0"
+      />
 
       <TerminalView className="min-h-0 flex-1" />
     </div>
@@ -35,13 +26,8 @@ export default function TerminalPage() {
   return (
     <Suspense
       fallback={
-        <div
-          className={
-            "flex h-[calc(100dvh-var(--shell-topbar)-2.5rem)] items-center justify-center " +
-            "sm:h-[calc(100dvh-var(--shell-topbar)-4rem)]"
-          }
-        >
-          <Loader2 className="h-8 w-8 animate-spin text-brand" />
+        <div className={`flex items-center justify-center ${FILL_VIEWPORT}`}>
+          <Loader2 className="size-5 animate-spin text-subtle" />
         </div>
       }
     >

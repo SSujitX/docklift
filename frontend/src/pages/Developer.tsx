@@ -3,7 +3,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { toast } from "sonner";
-import { Check, ChevronRight, Copy, KeyRound, Loader2, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
+import { Check, ChevronRight, Copy, Loader2, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
 import { PageHeader, StatChip } from "@/components/shell/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -16,7 +16,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { authFetch } from "@/lib/auth";
+import { apiCache, authFetch } from "@/lib/auth";
+import { API } from "@/lib/prefetch";
 import { API_URL, cn, copyToClipboard } from "@/lib/utils";
 import {
   type ApiToken,
@@ -40,14 +41,22 @@ async function errorOf(res: Response, fallback: string): Promise<string> {
   return data.error || `${fallback} (${res.status})`;
 }
 
+function tokenList(data: unknown): ApiToken[] {
+  const tokens = (data as { tokens?: ApiToken[] } | undefined)?.tokens;
+  return Array.isArray(tokens) ? tokens : [];
+}
+
 async function copy(text: string, what: string) {
   if (await copyToClipboard(text)) toast.success(`${what} copied`);
   else toast.error("Could not copy to the clipboard");
 }
 
 export default function DeveloperPage() {
-  const [tokens, setTokens] = useState<ApiToken[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Last known list (token metadata only, never secrets) draws at once on a revisit.
+  const [tokens, setTokens] = useState<ApiToken[]>(() =>
+    tokenList(apiCache.peek(API.tokens)),
+  );
+  const [loading, setLoading] = useState(() => apiCache.peek(API.tokens) === undefined);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [revoking, setRevoking] = useState<ApiToken | null>(null);
@@ -57,10 +66,9 @@ export default function DeveloperPage() {
 
   const load = useCallback(async () => {
     try {
-      const res = await authFetch(`${API_URL}/api/tokens`);
+      const res = await apiCache.fetch(API.tokens);
       if (!res.ok) throw new Error(await errorOf(res, "Failed to load API tokens"));
-      const data = (await res.json()) as { tokens?: ApiToken[] };
-      setTokens(Array.isArray(data.tokens) ? data.tokens : []);
+      setTokens(tokenList(await res.json()));
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load API tokens");
@@ -103,6 +111,7 @@ export default function DeveloperPage() {
           void load();
         }}
         onRevoke={setRevoking}
+        onCreate={() => setCreating(true)}
       />
 
       <ConnectPanel token={snippetToken} />
@@ -166,30 +175,39 @@ function Panel({
   );
 }
 
-function Pill({ children, tone = "neutral" }: { children: ReactNode; tone?: "neutral" | "warn" | "ok" | "danger" | "info" }) {
-  const tones = {
-    neutral: "border-border text-muted-foreground",
-    warn: "border-warn/40 text-warn",
-    ok: "border-ok/40 text-ok",
-    danger: "border-danger/40 text-danger",
-    info: "border-info/40 text-info",
-  } as const;
+function Tag({ children, warn = false }: { children: ReactNode; warn?: boolean }) {
   return (
-    <span className={cn("inline-flex h-5 items-center rounded-sm border px-1.5 font-mono text-[11px] leading-none whitespace-nowrap", tones[tone])}>
+    <span
+      className={cn(
+        "inline-flex h-5 items-center rounded-sm border px-1.5 font-mono text-[11px] leading-none whitespace-nowrap",
+        warn ? "border-warn/40 text-warn" : "border-border text-muted-foreground",
+      )}
+    >
       {children}
     </span>
   );
 }
 
-function CopyBlock({ label, value, what }: { label: string; value: string; what: string }) {
+function CopyBlock({ label, value, what, wrap = false }: { label: string; value: string; what: string; wrap?: boolean }) {
   const [done, setDone] = useState(false);
   return (
     <div className="min-w-0 space-y-1.5">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-[13px] font-medium leading-5">{label}</span>
+      <p className="text-[13px] font-medium leading-5">{label}</p>
+      <div className="flex items-start rounded-md border border-border bg-secondary/60">
+        <pre
+          className={cn(
+            "shell-scroll min-w-0 flex-1 px-3 py-2 font-mono text-xs leading-5 text-foreground select-all",
+            wrap ? "whitespace-pre-wrap [overflow-wrap:anywhere]" : "overflow-x-auto whitespace-pre",
+          )}
+        >
+          {value}
+        </pre>
         <Button
           variant="ghost"
-          size="sm"
+          size="icon"
+          className="m-0.5 shrink-0"
+          title={`Copy ${what.toLowerCase()}`}
+          aria-label={`Copy ${what.toLowerCase()}`}
           onClick={async () => {
             await copy(value, what);
             setDone(true);
@@ -197,12 +215,8 @@ function CopyBlock({ label, value, what }: { label: string; value: string; what:
           }}
         >
           {done ? <Check className="text-ok" /> : <Copy className="text-subtle" />}
-          Copy
         </Button>
       </div>
-      <pre className="shell-scroll overflow-x-auto rounded-md border border-border bg-secondary/60 px-3 py-2 font-mono text-xs leading-5 text-foreground whitespace-pre select-all">
-        {value}
-      </pre>
     </div>
   );
 }
@@ -215,20 +229,21 @@ function TokensPanel({
   error,
   onRefresh,
   onRevoke,
+  onCreate,
 }: {
   tokens: ApiToken[];
   loading: boolean;
   error: string | null;
   onRefresh: () => void;
   onRevoke: (t: ApiToken) => void;
+  onCreate: () => void;
 }) {
   return (
     <Panel
       title="API tokens"
-      meta={tokens.length}
       description="Send one as Authorization: Bearer dl_… to the REST API or the MCP endpoint. Changing your password revokes every token."
       actions={
-        <Button variant="ghost" size="icon" onClick={onRefresh} title="Refresh tokens">
+        <Button variant="ghost" size="icon" onClick={onRefresh} title="Refresh tokens" aria-label="Refresh tokens">
           <RefreshCw className="text-subtle" />
         </Button>
       }
@@ -245,12 +260,15 @@ function TokensPanel({
           ))}
         </div>
       ) : tokens.length === 0 ? (
-        <div className="flex flex-col items-center px-4 py-10 text-center">
-          <KeyRound className="size-5 text-subtle" />
-          <p className="mt-2 text-[15px] font-semibold">No API tokens yet</p>
+        <div className="px-4 py-14 text-center">
+          <p className="text-[15px] font-semibold">No API tokens yet</p>
           <p className="mx-auto mt-1 max-w-sm text-[13.5px] text-muted-foreground">
             Create one for a CI job, a script or an AI agent. It is shown once.
           </p>
+          <Button className="mt-4" onClick={onCreate}>
+            <Plus />
+            Create token
+          </Button>
         </div>
       ) : (
         <>
@@ -258,15 +276,16 @@ function TokensPanel({
           <ul className="divide-y divide-border md:hidden">
             {tokens.map((t) => (
               <li key={t.id} className="flex items-start gap-3 px-4 py-3">
-                <div className="min-w-0 flex-1 space-y-1">
-                  <p className="truncate text-sm font-medium leading-5">{t.name}</p>
-                  <p className="font-mono text-xs text-muted-foreground">{t.prefix}…</p>
-                  <TokenBadges token={t} />
-                  <p className="text-xs text-muted-foreground">
-                    Used {describeTime(t.last_used_at)} · {t.expires_at ? `expires ${describeTime(t.expires_at)}` : "no expiry"}
+                <div className="min-w-0 flex-1">
+                  <p className={cn("truncate text-sm font-medium leading-5", t.status !== "active" && "text-muted-foreground")}>{t.name}</p>
+                  <p className="mt-0.5 truncate text-xs leading-5 text-muted-foreground">
+                    <span className="font-mono">{t.prefix}…</span> · <TokenAccess token={t} />
+                  </p>
+                  <p className="text-xs leading-5 text-muted-foreground">
+                    Used {describeTime(t.last_used_at).toLowerCase()} · <TokenExpiry token={t} lower />
                   </p>
                 </div>
-                <Button variant="ghost" size="icon" onClick={() => onRevoke(t)} title={`Revoke ${t.name}`}>
+                <Button variant="ghost" size="icon" onClick={() => onRevoke(t)} title={`Revoke ${t.name}`} aria-label={`Revoke ${t.name}`}>
                   <Trash2 className="text-subtle" />
                 </Button>
               </li>
@@ -288,21 +307,20 @@ function TokensPanel({
             </thead>
             <tbody className="divide-y divide-border">
               {tokens.map((t) => (
-                <tr key={t.id} className="h-12">
-                  <td className="max-w-56 truncate px-5 font-medium">{t.name}</td>
+                <tr key={t.id} className="h-11 hover:bg-secondary/50">
+                  <td className={cn("max-w-56 truncate px-5 font-medium", t.status !== "active" && "text-muted-foreground")}>{t.name}</td>
                   <td className="px-4 font-mono text-xs text-muted-foreground">{t.prefix}…</td>
-                  <td className="px-4">
-                    <TokenBadges token={t} />
+                  <td className="px-4 text-[13px] text-muted-foreground">
+                    <TokenAccess token={t} />
                   </td>
                   <td className="px-4 text-[13px] text-muted-foreground" title={t.last_used_at ?? undefined}>
                     {describeTime(t.last_used_at)}
                   </td>
                   <td className="px-4 text-[13px] text-muted-foreground" title={t.expires_at ?? undefined}>
-                    {t.expires_at ? describeTime(t.expires_at) : "Never"}
+                    <TokenExpiry token={t} />
                   </td>
-                  <td className="px-5 text-right">
-                    <Button variant="ghost" size="sm" onClick={() => onRevoke(t)}>
-                      <Trash2 className="text-subtle" />
+                  <td className="px-3 text-right">
+                    <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-danger" onClick={() => onRevoke(t)}>
                       Revoke
                     </Button>
                   </td>
@@ -316,14 +334,27 @@ function TokensPanel({
   );
 }
 
-function TokenBadges({ token }: { token: ApiToken }) {
+/** Access in words. Only the permission to run dangerous actions carries colour. */
+function TokenAccess({ token }: { token: ApiToken }) {
   return (
-    <span className="inline-flex flex-wrap items-center gap-1.5">
-      <Pill tone={token.scope === "full" ? "info" : "neutral"}>{token.scope}</Pill>
-      {token.allow_dangerous && <Pill tone="warn">dangerous</Pill>}
-      {token.status !== "active" && <Pill tone="danger">{token.status}</Pill>}
-    </span>
+    <>
+      {token.scope === "full" ? "Full access" : "Read only"}
+      {token.allow_dangerous && <span className="text-warn"> + dangerous actions</span>}
+    </>
   );
+}
+
+function TokenExpiry({ token, lower = false }: { token: ApiToken; lower?: boolean }) {
+  if (token.status === "revoked") return <span className="text-danger">{lower ? "revoked" : "Revoked"}</span>;
+  if (token.status === "expired") {
+    return (
+      <span className="text-danger">
+        {lower ? "expired" : "Expired"} {describeTime(token.expires_at).toLowerCase()}
+      </span>
+    );
+  }
+  if (!token.expires_at) return <>{lower ? "no expiry" : "Never"}</>;
+  return <>{lower ? `expires ${describeTime(token.expires_at)}` : describeTime(token.expires_at)}</>;
 }
 
 function CreateTokenDialog({
@@ -498,11 +529,10 @@ function CreatedTokenDialog({ created, onClose }: { created: { token: string; it
         </DialogHeader>
         {created && (
           <div className="space-y-3">
-            <CopyBlock label="Token" value={created.token} what="Token" />
-            <div className="flex flex-wrap gap-1.5">
-              <TokenBadges token={created.item} />
-              <Pill>{created.item.expires_at ? `expires ${describeTime(created.item.expires_at)}` : "no expiry"}</Pill>
-            </div>
+            <CopyBlock label="Token" value={created.token} what="Token" wrap />
+            <p className="text-[13px] leading-5 text-muted-foreground">
+              <TokenAccess token={created.item} /> · <TokenExpiry token={created.item} lower />
+            </p>
             <p className="text-xs leading-[1.125rem] text-muted-foreground">
               The snippets under Connect an AI now include this token until you leave the page.
             </p>
@@ -620,9 +650,9 @@ function ConnectPanel({ token }: { token: string | null }) {
             </button>
           ))}
         </div>
-        {tab === "claude" && <CopyBlock label="Run in your project" value={claudeCodeCommand(url, t)} what="Command" />}
+        {tab === "claude" && <CopyBlock label="Run in your project" value={claudeCodeCommand(url, t)} what="Command" wrap />}
         {tab === "json" && <CopyBlock label="MCP config (mcpServers)" value={genericMcpConfig(url, t)} what="Config" />}
-        {tab === "curl" && <CopyBlock label="Call the REST API" value={curlExample(API_URL || window.location.origin, t)} what="Command" />}
+        {tab === "curl" && <CopyBlock label="Call the REST API" value={curlExample(API_URL || window.location.origin, t)} what="Command" wrap />}
         <p className="text-xs leading-[1.125rem] text-muted-foreground">
           {token ? "The snippet contains the token you just created." : `Replace ${TOKEN_PLACEHOLDER} with a token.`} Use a read-only token
           for agents that only need to look. Guide:{" "}
@@ -637,17 +667,12 @@ function ConnectPanel({ token }: { token: string | null }) {
 
 /* ---------- endpoint browser ---------- */
 
-const METHOD_TONE: Record<string, string> = {
-  GET: "text-info",
-  POST: "text-ok",
-  PUT: "text-warn",
-  PATCH: "text-warn",
-  DELETE: "text-danger",
-};
-
 function EndpointsPanel() {
-  const [groups, setGroups] = useState<EndpointGroup[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [groups, setGroups] = useState<EndpointGroup[]>(() => {
+    const doc = apiCache.peek(API.openapi);
+    return doc === undefined ? [] : parseOpenApi(doc);
+  });
+  const [loading, setLoading] = useState(() => apiCache.peek(API.openapi) === undefined);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
 
@@ -655,7 +680,7 @@ function EndpointsPanel() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await authFetch(`${API_URL}/api/openapi.json`);
+        const res = await apiCache.fetch(API.openapi);
         if (!res.ok) throw new Error(await errorOf(res, "Failed to load the endpoint list"));
         const doc = await res.json();
         if (!cancelled) setGroups(parseOpenApi(doc));
@@ -694,8 +719,19 @@ function EndpointsPanel() {
       <div className="border-b border-border p-4 sm:px-5">
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-subtle" />
-          <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search: deploy, env, POST /api/projects…" className="pl-9" />
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search: deploy, env, POST /api/projects…"
+            aria-label="Search endpoints"
+            className="pl-9"
+          />
         </div>
+        <p className="mt-2.5 text-xs leading-[1.125rem] text-muted-foreground">
+          <span className="font-mono text-foreground">read</span> works with a read-only token.{" "}
+          <span className="font-mono text-warn">dangerous</span> needs a token that allows dangerous actions.{" "}
+          <span className="font-mono text-foreground">dashboard only</span> never accepts a token.
+        </p>
       </div>
       {error && <div className="m-4 rounded-md border border-danger/40 bg-secondary/60 px-3 py-2.5 text-[13px] sm:mx-5">{error}</div>}
       {loading ? (
@@ -728,7 +764,7 @@ function EndpointsPanel() {
 }
 
 async function openSpec() {
-  const res = await authFetch(`${API_URL}/api/openapi.json`);
+  const res = await apiCache.fetch(API.openapi);
   if (!res.ok) {
     toast.error(await errorOf(res, "Failed to load the document"));
     return;
@@ -748,15 +784,15 @@ function EndpointRow({ endpoint: e }: { endpoint: Endpoint }) {
     <li>
       <details className="group/ep">
         <summary className="flex cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 hover:bg-secondary/50 sm:pl-11 sm:pr-5 [&::-webkit-details-marker]:hidden">
-          <span className={cn("w-14 shrink-0 font-mono text-xs font-semibold", METHOD_TONE[e.method] ?? "text-foreground")}>{e.method}</span>
+          <span className={cn("w-14 shrink-0 font-mono text-xs font-medium", e.method === "DELETE" ? "text-danger" : "text-muted-foreground")}>{e.method}</span>
           <span className="min-w-0 break-all font-mono text-[13px] text-foreground">{e.path}</span>
           <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground">{e.summary}</span>
           <span className="flex flex-wrap gap-1">
-            {e.stepUp && <Pill tone="warn">dangerous</Pill>}
-            {e.sessionOnly && <Pill tone="danger">dashboard only</Pill>}
-            {e.readScope && <Pill tone="ok">read token</Pill>}
-            {e.stream && <Pill>stream</Pill>}
-            {e.auth === "public" && <Pill>public</Pill>}
+            {e.stepUp && <Tag warn>dangerous</Tag>}
+            {e.sessionOnly && <Tag>dashboard only</Tag>}
+            {e.readScope && <Tag>read</Tag>}
+            {e.stream && <Tag>stream</Tag>}
+            {e.auth === "public" && <Tag>public</Tag>}
           </span>
         </summary>
         <div className="space-y-2 px-4 pb-3 sm:pl-11 sm:pr-5">

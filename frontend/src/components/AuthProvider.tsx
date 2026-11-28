@@ -3,7 +3,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { API_URL } from "@/lib/utils";
-import { registerAuthUnauthorizedHandler } from "@/lib/auth";
+import { apiCache, registerAuthUnauthorizedHandler } from "@/lib/auth";
 import { Loader2 } from "lucide-react";
 
 interface User {
@@ -72,6 +72,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setUser(data.user);
           } else {
             // Token invalid, clear storage
+            apiCache.clear();
             localStorage.removeItem("docklift_token");
             localStorage.removeItem("docklift_user");
             setToken(null);
@@ -121,6 +122,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [initialCheckDone, token, isPublicRoute, pathname, navigate]);
 
   const login = (newToken: string, newUser: User) => {
+    // A new session (possibly another user) must never see the previous session's data.
+    apiCache.clear();
     localStorage.setItem("docklift_token", newToken);
     localStorage.setItem("docklift_user", JSON.stringify(newUser));
     setToken(newToken);
@@ -133,6 +136,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = useCallback(() => {
+    apiCache.clear();
     localStorage.removeItem("docklift_token");
     localStorage.removeItem("docklift_user");
     setToken(null);

@@ -3,7 +3,7 @@
 
 import { Fragment, useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { ChevronRight, Container, Menu, Monitor, Moon, Search, Star, Sun } from "lucide-react";
+import { ChevronRight, Container, Menu, Monitor, Moon, Search, Sun } from "lucide-react";
 import { GithubIcon } from "@/components/icons/GithubIcon";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
@@ -15,6 +15,15 @@ import {
 } from "./SidebarStatus";
 import { activeNavItem, breadcrumbsFor } from "./navigation";
 import { useShell } from "./ShellContext";
+
+const FOCUS_RING =
+  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
+
+/** Ghost icon button: 32px, 40px on touch. */
+const ICON_BUTTON = cn(
+  "flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-secondary hover:text-foreground pointer-coarse:size-10",
+  FOCUS_RING,
+);
 
 export function TopBar() {
   const { pathname } = useLocation();
@@ -33,7 +42,7 @@ export function TopBar() {
 
   useEffect(() => {
     const isApple = /Mac|iPhone|iPad|iPod/i.test(navigator.platform);
-    setModKey(isApple ? "⌘" : "Ctrl+");
+    setModKey(isApple ? "⌘" : "Ctrl ");
   }, []);
 
   const cycleTheme = () => {
@@ -43,44 +52,47 @@ export function TopBar() {
   };
 
   return (
-    <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-border/60 bg-background/80 px-3 backdrop-blur-xl sm:gap-3 sm:px-4 md:px-6">
+    <header className="sticky top-0 z-30 flex h-12 items-center gap-2 border-b border-border bg-background px-4 sm:px-6 xl:px-8">
       <button
         type="button"
         onClick={() => setMobileOpen(true)}
         aria-label="Open navigation"
-        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-border/60 text-muted-foreground transition-colors hover:text-foreground lg:hidden"
+        className={cn(ICON_BUTTON, "-ml-2 lg:hidden")}
       >
-        <Menu className="h-4.5 w-4.5" />
+        <Menu className="size-4" />
       </button>
 
       <Link
         to="/"
-        className="flex min-w-0 items-center gap-2 lg:hidden"
+        className={cn("flex min-w-0 items-center gap-2 rounded-md lg:hidden", FOCUS_RING)}
         aria-label="Docklift home"
       >
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-linear-to-br/srgb from-brand to-blue-600">
-          <Container className="h-4 w-4 text-white" strokeWidth={2.5} />
+        <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-brand">
+          <Container className="size-3.5 stroke-2 text-brand-foreground" />
         </span>
-        <span className="truncate text-sm font-semibold tracking-tight">
+        <span className="truncate text-[13.5px] font-medium text-foreground">
           {mobileTitle}
         </span>
       </Link>
 
       <nav
         aria-label="Breadcrumb"
-        className="hidden min-w-0 flex-1 items-center gap-1.5 text-sm lg:flex"
+        className="hidden min-w-0 flex-1 items-center gap-1.5 text-[13.5px] lg:flex"
       >
         {crumbs.map((crumb, index) => {
           const isLast = index === crumbs.length - 1;
           return (
             <Fragment key={`${crumb.label}-${index}`}>
               {index > 0 && (
-                <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50" />
+                <ChevronRight className="size-3.5 shrink-0 text-subtle" />
               )}
               {crumb.href && !isLast ? (
                 <Link
                   to={crumb.href}
-                  className="truncate text-muted-foreground transition-colors hover:text-foreground"
+                  className={cn(
+                    "truncate rounded-sm text-muted-foreground transition-colors duration-150 hover:text-foreground",
+                    FOCUS_RING,
+                  )}
                 >
                   {crumb.label}
                 </Link>
@@ -88,7 +100,7 @@ export function TopBar() {
                 <span
                   className={cn(
                     "truncate",
-                    isLast ? "font-semibold text-foreground" : "text-muted-foreground",
+                    isLast ? "font-medium text-foreground" : "text-muted-foreground",
                   )}
                 >
                   {crumb.label}
@@ -97,25 +109,22 @@ export function TopBar() {
             </Fragment>
           );
         })}
-        {current?.description && crumbs.length === 1 && (
-          <span className="ml-2 truncate text-xs text-muted-foreground/70">
-            · {current.description}
-          </span>
-        )}
       </nav>
 
-      <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2">
+      <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-1.5">
         <button
           type="button"
           onClick={() => setPaletteOpen(true)}
           aria-label="Open command palette"
-          className="flex h-9 w-9 items-center justify-center rounded-xl border border-border/60 bg-secondary/30 text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground sm:w-auto sm:min-w-56 sm:gap-2 sm:px-3 md:min-w-[16rem] lg:min-w-[18rem]"
+          className={cn(
+            "flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-secondary hover:text-foreground pointer-coarse:h-10 pointer-coarse:w-10",
+            "sm:w-56 sm:justify-start sm:gap-2 sm:border sm:border-input sm:bg-card sm:px-2.5 sm:text-subtle sm:hover:bg-card sm:hover:border-subtle sm:hover:text-muted-foreground sm:pointer-coarse:w-56",
+            FOCUS_RING,
+          )}
         >
-          <Search className="h-4 w-4 shrink-0" />
-          <span className="hidden flex-1 text-left text-xs font-medium sm:inline">
-            Search…
-          </span>
-          <kbd className="hidden rounded border border-border/60 bg-background/80 px-1.5 py-0.5 text-[10px] font-semibold md:inline">
+          <Search className="size-4 shrink-0" />
+          <span className="hidden flex-1 text-left text-[13px] sm:inline">Search…</span>
+          <kbd className="hidden rounded-sm border border-border px-1 font-mono text-[11px] leading-4 text-subtle sm:inline">
             {modKey}K
           </kbd>
         </button>
@@ -125,13 +134,13 @@ export function TopBar() {
           target="_blank"
           rel="noopener noreferrer"
           title={`Star on GitHub — ${formatStars(stars)}`}
-          className="hidden h-9 items-center gap-1.5 rounded-xl border border-border/60 px-2.5 text-muted-foreground transition-colors hover:text-foreground md:flex"
+          className={cn(
+            "hidden h-8 items-center gap-1.5 rounded-md px-2 text-muted-foreground transition-colors duration-150 hover:bg-secondary hover:text-foreground md:flex",
+            FOCUS_RING,
+          )}
         >
-          <GithubIcon className="h-4 w-4" />
-          <span className="flex items-center gap-1 text-xs font-semibold tabular-nums">
-            <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
-            {formatStars(stars)}
-          </span>
+          <GithubIcon className="size-4" />
+          <span className="font-mono text-xs tabular-nums">{formatStars(stars)}</span>
         </a>
 
         <button
@@ -143,14 +152,14 @@ export function TopBar() {
               ? `Theme: Auto (${resolvedTheme})`
               : `Theme: ${theme}`
           }
-          className="flex h-9 w-9 items-center justify-center rounded-xl border border-border/60 text-muted-foreground transition-colors hover:text-foreground"
+          className={ICON_BUTTON}
         >
           {theme === "system" ? (
-            <Monitor className="h-4 w-4" />
+            <Monitor className="size-4" />
           ) : resolvedTheme === "dark" ? (
-            <Sun className="h-4 w-4" />
+            <Sun className="size-4" />
           ) : (
-            <Moon className="h-4 w-4" />
+            <Moon className="size-4" />
           )}
         </button>
 

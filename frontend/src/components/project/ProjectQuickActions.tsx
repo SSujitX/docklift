@@ -11,26 +11,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Play,
-  Square,
-  RotateCw,
-  Trash2,
-  Loader2,
-  XCircle,
-  AlertTriangle,
-} from "lucide-react";
+import { RotateCw, Trash2, Loader2 } from "lucide-react";
 import { API_URL, cn } from "@/lib/utils";
 import { authFetch } from "@/lib/auth";
 import { toast } from "sonner";
-
-const ACTION =
-  "h-8 gap-1.5 rounded-lg px-2.5 text-xs font-medium shadow-none border transition-colors";
-
-const ACTION_PRIMARY = `${ACTION} bg-brand text-brand-foreground border-transparent hover:bg-brand hover:brightness-110 hover:text-brand-foreground`;
-const ACTION_SOFT = `${ACTION} bg-brand/15 text-brand border-transparent hover:bg-brand/25`;
-const ACTION_SECONDARY = `${ACTION} bg-background text-foreground border-border hover:bg-secondary hover:text-foreground`;
-const ACTION_DANGER = `${ACTION} bg-background text-destructive border-border hover:bg-destructive/10 hover:text-destructive hover:border-destructive/35`;
 
 interface ProjectQuickActionsProps {
   project: Project;
@@ -135,7 +119,7 @@ export function ProjectQuickActions({
           "flex flex-wrap items-center gap-1.5",
           compact
             ? "justify-start sm:justify-end"
-            : "border-t border-border/40 pt-3 md:border-t-0 md:pt-0",
+            : "border-t border-border pt-3 md:border-t-0 md:pt-0",
           className,
         )}
         onClick={(e) => e.stopPropagation()}
@@ -145,52 +129,43 @@ export function ProjectQuickActions({
           <>
             <Button
               type="button"
-              variant="bare"
+              variant="outline"
               size="sm"
-              className={compact ? ACTION_SOFT : ACTION_PRIMARY}
               onClick={(e) => handleAction("redeploy", e)}
               disabled={loading}
             >
-              {loading && actionType === "redeploy" ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Play className="h-3 w-3 fill-current" />
+              {loading && actionType === "redeploy" && (
+                <Loader2 className="size-3.5 animate-spin" />
               )}
               Redeploy
             </Button>
             <Button
               type="button"
-              variant="bare"
+              variant={compact ? "ghost" : "outline"}
               size={compact ? "icon" : "sm"}
-              className={
-                compact
-                  ? "h-8 w-8 border border-border/60 bg-background"
-                  : ACTION_SECONDARY
-              }
+              className={compact ? "text-subtle hover:text-foreground" : undefined}
               onClick={(e) => handleAction("restart", e)}
               disabled={loading}
               title="Restart"
               aria-label="Restart"
             >
               {loading && actionType === "restart" ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <RotateCw className="h-3.5 w-3.5" />
-              )}
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : compact ? (
+                <RotateCw />
+              ) : null}
               {!compact && "Restart"}
             </Button>
             <Button
               type="button"
-              variant="bare"
+              variant={compact ? "ghost" : "outline"}
               size="sm"
-              className={ACTION_SECONDARY}
+              className={compact ? "text-muted-foreground" : undefined}
               onClick={(e) => handleAction("stop", e)}
               disabled={loading}
             >
-              {loading && actionType === "stop" ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Square className="h-3 w-3 fill-current" />
+              {loading && actionType === "stop" && (
+                <Loader2 className="size-3.5 animate-spin" />
               )}
               Stop
             </Button>
@@ -198,32 +173,27 @@ export function ProjectQuickActions({
         ) : project.status === "building" ? (
           <Button
             type="button"
-            variant="bare"
+            variant="outline"
             size="sm"
-            className={ACTION_DANGER}
+            className="text-danger"
             onClick={(e) => handleAction("cancel", e)}
             disabled={loading}
           >
-            {loading && actionType === "cancel" ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <XCircle className="h-3.5 w-3.5" />
+            {loading && actionType === "cancel" && (
+              <Loader2 className="size-3.5 animate-spin" />
             )}
             Cancel
           </Button>
         ) : (
           <Button
             type="button"
-            variant="bare"
+            variant="outline"
             size="sm"
-            className={ACTION_PRIMARY}
             onClick={(e) => handleAction("deploy", e)}
             disabled={loading}
           >
-            {loading && actionType === "deploy" ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Play className="h-3 w-3 fill-current" />
+            {loading && actionType === "deploy" && (
+              <Loader2 className="size-3.5 animate-spin" />
             )}
             Deploy
           </Button>
@@ -231,12 +201,10 @@ export function ProjectQuickActions({
 
         <Button
           type="button"
-          variant="bare"
+          variant={compact ? "ghost" : "outline"}
           size={compact ? "icon" : "sm"}
           className={
-            compact
-              ? "h-8 w-8 border border-border/60 bg-background text-destructive hover:bg-destructive/10"
-              : ACTION_DANGER
+            compact ? "text-subtle hover:text-danger" : "text-danger"
           }
           onClick={(e) => {
             e.preventDefault();
@@ -247,32 +215,21 @@ export function ProjectQuickActions({
           title="Delete project"
           aria-label="Delete project"
         >
-          <Trash2 className="h-3.5 w-3.5" />
-          {!compact && "Delete"}
+          {compact ? <Trash2 /> : "Delete"}
         </Button>
       </div>
 
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <DialogContent
-          className="sm:max-w-[400px]"
-          onClick={(e) => e.stopPropagation()}
-        >
+        <DialogContent onClick={(e) => e.stopPropagation()}>
           <DialogHeader>
-            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-500/10">
-              <AlertTriangle className="h-6 w-6 text-red-500" />
-            </div>
-            <DialogTitle className="text-center">Delete Project</DialogTitle>
-            <DialogDescription className="text-center">
-              Are you sure you want to delete{" "}
-              <span className="font-semibold text-foreground">{project.name}</span>
-              ?
-              <br />
-              <span className="text-red-500">
-                This will also remove all containers and cannot be undone.
-              </span>
+            <DialogTitle>Delete project</DialogTitle>
+            <DialogDescription>
+              Delete{" "}
+              <span className="font-mono text-foreground">{project.name}</span>?
+              This also removes all of its containers and cannot be undone.
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter className="gap-2 sm:gap-0">
+          <DialogFooter>
             <Button
               variant="outline"
               onClick={(e) => {
@@ -280,7 +237,6 @@ export function ProjectQuickActions({
                 setDeleteDialogOpen(false);
               }}
               disabled={deleting}
-              className="flex-1"
             >
               Cancel
             </Button>
@@ -288,14 +244,9 @@ export function ProjectQuickActions({
               variant="destructive"
               onClick={handleDeleteConfirm}
               disabled={deleting}
-              className="flex-1 gap-2"
             >
-              {deleting ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Trash2 className="h-4 w-4" />
-              )}
-              Delete
+              {deleting && <Loader2 className="animate-spin" />}
+              Delete project
             </Button>
           </DialogFooter>
         </DialogContent>

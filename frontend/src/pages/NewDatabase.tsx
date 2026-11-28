@@ -4,10 +4,7 @@ import {
   ArrowLeft,
   Check,
   ChevronUp,
-  Database,
   Loader2,
-  Server,
-  Sparkles,
   Tag,
 } from "lucide-react";
 import { PageHeader } from "@/components/shell/PageHeader";
@@ -187,83 +184,86 @@ export default function NewDatabasePage() {
       <button
         type="button"
         onClick={() => navigate("/databases")}
-        className="mb-6 inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
+        className="mb-4 inline-flex items-center gap-1.5 rounded-sm text-[13px] text-muted-foreground transition-colors duration-150 hover:text-foreground"
       >
-        <ArrowLeft className="h-4 w-4" />
-        Back to Databases
+        <ArrowLeft className="size-4 text-subtle" />
+        Back to databases
       </button>
 
       <PageHeader
-        eyebrow="Deploy"
-        title="New Database"
-        description="Pick an engine and a Docker Hub version. Tags refresh from the official image catalog automatically."
-        icon={Database}
+        title="New database"
+        description="Pick an engine and a Docker Hub version. Tags refresh from the official image catalog."
       />
 
-      <div className="w-full space-y-6 pb-28 sm:pb-24">
-        <Card className="space-y-5 rounded-2xl border-border/60 p-5 sm:p-6">
-          <div className="space-y-2">
-            <label className="text-sm font-medium" htmlFor="db-name">
-              Name
-            </label>
-            <Input
-              id="db-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="my-postgres"
-              maxLength={120}
-              className="h-11 bg-secondary/30"
-            />
-          </div>
+      <Card className="w-full">
+        <div className="divide-y divide-border">
+          <section className="p-4 sm:p-5">
+            <div className="max-w-xl space-y-1.5">
+              <label className="block text-[13px] font-medium" htmlFor="db-name">
+                Name
+              </label>
+              <Input
+                id="db-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="my-postgres"
+                maxLength={120}
+              />
+            </div>
+          </section>
 
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Engine</label>
+          <section className="space-y-2 p-4 sm:p-5">
+            <label className="block text-[13px] font-medium">Engine</label>
             {loadingEngines ? (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" />
+              <div className="flex items-center gap-2 text-[13px] text-muted-foreground">
+                <Loader2 className="size-4 animate-spin" />
                 Loading engines…
               </div>
             ) : (
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                {engines.map((engine) => (
-                  <button
-                    key={engine.id}
-                    type="button"
-                    onClick={() => selectEngine(engine.id)}
-                    className={cn(
-                      "rounded-2xl border p-4 text-left transition-colors",
-                      engineId === engine.id
-                        ? "border-brand/40 bg-brand/10"
-                        : "border-border/60 bg-card/40 hover:bg-secondary/40",
-                    )}
-                  >
-                    <div className="flex items-center gap-2 text-sm font-semibold">
-                      <Server className="h-4 w-4 text-muted-foreground" />
-                      {engine.label}
-                    </div>
-                    <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
-                      {engine.description}
-                    </p>
-                    <p className="mt-2 font-mono text-[10px] text-muted-foreground/80">
-                      {engine.imageRepo || engine.image} · :{engine.port} ·{" "}
-                      {engine.defaultEnvKey}
-                    </p>
-                  </button>
-                ))}
+                {engines.map((engine) => {
+                  const active = engineId === engine.id;
+                  return (
+                    <button
+                      key={engine.id}
+                      type="button"
+                      onClick={() => selectEngine(engine.id)}
+                      className={cn(
+                        "flex flex-col rounded-lg border bg-card p-3 text-left transition-colors duration-150",
+                        active
+                          ? "border-brand ring-1 ring-brand"
+                          : "border-input hover:bg-secondary/50",
+                      )}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-medium text-foreground">
+                          {engine.label}
+                        </span>
+                        {active && <Check className="size-4 text-brand" />}
+                      </div>
+                      <p className="mt-1 text-[13px] leading-5 text-muted-foreground">
+                        {engine.description}
+                      </p>
+                      <p className="mt-2 truncate font-mono text-xs text-muted-foreground">
+                        {engine.imageRepo || engine.image}
+                        <span className="text-subtle"> · </span>:{engine.port}
+                        <span className="text-subtle"> · </span>
+                        {engine.defaultEnvKey}
+                      </p>
+                    </button>
+                  );
+                })}
               </div>
             )}
-          </div>
+          </section>
 
-          <div className="space-y-2">
-            <label className="text-sm font-medium" htmlFor="db-version">
+          <section className="space-y-1.5 p-4 sm:p-5">
+            <label className="block text-[13px] font-medium" htmlFor="db-version">
               Version
             </label>
 
             {versions.length > 0 && (
-              <div
-                ref={versionPickerRef}
-                className="relative w-full max-w-sm sm:max-w-xs"
-              >
+              <div ref={versionPickerRef} className="relative w-full max-w-sm">
                 <button
                   id="db-version"
                   type="button"
@@ -271,37 +271,32 @@ export default function NewDatabasePage() {
                   aria-expanded={versionOpen}
                   onClick={() => setVersionOpen((o) => !o)}
                   className={cn(
-                    "flex h-10 w-full items-center gap-2 rounded-xl border border-border/60 bg-secondary/30 px-3 text-left text-sm transition-colors",
-                    "hover:border-brand/40",
-                    versionOpen && "border-brand/40 ring-2 ring-brand/15",
+                    "flex h-9 w-full items-center gap-2 rounded-md border bg-card px-3 text-left text-sm transition-[border-color,box-shadow] duration-150 pointer-coarse:h-10",
+                    versionOpen
+                      ? "border-brand ring-3 ring-brand/20"
+                      : "border-input hover:border-subtle",
                   )}
                 >
-                  <Tag
-                    className={cn(
-                      "h-3.5 w-3.5 shrink-0",
-                      versionOpen ? "text-brand" : "text-muted-foreground",
-                    )}
-                  />
+                  <Tag className="size-4 shrink-0 text-subtle" />
                   <span className="min-w-0 flex-1 truncate">
-                    <span className="font-medium">
+                    <span className="text-foreground">
                       {selectedVersion?.label || "Select version"}
                     </span>
                     {selectedVersion?.recommended && (
-                      <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-wider text-brand">
-                        Rec
+                      <span className="ml-2 text-xs text-subtle">
+                        recommended
                       </span>
                     )}
                   </span>
                   {fullImage && (
-                    <span className="hidden max-w-[40%] truncate font-mono text-[10px] text-muted-foreground sm:inline">
+                    <span className="hidden max-w-[40%] truncate font-mono text-xs text-muted-foreground sm:inline">
                       {fullImage}
                     </span>
                   )}
                   <ChevronUp
                     className={cn(
-                      "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
+                      "size-4 shrink-0 text-subtle transition-transform duration-150",
                       !versionOpen && "rotate-180",
-                      versionOpen && "text-brand",
                     )}
                   />
                 </button>
@@ -309,9 +304,9 @@ export default function NewDatabasePage() {
                 {versionOpen && (
                   <div
                     role="listbox"
-                    className="absolute bottom-full left-0 right-0 z-50 mb-1.5 overflow-hidden rounded-xl border border-border/60 bg-popover shadow-xl shadow-black/15"
+                    className="absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden rounded-lg border border-border bg-popover shadow-popover"
                   >
-                    <div className="max-h-[min(11rem,32vh)] overflow-y-auto overscroll-contain p-1">
+                    <div className="max-h-[min(15rem,40vh)] overflow-y-auto overscroll-contain p-1">
                       {versions.map((v) => {
                         const active = v.tag === versionTag;
                         return (
@@ -325,25 +320,25 @@ export default function NewDatabasePage() {
                               setVersionOpen(false);
                             }}
                             className={cn(
-                              "flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm transition-colors",
+                              "flex h-8 w-full items-center gap-2 rounded-[4px] px-2 text-left text-sm transition-colors duration-150 pointer-coarse:h-10",
                               active
-                                ? "bg-brand/10 font-medium text-brand"
+                                ? "bg-secondary text-foreground"
                                 : "text-foreground hover:bg-secondary/60",
                             )}
                           >
                             <span className="min-w-0 flex-1 truncate">
                               {v.label}
-                              <span className="ml-1.5 font-mono text-[10px] font-normal text-muted-foreground">
+                              <span className="ml-2 font-mono text-xs text-muted-foreground">
                                 :{v.tag}
                               </span>
                             </span>
                             {v.recommended && (
-                              <span className="shrink-0 text-[9px] font-semibold uppercase tracking-wider text-brand/80">
-                                Rec
+                              <span className="shrink-0 text-xs text-subtle">
+                                recommended
                               </span>
                             )}
                             {active && (
-                              <Check className="h-3.5 w-3.5 shrink-0" />
+                              <Check className="size-4 shrink-0 text-brand" />
                             )}
                           </button>
                         );
@@ -353,61 +348,50 @@ export default function NewDatabasePage() {
                 )}
               </div>
             )}
-            <p className="text-[11px] leading-relaxed text-muted-foreground">
+            <p className="text-xs leading-5 text-muted-foreground">
               Versions load from Docker Hub (majors + Alpine where available).
               {fullImage ? (
-                <span className="mt-0.5 block font-mono text-[10px] sm:hidden">
-                  {fullImage}
-                </span>
+                <span className="block font-mono sm:hidden">{fullImage}</span>
               ) : null}
             </p>
-          </div>
 
-          <div className="rounded-xl border border-border/60 bg-secondary/20 px-4 py-3 text-xs leading-relaxed text-muted-foreground">
-            Host ports stay off. After deploy, link this database to a project or a
-            specific service — Docklift joins networks and injects the connection URL.
-          </div>
-        </Card>
-
-        <div className="pointer-events-none fixed inset-x-0 bottom-0 z-20 lg:left-(--shell-rail,17rem)">
-          <div className="pointer-events-auto border-t border-border/60 bg-background/90 px-3 py-3 backdrop-blur-xl sm:px-4 md:px-8">
-            <div className="mx-auto flex w-full max-w-7xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-              <div className="min-w-0">
-                <p className="truncate text-sm font-semibold tracking-tight">
-                  {name.trim() || "Untitled database"}
-                </p>
-                <div className="mt-1.5 flex flex-wrap gap-1.5">
-                  {selected && (
-                    <span className="inline-flex items-center rounded-lg border border-brand/25 bg-brand/10 px-2 py-0.5 text-[10px] font-medium text-brand">
-                      {selected.label}
-                    </span>
-                  )}
-                  {versionTag && (
-                    <span className="inline-flex items-center rounded-lg border border-border/60 bg-secondary/40 px-2 py-0.5 font-mono text-[10px] font-medium text-muted-foreground">
-                      {versionTag}
-                    </span>
-                  )}
-                </div>
-              </div>
-              <Button
-                type="button"
-                onClick={create}
-                disabled={
-                  creating || loadingEngines || !name.trim() || !versionTag
-                }
-                className="h-11 w-full shrink-0 bg-brand px-6 font-semibold text-brand-foreground shadow-lg shadow-brand/20 hover:brightness-110 sm:w-auto sm:min-w-44"
-              >
-                {creating ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Sparkles className="mr-2 h-4 w-4" />
-                )}
-                Create & deploy
-              </Button>
+            <div className="mt-4! max-w-xl rounded-md border border-info/40 bg-secondary/60 px-3 py-2.5 text-[13px] leading-5 text-muted-foreground">
+              Host ports stay off. After deploy, link this database to a project
+              or a specific service. Docklift joins the networks and injects the
+              connection URL.
             </div>
+          </section>
+
+          <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium">
+                {name.trim() || "Untitled database"}
+              </p>
+              <p className="mt-0.5 truncate font-mono text-xs text-muted-foreground">
+                {selected?.label}
+                {selected && versionTag && (
+                  <>
+                    <span className="text-subtle"> · </span>
+                    {versionTag}
+                  </>
+                )}
+              </p>
+            </div>
+            <Button
+              type="button"
+              size="lg"
+              onClick={create}
+              disabled={
+                creating || loadingEngines || !name.trim() || !versionTag
+              }
+              className="w-full shrink-0 sm:w-auto"
+            >
+              {creating && <Loader2 className="animate-spin" />}
+              Create and deploy
+            </Button>
           </div>
         </div>
-      </div>
+      </Card>
     </>
   );
 }

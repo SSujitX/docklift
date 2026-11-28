@@ -11,11 +11,35 @@ import {
   Plus,
   X,
 } from "lucide-react";
+import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { settingsTabFromSearch } from "@/lib/settingsNav";
+import { prefetchIntent } from "@/lib/prefetch";
 import { isNavActive, navGroups, type NavItem } from "./navigation";
 import { SidebarStatus } from "./SidebarStatus";
 import { useShell } from "./ShellContext";
+
+const FOCUS_RING =
+  "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring";
+
+/** One nav row: 32px (40px on touch), quiet until hovered or active. */
+function itemClass(active: boolean, isCollapsed: boolean) {
+  return cn(
+    "group flex h-8 items-center rounded-md text-[13.5px] font-medium transition-colors duration-150 pointer-coarse:h-10",
+    FOCUS_RING,
+    isCollapsed ? "justify-center" : "gap-2.5 px-2",
+    active
+      ? "bg-sidebar-accent text-sidebar-foreground"
+      : "text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground",
+  );
+}
+
+function iconClass(active: boolean) {
+  return cn(
+    "size-4 shrink-0 transition-colors duration-150",
+    active ? "text-sidebar-foreground" : "text-subtle group-hover:text-sidebar-foreground",
+  );
+}
 
 function SettingsTree({
   item,
@@ -51,22 +75,9 @@ function SettingsTree({
         onClick={onNavigate}
         title="Settings"
         aria-current={parentActive ? "page" : undefined}
-        className={cn(
-          "group relative flex h-10 items-center justify-center rounded-xl text-sm font-medium transition-colors",
-          parentActive
-            ? "text-sidebar-foreground"
-            : "text-sidebar-muted hover:bg-sidebar-accent/70 hover:text-sidebar-foreground",
-        )}
+        className={itemClass(parentActive, true)}
       >
-        {parentActive && (
-          <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-brand shadow-[0_0_12px_hsl(var(--brand)/0.7)]" />
-        )}
-        <item.icon
-          className={cn(
-            "h-4.5 w-4.5 shrink-0",
-            parentActive ? "text-brand" : "text-sidebar-muted group-hover:text-sidebar-foreground",
-          )}
-        />
+        <item.icon className={iconClass(parentActive)} />
       </Link>
     );
   }
@@ -75,26 +86,21 @@ function SettingsTree({
     <div className="space-y-0.5">
       <div
         className={cn(
-          "group relative flex items-center rounded-xl text-sm font-medium transition-colors",
+          "group flex items-center rounded-md text-[13.5px] font-medium transition-colors duration-150",
           parentActive
-            ? "text-sidebar-foreground"
-            : "text-sidebar-muted hover:bg-sidebar-accent/70 hover:text-sidebar-foreground",
+            ? "bg-sidebar-accent text-sidebar-foreground"
+            : "text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground",
         )}
       >
-        {parentActive && (
-          <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-brand shadow-[0_0_12px_hsl(var(--brand)/0.7)]" />
-        )}
         <Link
           to="/settings?tab=profile"
           onClick={onNavigate}
-          className="flex min-w-0 flex-1 items-center gap-2.5 px-2.5 py-2"
+          className={cn(
+            "flex h-8 min-w-0 flex-1 items-center gap-2.5 rounded-md px-2 pointer-coarse:h-10",
+            FOCUS_RING,
+          )}
         >
-          <item.icon
-            className={cn(
-              "h-4.5 w-4.5 shrink-0",
-              parentActive ? "text-brand" : "text-sidebar-muted group-hover:text-sidebar-foreground",
-            )}
-          />
+          <item.icon className={iconClass(parentActive)} />
           <span className="truncate">{item.label}</span>
         </Link>
         <button
@@ -105,11 +111,14 @@ function SettingsTree({
           }}
           aria-expanded={treeOpen}
           aria-label={treeOpen ? "Collapse settings" : "Expand settings"}
-          className="mr-1.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+          className={cn(
+            "mr-1 flex size-6 shrink-0 items-center justify-center rounded-md text-subtle transition-colors duration-150 hover:text-sidebar-foreground pointer-coarse:size-10 pointer-coarse:mr-0",
+            FOCUS_RING,
+          )}
         >
           <ChevronDown
             className={cn(
-              "h-4 w-4 transition-transform duration-200",
+              "size-4 transition-transform duration-150 motion-reduce:transition-none",
               treeOpen && "rotate-180",
             )}
           />
@@ -117,7 +126,7 @@ function SettingsTree({
       </div>
 
       {treeOpen && item.children && (
-        <div className="ml-3 space-y-0.5 border-l border-sidebar-border pl-2">
+        <div className="ml-6 space-y-0.5">
           {item.children.map((child) => {
             const tab = new URLSearchParams(child.href.split("?")[1] || "").get(
               "tab",
@@ -127,16 +136,23 @@ function SettingsTree({
               <Link
                 key={child.href}
                 to={child.href}
+                {...prefetchIntent(child.href)}
                 onClick={onNavigate}
                 aria-current={childActive ? "page" : undefined}
                 className={cn(
-                  "flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-[13px] font-medium transition-colors",
+                  "group flex h-7 items-center gap-2 rounded-md px-2 text-[13px] font-medium transition-colors duration-150 pointer-coarse:h-10",
+                  FOCUS_RING,
                   childActive
-                    ? "bg-brand/10 text-brand"
-                    : "text-sidebar-muted hover:bg-sidebar-accent/70 hover:text-sidebar-foreground",
+                    ? "bg-sidebar-accent text-sidebar-foreground"
+                    : "text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground",
                 )}
               >
-                <child.icon className="h-3.5 w-3.5 shrink-0" />
+                <child.icon
+                  className={cn(
+                    "size-3.5 shrink-0",
+                    childActive ? "text-sidebar-foreground" : "text-subtle group-hover:text-sidebar-foreground",
+                  )}
+                />
                 <span className="truncate">{child.label}</span>
               </Link>
             );
@@ -161,33 +177,28 @@ export function Sidebar({
   const isCollapsed = !isMobile && collapsed && !expandedOnHover;
 
   return (
-    <div className="shell-rail-surface flex h-full flex-col border-r border-sidebar-border text-sidebar-foreground">
+    <div className="flex h-full flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
       <div
         className={cn(
-          "flex h-14 shrink-0 items-center border-b border-sidebar-border",
-          isCollapsed ? "justify-center px-2" : "gap-2 px-3",
+          "flex h-12 shrink-0 items-center",
+          isCollapsed ? "justify-center px-2" : "gap-2 pl-4 pr-2",
         )}
       >
         <Link
           to="/"
+          {...prefetchIntent("/")}
           className={cn(
-            "group flex min-w-0 items-center gap-2.5",
+            "flex min-w-0 items-center gap-2.5 rounded-md",
+            "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
             isCollapsed ? "flex-none justify-center" : "flex-1",
           )}
           onClick={() => isMobile && setMobileOpen(false)}
         >
-          <span className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-linear-to-br/srgb from-brand to-blue-600 shadow-lg shadow-brand/20 transition-transform duration-300 group-hover:scale-105">
-            <Container className="h-[18px] w-[18px] text-white" strokeWidth={2.5} />
+          <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-brand">
+            <Container className="size-3.5 stroke-2 text-brand-foreground" />
           </span>
           {!isCollapsed && (
-            <span className="min-w-0">
-              <span className="block truncate text-[15px] font-bold leading-tight tracking-tight">
-                Docklift
-              </span>
-              <span className="block text-[9px] font-semibold uppercase tracking-[0.2em] text-brand">
-                Deploy Deck
-              </span>
-            </span>
+            <span className="truncate text-sm font-semibold">Docklift</span>
           )}
         </Link>
 
@@ -196,9 +207,12 @@ export function Sidebar({
             type="button"
             onClick={() => setMobileOpen(false)}
             aria-label="Close navigation"
-            className="flex h-9 w-9 items-center justify-center rounded-xl text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+            className={cn(
+              "flex size-8 items-center justify-center rounded-md text-subtle transition-colors duration-150 hover:bg-sidebar-accent hover:text-sidebar-foreground pointer-coarse:size-10",
+              FOCUS_RING,
+            )}
           >
-            <X className="h-4.5 w-4.5" />
+            <X className="size-4" />
           </button>
         ) : (
           !isCollapsed && (
@@ -211,52 +225,45 @@ export function Sidebar({
                   : "Collapse sidebar (Ctrl+B)"
               }
               aria-label={expandedOnHover ? "Keep sidebar open" : "Collapse sidebar"}
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+              className={cn(
+                "flex size-8 items-center justify-center rounded-md text-subtle transition-colors duration-150 hover:bg-sidebar-accent hover:text-sidebar-foreground pointer-coarse:size-10",
+                FOCUS_RING,
+              )}
             >
               {expandedOnHover ? (
-                <PanelLeftOpen className="h-4 w-4" />
+                <PanelLeftOpen className="size-4" />
               ) : (
-                <PanelLeftClose className="h-4 w-4" />
+                <PanelLeftClose className="size-4" />
               )}
             </button>
           )
         )}
       </div>
 
-      <div
-        className={cn(
-          "shrink-0 pt-3",
-          isCollapsed ? "flex justify-center px-2" : "px-3",
-        )}
-      >
+      <div className={cn("shrink-0 pt-1", isCollapsed ? "flex justify-center px-2" : "px-2")}>
         <Link
           to="/projects/new"
           onClick={() => isMobile && setMobileOpen(false)}
           title={isCollapsed ? "New project" : undefined}
           aria-label="New project"
+          data-slot="button"
           className={cn(
-            "flex items-center justify-center rounded-xl bg-brand text-sm font-semibold text-brand-foreground",
-            "shadow-lg shadow-brand/20 transition-all hover:brightness-110 active:scale-[0.98]",
-            isCollapsed ? "h-9 w-9" : "h-10 gap-2",
+            buttonVariants({ variant: "outline", size: isCollapsed ? "icon" : "default" }),
+            !isCollapsed && "w-full",
           )}
         >
-          <Plus className="h-4 w-4" strokeWidth={2.5} />
+          <Plus className="size-4 text-subtle" />
           {!isCollapsed && "New project"}
         </Link>
       </div>
 
-      <nav
-        className={cn(
-          "shell-scroll mt-4 flex-1 space-y-5 overflow-y-auto pb-4",
-          isCollapsed ? "px-2" : "px-3",
-        )}
-      >
+      <nav className="shell-scroll mt-4 flex-1 space-y-4 overflow-y-auto px-2 pb-4">
         {navGroups.map((group) => (
-          <div key={group.label} className="space-y-1">
+          <div key={group.label} className="space-y-0.5">
             {isCollapsed ? (
               <div className="mx-auto mb-2 h-px w-6 bg-sidebar-border" />
             ) : (
-              <p className="px-2.5 pb-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-sidebar-muted/70">
+              <p className="mb-1 px-2 text-xs leading-5 text-subtle">
                 {group.label}
               </p>
             )}
@@ -274,21 +281,8 @@ export function Sidebar({
               }
 
               const active = !item.external && isNavActive(pathname, item);
-              const className = cn(
-                "group relative flex items-center rounded-xl text-sm font-medium transition-colors",
-                isCollapsed ? "h-10 justify-center" : "gap-2.5 px-2.5 py-2",
-                active
-                  ? "text-sidebar-foreground"
-                  : "text-sidebar-muted hover:bg-sidebar-accent/70 hover:text-sidebar-foreground",
-              );
-              const icon = (
-                <item.icon
-                  className={cn(
-                    "h-4.5 w-4.5 shrink-0 transition-colors",
-                    active ? "text-brand" : "text-sidebar-muted group-hover:text-sidebar-foreground",
-                  )}
-                />
-              );
+              const className = itemClass(active, isCollapsed);
+              const icon = <item.icon className={iconClass(active)} />;
 
               if (item.external) {
                 return (
@@ -311,14 +305,12 @@ export function Sidebar({
                 <Link
                   key={item.href}
                   to={item.href}
+                  {...prefetchIntent(item.href)}
                   onClick={() => isMobile && setMobileOpen(false)}
                   title={isCollapsed ? item.label : undefined}
                   aria-current={active ? "page" : undefined}
                   className={className}
                 >
-                  {active && (
-                    <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-brand shadow-[0_0_12px_hsl(var(--brand)/0.7)]" />
-                  )}
                   {icon}
                   {!isCollapsed && <span className="truncate">{item.label}</span>}
                 </Link>
@@ -328,12 +320,7 @@ export function Sidebar({
         ))}
       </nav>
 
-      <div
-        className={cn(
-          "shrink-0 border-t border-sidebar-border py-3",
-          isCollapsed ? "px-2" : "px-3",
-        )}
-      >
+      <div className="shrink-0 border-t border-sidebar-border px-2 py-2">
         <SidebarStatus collapsed={isCollapsed} />
       </div>
     </div>

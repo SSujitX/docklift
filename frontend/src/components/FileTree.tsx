@@ -28,26 +28,26 @@ interface TreeItemProps {
 
 const getFileIcon = (name: string) => {
   const ext = name.split(".").pop()?.toLowerCase();
+  const cls = "size-4 shrink-0 text-subtle";
   switch (ext) {
     case "py":
     case "js":
     case "ts":
     case "tsx":
     case "jsx":
-      return <FileCode className="h-4 w-4 text-violet-500" />;
-    case "json":
-      return <FileJson className="h-4 w-4 text-amber-500" />;
-    case "md":
-    case "txt":
-      return <FileText className="h-4 w-4 text-blue-500" />;
     case "yml":
     case "yaml":
-      return <FileCode className="h-4 w-4 text-pink-500" />;
+      return <FileCode className={cls} />;
+    case "json":
+      return <FileJson className={cls} />;
+    case "md":
+    case "txt":
+      return <FileText className={cls} />;
     default:
       if (name === "Dockerfile") {
-        return <FileCode className="h-4 w-4 text-cyan-500" />;
+        return <FileCode className={cls} />;
       }
-      return <File className="h-4 w-4 text-muted-foreground" />;
+      return <File className={cls} />;
   }
 };
 
@@ -66,25 +66,22 @@ function TreeItem({ item, level, onFileEdit }: TreeItemProps) {
       <div>
         <button
           onClick={() => setIsOpen(!isOpen)}
-          className={cn(
-            "flex items-center gap-2 w-full px-3 py-2 hover:bg-secondary/50 transition-colors text-left",
-            "text-sm"
-          )}
+          className="flex h-9 w-full items-center gap-2 pr-4 text-left text-[13px] transition-colors duration-150 hover:bg-secondary/50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring pointer-coarse:h-10"
           style={{ paddingLeft: `${level * 16 + 12}px` }}
         >
           {isOpen ? (
-            <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+            <ChevronDown className="size-4 shrink-0 text-subtle" />
           ) : (
-            <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+            <ChevronRight className="size-4 shrink-0 text-subtle" />
           )}
           {isOpen ? (
-            <FolderOpen className="h-4 w-4 text-amber-500 shrink-0" />
+            <FolderOpen className="size-4 shrink-0 text-subtle" />
           ) : (
-            <Folder className="h-4 w-4 text-amber-500 shrink-0" />
+            <Folder className="size-4 shrink-0 text-subtle" />
           )}
-          <span className="font-medium truncate">{item.name}</span>
-          <span className="text-xs text-muted-foreground ml-auto">
-            {item.children?.length || 0} items
+          <span className="truncate font-mono font-medium">{item.name}</span>
+          <span className="ml-auto shrink-0 text-xs text-subtle">
+            <span className="font-mono">{item.children?.length || 0}</span> items
           </span>
         </button>
         {isOpen && item.children && (
@@ -106,21 +103,20 @@ function TreeItem({ item, level, onFileEdit }: TreeItemProps) {
   return (
     <div
       className={cn(
-        "flex items-center gap-2 px-3 py-2 hover:bg-secondary/50 transition-colors",
-        "text-sm group"
+        "group flex h-9 items-center gap-2 pr-2 text-[13px] transition-colors duration-150 hover:bg-secondary/50 pointer-coarse:h-10",
       )}
       style={{ paddingLeft: `${level * 16 + 36}px` }}
     >
       {getFileIcon(item.name)}
-      <span className="font-mono truncate">{item.name}</span>
-      <span className="text-xs text-muted-foreground">
+      <span className="min-w-0 truncate font-mono">{item.name}</span>
+      <span className="shrink-0 font-mono text-xs text-subtle">
         {item.size !== undefined && formatSize(item.size)}
       </span>
       {item.editable && onFileEdit && (
         <Button
           size="sm"
           variant="ghost"
-          className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity h-7"
+          className="ml-auto text-muted-foreground opacity-60 group-hover:opacity-100 focus-visible:opacity-100"
           onClick={() => onFileEdit(item.path)}
         >
           Edit
@@ -140,18 +136,22 @@ export function FileTree({ files, onFileEdit }: FileTreeProps) {
 
   if (files.length === 0) {
     return (
-      <div className="text-muted-foreground text-sm py-12 text-center">
-        No files uploaded
+      <div className="py-12 text-center">
+        <p className="text-sm font-medium">No files uploaded</p>
+        <p className="mt-1 text-[13px] text-muted-foreground">
+          Files appear here after the source is uploaded or cloned.
+        </p>
       </div>
     );
   }
 
   return (
     <div className="divide-y divide-border">
-      <div className="px-4 py-3 bg-secondary/30 text-sm text-muted-foreground">
-        {countFiles(files)} files in {files.filter((f) => f.type === "folder").length} folders
+      <div className="px-4 py-2 text-xs text-muted-foreground">
+        <span className="font-mono">{countFiles(files)}</span> files in{" "}
+        <span className="font-mono">{files.filter((f) => f.type === "folder").length}</span> folders
       </div>
-      <div className="max-h-[500px] overflow-y-auto">
+      <div className="max-h-[500px] overflow-y-auto py-1">
         {files.map((item) => (
           <TreeItem key={item.path} item={item} level={0} onFileEdit={onFileEdit} />
         ))}

@@ -6,22 +6,14 @@ import {
   Check,
   Copy,
   ExternalLink,
-  Globe,
   Loader2,
-  Lock,
-  Plus,
   RefreshCw,
-  ScrollText,
   Search,
-  Server,
-  ShieldAlert,
-  ShieldOff,
   Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
-import type { SslInfo } from "@/components/SslStatusBadge";
+import { SslStatusBadge, type SslInfo } from "@/components/SslStatusBadge";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { authFetch } from "@/lib/auth";
 import {
   displayHostnameFromInput,
@@ -38,53 +30,17 @@ type BusyAction = "add" | "remove" | "retry";
 // auto-refreshing after this long so an abandoned tab does not poll all day.
 const POLL_TIMEOUT_MS = 5 * 60 * 1000;
 
-const STATUS_META: Record<
-  SslInfo["status"],
-  { label: string; className: string; icon: typeof Lock }
-> = {
-  active: {
-    label: "HTTPS active",
-    className: "bg-emerald-500/10 text-emerald-600 border-emerald-500/30",
-    icon: Lock,
-  },
-  expiring: {
-    label: "Renews soon",
-    className: "bg-amber-500/10 text-amber-600 border-amber-500/30",
-    icon: Lock,
-  },
-  expired: {
-    label: "Certificate expired",
-    className: "bg-red-500/10 text-red-600 border-red-500/30",
-    icon: ShieldAlert,
-  },
-  failed: {
-    label: "HTTPS setup failed",
-    className: "bg-red-500/10 text-red-600 border-red-500/30",
-    icon: ShieldAlert,
-  },
-  pending: {
-    label: "Issuing certificate",
-    className: "bg-brand/10 text-brand border-brand/30",
-    icon: Loader2,
-  },
-  missing: {
-    label: "HTTP only — no certificate yet",
-    className: "bg-secondary text-muted-foreground border-border/60",
-    icon: ShieldOff,
-  },
-};
-
 const LEVEL_STYLES: Record<SslEvent["level"], string> = {
-  info: "text-foreground/80",
-  success: "text-emerald-600",
-  warn: "text-amber-600",
-  error: "text-red-500",
+  info: "text-foreground",
+  success: "text-ok",
+  warn: "text-warn",
+  error: "text-danger",
 };
 
 const DNS_STYLES: Record<DomainDnsCheck["status"], string> = {
-  ok: "text-emerald-600",
-  mismatch: "text-amber-600",
-  missing: "text-red-500",
+  ok: "text-ok",
+  mismatch: "text-warn",
+  missing: "text-danger",
   unknown: "text-muted-foreground",
 };
 
@@ -95,41 +51,18 @@ function splitDomains(value: string | null): string[] {
     .filter(Boolean);
 }
 
-function SslPill({ ssl }: { ssl?: SslInfo | null }) {
-  const status = ssl?.status || "missing";
-  const meta = STATUS_META[status];
-  const Icon = meta.icon;
-  const expiry =
-    ssl?.expiresAt && (status === "active" || status === "expiring")
-      ? new Date(ssl.expiresAt).toLocaleDateString()
-      : null;
-
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-[11px] font-medium",
-        meta.className,
-      )}
-    >
-      <Icon className={cn("h-3 w-3 shrink-0", status === "pending" && "animate-spin")} />
-      {meta.label}
-      {expiry && <span className="opacity-70">· until {expiry}</span>}
-    </span>
-  );
-}
-
 function CopyableCommand({ command }: { command: string }) {
   const [copied, setCopied] = useState(false);
   return (
-    <div className="flex items-stretch gap-1">
-      <code className="shell-scroll min-w-0 flex-1 overflow-x-auto whitespace-nowrap rounded bg-background px-2 py-1.5 text-[11px] select-all">
+    <div className="flex items-center gap-1">
+      <code className="shell-scroll min-w-0 flex-1 overflow-x-auto whitespace-nowrap rounded-sm bg-card px-2 py-1.5 font-mono text-xs text-foreground select-all">
         {command}
       </code>
       <Button
         type="button"
         variant="ghost"
         size="icon"
-        className="h-8 w-8 shrink-0"
+        className="shrink-0 text-subtle hover:text-foreground"
         onClick={async () => {
           await copyToClipboard(command);
           setCopied(true);
@@ -138,9 +71,9 @@ function CopyableCommand({ command }: { command: string }) {
         aria-label="Copy command"
       >
         {copied ? (
-          <Check className="h-3.5 w-3.5 text-emerald-500" />
+          <Check className="size-3.5 text-ok" />
         ) : (
-          <Copy className="h-3.5 w-3.5" />
+          <Copy className="size-3.5" />
         )}
       </Button>
     </div>
@@ -349,323 +282,307 @@ export function ServiceDomainCard({
   const hint = parsed.value ? dnsRecordHint(parsed.value) : null;
 
   return (
-    <Card className="border-border/50 p-4 sm:p-6">
-      <div className="space-y-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="flex min-w-0 items-start gap-3">
-            <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-brand/10">
-              <Server className="h-5 w-5 text-brand" />
-            </div>
-            <div className="min-w-0">
-              <h4 className="truncate text-base font-bold">{service.name}</h4>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                {service.port ? `Public port ${service.port}` : "No port assigned"} · container
-                port {service.internal_port} ·{" "}
-                {domains.length === 0
-                  ? "no domains"
-                  : `${domains.length} domain${domains.length > 1 ? "s" : ""}`}
-              </p>
-            </div>
-          </div>
-
-          {domains.length > 0 && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-9 gap-1.5 text-xs"
-              onClick={handleRetry}
-              disabled={busy !== null || !service.container_name}
-              title={
-                service.container_name
-                  ? "Ask Let's Encrypt again for every domain on this service"
-                  : "Deploy the service first"
-              }
-            >
-              {busy === "retry" ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <RefreshCw className="h-3.5 w-3.5" />
-              )}
-              Retry HTTPS
-            </Button>
-          )}
+    <section className="rounded-lg border border-border bg-card">
+      {/* Header */}
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border px-4 py-3">
+        <div className="min-w-0">
+          <h3 className="truncate text-[15px] font-semibold leading-5">{service.name}</h3>
+          <p className="mt-0.5 font-mono text-xs text-muted-foreground">
+            {service.port ? `public port ${service.port}` : "no port assigned"}
+            <span className="text-subtle"> · </span>
+            container port {service.internal_port}
+            <span className="text-subtle"> · </span>
+            {domains.length === 0
+              ? "no domains"
+              : `${domains.length} domain${domains.length > 1 ? "s" : ""}`}
+          </p>
         </div>
 
-        <form onSubmit={handleAdd} className="space-y-2">
-          <label
-            htmlFor={`domain-input-${service.id}`}
-            className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground"
+        {domains.length > 0 && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={handleRetry}
+            disabled={busy !== null || !service.container_name}
+            title={
+              service.container_name
+                ? "Ask Let's Encrypt again for every domain on this service"
+                : "Deploy the service first"
+            }
           >
-            Add a domain
-          </label>
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <div className="relative min-w-0 flex-1">
-              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 font-mono text-sm text-muted-foreground">
-                https://
-              </span>
-              <input
-                id={`domain-input-${service.id}`}
-                value={input}
-                onChange={(e) => setInput(displayHostnameFromInput(e.target.value))}
-                onPaste={(e) => {
-                  const pasted = e.clipboardData.getData("text");
-                  if (!pasted) return;
-                  const cleaned = displayHostnameFromInput(pasted);
-                  if (cleaned !== pasted) {
-                    e.preventDefault();
-                    setInput(cleaned);
-                  }
-                }}
-                onBlur={() => setInput((v) => displayHostnameFromInput(v))}
-                placeholder="app.example.com"
-                spellCheck={false}
-                autoComplete="off"
-                className="h-11 w-full rounded-lg border border-input bg-background pl-19 pr-3 font-mono text-sm ring-offset-background transition-colors placeholder:font-sans placeholder:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
-              />
-            </div>
-            <Button
-              type="submit"
-              disabled={!parsed.value || Boolean(parsed.error) || isDuplicate || busy !== null}
-              className="h-11 gap-2 font-semibold"
-            >
-              {busy === "add" ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Plus className="h-4 w-4" />
-              )}
-              Add domain
-            </Button>
-          </div>
+            {busy === "retry" ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <RefreshCw className="size-3.5" />
+            )}
+            Retry HTTPS
+          </Button>
+        )}
+      </div>
 
-          {parsed.error ? (
-            <p className="flex items-start gap-1.5 text-xs text-red-500">
-              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              {parsed.error}
-            </p>
-          ) : isDuplicate ? (
-            <p className="flex items-start gap-1.5 text-xs text-amber-600">
-              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              {parsed.value} is already mapped to this service.
-            </p>
-          ) : parsed.value ? (
-            <div className="space-y-1 text-xs">
-              <p className="text-muted-foreground">
-                Saves as <code className="font-mono text-foreground">{parsed.value}</code>
-                {hint && (
-                  <>
-                    {" "}
-                    — needs an <strong className="text-foreground">A</strong> record named{" "}
-                    <code className="font-mono text-foreground">{hint.name}</code> pointing at{" "}
-                    <code className="font-mono text-foreground">{serverIP}</code>
-                  </>
-                )}
-              </p>
-            </div>
-          ) : (
-            <p className="text-xs text-muted-foreground">
-              Paste a URL — only <code className="font-mono">https://</code> and a trailing{" "}
-              <code className="font-mono">/</code> (or path) are removed. Subdomains stay as-is.
-            </p>
-          )}
-        </form>
-
-        {domains.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-border/60 bg-secondary/20 p-5 text-center">
-            <Globe className="mx-auto h-6 w-6 text-muted-foreground/40" />
-            <p className="mt-2 text-sm font-medium">No domain mapped yet</p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {typeof service.port === "number" &&
-              service.port > 0 &&
-              serverIP &&
-              serverIP !== "..." &&
-              serverIP !== "N/A"
-                ? `Also reachable at http://${serverIP}:${service.port} (host port published).`
-                : "Private by default — add a domain for HTTPS (preferred). Avoid sharing IP:port: it reveals your origin server. Raw host ports are opt-in via Build → Publish host ports, then redeploy."}
-            </p>
+      {/* Add a domain */}
+      <form onSubmit={handleAdd} className="space-y-2 border-b border-border p-4">
+        <label
+          htmlFor={`domain-input-${service.id}`}
+          className="text-[13px] font-medium"
+        >
+          Add a domain
+        </label>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <div className="relative min-w-0 flex-1 sm:max-w-md">
+            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 font-mono text-sm text-subtle">
+              https://
+            </span>
+            <input
+              id={`domain-input-${service.id}`}
+              value={input}
+              onChange={(e) => setInput(displayHostnameFromInput(e.target.value))}
+              onPaste={(e) => {
+                const pasted = e.clipboardData.getData("text");
+                if (!pasted) return;
+                const cleaned = displayHostnameFromInput(pasted);
+                if (cleaned !== pasted) {
+                  e.preventDefault();
+                  setInput(cleaned);
+                }
+              }}
+              onBlur={() => setInput((v) => displayHostnameFromInput(v))}
+              placeholder="app.example.com"
+              spellCheck={false}
+              autoComplete="off"
+              className="h-9 w-full rounded-md border border-input bg-card pl-[5.5rem] pr-3 font-mono text-sm transition-colors duration-150 placeholder:text-subtle focus-visible:border-brand focus-visible:outline-hidden focus-visible:ring-3 focus-visible:ring-brand/20 pointer-coarse:h-10"
+            />
           </div>
+          <Button
+            type="submit"
+            size="lg"
+            disabled={!parsed.value || Boolean(parsed.error) || isDuplicate || busy !== null}
+          >
+            {busy === "add" && <Loader2 className="animate-spin" />}
+            Add domain
+          </Button>
+        </div>
+
+        {parsed.error ? (
+          <p className="flex items-start gap-1.5 text-xs text-danger">
+            <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+            {parsed.error}
+          </p>
+        ) : isDuplicate ? (
+          <p className="flex items-start gap-1.5 text-xs text-warn">
+            <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+            {parsed.value} is already mapped to this service.
+          </p>
+        ) : parsed.value ? (
+          <p className="text-xs leading-5 text-muted-foreground">
+            Saves as <code className="font-mono text-foreground">{parsed.value}</code>
+            {hint && (
+              <>
+                {" "}
+                — needs an <span className="font-medium text-foreground">A</span> record named{" "}
+                <code className="font-mono text-foreground">{hint.name}</code> pointing at{" "}
+                <code className="font-mono text-foreground">{serverIP}</code>
+              </>
+            )}
+          </p>
         ) : (
-          <div className="space-y-2">
-            {domains.map((domain) => {
-              const ssl = sslMap[domain];
-              const secure = ssl?.status === "active" || ssl?.status === "expiring";
-              const dns = dnsChecks[domain];
-              const fix =
-                ssl?.status === "failed" || ssl?.status === "expired"
-                  ? sslFixFor(ssl?.error, serverIP)
-                  : null;
+          <p className="text-xs leading-5 text-muted-foreground">
+            Paste a URL — only <code className="font-mono">https://</code> and a trailing{" "}
+            <code className="font-mono">/</code> (or path) are removed. Subdomains stay as-is.
+          </p>
+        )}
+      </form>
 
-              return (
-                <div
-                  key={domain}
-                  className="space-y-3 rounded-xl border border-border/50 bg-secondary/10 p-3 sm:p-4"
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div className="min-w-0 space-y-1.5">
-                      <a
-                        href={`${secure ? "https" : "http"}://${domain}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-start gap-1.5 font-mono text-sm font-semibold break-all transition-colors hover:text-brand"
-                      >
-                        {domain}
-                        <ExternalLink className="mt-0.5 h-3.5 w-3.5 shrink-0 opacity-60" />
-                      </a>
-                      <div>
-                        <SslPill ssl={ssl} />
-                      </div>
-                    </div>
+      {/* Mapped domains */}
+      {domains.length === 0 ? (
+        <div className="px-4 py-8 text-center">
+          <p className="text-sm font-medium">No domain mapped yet</p>
+          <p className="mx-auto mt-1 max-w-md text-[13px] leading-5 text-muted-foreground">
+            {typeof service.port === "number" &&
+            service.port > 0 &&
+            serverIP &&
+            serverIP !== "..." &&
+            serverIP !== "N/A"
+              ? `Also reachable at http://${serverIP}:${service.port} (host port published).`
+              : "Private by default — add a domain for HTTPS (preferred). Avoid sharing IP:port: it reveals your origin server. Raw host ports are opt-in via Build → Publish host ports, then redeploy."}
+          </p>
+        </div>
+      ) : (
+        <ul className="divide-y divide-border">
+          {domains.map((domain) => {
+            const ssl = sslMap[domain];
+            const secure = ssl?.status === "active" || ssl?.status === "expiring";
+            const dns = dnsChecks[domain];
+            const fix =
+              ssl?.status === "failed" || ssl?.status === "expired"
+                ? sslFixFor(ssl?.error, serverIP)
+                : null;
 
-                    {confirmRemove === domain ? (
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xs text-muted-foreground">Remove?</span>
-                        <Button
-                          type="button"
-                          variant="destructive"
-                          size="sm"
-                          className="h-8 text-xs"
-                          onClick={() => void handleRemove(domain)}
-                          disabled={busy !== null}
-                        >
-                          {busy === "remove" ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          ) : (
-                            "Remove"
-                          )}
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="h-8 text-xs"
-                          onClick={() => setConfirmRemove(null)}
-                        >
-                          Cancel
-                        </Button>
-                      </div>
-                    ) : (
-                      <div className="flex shrink-0 items-center gap-1">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="h-8 gap-1.5 text-xs"
-                          onClick={() => void runDnsCheck([domain])}
-                          disabled={checking !== null}
-                        >
-                          {checking === domain ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          ) : (
-                            <Search className="h-3.5 w-3.5" />
-                          )}
-                          Check DNS
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-muted-foreground hover:bg-red-500/10 hover:text-red-500"
-                          onClick={() => setConfirmRemove(domain)}
-                          aria-label={`Remove ${domain}`}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    )}
+            return (
+              <li key={domain} className="space-y-2.5 px-4 py-3">
+                <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+                  <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1">
+                    <a
+                      href={`${secure ? "https" : "http"}://${domain}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex min-w-0 items-start gap-1 font-mono text-sm font-medium break-all underline-offset-4 hover:underline"
+                    >
+                      {domain}
+                      <ExternalLink className="mt-0.5 size-3.5 shrink-0 text-subtle" />
+                    </a>
+                    {/* Error details live in the fix callout below, not twice. */}
+                    <SslStatusBadge
+                      ssl={fix && ssl ? { ...ssl, error: null, diagnosticCommand: null } : ssl}
+                    />
                   </div>
 
-                  {dns && (
-                    <p className={cn("text-[11px] wrap-break-word", DNS_STYLES[dns.status])}>
-                      {dns.message}
-                    </p>
-                  )}
-
-                  {fix && (
-                    <div className="space-y-2 rounded-lg border border-red-500/30 bg-red-500/5 p-3">
-                      <p className="flex items-start gap-1.5 text-xs font-semibold text-red-500">
-                        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                        {fix.title}
-                      </p>
-                      {ssl?.error && (
-                        <p className="text-[11px] text-muted-foreground wrap-break-word">{ssl.error}</p>
-                      )}
-                      <ol className="space-y-1">
-                        {fix.steps.map((step, i) => (
-                          <li key={i} className="flex gap-2 text-[11px] text-foreground/80">
-                            <span className="font-bold text-red-500/70">{i + 1}.</span>
-                            <span className="min-w-0">{step}</span>
-                          </li>
-                        ))}
-                      </ol>
-                      {ssl?.diagnosticCommand && (
-                        <CopyableCommand command={ssl.diagnosticCommand} />
-                      )}
+                  {confirmRemove === domain ? (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[13px] text-muted-foreground">Remove?</span>
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => void handleRemove(domain)}
+                        disabled={busy !== null}
+                      >
+                        {busy === "remove" ? (
+                          <Loader2 className="size-3.5 animate-spin" />
+                        ) : (
+                          "Remove"
+                        )}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setConfirmRemove(null)}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex shrink-0 items-center gap-1">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="text-muted-foreground"
+                        onClick={() => void runDnsCheck([domain])}
+                        disabled={checking !== null}
+                      >
+                        {checking === domain ? (
+                          <Loader2 className="size-3.5 animate-spin" />
+                        ) : (
+                          <Search className="size-3.5" />
+                        )}
+                        Check DNS
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="text-subtle hover:text-danger"
+                        onClick={() => setConfirmRemove(domain)}
+                        aria-label={`Remove ${domain}`}
+                      >
+                        <Trash2 />
+                      </Button>
                     </div>
                   )}
                 </div>
-              );
-            })}
-          </div>
-        )}
 
-        {(events.length > 0 || busy !== null) && (
-          <div className="overflow-hidden rounded-xl border border-border/50">
-            <div className="flex items-center justify-between gap-2 bg-secondary/40 px-3 py-2">
-              <span className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
-                {activityRunning ? (
-                  <Loader2 className="h-3 w-3 animate-spin text-brand" />
-                ) : (
-                  <ScrollText className="h-3 w-3" />
+                {dns && (
+                  <p className={cn("text-xs wrap-break-word", DNS_STYLES[dns.status])}>
+                    {dns.message}
+                  </p>
                 )}
-                Let&apos;s Encrypt activity
-              </span>
+
+                {fix && (
+                  <div className="space-y-2 rounded-md border border-danger/40 bg-secondary/60 px-3 py-2.5 text-[13px]">
+                    <p className="font-medium text-foreground">{fix.title}</p>
+                    {ssl?.error && (
+                      <p className="font-mono text-xs text-danger wrap-break-word">{ssl.error}</p>
+                    )}
+                    <ol className="space-y-1">
+                      {fix.steps.map((step, i) => (
+                        <li key={i} className="flex gap-2 leading-5 text-muted-foreground">
+                          <span className="font-mono text-xs leading-5 text-subtle">{i + 1}.</span>
+                          <span className="min-w-0">{step}</span>
+                        </li>
+                      ))}
+                    </ol>
+                    {ssl?.diagnosticCommand && (
+                      <CopyableCommand command={ssl.diagnosticCommand} />
+                    )}
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {/* Let's Encrypt activity */}
+      {(events.length > 0 || busy !== null) && (
+        <div className="border-t border-border">
+          <div className="flex items-center justify-between gap-2 px-4 py-2">
+            <span className="flex items-center gap-2 text-[13px] font-medium">
+              {activityRunning && (
+                <Loader2 className="size-3.5 animate-spin text-subtle" />
+              )}
+              Let&apos;s Encrypt activity
+            </span>
+            <div className="flex items-center gap-2">
               {pollExpired && (
-                <span className="ml-auto text-[11px] text-muted-foreground">
-                  auto-refresh paused
+                <span className="text-xs text-muted-foreground">
+                  Auto-refresh paused
                 </span>
               )}
               <Button
                 type="button"
                 variant="ghost"
                 size="sm"
-                className="h-7 gap-1.5 text-[11px]"
+                className="text-muted-foreground"
                 onClick={() => {
                   setPollExpired(false);
                   void fetchSsl(true);
                 }}
               >
-                <RefreshCw className="h-3 w-3" />
+                <RefreshCw className="size-3.5" />
                 Refresh
               </Button>
             </div>
-            <div
-              ref={logRef}
-              className="shell-scroll max-h-48 divide-y divide-border/30 overflow-y-auto bg-background/60"
-            >
-              {events.length === 0 ? (
-                <p className="px-3 py-3 text-[11px] text-muted-foreground">
-                  Setting up routing and requesting a certificate…
-                </p>
-              ) : (
-                events.map((event, i) => (
-                  <div key={`${event.at}-${i}`} className="flex gap-2 px-3 py-1.5 text-[11px]">
-                    <span className="shrink-0 font-mono text-muted-foreground/70">
-                      {new Date(event.at).toLocaleTimeString([], {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                        second: "2-digit",
-                      })}
-                    </span>
-                    <span className={cn("min-w-0 wrap-break-word", LEVEL_STYLES[event.level])}>
-                      {event.message}
-                    </span>
-                  </div>
-                ))
-              )}
-            </div>
           </div>
-        )}
-      </div>
-    </Card>
+          <div
+            ref={logRef}
+            className="shell-scroll mx-4 mb-4 max-h-48 overflow-y-auto rounded-md bg-secondary/60 py-1.5"
+          >
+            {events.length === 0 ? (
+              <p className="px-3 py-1.5 text-xs text-muted-foreground">
+                Setting up routing and requesting a certificate…
+              </p>
+            ) : (
+              events.map((event, i) => (
+                <div key={`${event.at}-${i}`} className="flex gap-3 px-3 py-0.5 text-xs leading-5">
+                  <span className="shrink-0 font-mono tabular-nums text-subtle">
+                    {new Date(event.at).toLocaleTimeString([], {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                      second: "2-digit",
+                    })}
+                  </span>
+                  <span className={cn("min-w-0 wrap-break-word", LEVEL_STYLES[event.level])}>
+                    {event.message}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </section>
   );
 }

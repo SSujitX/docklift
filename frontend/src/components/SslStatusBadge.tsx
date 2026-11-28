@@ -1,5 +1,6 @@
 import { Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 export type SslInfo = {
   status: "missing" | "pending" | "active" | "expiring" | "expired" | "failed";
@@ -8,20 +9,21 @@ export type SslInfo = {
   diagnosticCommand?: string | null;
 };
 
-const STYLES: Record<SslInfo["status"], string> = {
-  active: "bg-emerald-500/15 text-emerald-600 border-emerald-500/30",
-  expiring: "bg-amber-500/15 text-amber-600 border-amber-500/30",
-  expired: "bg-red-500/15 text-red-600 border-red-500/30",
-  failed: "bg-red-500/15 text-red-600 border-red-500/30",
-  pending: "bg-cyan-500/15 text-cyan-600 border-cyan-500/30",
-  missing: "bg-secondary text-muted-foreground border-border/50",
+// Dot colour carries the state; the label stays neutral.
+const DOTS: Record<SslInfo["status"], string> = {
+  active: "bg-ok",
+  expiring: "bg-warn",
+  expired: "bg-danger",
+  failed: "bg-danger",
+  pending: "bg-info animate-pulse motion-reduce:animate-none",
+  missing: "bg-subtle",
 };
 
 const LABELS: Record<SslInfo["status"], string> = {
-  active: "HTTPS Active",
+  active: "HTTPS active",
   expiring: "Expiring soon",
   expired: "Expired",
-  failed: "SSL Failed",
+  failed: "SSL failed",
   pending: "Issuing…",
   missing: "No cert",
 };
@@ -42,16 +44,19 @@ export function SslStatusBadge({
       : null;
 
   return (
-    <div className="flex flex-col gap-1 min-w-0">
-      <div className="flex items-center gap-2 flex-wrap">
+    <div className="flex min-w-0 flex-col gap-1">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <span
-          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium border ${STYLES[status]}`}
+          className={cn(
+            "inline-flex items-center gap-2 whitespace-nowrap text-[13px] font-medium leading-5",
+            status === "missing" ? "text-muted-foreground" : "text-foreground",
+          )}
         >
-          {status === "pending" && <Loader2 className="h-3 w-3 animate-spin" />}
+          <span aria-hidden="true" className={cn("size-2 shrink-0 rounded-full", DOTS[status])} />
           {LABELS[status]}
         </span>
         {expiry && (
-          <span className="text-[11px] text-muted-foreground">until {expiry}</span>
+          <span className="font-mono text-xs text-muted-foreground">until {expiry}</span>
         )}
         {(status === "failed" || status === "expired" || status === "missing") &&
           onRetry && (
@@ -59,14 +64,14 @@ export function SslStatusBadge({
               type="button"
               variant="ghost"
               size="sm"
-              className="h-7 px-2 text-xs"
+              className="px-2 text-muted-foreground"
               onClick={onRetry}
               disabled={retrying}
             >
               {retrying ? (
-                <Loader2 className="h-3 w-3 animate-spin" />
+                <Loader2 className="size-3.5 animate-spin" />
               ) : (
-                <RefreshCw className="h-3 w-3 mr-1" />
+                <RefreshCw className="size-3.5" />
               )}
               Retry SSL
             </Button>
@@ -74,11 +79,11 @@ export function SslStatusBadge({
       </div>
       {status === "failed" && ssl?.error && (
         <div className="space-y-1.5">
-          <p className="text-xs text-red-500/90 wrap-break-word">{ssl.error}</p>
+          <p className="wrap-break-word text-xs text-danger">{ssl.error}</p>
           {ssl.diagnosticCommand && (
             <div className="space-y-1">
-              <p className="text-[11px] text-muted-foreground">Full error on server:</p>
-              <code className="block max-w-full overflow-x-auto rounded bg-secondary px-2 py-1.5 text-[11px] text-foreground select-all">
+              <p className="text-xs text-muted-foreground">Full error on server:</p>
+              <code className="block max-w-full select-all overflow-x-auto rounded-sm bg-secondary/60 px-2 py-1.5 font-mono text-xs text-foreground">
                 {ssl.diagnosticCommand}
               </code>
             </div>
