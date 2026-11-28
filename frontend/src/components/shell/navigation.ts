@@ -164,7 +164,7 @@ export function activeNavItem(pathname: string): NavItem | undefined {
 
 const segmentLabels: Record<string, string> = {
   projects: "Projects",
-  new: "New Project",
+  new: "New project",
   databases: "Databases",
   ports: "Ports",
   system: "System",
