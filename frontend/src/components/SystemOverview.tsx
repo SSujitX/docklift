@@ -4,7 +4,8 @@ import { useEffect, useState, useCallback, type ReactNode } from "react";
 import { ArrowDown, ArrowUp, RefreshCw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { API_URL, cn } from "@/lib/utils";
-import { authFetch } from "@/lib/auth";
+import { apiCache, authFetch } from "@/lib/auth";
+import { API } from "@/lib/prefetch";
 import {
   Dialog,
   DialogContent,
@@ -236,10 +237,16 @@ const SEGMENT =
   "inline-flex h-7 items-center rounded-[4px] px-2.5 text-[13px] font-medium transition-colors duration-150 pointer-coarse:h-9";
 
 export function SystemOverview() {
-  const [stats, setStats] = useState<SystemStats | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Last known stats draw at once on a revisit (with their own time); the poll refreshes them.
+  const [stats, setStats] = useState<SystemStats | null>(
+    () => apiCache.peek<SystemStats>(API.systemStats) ?? null,
+  );
+  const [loading, setLoading] = useState(() => apiCache.peek(API.systemStats) === undefined);
   const [error, setError] = useState<string | null>(null);
-  const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(() => {
+    const at = apiCache.storedAt(API.systemStats);
+    return at === undefined ? null : new Date(at);
+  });
   const [purging, setPurging] = useState(false);
   const [showPurgeDialog, setShowPurgeDialog] = useState(false);
   const [purgePassword, setPurgePassword] = useState("");
@@ -247,7 +254,7 @@ export function SystemOverview() {
 
   const fetchStats = useCallback(async () => {
     try {
-      const res = await authFetch(`${API_URL}/api/system/stats`);
+      const res = await apiCache.fetch(API.systemStats);
       const data = await res.json();
       setStats(data);
       setLastUpdate(new Date());

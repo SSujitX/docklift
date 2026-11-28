@@ -14,6 +14,7 @@ import {
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { settingsTabFromSearch } from "@/lib/settingsNav";
+import { prefetchIntent } from "@/lib/prefetch";
 import { isNavActive, navGroups, type NavItem } from "./navigation";
 import { SidebarStatus } from "./SidebarStatus";
 import { useShell } from "./ShellContext";
@@ -135,6 +136,7 @@ function SettingsTree({
               <Link
                 key={child.href}
                 to={child.href}
+                {...prefetchIntent(child.href)}
                 onClick={onNavigate}
                 aria-current={childActive ? "page" : undefined}
                 className={cn(
@@ -184,6 +186,7 @@ export function Sidebar({
       >
         <Link
           to="/"
+          {...prefetchIntent("/")}
           className={cn(
             "flex min-w-0 items-center gap-2.5 rounded-md",
             "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
@@ -302,6 +305,7 @@ export function Sidebar({
                 <Link
                   key={item.href}
                   to={item.href}
+                  {...prefetchIntent(item.href)}
                   onClick={() => isMobile && setMobileOpen(false)}
                   title={isCollapsed ? item.label : undefined}
                   aria-current={active ? "page" : undefined}

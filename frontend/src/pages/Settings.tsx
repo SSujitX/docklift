@@ -13,7 +13,8 @@ import { GithubIcon } from "@/components/icons/GithubIcon";
 import { toast } from "sonner";
 import { API_URL, cn, copyToClipboard } from "@/lib/utils";
 import { GitHubConnect } from "@/components/GitHubConnect";
-import { authFetch, startGithubInstallAndNavigate } from "@/lib/auth";
+import { apiCache, authFetch, startGithubInstallAndNavigate } from "@/lib/auth";
+import { API } from "@/lib/prefetch";
 import { useAuth } from "@/components/AuthProvider";
 import type { SslInfo } from "@/components/SslStatusBadge";
 import { DnsGuideCard } from "@/components/domains/DnsGuideCard";
@@ -53,9 +54,14 @@ interface BackupInfo {
 }
 
 function SettingsContent() {
-  const [githubStatus, setGithubStatus] = useState<GitHubStatus | null>(null);
-  const [githubInstallations, setGithubInstallations] = useState<GitHubInstallation[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Every tab starts from its last known data (memory cache) and refreshes when opened.
+  const [githubStatus, setGithubStatus] = useState<GitHubStatus | null>(
+    () => apiCache.peek<GitHubStatus>(API.githubStatus) ?? null,
+  );
+  const [githubInstallations, setGithubInstallations] = useState<GitHubInstallation[]>(
+    () => apiCache.peek<{ installations?: GitHubInstallation[] }>(API.githubInstallations)?.installations || [],
+  );
+  const [loading, setLoading] = useState(() => apiCache.peek(API.githubStatus) === undefined);
   const [disconnecting, setDisconnecting] = useState(false);
   const [showGitHubConnect, setShowGitHubConnect] = useState(false);
   const [activeTab, setActiveTab] = useState('profile');
@@ -72,15 +78,26 @@ function SettingsContent() {
   const [showNewPassword, setShowNewPassword] = useState(false);
   
   // Domain State
-  const [domains, setDomains] = useState<DomainConfig[]>([]);
+  const [domains, setDomains] = useState<DomainConfig[]>(
+    () => apiCache.peek<DomainConfig[]>(API.domains) ?? [],
+  );
   const [loadingDomains, setLoadingDomains] = useState(false);
-  const [serverIP, setServerIP] = useState<string>('...');
-  const [acmeEmail, setAcmeEmail] = useState('');
+  const [serverIP, setServerIP] = useState<string>(() => {
+    const cached = apiCache.peek<{ ip?: string }>(API.systemIP);
+    return cached ? cached.ip || 'N/A' : '...';
+  });
+  const [acmeEmail, setAcmeEmail] = useState(
+    () => apiCache.peek<{ email?: string }>(API.sslEmail)?.email || '',
+  );
   const [savingAcmeEmail, setSavingAcmeEmail] = useState(false);
 
   // Backup State
-  const [backups, setBackups] = useState<BackupInfo[]>([]);
-  const [uploadedFiles, setUploadedFiles] = useState<BackupInfo[]>([]);
+  const [backups, setBackups] = useState<BackupInfo[]>(
+    () => apiCache.peek<BackupInfo[]>(API.backups) ?? [],
+  );
+  const [uploadedFiles, setUploadedFiles] = useState<BackupInfo[]>(
+    () => apiCache.peek<BackupInfo[]>(API.backupUploads) ?? [],
+  );
   const [loadingBackups, setLoadingBackups] = useState(false);
   const [loadingUploads, setLoadingUploads] = useState(false);
   const [creatingBackup, setCreatingBackup] = useState(false);
@@ -148,7 +165,7 @@ function SettingsContent() {
 
   const fetchServerIP = async () => {
     try {
-      const res = await authFetch(`${API_URL}/api/system/ip`);
+      const res = await apiCache.fetch(API.systemIP);
       if (res.ok) {
         const data = await res.json();
         setServerIP(data.ip || 'N/A');
@@ -159,28 +176,36 @@ function SettingsContent() {
   };
 
   const fetchGitHubStatus = async () => {
+    const loadInstallations = () =>
+      apiCache
+        .fetch(API.githubInstallations)
+        .then(async (instRes) => {
+          if (!instRes.ok) return null;
+          const instData = await instRes.json();
+          return (instData.installations || []) as GitHubInstallation[];
+        })
+        .catch(() => null); // Ignore installation fetch errors
+    // The installations request does not need the status answer, so both go out together when
+    // GitHub was connected at the last look. Otherwise it waits for the status: the endpoint
+    // answers with an error while GitHub is not connected.
+    const lastStatus = apiCache.peek<{ connected?: boolean }>(API.githubStatus);
+    let installationsRequest = lastStatus?.connected ? loadInstallations() : null;
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
-      
-      const res = await authFetch(`${API_URL}/api/github/status`, {
+
+      const res = await apiCache.fetch(API.githubStatus, {
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
       const data = await res.json();
       setGithubStatus(data);
 
-      // Also fetch all installations if connected
+      // Show all installations if connected
       if (data.connected) {
-        try {
-          const instRes = await authFetch(`${API_URL}/api/github/installations`);
-          if (instRes.ok) {
-            const instData = await instRes.json();
-            setGithubInstallations(instData.installations || []);
-          }
-        } catch {
-          // Ignore installation fetch errors
-        }
+        installationsRequest ??= loadInstallations();
+        const installations = await installationsRequest;
+        if (installations) setGithubInstallations(installations);
       }
     } catch {
       setGithubStatus({ connected: false });
@@ -215,9 +240,15 @@ function SettingsContent() {
   };
 
   const fetchDomains = async (opts?: { silent?: boolean }): Promise<boolean> => {
-    if (!opts?.silent) setLoadingDomains(true);
+    // Spinner only when there is nothing to show yet; cached domains stay up while refreshing.
+    const showSpinner = !opts?.silent && apiCache.peek(API.domains) === undefined;
+    if (showSpinner) setLoadingDomains(true);
     try {
-      const res = await authFetch(`${API_URL}/api/domains`);
+      // Both requests go out together; the email is still applied only after domains loaded.
+      const domainsRequest = apiCache.fetch(API.domains);
+      const emailRequest = apiCache.fetch(API.sslEmail);
+      emailRequest.catch(() => {}); // handled below; avoids an unhandled rejection if domains fail first
+      const res = await domainsRequest;
       if (res.ok) {
         const data = await res.json();
         setDomains(data);
@@ -225,7 +256,7 @@ function SettingsContent() {
         if (!opts?.silent) toast.error("Failed to load domains");
         return false;
       }
-      const emailRes = await authFetch(`${API_URL}/api/domains/ssl/email`);
+      const emailRes = await emailRequest;
       if (emailRes.ok) {
         const emailData = await emailRes.json();
         setAcmeEmail(emailData.email || '');
@@ -235,7 +266,7 @@ function SettingsContent() {
       if (!opts?.silent) toast.error("Failed to load domains");
       return false;
     } finally {
-      if (!opts?.silent) setLoadingDomains(false);
+      if (showSpinner) setLoadingDomains(false);
     }
   };
 
@@ -319,9 +350,9 @@ function SettingsContent() {
 
   // Backup Functions
   const fetchBackups = async () => {
-    setLoadingBackups(true);
+    if (apiCache.peek(API.backups) === undefined) setLoadingBackups(true);
     try {
-      const res = await authFetch(`${API_URL}/api/backup`);
+      const res = await apiCache.fetch(API.backups);
       if (res.ok) {
         const data = await res.json();
         setBackups(data);
@@ -334,9 +365,9 @@ function SettingsContent() {
   };
 
   const fetchUploadedFiles = async () => {
-    setLoadingUploads(true);
+    if (apiCache.peek(API.backupUploads) === undefined) setLoadingUploads(true);
     try {
-      const res = await authFetch(`${API_URL}/api/backup/uploads`);
+      const res = await apiCache.fetch(API.backupUploads);
       if (res.ok) {
         const data = await res.json();
         setUploadedFiles(data);

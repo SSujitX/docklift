@@ -13,7 +13,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Loader2, ExternalLink } from "lucide-react";
 import { GithubIcon } from "./icons/GithubIcon";
-import { getAuthHeaders, startGithubInstallAndNavigate } from "@/lib/auth";
+import { apiCache, getAuthHeaders, startGithubInstallAndNavigate } from "@/lib/auth";
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 
@@ -143,6 +143,8 @@ export function GitHubConnect({ open, onOpenChange, onConnected }: GitHubConnect
     } catch (error) {
       console.error("Failed to disconnect:", error);
     } finally {
+      // Raw fetch skips authFetch's mutation hook; drop cached GitHub data here.
+      apiCache.invalidate();
       setLoading(false);
     }
   };
@@ -161,6 +163,7 @@ export function GitHubConnect({ open, onOpenChange, onConnected }: GitHubConnect
         const data = await res.json();
         if (data.found) {
           setIsPolling(false);
+          apiCache.invalidate();
           await fetchStatus();
           onConnected?.();
         }
@@ -180,6 +183,7 @@ export function GitHubConnect({ open, onOpenChange, onConnected }: GitHubConnect
       const data = await res.json();
       if (data.found) {
         setIsPolling(false);
+        apiCache.invalidate();
         // Refresh status
         await fetchStatus();
         onConnected?.();

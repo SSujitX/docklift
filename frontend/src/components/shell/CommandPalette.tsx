@@ -12,10 +12,11 @@ import {
   Sun,
 } from "lucide-react";
 import { useAuth } from "@/components/AuthProvider";
-import { authFetch } from "@/lib/auth";
+import { apiCache } from "@/lib/auth";
+import { API } from "@/lib/prefetch";
 import { useFocusTrap } from "@/lib/focusTrap";
 import { useTheme } from "@/lib/theme";
-import { API_URL, cn } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import type { Project } from "@/lib/types";
 import { SETTINGS_SECTIONS, settingsHref } from "@/lib/settingsNav";
 import { navItems, type IconComponent } from "./navigation";
@@ -51,7 +52,10 @@ export function CommandPalette() {
       return;
     }
     inputRef.current?.focus();
-    authFetch(`${API_URL}/api/projects`)
+    const cached = apiCache.peek(API.projects);
+    if (Array.isArray(cached)) setProjects(cached as Project[]);
+    apiCache
+      .fetch(API.projects)
       .then((res) => (res.ok ? res.json() : []))
       .then((data) => setProjects(Array.isArray(data) ? data : []))
       .catch(() => {});

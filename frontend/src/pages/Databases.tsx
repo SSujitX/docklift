@@ -19,7 +19,8 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Project } from "@/lib/types";
 import { API_URL, cn } from "@/lib/utils";
-import { authFetch } from "@/lib/auth";
+import { apiCache, authFetch } from "@/lib/auth";
+import { API } from "@/lib/prefetch";
 import { Plus, RefreshCw, ChevronLeft, ChevronRight } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
@@ -73,6 +74,12 @@ function matchesFilter(project: Project, filter: StatusFilter): boolean {
   return project.status === filter;
 }
 
+function databaseProjects(data: unknown): Project[] {
+  return Array.isArray(data)
+    ? data.filter((p: Project) => p.project_type === "database")
+    : [];
+}
+
 function openFromKeyboard(event: KeyboardEvent, open: () => void) {
   if (event.target !== event.currentTarget) return;
   if (event.key === "Enter" || event.key === " ") {
@@ -82,8 +89,11 @@ function openFromKeyboard(event: KeyboardEvent, open: () => void) {
 }
 
 export default function DatabasesPage() {
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Last known list draws at once on a revisit; the mount fetch below refreshes it.
+  const [projects, setProjects] = useState<Project[]>(() =>
+    databaseProjects(apiCache.peek(API.projects)),
+  );
+  const [loading, setLoading] = useState(() => apiCache.peek(API.projects) === undefined);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<StatusFilter>("all");
   const [page, setPage] = useState(0);
@@ -96,7 +106,7 @@ export default function DatabasesPage() {
 
   const fetchProjects = useCallback(async () => {
     try {
-      const res = await authFetch(`${API_URL}/api/projects`);
+      const res = await apiCache.fetch(API.projects);
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(
@@ -104,11 +114,7 @@ export default function DatabasesPage() {
             `Failed to load databases (${res.status})`,
         );
       }
-      const data = await res.json();
-      const databaseProjects = Array.isArray(data)
-        ? data.filter((p: Project) => p.project_type === "database")
-        : [];
-      setProjects(databaseProjects);
+      setProjects(databaseProjects(await res.json()));
       setError(null);
     } catch (err) {
       console.error("Failed to fetch database services:", err);

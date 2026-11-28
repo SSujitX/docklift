@@ -20,7 +20,8 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Project } from "@/lib/types";
 import { API_URL, cn } from "@/lib/utils";
-import { authFetch } from "@/lib/auth";
+import { apiCache, authFetch } from "@/lib/auth";
+import { API } from "@/lib/prefetch";
 import { Plus, RefreshCw, ChevronLeft, ChevronRight } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
@@ -66,6 +67,22 @@ function matchesFilter(project: Project, filter: StatusFilter): boolean {
   return project.status === filter;
 }
 
+/** `/api/projects` lists databases too; this page shows applications only. */
+function appProjects(data: unknown): Project[] {
+  const list = Array.isArray(data) ? (data as Project[]) : [];
+  return list.filter((p) => p.project_type !== "database");
+}
+
+function hostResources(
+  data: { cpu?: unknown; memory?: unknown } | null | undefined,
+): HostResources | null {
+  if (data === undefined) return null;
+  return {
+    cpuPercent: Number(data?.cpu ?? 0),
+    memoryPercent: Number(data?.memory ?? 0),
+  };
+}
+
 function openProjectFromKeyboard(event: KeyboardEvent, open: () => void) {
   // Ignore when focus is on a nested control (Redeploy, Delete, etc.).
   if (event.target !== event.currentTarget) return;
@@ -76,11 +93,14 @@ function openProjectFromKeyboard(event: KeyboardEvent, open: () => void) {
 }
 
 export default function Dashboard() {
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Last known data draws at once on a revisit; the mount fetch below refreshes it.
+  const [projects, setProjects] = useState<Project[]>(() => appProjects(apiCache.peek(API.projects)));
+  const [loading, setLoading] = useState(() => apiCache.peek(API.projects) === undefined);
   const [filter, setFilter] = useState<StatusFilter>("all");
   const [page, setPage] = useState(0);
-  const [resources, setResources] = useState<HostResources | null>(null);
+  const [resources, setResources] = useState<HostResources | null>(() =>
+    hostResources(apiCache.peek(API.systemQuick)),
+  );
   const [projectStats, setProjectStats] = useState<
     Record<string, ProjectResourceStats | null | undefined>
   >({});
@@ -90,11 +110,9 @@ export default function Dashboard() {
 
   const fetchProjects = useCallback(async () => {
     try {
-      const res = await authFetch(`${API_URL}/api/projects`);
+      const res = await apiCache.fetch(API.projects);
       if (!res.ok) return;
-      const data = await res.json();
-      const list = Array.isArray(data) ? (data as Project[]) : [];
-      setProjects(list.filter((p) => p.project_type !== "database"));
+      setProjects(appProjects(await res.json()));
     } catch (error) {
       console.error("Failed to fetch projects:", error);
     } finally {
@@ -104,13 +122,9 @@ export default function Dashboard() {
 
   const fetchResources = useCallback(async () => {
     try {
-      const res = await authFetch(`${API_URL}/api/system/quick`);
+      const res = await apiCache.fetch(API.systemQuick);
       if (!res.ok) return;
-      const data = await res.json();
-      setResources({
-        cpuPercent: Number(data?.cpu ?? 0),
-        memoryPercent: Number(data?.memory ?? 0),
-      });
+      setResources(hostResources(await res.json()));
     } catch {
       // Host stats are optional on this page.
     }

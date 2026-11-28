@@ -12,8 +12,9 @@ import { useNavigate } from "react-router-dom";
 import { PageHeader } from "@/components/shell/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Port } from "@/lib/types";
-import { API_URL, cn } from "@/lib/utils";
-import { authFetch } from "@/lib/auth";
+import { cn } from "@/lib/utils";
+import { apiCache } from "@/lib/auth";
+import { API } from "@/lib/prefetch";
 import { ChevronLeft, ChevronRight, RefreshCw } from "lucide-react";
 
 type PortFilter = "all" | "allocated" | "available";
@@ -34,6 +35,15 @@ const DESKTOP_HEAD_PX = 36;
 /** Mobile list row height */
 const MOBILE_ROW_PX = 52;
 
+/** New shape: { ports, private_running } — still accept a bare array. */
+function parsePorts(data: any): { ports: Port[]; privateRunning: PrivateRunning[] } {
+  if (Array.isArray(data)) return { ports: data, privateRunning: [] };
+  return {
+    ports: Array.isArray(data?.ports) ? data.ports : [],
+    privateRunning: Array.isArray(data?.private_running) ? data.private_running : [],
+  };
+}
+
 function openFromKeyboard(event: KeyboardEvent, open: () => void) {
   if (event.target !== event.currentTarget) return;
   if (event.key === "Enter" || event.key === " ") {
@@ -45,9 +55,16 @@ function openFromKeyboard(event: KeyboardEvent, open: () => void) {
 export default function PortsPage() {
   const navigate = useNavigate();
   const listRef = useRef<HTMLDivElement>(null);
-  const [ports, setPorts] = useState<Port[]>([]);
-  const [privateRunning, setPrivateRunning] = useState<PrivateRunning[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Last known data draws at once on a revisit; the mount fetch below refreshes it.
+  const [cached] = useState(() => {
+    const data = apiCache.peek(API.ports);
+    return data === undefined ? null : parsePorts(data);
+  });
+  const [ports, setPorts] = useState<Port[]>(cached?.ports ?? []);
+  const [privateRunning, setPrivateRunning] = useState<PrivateRunning[]>(
+    cached?.privateRunning ?? [],
+  );
+  const [loading, setLoading] = useState(cached === null);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<PortFilter>("all");
   const [page, setPage] = useState(0);
@@ -55,7 +72,7 @@ export default function PortsPage() {
 
   const fetchPorts = useCallback(async () => {
     try {
-      const res = await authFetch(`${API_URL}/api/ports`);
+      const res = await apiCache.fetch(API.ports);
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(
@@ -63,17 +80,9 @@ export default function PortsPage() {
             `Failed to load ports (${res.status})`,
         );
       }
-      const data = await res.json();
-      // New shape: { ports, private_running } — still accept a bare array
-      if (Array.isArray(data)) {
-        setPorts(data);
-        setPrivateRunning([]);
-      } else {
-        setPorts(Array.isArray(data?.ports) ? data.ports : []);
-        setPrivateRunning(
-          Array.isArray(data?.private_running) ? data.private_running : [],
-        );
-      }
+      const parsed = parsePorts(await res.json());
+      setPorts(parsed.ports);
+      setPrivateRunning(parsed.privateRunning);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load ports");

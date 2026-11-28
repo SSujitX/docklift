@@ -16,7 +16,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { authFetch } from "@/lib/auth";
+import { apiCache, authFetch } from "@/lib/auth";
+import { API } from "@/lib/prefetch";
 import { API_URL, cn, copyToClipboard } from "@/lib/utils";
 import {
   type ApiToken,
@@ -40,14 +41,22 @@ async function errorOf(res: Response, fallback: string): Promise<string> {
   return data.error || `${fallback} (${res.status})`;
 }
 
+function tokenList(data: unknown): ApiToken[] {
+  const tokens = (data as { tokens?: ApiToken[] } | undefined)?.tokens;
+  return Array.isArray(tokens) ? tokens : [];
+}
+
 async function copy(text: string, what: string) {
   if (await copyToClipboard(text)) toast.success(`${what} copied`);
   else toast.error("Could not copy to the clipboard");
 }
 
 export default function DeveloperPage() {
-  const [tokens, setTokens] = useState<ApiToken[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Last known list (token metadata only, never secrets) draws at once on a revisit.
+  const [tokens, setTokens] = useState<ApiToken[]>(() =>
+    tokenList(apiCache.peek(API.tokens)),
+  );
+  const [loading, setLoading] = useState(() => apiCache.peek(API.tokens) === undefined);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [revoking, setRevoking] = useState<ApiToken | null>(null);
@@ -57,10 +66,9 @@ export default function DeveloperPage() {
 
   const load = useCallback(async () => {
     try {
-      const res = await authFetch(`${API_URL}/api/tokens`);
+      const res = await apiCache.fetch(API.tokens);
       if (!res.ok) throw new Error(await errorOf(res, "Failed to load API tokens"));
-      const data = (await res.json()) as { tokens?: ApiToken[] };
-      setTokens(Array.isArray(data.tokens) ? data.tokens : []);
+      setTokens(tokenList(await res.json()));
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load API tokens");
@@ -660,8 +668,11 @@ function ConnectPanel({ token }: { token: string | null }) {
 /* ---------- endpoint browser ---------- */
 
 function EndpointsPanel() {
-  const [groups, setGroups] = useState<EndpointGroup[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [groups, setGroups] = useState<EndpointGroup[]>(() => {
+    const doc = apiCache.peek(API.openapi);
+    return doc === undefined ? [] : parseOpenApi(doc);
+  });
+  const [loading, setLoading] = useState(() => apiCache.peek(API.openapi) === undefined);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
 
@@ -669,7 +680,7 @@ function EndpointsPanel() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await authFetch(`${API_URL}/api/openapi.json`);
+        const res = await apiCache.fetch(API.openapi);
         if (!res.ok) throw new Error(await errorOf(res, "Failed to load the endpoint list"));
         const doc = await res.json();
         if (!cancelled) setGroups(parseOpenApi(doc));
@@ -753,7 +764,7 @@ function EndpointsPanel() {
 }
 
 async function openSpec() {
-  const res = await authFetch(`${API_URL}/api/openapi.json`);
+  const res = await apiCache.fetch(API.openapi);
   if (!res.ok) {
     toast.error(await errorOf(res, "Failed to load the document"));
     return;

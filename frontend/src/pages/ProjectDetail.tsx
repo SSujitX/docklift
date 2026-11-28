@@ -31,7 +31,8 @@ import {
   StorageMount,
 } from "@/lib/types";
 import { API_URL, cn } from "@/lib/utils";
-import { authFetch } from "@/lib/auth";
+import { apiCache, authFetch } from "@/lib/auth";
+import { API, projectAPI } from "@/lib/prefetch";
 import { consumeProgressStream } from "@/lib/streamProgress";
 import {
   Loader2,
@@ -54,6 +55,34 @@ import {
 } from "@/components/ui/dialog";
 
 const HISTORY_PAGE_SIZE = 6;
+
+function deploymentList(payload: unknown): Deployment[] {
+  if (Array.isArray(payload)) return payload;
+  const items = (payload as { items?: unknown } | undefined)?.items;
+  return Array.isArray(items) ? items : [];
+}
+
+/** Last known data for a project (memory cache only); `project` is null when not cached. */
+function readProjectCache(projectId: string) {
+  const historyPayload = apiCache.peek<{ total?: number } | Deployment[]>(
+    projectAPI.history(projectId, HISTORY_PAGE_SIZE, 0),
+  );
+  const deployments = deploymentList(historyPayload);
+  const total = (historyPayload as { total?: number } | undefined)?.total;
+  const latestSuccess = apiCache.peek(projectAPI.latestSuccess(projectId));
+  return {
+    project: apiCache.peek<Project>(projectAPI.project(projectId)) ?? null,
+    files: apiCache.peek<ProjectFile[]>(projectAPI.files(projectId)),
+    services: apiCache.peek<Service[]>(projectAPI.services(projectId)),
+    deployments,
+    deploymentTotal: typeof total === "number" ? total : deployments.length,
+    latestSuccessId:
+      latestSuccess === undefined ? null : deploymentList(latestSuccess)[0]?.id ?? null,
+    autoDeploy: Boolean(
+      apiCache.peek<{ auto_deploy?: boolean }>(projectAPI.autoDeploy(projectId))?.auto_deploy,
+    ),
+  };
+}
 
 const DEPLOY_STATUS: Record<string, { label: string; dot: string }> = {
   success: { label: "Succeeded", dot: "bg-ok" },
@@ -361,16 +390,18 @@ export default function ProjectDetail() {
   const [searchParams, setSearchParams] = useSearchParams();
   const projectId = params.id as string;
 
-  const [project, setProject] = useState<Project | null>(null);
+  // Last known data for this project draws at once on a revisit; the first poll refreshes it.
+  const [initial] = useState(() => readProjectCache(projectId));
+  const [project, setProject] = useState<Project | null>(initial.project);
   useBreadcrumbLeaf(project?.name);
-  const [files, setFiles] = useState<ProjectFile[]>([]);
-  const [deployments, setDeployments] = useState<Deployment[]>([]);
-  const [services, setServices] = useState<Service[]>([]);
+  const [files, setFiles] = useState<ProjectFile[]>(initial.files ?? []);
+  const [deployments, setDeployments] = useState<Deployment[]>(initial.deployments);
+  const [services, setServices] = useState<Service[]>(initial.services ?? []);
   const [selectedServiceId, setSelectedServiceId] = useState<string | null>(
     null,
   );
   const [logs, setLogs] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(initial.project === null);
   const [actionLoading, setActionLoading] = useState(false);
   const [currentAction, setCurrentAction] = useState<string | null>(null);
   const [editingFile, setEditingFile] = useState<{
@@ -393,7 +424,10 @@ export default function ProjectDetail() {
   }, [searchParams]);
   /** Source tab file browser — open by default; user can collapse via chevron */
   const [sourceFilesOpen, setSourceFilesOpen] = useState(true);
-  const [serverIP, setServerIP] = useState<string>("...");
+  const [serverIP, setServerIP] = useState<string>(() => {
+    const cached = apiCache.peek<{ ip?: string }>(API.systemIP);
+    return cached ? cached.ip || "N/A" : "...";
+  });
   const [buildType, setBuildType] = useState<BuildType>("auto");
   const [baseDirectory, setBaseDirectory] = useState(".");
   const [dockerfilePath, setDockerfilePath] = useState("Dockerfile");
@@ -537,15 +571,15 @@ export default function ProjectDetail() {
   const [rollbackPassword, setRollbackPassword] = useState("");
   const [rollbackLoading, setRollbackLoading] = useState(false);
   /** Global latest success id (not page-local) — Restore must never offer this row. */
-  const [latestSuccessId, setLatestSuccessId] = useState<string | null>(null);
+  const [latestSuccessId, setLatestSuccessId] = useState<string | null>(initial.latestSuccessId);
 
   // Auto-deploy state
-  const [autoDeploy, setAutoDeploy] = useState(false);
+  const [autoDeploy, setAutoDeploy] = useState(initial.autoDeploy);
   const [autoDeployLoading, setAutoDeployLoading] = useState(false);
 
   // Deployment history pagination (6 per page)
   const [historyPage, setHistoryPage] = useState(0);
-  const [deploymentTotal, setDeploymentTotal] = useState(0);
+  const [deploymentTotal, setDeploymentTotal] = useState(initial.deploymentTotal);
   const [historyLoading, setHistoryLoading] = useState(false);
   const historyFetchGen = useRef(0);
   const deploymentsAbortRef = useRef<AbortController | null>(null);
@@ -559,7 +593,7 @@ export default function ProjectDetail() {
   useEffect(() => {
     const fetchServerIP = async () => {
       try {
-        const res = await authFetch(`${API_URL}/api/system/ip`);
+        const res = await apiCache.fetch(API.systemIP);
         if (res.ok) {
           const data = await res.json();
           setServerIP(data.ip || "N/A");
@@ -583,23 +617,21 @@ export default function ProjectDetail() {
 
       const [projectRes, filesRes, deploymentsRes, servicesRes, latestRes, latestSuccessRes] =
         await Promise.all([
-          authFetch(`${API_URL}/api/projects/${projectId}`),
-          authFetch(`${API_URL}/api/files/${projectId}`),
-          authFetch(
-            `${API_URL}/api/deployments/${projectId}?limit=${HISTORY_PAGE_SIZE}&offset=${historyOffset}&meta=1`,
+          apiCache.fetch(projectAPI.project(projectId)),
+          apiCache.fetch(projectAPI.files(projectId)),
+          apiCache.fetch(
+            projectAPI.history(projectId, HISTORY_PAGE_SIZE, historyOffset),
             { signal: deploymentsAbort.signal },
           ),
-          authFetch(`${API_URL}/api/deployments/${projectId}/services`),
+          apiCache.fetch(projectAPI.services(projectId)),
           // Always resolve the newest deployment for live log tracking when not on page 1
           historyPage > 0
-            ? authFetch(
+            ? apiCache.fetch(
                 `${API_URL}/api/deployments/${projectId}?limit=1&offset=0`,
               )
             : Promise.resolve(null),
           // Latest success for Restore eligibility on every history page
-          authFetch(
-            `${API_URL}/api/deployments/${projectId}?limit=1&offset=0&status=success`,
-          ),
+          apiCache.fetch(projectAPI.latestSuccess(projectId)),
         ]);
 
       if (!projectRes.ok) {
@@ -735,11 +767,21 @@ export default function ProjectDetail() {
 
   useEffect(() => {
     historyFetchGen.current += 1;
+    // Start from this project's cached history (or empty); a cached project replaces the one
+    // shown when the route switches projects without remounting.
+    const cached = readProjectCache(projectId);
     setHistoryPage(0);
-    setDeploymentTotal(0);
-    setDeployments([]);
+    setDeploymentTotal(cached.deploymentTotal);
+    setDeployments(cached.deployments);
     setViewingDeploymentId(null);
     setLogs("");
+    if (cached.project) {
+      setProject(cached.project);
+      if (cached.files) setFiles(cached.files);
+      if (cached.services) setServices(cached.services);
+      setLatestSuccessId(cached.latestSuccessId);
+      setAutoDeploy(cached.autoDeploy);
+    }
   }, [projectId]);
 
   // Apps + databases: when history arrives and nothing is selected, show latest logs
@@ -922,9 +964,7 @@ export default function ProjectDetail() {
 
     const fetchAutoDeploy = async () => {
       try {
-        const res = await authFetch(
-          `${API_URL}/api/projects/${projectId}/auto-deploy`,
-        );
+        const res = await apiCache.fetch(projectAPI.autoDeploy(projectId));
         if (res.ok) {
           const data = await res.json();
           setAutoDeploy(data.auto_deploy || false);
