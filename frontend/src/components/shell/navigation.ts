@@ -5,6 +5,7 @@ import type { ComponentType } from "react";
 import {
   Anchor,
   BookOpen,
+  Bot,
   Database,
   Gauge,
   LayoutGrid,
@@ -122,6 +123,13 @@ export const navGroups: NavGroup[] = [
         })),
       },
       {
+        label: "API & MCP",
+        href: "/developer",
+        icon: Bot,
+        description: "API tokens, endpoints and AI agent setup",
+        section: ["/developer"],
+      },
+      {
         label: "Docs",
         href: "https://docklift.dev",
         icon: BookOpen,
@@ -163,6 +171,7 @@ const segmentLabels: Record<string, string> = {
   logs: "Logs",
   terminal: "Terminal",
   settings: "Settings",
+  developer: "API & MCP",
 };
 
 export interface Crumb {
