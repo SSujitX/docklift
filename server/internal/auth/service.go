@@ -35,6 +35,8 @@ type Service struct {
 	sessions sessionRegistry
 	// usedTokens remembers consumed one-time purpose tokens until they expire.
 	usedTokens usedTokens
+	// tokenFailures counts invalid API tokens per client address.
+	tokenFailures *httpx.FailureLimiter
 }
 
 // Step-up password guessing limit: StepUpFailureLimit wrong passwords per
@@ -63,6 +65,12 @@ func New(st *store.Store, secrets Secrets, dataPath string, log *slog.Logger) *S
 	s.stepUpFailures = httpx.NewFailureLimiter(httpx.FailureLimitConfig{
 		Window:  StepUpFailureWindow,
 		Limit:   StepUpFailureLimit,
+		MaxKeys: stepUpMaxKeys,
+		Now:     func() time.Time { return s.now() },
+	})
+	s.tokenFailures = httpx.NewFailureLimiter(httpx.FailureLimitConfig{
+		Window:  APITokenFailureWindow,
+		Limit:   APITokenFailureLimit,
 		MaxKeys: stepUpMaxKeys,
 		Now:     func() time.Time { return s.now() },
 	})
@@ -139,6 +147,9 @@ type User struct {
 	Email   string
 	Role    string
 	Purpose string
+	// Token is set when the request was authenticated with an API token
+	// instead of a session JWT.
+	Token *APITokenInfo
 }
 
 type userKey struct{}
@@ -172,21 +183,22 @@ func (s *Service) writeVerifyError(w http.ResponseWriter, err error) {
 	}
 }
 
-// RequireSession is authMiddleware: an `Authorization: Bearer <session JWT>`.
+// RequireSession is authMiddleware: an `Authorization: Bearer <session JWT>`,
+// or an API token (`Bearer dl_...`, see serveAPIToken; a JWT never starts
+// with that prefix, so session handling is unchanged).
 // Query tokens are never accepted and purpose tokens (sse/terminal) are
 // refused. The X-Internal-Secret header of Docklift 2.x (a
 // full-admin bypass used only by its webhook-to-deploy HTTP call, which the
 // Go backend makes in process) is no longer accepted.
 func (s *Service) RequireSession(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		header := r.Header.Get("Authorization")
-		if !strings.HasPrefix(header, "Bearer ") {
+		token, ok := bearerToken(r)
+		if !ok {
 			httpx.Error(w, http.StatusUnauthorized, "Authentication required")
 			return
 		}
-		token := strings.Split(header, " ")[1]
-		if token == "" {
-			httpx.Error(w, http.StatusUnauthorized, "Authentication required")
+		if strings.HasPrefix(token, APITokenPrefix) {
+			s.serveAPIToken(w, r, token, next)
 			return
 		}
 		c, err := s.Verify(token)
@@ -247,6 +259,9 @@ func (s *Service) RequireSSE(next http.Handler) http.Handler {
 // error means a database failure; nothing was written and the caller
 // answers as its own error path did in 2.x.
 func (s *Service) RequireStepUpPassword(w http.ResponseWriter, r *http.Request) (bool, error) {
+	if handled, ok := s.TokenStepUp(w, r); handled {
+		return ok, nil
+	}
 	password, ok := httpx.BodyFrom(r).Get("password").String()
 	if !ok || password == "" {
 		httpx.JSON(w, http.StatusForbidden, stepUpBody{Error: "Password confirmation required for this operation", RequirePassword: true})
@@ -277,6 +292,9 @@ func (s *Service) RequireStepUpPassword(w http.ResponseWriter, r *http.Request) 
 // mismatch. A match resets the count. This throttle is not in the
 // Docklift 2.x (owner-approved security fix).
 func (s *Service) VerifyStepUpPassword(w http.ResponseWriter, r *http.Request, userID, hash, password string) bool {
+	if handled, ok := s.TokenStepUp(w, r); handled {
+		return ok
+	}
 	ok, wait := s.CheckAccountPassword(r, userID, hash, password)
 	switch {
 	case wait > 0:
@@ -295,6 +313,10 @@ func (s *Service) VerifyStepUpPassword(w http.ResponseWriter, r *http.Request, u
 // response. wait > 0 means the user is throttled from this client (the hash
 // was not compared) and is the time until the next attempt is allowed.
 func (s *Service) CheckAccountPassword(r *http.Request, userID, hash, password string) (ok bool, wait time.Duration) {
+	if u, _ := UserFrom(r.Context()); u.Token != nil {
+		// An API token never proves knowledge of the account password.
+		return false, 0
+	}
 	key := userID + " " + httpx.RateLimitKey(httpx.ClientIP(r))
 	if wait := s.stepUpFailures.RetryAfter(key); wait > 0 {
 		s.log.Warn("[SECURITY] Account password attempts throttled", "userId", userID, "ip", httpx.ClientIP(r))

@@ -28,6 +28,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"docklift/internal/app"
+	"docklift/internal/auth"
 	"docklift/internal/certs"
 	"docklift/internal/dnscheck"
 	"docklift/internal/httpx"
@@ -73,7 +74,8 @@ func Mount(r chi.Router, d *app.Deps) {
 	r.Post("/dns-check", h.dnsCheck)
 	r.Get("/{domain}/ssl", h.sslStatus)
 	r.Post("/{domain}/ssl/retry", h.sslRetry)
-	r.Put("/{domain}/access", h.setAccess)
+	// The domain-only access switch can lock the dashboard out: never with an API token.
+	r.With(auth.SessionOnly).Put("/{domain}/access", h.setAccess)
 	r.Delete("/{domain}", h.remove)
 }
 

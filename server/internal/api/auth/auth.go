@@ -34,10 +34,12 @@ func Mount(r chi.Router, d *app.Deps) {
 	r.Group(func(r chi.Router) {
 		r.Use(d.Auth.RequireSession)
 		r.Get("/me", h.me)
-		r.Patch("/profile", h.profile)
-		r.Post("/change-password", h.changePassword)
-		r.Post("/sse-token", h.purposeToken(authsvc.PurposeSSE, "Failed to generate SSE token"))
-		r.Post("/terminal-token", h.purposeToken(authsvc.PurposeTerminal, "Failed to generate terminal token"))
+		// Account changes and purpose tokens need a dashboard session: an
+		// API token, whatever its flags, never reaches them.
+		r.With(authsvc.SessionOnly).Patch("/profile", h.profile)
+		r.With(authsvc.SessionOnly).Post("/change-password", h.changePassword)
+		r.With(authsvc.SessionOnly).Post("/sse-token", h.purposeToken(authsvc.PurposeSSE, "Failed to generate SSE token"))
+		r.With(authsvc.SessionOnly).Post("/terminal-token", h.purposeToken(authsvc.PurposeTerminal, "Failed to generate terminal token"))
 	})
 }
 

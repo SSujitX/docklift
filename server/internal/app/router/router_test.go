@@ -314,6 +314,8 @@ func TestPanelAccessGuardsEveryRoute(t *testing.T) {
 		{"terminal upgrade", "GET", "/ws/terminal?token=x", upgrade},
 		{"sse", "GET", "/api/system/logs/backend?token=x", map[string]string{"Accept": "text/event-stream"}},
 		{"asset", "GET", "/assets/app.js", nil},
+		{"mcp", "POST", "/mcp", map[string]string{"Authorization": "Bearer dl_x", "Accept": "application/json, text/event-stream"}},
+		{"openapi", "GET", "/api/openapi.json", bearer},
 	} {
 		r := doFrom(t, h, gateway, tc.method, tc.path, tc.headers)
 		if r.code != 403 || r.errorMsg() != "Dashboard access by IP is disabled. Use https://panel.example.com" {

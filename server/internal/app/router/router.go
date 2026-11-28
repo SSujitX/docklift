@@ -19,13 +19,17 @@ import (
 	"docklift/internal/api/github"
 	"docklift/internal/api/health"
 	"docklift/internal/api/logs"
+	mcpapi "docklift/internal/api/mcp"
+	"docklift/internal/api/openapi"
 	"docklift/internal/api/ports"
 	"docklift/internal/api/projects"
 	"docklift/internal/api/system"
 	"docklift/internal/api/terminal"
+	"docklift/internal/api/tokens"
 	"docklift/internal/app"
 	authsvc "docklift/internal/auth"
 	"docklift/internal/httpx"
+	"docklift/internal/version"
 	"docklift/web"
 )
 
@@ -72,9 +76,16 @@ func New(d *app.Deps) http.Handler {
 	terminal.Attach(root, d)
 
 	allow := append(append([]string(nil), d.Config.CORSOrigins...), d.Config.FrontendURL)
+	// The MCP endpoint runs its tool calls through this same root handler,
+	// so they pass every middleware above and the /api guards again.
+	mcpHandler := mcpapi.New(d, func() http.Handler { return root })
 	root.Group(func(r chi.Router) {
 		r.Use(httpx.SecurityHeaders, httpx.CORS(allow))
 		r.Mount("/api", apiRouter(d))
+		// API token only, Origin-checked; bodies are read after the token.
+		r.Post(mcpapi.Path, mcpHandler.ServeHTTP)
+		r.Get(mcpapi.Path, mcpHandler.ServeHTTP)
+		r.Delete(mcpapi.Path, mcpHandler.ServeHTTP)
 		r.Handle("/*", web.Handler())
 	})
 	return root
@@ -147,6 +158,9 @@ func apiRouter(d *app.Deps) http.Handler {
 	group("/domains", domains.Mount, session, body)
 	group("/logs", logs.Mount, sseOr(d.Auth, "/api/logs", func(rel string) bool { return strings.Contains(rel, "/stream/") }), body)
 	group("/backup", backup.Mount, backupGuard(d), body)
+	// API tokens: dashboard session only (tokens.Mount refuses API tokens).
+	group("/tokens", tokens.Mount, session, body)
+	r.With(session).Get("/openapi.json", openapi.Handler(func() string { return version.Version }))
 	return r
 }
 
@@ -212,12 +226,14 @@ func githubGuard(session, body func(http.Handler) http.Handler) func(http.Handle
 }
 
 // sseOr authenticates GET requests whose mount-relative path satisfies isSSE
-// with the SSE query token, and everything else with the session JWT.
+// with the SSE query token, and everything else with the session JWT. A
+// request carrying a Bearer API token (scripts, the MCP endpoint) uses the
+// token on the stream paths too; a session JWT still needs the SSE token.
 func sseOr(a *authsvc.Service, prefix string, isSSE func(rel string) bool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		sse, session := a.RequireSSE(next), a.RequireSession(next)
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if httpx.OriginalMethod(r) == http.MethodGet && isSSE(relPath(r, prefix)) {
+			if httpx.OriginalMethod(r) == http.MethodGet && isSSE(relPath(r, prefix)) && !authsvc.IsAPITokenRequest(r) {
 				sse.ServeHTTP(w, r)
 				return
 			}

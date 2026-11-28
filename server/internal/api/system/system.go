@@ -394,6 +394,16 @@ func (h *handlers) execute(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusUnauthorized, "Authentication required")
 		return
 	}
+	if handled, ok := h.d.Auth.TokenStepUp(w, r); handled {
+		// An API token has no password to re-enter: only a token created
+		// with allow_dangerous may run commands.
+		if !ok {
+			return
+		}
+		h.d.Log.Info(fmt.Sprintf("[TERMINAL] API token %q (%s) of %q executed: %s", authUser.Token.Name, authUser.Token.Prefix, authUser.Email, js.Substring(command, 200)))
+		h.runCommand(w, r, command)
+		return
+	}
 	password, isString := body.Get("password").String()
 	if !isString || password == "" {
 		httpx.JSON(w, http.StatusUnauthorized, passwordRequiredBody{Error: "Password required for terminal access", RequirePassword: true})
@@ -415,7 +425,11 @@ func (h *handlers) execute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.d.Log.Info(fmt.Sprintf("[TERMINAL] User %q executed: %s", user.Email, js.Substring(command, 200)))
+	h.runCommand(w, r, command)
+}
 
+// runCommand runs an authorised /execute command and answers its output.
+func (h *handlers) runCommand(w http.ResponseWriter, r *http.Request, command string) {
 	res := runShell(r.Context(), h.shell, command)
 	if res.Failed {
 		msg := res.Stderr

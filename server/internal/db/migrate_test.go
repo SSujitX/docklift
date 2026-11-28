@@ -17,6 +17,7 @@ var lfChecksums = map[string]string{
 	"20260726040000_managed_databases":        "93189be5c9d32e278b30e652a019f7c97c5c706573481004dd2c48b8fc61e08b",
 	"20260726043000_database_link_env_unique": "37516dea6fbdefbb81f85c2c894403a25e7f36ca096a309856b50974a440d2bf",
 	"20260731120000_deployment_image_tags":    "5be5833db5fccb99c3a7754367ba6c39164e415c5bdeae45cecf2341dd110061",
+	"20261128120000_api_tokens":               "bc80a9166722157df58ca2aae47fd98618b8780214a45cc8242bd5eee94910d4",
 }
 
 func quietLog() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
@@ -81,11 +82,11 @@ func TestMigrateFreshDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(res.Applied) != 5 {
+	if len(res.Applied) != len(lfChecksums) {
 		t.Fatalf("applied %v", res.Applied)
 	}
 	entries := ledger(t, d)
-	if len(entries) != 5 {
+	if len(entries) != len(lfChecksums) {
 		t.Fatalf("ledger has %d rows", len(entries))
 	}
 	for _, e := range entries {
@@ -183,7 +184,7 @@ func TestFailedMigrationBlocksLikeP3009(t *testing.T) {
 	}
 	execScript(t, d, `UPDATE _prisma_migrations SET rolled_back_at = 1`)
 	execScript(t, d, `DROP TABLE projects`)
-	if res, err := d.Migrate(ctx); err != nil || len(res.Applied) != 5 {
+	if res, err := d.Migrate(ctx); err != nil || len(res.Applied) != len(lfChecksums) {
 		t.Errorf("after rollback resolve: %v %v", res.Applied, err)
 	}
 }
@@ -200,7 +201,7 @@ func TestEnsureBaselinesLegacyInstall(t *testing.T) {
 		t.Fatal(err)
 	}
 	entries := ledger(t, d)
-	if len(entries) != 5 || entries[0].name != BaselineMigration || entries[0].steps != 0 {
+	if len(entries) != len(lfChecksums) || entries[0].name != BaselineMigration || entries[0].steps != 0 {
 		t.Fatalf("ledger after baseline: %+v", entries)
 	}
 	var service string

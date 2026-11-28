@@ -97,7 +97,8 @@ func MountWith(r chi.Router, d *app.Deps, o Options) {
 	r.Post("/create", h.create)
 	r.Post("/restore/{filename}", h.withRestoreLock("restore-from-backup", h.restoreFromBackup))
 	r.Delete("/{filename}", h.deleteBackup)
-	r.Get("/download/{filename}", h.download)
+	// A backup holds every secret of the install: read-scope tokens may not download it.
+	r.With(auth.FullScopeOnly).Get("/download/{filename}", h.download)
 	r.Post("/upload", h.upload)
 	r.Post("/restore-upload", h.withRestoreLock("restore-upload", h.restoreUpload))
 	r.Post("/restore-from-upload/{filename}", h.withRestoreLock("restore-from-upload", h.restoreFromUpload))
