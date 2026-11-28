@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback, type CSSProperties } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Maximize2, Minimize2 } from "lucide-react";
+import { ArrowDown, Maximize2, Minimize2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -122,6 +122,8 @@ export function TerminalView({ className }: { className?: string }) {
   const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  /** False while the user has scrolled up in the scrollback. */
+  const [atBottom, setAtBottom] = useState(true);
   const [upgradePassword, setUpgradePassword] = useState("");
   const [upgradePasswordError, setUpgradePasswordError] = useState("");
   
@@ -240,6 +242,14 @@ export function TerminalView({ className }: { className?: string }) {
 
       term.open(terminalRef.current!);
       xtermRef.current = term;
+
+      // Show the "Latest" button while the viewport is above the newest line.
+      const syncAtBottom = () => {
+        const buf = term.buffer.active;
+        setAtBottom(buf.viewportY >= buf.baseY);
+      };
+      term.onScroll(syncAtBottom);
+      term.onWriteParsed(syncAtBottom);
 
       // Fit to container
       requestAnimationFrame(() => {
@@ -971,11 +981,28 @@ export function TerminalView({ className }: { className?: string }) {
           </Button>
         </div>
 
-        <div
-          ref={terminalRef}
-          className="min-h-0 flex-1 py-2 pl-3 pr-1"
-          style={{ background: termBg }}
-        />
+        <div className="relative flex min-h-0 flex-1 flex-col">
+          <div
+            ref={terminalRef}
+            className="min-h-0 flex-1 py-2 pl-3 pr-1"
+            style={{ background: termBg }}
+          />
+          {!atBottom && (
+            <button
+              type="button"
+              onClick={() => {
+                xtermRef.current?.scrollToBottom();
+                xtermRef.current?.focus();
+                setAtBottom(true);
+              }}
+              title="Scroll to the latest output"
+              className="absolute bottom-3 right-5 z-10 flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 text-xs font-medium text-muted-foreground shadow-popover transition-colors duration-150 hover:text-foreground focus-visible:outline-hidden focus-visible:ring-3 focus-visible:ring-brand/30"
+            >
+              <ArrowDown className="size-3.5" />
+              Latest
+            </button>
+          )}
+        </div>
       </div>
 
       <Dialog

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { cn, copyToClipboard } from "@/lib/utils";
-import { Copy, Check } from "lucide-react";
+import { ArrowDown, Copy, Check } from "lucide-react";
 import { Button } from "./ui/button";
 
 /** Fixed dark log surface in both app themes — the only literal colour in this file. */
@@ -138,10 +138,11 @@ export function Terminal({ logs, isBuilding, className }: TerminalProps) {
       </div>
 
       {/* Body */}
+      <div className="relative flex min-h-0 flex-1 flex-col">
       <div
         ref={containerRef}
         onScroll={handleScroll}
-        className="relative flex-1 overflow-auto py-3 pr-4 font-mono text-[12.5px] leading-5 selection:bg-foreground/20"
+        className="min-h-0 flex-1 overflow-auto py-3 pr-4 font-mono text-[12.5px] leading-5 selection:bg-foreground/20"
       >
         {logs ? (
           <div>
@@ -169,6 +170,24 @@ export function Terminal({ logs, isBuilding, className }: TerminalProps) {
             </p>
           </div>
         )}
+      </div>
+
+      {/* Jump to the newest output */}
+      {!autoScroll && logs && (
+        <button
+          type="button"
+          onClick={() => {
+            setAutoScroll(true);
+            const el = containerRef.current;
+            if (el) el.scrollTop = el.scrollHeight;
+          }}
+          title="Scroll to the latest output"
+          className="absolute bottom-3 right-4 flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 font-sans text-xs font-medium text-muted-foreground shadow-popover transition-colors duration-150 hover:text-foreground focus-visible:outline-hidden focus-visible:ring-3 focus-visible:ring-brand/30"
+        >
+          <ArrowDown className="size-3.5" />
+          Latest
+        </button>
+      )}
       </div>
     </div>
   );
