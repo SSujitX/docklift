@@ -2,13 +2,18 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Check,
   ChevronDown,
-  Database,
   Link2,
   Loader2,
   Unlink,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { API_URL, cn } from "@/lib/utils";
 import { authFetch } from "@/lib/auth";
 import { toast } from "sonner";
@@ -60,39 +65,41 @@ function RoundedSelect({
   }, []);
 
   return (
-    <label className="flex min-w-0 flex-1 flex-col gap-1.5 text-xs">
-      <span className="font-medium text-muted-foreground">{label}</span>
+    <label className="flex min-w-0 flex-1 flex-col gap-1.5">
+      <span className="text-[13px] font-medium text-foreground">{label}</span>
       <div className="relative" ref={ref}>
         <button
           type="button"
           disabled={disabled}
           onClick={() => setOpen((v) => !v)}
           className={cn(
-            "flex h-11 w-full items-center gap-2 rounded-xl border border-border/60 bg-background px-3 text-left text-sm transition-colors",
-            "hover:border-brand/40 disabled:cursor-not-allowed disabled:opacity-50",
-            open && "border-brand/40 ring-2 ring-brand/15",
+            "flex h-9 w-full items-center gap-2 rounded-md border bg-card px-3 text-left text-sm transition-[border-color,box-shadow] duration-150 pointer-coarse:h-10",
+            "disabled:cursor-not-allowed disabled:opacity-50",
+            open
+              ? "border-brand ring-3 ring-brand/20"
+              : "border-input hover:border-subtle",
           )}
         >
           <span
             className={cn(
               "min-w-0 flex-1 truncate",
-              selected ? "font-medium text-foreground" : "text-muted-foreground",
+              selected ? "text-foreground" : "text-subtle",
             )}
           >
             {selected?.label || placeholder}
           </span>
           <ChevronDown
             className={cn(
-              "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
-              open && "rotate-180 text-brand",
+              "size-4 shrink-0 text-subtle transition-transform duration-150",
+              open && "rotate-180",
             )}
           />
         </button>
         {open && (
-          <div className="absolute left-0 right-0 z-50 mt-1.5 overflow-hidden rounded-xl border border-border/60 bg-popover shadow-xl shadow-black/10">
+          <div className="absolute left-0 right-0 z-50 mt-1 overflow-hidden rounded-lg border border-border bg-popover shadow-popover">
             <div className="max-h-[min(14rem,40vh)] overflow-y-auto p-1">
               {options.length === 0 ? (
-                <p className="px-3 py-6 text-center text-sm text-muted-foreground">
+                <p className="px-3 py-6 text-center text-[13px] text-muted-foreground">
                   No options
                 </p>
               ) : (
@@ -107,14 +114,14 @@ function RoundedSelect({
                         setOpen(false);
                       }}
                       className={cn(
-                        "flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm transition-colors",
+                        "flex h-8 w-full items-center gap-2 rounded-[4px] px-2 text-left text-sm transition-colors duration-150 pointer-coarse:h-10",
                         active
-                          ? "bg-brand/10 font-medium text-brand"
+                          ? "bg-secondary text-foreground"
                           : "text-foreground hover:bg-secondary/60",
                       )}
                     >
                       <span className="min-w-0 flex-1 truncate">{opt.label}</span>
-                      {active && <Check className="h-3.5 w-3.5 shrink-0" />}
+                      {active && <Check className="size-4 shrink-0 text-brand" />}
                     </button>
                   );
                 })
@@ -247,128 +254,128 @@ export function AttachDatabasePanel({
   ];
 
   return (
-    <Card className="rounded-2xl border-border/60 shadow-none">
-      <CardHeader className="pb-3">
-        <CardTitle className="flex flex-wrap items-center gap-2 text-base font-semibold tracking-tight">
-          <Database className="h-4 w-4 text-muted-foreground" />
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex flex-wrap items-baseline gap-2">
           Attach database
           {scoped && lockedServiceName && (
-            <span className="rounded-lg border border-brand/25 bg-brand/10 px-2 py-0.5 text-[10px] font-semibold text-brand">
+            <span className="font-mono text-[13px] font-normal text-muted-foreground">
               {lockedServiceName}
             </span>
           )}
         </CardTitle>
+        {!loading && (
+          <CardDescription>
+            {scoped
+              ? `Link a managed database and inject its connection URL into ${lockedServiceName}. Redeploy afterward.`
+              : "Link a managed database over the private Docker network and inject its connection URL into all services or one service. Redeploy afterward."}
+          </CardDescription>
+        )}
       </CardHeader>
-      <CardContent className="space-y-4">
-        {loading ? (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Loading…
-          </div>
-        ) : (
-          <>
-            <p className="text-xs leading-relaxed text-muted-foreground">
-              {scoped
-                ? `Link a managed database and inject its connection URL into ${lockedServiceName}. Redeploy afterward.`
-                : "Link a managed database over the private Docker network and inject its connection URL into all services or one service. Redeploy afterward."}
-            </p>
-
-            <div className="flex flex-col gap-3">
-              <div
-                className={cn(
-                  "grid gap-3",
-                  scoped ? "grid-cols-1" : "grid-cols-1 sm:grid-cols-2",
-                )}
-              >
-                <RoundedSelect
-                  label="Database"
-                  placeholder="Select database…"
-                  value={dbId}
-                  onChange={setDbId}
-                  disabled={busy || dbs.length === 0}
-                  options={dbOptions}
-                />
-                {!scoped && (
-                  <RoundedSelect
-                    label="Service scope"
-                    placeholder="All services (shared)"
-                    value={serviceName}
-                    onChange={setServiceName}
-                    disabled={busy}
-                    options={scopeOptions}
-                  />
-                )}
-              </div>
-
-              <label className="flex items-start gap-2.5 text-xs leading-relaxed text-muted-foreground">
-                <input
-                  type="checkbox"
-                  checked={overwrite}
-                  onChange={(e) => setOverwrite(e.target.checked)}
-                  className="mt-0.5 h-4 w-4 rounded-md border-border text-brand focus:ring-brand/30"
-                />
-                Overwrite existing env key if present (e.g. manual DATABASE_URL)
-              </label>
-
-              <Button
-                type="button"
-                onClick={attach}
-                disabled={busy || !dbId || dbs.length === 0}
-                className="h-11 w-full rounded-xl bg-brand font-semibold text-brand-foreground shadow-lg shadow-brand/15 hover:brightness-110 sm:w-auto sm:self-start sm:px-6"
-              >
-                {busy ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Link2 className="h-4 w-4" />
-                )}
-                Attach
-                {scoped && lockedServiceName ? ` to ${lockedServiceName}` : ""}
-              </Button>
-            </div>
-
+      {loading ? (
+        <CardContent className="flex items-center gap-2 text-[13px] text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" />
+          Loading…
+        </CardContent>
+      ) : (
+        <>
+          <CardContent className="space-y-3">
             {dbs.length === 0 && (
-              <p className="rounded-xl border border-dashed border-border/60 bg-secondary/20 px-3 py-3 text-sm text-muted-foreground">
+              <p className="rounded-md border border-info/40 bg-secondary/60 px-3 py-2.5 text-[13px] leading-5 text-muted-foreground">
                 No running managed databases. Create and deploy one under Databases.
               </p>
             )}
 
-            {visibleLinks.length > 0 && (
-              <ul className="space-y-2">
-                {visibleLinks.map((l) => (
-                  <li
-                    key={l.id}
-                    className="flex items-center justify-between gap-2 rounded-xl border border-border/60 bg-secondary/20 px-3 py-2.5 text-sm"
-                  >
-                    <div className="min-w-0">
-                      <div className="truncate font-medium">
-                        {l.database_project.name}
-                      </div>
-                      <div className="text-[11px] text-muted-foreground">
-                        {l.database_project.db_engine || "db"} ·{" "}
-                        {l.service_name
-                          ? `Service ${l.service_name}`
-                          : "All services"}{" "}
-                        · <span className="font-mono">{l.env_key}</span>
-                      </div>
+            <div
+              className={cn(
+                "grid gap-3",
+                scoped ? "max-w-md grid-cols-1" : "grid-cols-1 sm:grid-cols-2",
+              )}
+            >
+              <RoundedSelect
+                label="Database"
+                placeholder="Select database…"
+                value={dbId}
+                onChange={setDbId}
+                disabled={busy || dbs.length === 0}
+                options={dbOptions}
+              />
+              {!scoped && (
+                <RoundedSelect
+                  label="Service scope"
+                  placeholder="All services (shared)"
+                  value={serviceName}
+                  onChange={setServiceName}
+                  disabled={busy}
+                  options={scopeOptions}
+                />
+              )}
+            </div>
+
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <label className="flex items-start gap-2 text-[13px] leading-5 text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={overwrite}
+                  onChange={(e) => setOverwrite(e.target.checked)}
+                  className="mt-0.5 size-4 shrink-0 rounded-sm border-input accent-brand"
+                />
+                <span>
+                  Overwrite existing env key if present (e.g. manual{" "}
+                  <span className="font-mono text-xs">DATABASE_URL</span>)
+                </span>
+              </label>
+
+              <Button
+                type="button"
+                variant="outline"
+                onClick={attach}
+                disabled={busy || !dbId || dbs.length === 0}
+                className="w-full shrink-0 sm:w-auto"
+              >
+                {busy ? <Loader2 className="animate-spin" /> : <Link2 />}
+                Attach
+                {scoped && lockedServiceName ? ` to ${lockedServiceName}` : ""}
+              </Button>
+            </div>
+          </CardContent>
+
+          {visibleLinks.length > 0 && (
+            <ul className="divide-y divide-border border-t border-border">
+              {visibleLinks.map((l) => (
+                <li
+                  key={l.id}
+                  className="flex items-center justify-between gap-3 px-4 py-2.5"
+                >
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-medium">
+                      {l.database_project.name}
                     </div>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      disabled={busy}
-                      onClick={() => unlink(l.database_project.id, l.id)}
-                      className="shrink-0 rounded-xl text-muted-foreground hover:text-destructive"
-                    >
-                      <Unlink className="h-3.5 w-3.5" />
-                      Unlink
-                    </Button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </>
-        )}
-      </CardContent>
+                    <div className="truncate font-mono text-xs text-muted-foreground">
+                      {l.database_project.db_engine || "db"}
+                      <span className="text-subtle"> · </span>
+                      {l.service_name ? `service ${l.service_name}` : "all services"}
+                      <span className="text-subtle"> · </span>
+                      {l.env_key}
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={busy}
+                    onClick={() => unlink(l.database_project.id, l.id)}
+                    className="shrink-0 text-muted-foreground hover:text-danger"
+                  >
+                    <Unlink />
+                    Unlink
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
     </Card>
   );
 }
