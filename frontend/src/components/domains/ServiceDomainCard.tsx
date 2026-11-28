@@ -330,7 +330,7 @@ export function ServiceDomainCard({
           Add a domain
         </label>
         <div className="flex flex-col gap-2 sm:flex-row">
-          <div className="relative min-w-0 flex-1 sm:max-w-md">
+          <div className="relative min-w-0 flex-1">
             <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 font-mono text-sm text-subtle">
               https://
             </span>
@@ -358,6 +358,7 @@ export function ServiceDomainCard({
             type="submit"
             size="lg"
             disabled={!parsed.value || Boolean(parsed.error) || isDuplicate || busy !== null}
+            className="shrink-0"
           >
             {busy === "add" && <Loader2 className="animate-spin" />}
             Add domain
