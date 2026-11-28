@@ -27,14 +27,22 @@ import {
   dnsRecordHint,
   normalizeDomainInput,
 } from "@/lib/domain";
+import {
+  dismissSuggestion,
+  panelAccessSuggestion,
+  suggestionDismissed,
+  type PanelAccess,
+} from "@/lib/panelAccess";
 import type { DomainDnsCheck, SslEvent } from "@/lib/types";
 import { API_URL, cn, copyToClipboard } from "@/lib/utils";
+import { PanelAccessSuggestion, PanelAccessSwitch, usePanelAccess } from "./PanelAccess";
 import { sslFixFor } from "./sslHelp";
 
 export interface PanelDomain {
   domain: string;
   port: number;
   ssl?: SslInfo | null;
+  access?: PanelAccess;
 }
 
 type BusyAction = "add" | "remove" | "retry";
@@ -183,6 +191,8 @@ export function PanelDomainCard({
   const logRef = useRef<HTMLDivElement>(null);
   // After a successful mutation, ignore stale parent props until GET catches up.
   const expectHostnames = useRef<string[] | null>(null);
+  const panelAccess = usePanelAccess(serverIP, onUpdate);
+  const [dismissed, setDismissed] = useState<string[]>([]);
 
   useEffect(() => {
     domainsRef.current = domains;
@@ -463,6 +473,10 @@ export function PanelDomainCard({
   };
 
   const hint = parsed.value ? dnsRecordHint(parsed.value) : null;
+  const suggestion =
+    busy === null
+      ? panelAccessSuggestion(domains, (d) => dismissed.includes(d) || suggestionDismissed(d))
+      : null;
 
   return (
     <Card className="border-border/50 p-4 sm:p-6">
@@ -502,6 +516,19 @@ export function PanelDomainCard({
             </Button>
           )}
         </div>
+
+        {suggestion && (
+          <PanelAccessSuggestion
+            domain={suggestion}
+            serverIP={serverIP}
+            busy={panelAccess.busy}
+            onEnable={panelAccess.requestEnable}
+            onDismiss={(d) => {
+              dismissSuggestion(d);
+              setDismissed((prev) => [...prev, d]);
+            }}
+          />
+        )}
 
         <form onSubmit={(e) => void handleAdd(e)} className="space-y-2">
           <label
@@ -614,6 +641,15 @@ export function PanelDomainCard({
               Access the panel at a hostname like{" "}
               <code className="font-mono">panel.example.com</code> instead of IP:port.
             </p>
+            <div className="mt-4 text-left">
+              <PanelAccessSwitch
+                domain={null}
+                serverIP={serverIP}
+                busy={panelAccess.busy}
+                onEnable={panelAccess.requestEnable}
+                onDisable={(d) => void panelAccess.disable(d)}
+              />
+            </div>
           </div>
         ) : (
           <div className="space-y-2">
@@ -710,6 +746,17 @@ export function PanelDomainCard({
                     )}
                   </div>
 
+                  {entry.port === DEFAULT_PANEL_PORT && (
+                    <PanelAccessSwitch
+                      domain={domain}
+                      access={entry.access}
+                      serverIP={serverIP}
+                      busy={panelAccess.busy || busy !== null}
+                      onEnable={panelAccess.requestEnable}
+                      onDisable={(d) => void panelAccess.disable(d)}
+                    />
+                  )}
+
                   {dns && (
                     <p className={cn("text-[11px] wrap-break-word", DNS_STYLES[dns.status])}>
                       {dns.message}
@@ -802,6 +849,7 @@ export function PanelDomainCard({
           </div>
         )}
       </div>
+      {panelAccess.dialog}
     </Card>
   );
 }

@@ -18,6 +18,7 @@ import { useAuth } from "@/components/AuthProvider";
 import type { SslInfo } from "@/components/SslStatusBadge";
 import { DnsGuideCard } from "@/components/domains/DnsGuideCard";
 import { PanelDomainCard } from "@/components/domains/PanelDomainCard";
+import type { PanelAccess } from "@/lib/panelAccess";
 import { consumeProgressStream } from "@/lib/streamProgress";
 import { SETTINGS_TAB_IDS, settingsSectionLabel } from "@/lib/settingsNav";
 
@@ -35,6 +36,7 @@ interface DomainConfig {
   domain: string;
   port: number;
   ssl?: SslInfo;
+  access?: PanelAccess;
 }
 
 interface GitHubInstallation {
