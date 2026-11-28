@@ -3,11 +3,10 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card } from "@/components/ui/card";
 import { EnvVariable } from "@/lib/types";
 import { API_URL } from "@/lib/utils";
 import { authFetch } from "@/lib/auth";
-import { Plus, Trash2, Eye, EyeOff, Key, Loader2, RotateCw, Shield, FlaskConical, Globe, AlertCircle, Info } from "lucide-react";
+import { Trash2, Eye, EyeOff, Loader2, Shield } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Check } from "lucide-react";
@@ -198,19 +197,19 @@ export function EnvVarsManager({
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-8 text-muted-foreground">
-        <Loader2 className="h-5 w-5 animate-spin mr-2" />
-        Loading...
+      <div className="flex items-center justify-center gap-2 rounded-lg border border-border bg-card py-10 text-[13px] text-muted-foreground">
+        <Loader2 className="size-4 animate-spin" />
+        Loading…
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {multiService && (
-        <div className="rounded-lg border border-border bg-secondary/30 px-3 py-2.5 text-sm">
+        <div className="rounded-md border border-info/40 bg-secondary/60 px-3 py-2.5 text-[13px]">
           <span className="font-medium text-foreground">{scopeLabel}</span>
-          <p className="mt-0.5 text-xs text-muted-foreground">
+          <p className="mt-0.5 text-muted-foreground">
             {serviceName
               ? "Only injected into this service’s build and runtime. Same key in Shared is overridden here."
               : "Injected into every service. Use a service-scoped key when values must differ."}
@@ -218,37 +217,115 @@ export function EnvVarsManager({
         </div>
       )}
 
-      {/* New Professional Input Section */}
-      <Card className="overflow-hidden border-border p-0 shadow-none">
-        <div className="flex items-center justify-between border-b border-border bg-secondary/30 px-5 py-3">
-          <div className="flex items-center gap-2">
-            <Plus className="h-4 w-4 text-muted-foreground" />
-            <span className="text-xs font-medium text-muted-foreground">
-              {showBulkImport ? "Bulk import" : "Add variable"}
-              {multiService ? ` · ${scopeLabel}` : ""}
+      {/* Variables */}
+      <section className="rounded-lg border border-border bg-card">
+        <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+          <h3 className="text-[15px] font-semibold leading-5">
+            Variables{" "}
+            <span className="font-mono text-[13px] font-normal text-subtle">
+              {envVars.length}
             </span>
-          </div>
-          <div className="flex items-center gap-3">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowBulkImport(!showBulkImport)}
-              className="h-7 px-3 text-xs font-medium"
-            >
-              {showBulkImport ? "Single Mode" : "Bulk Import"}
-            </Button>
-            <div className="text-[10px] font-bold text-muted-foreground/60 flex items-center gap-1">
-              <Shield className="h-3 w-3" /> SECURE STORAGE
-            </div>
-          </div>
+          </h3>
+          <span className="hidden text-xs text-muted-foreground sm:inline">
+            Values stay masked until revealed
+          </span>
         </div>
-        
-        <div className="p-6 space-y-6">
-          {showBulkImport ? (
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider ml-1">
-                  Paste KEY=VALUE pairs (one per line)
+
+        {envVars.length === 0 ? (
+          <div className="px-4 py-14 text-center">
+            <p className="text-[15px] font-semibold">No variables yet</p>
+            <p className="mx-auto mt-1 max-w-sm text-[13.5px] text-muted-foreground">
+              Add a key and value below. They are injected on the next deploy.
+            </p>
+          </div>
+        ) : (
+          <>
+            <div className="hidden h-9 grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)_9rem_2rem] items-center gap-4 border-b border-border px-4 text-xs font-medium text-muted-foreground md:grid">
+              <span>Key</span>
+              <span>Value</span>
+              <span>Used in</span>
+              <span />
+            </div>
+            <ul className="divide-y divide-border">
+              {envVars.map((env) => (
+                <li
+                  key={env.id}
+                  className="group grid min-h-11 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-0.5 px-4 py-2 transition-colors duration-150 hover:bg-secondary/50 md:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)_9rem_2rem] md:py-1.5"
+                >
+                  <span className="min-w-0 truncate font-mono text-[13px] font-medium text-foreground">
+                    {env.key}
+                  </span>
+
+                  <div className="col-start-1 row-start-2 flex min-w-0 items-center gap-1 md:col-start-auto md:row-start-auto">
+                    <span className="min-w-0 truncate font-mono text-[13px] text-muted-foreground">
+                      {visibleValues.has(env.id) ? env.value : maskValue(env.value)}
+                    </span>
+                    <button
+                      onClick={() => toggleVisibility(env.id)}
+                      className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-subtle transition-colors duration-150 hover:bg-secondary hover:text-foreground pointer-coarse:size-9"
+                    >
+                      {visibleValues.has(env.id) ? (
+                        <EyeOff className="size-3.5" />
+                      ) : (
+                        <Eye className="size-3.5" />
+                      )}
+                    </button>
+                  </div>
+
+                  <div className="col-start-2 row-start-2 flex flex-wrap items-center justify-end gap-1.5 md:col-start-auto md:row-start-auto md:justify-start">
+                    {env.is_build_arg && <Tag>Build</Tag>}
+                    {env.is_runtime && <Tag>Runtime</Tag>}
+                    {env.is_secret && <Tag>Secret</Tag>}
+                    {!env.is_build_arg && !env.is_runtime && (
+                      <span className="text-xs text-subtle">—</span>
+                    )}
+                  </div>
+
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => handleDelete(env.id, env.key)}
+                    className="col-start-2 row-start-1 justify-self-end text-subtle opacity-60 hover:text-danger group-hover:opacity-100 focus-visible:opacity-100 md:col-start-auto md:row-start-auto"
+                  >
+                    <Trash2 />
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </section>
+
+      {/* Add / bulk import */}
+      <section className="rounded-lg border border-border bg-card">
+        <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+          <div className="min-w-0">
+            <h3 className="text-[15px] font-semibold leading-5">
+              {showBulkImport ? "Bulk import" : "Add variable"}
+            </h3>
+            <p className="mt-0.5 flex items-center gap-1.5 text-[13px] text-muted-foreground">
+              <Shield className="size-3.5 shrink-0 text-subtle" />
+              <span className="truncate">
+                Secure storage{multiService ? ` · ${scopeLabel}` : ""}
+              </span>
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowBulkImport(!showBulkImport)}
+            className="shrink-0"
+          >
+            {showBulkImport ? "Single variable" : "Bulk import"}
+          </Button>
+        </div>
+
+        {showBulkImport ? (
+          <>
+            <div className="space-y-4 p-4 sm:p-5">
+              <div className="space-y-1.5">
+                <label className="text-[13px] font-medium">
+                  Paste <span className="font-mono">KEY=VALUE</span> pairs, one per line
                 </label>
                 <textarea
                   placeholder={`ADMIN_USERNAME=admin
@@ -257,238 +334,150 @@ SESSION_SECRET=your-secret-here
 # Lines starting with # are ignored`}
                   value={bulkContent}
                   onChange={(e) => setBulkContent(e.target.value)}
-                  className="w-full h-40 p-4 font-mono text-sm bg-background/50 border border-border/60 rounded-xl resize-none focus:outline-none focus:border-cyan-500/50"
+                  className="h-40 w-full resize-none rounded-md border border-input bg-card px-3 py-2 font-mono text-[13px] transition-colors placeholder:text-subtle focus-visible:border-brand focus-visible:outline-hidden focus-visible:ring-3 focus-visible:ring-brand/20"
                 />
               </div>
-              
-              {/* Build/Runtime Toggles for Bulk Import */}
-              <div className="flex items-center gap-6 p-3 rounded-xl bg-secondary/30 border border-border/40">
-                <div className="flex items-center gap-2 group cursor-pointer" onClick={() => setIsBuildArg(!isBuildArg)}>
-                  <div className={cn(
-                    "h-4 w-4 rounded border transition-colors flex items-center justify-center",
-                    isBuildArg ? "bg-orange-500 border-orange-500" : "bg-transparent border-muted-foreground/40"
-                  )}>
-                    {isBuildArg && <Check className="h-3 w-3 text-white" strokeWidth={4} />}
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-xs font-semibold">Build Argument</span>
-                    <span className="text-[10px] text-muted-foreground">Used during Docker build</span>
-                  </div>
-                </div>
 
-                <div className="flex items-center gap-2 group cursor-pointer" onClick={() => setIsRuntime(!isRuntime)}>
-                  <div className={cn(
-                    "h-4 w-4 rounded border transition-colors flex items-center justify-center",
-                    isRuntime ? "bg-orange-500 border-orange-500" : "bg-transparent border-muted-foreground/40"
-                  )}>
-                    {isRuntime && <Check className="h-3 w-3 text-white" strokeWidth={4} />}
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-xs font-semibold">Runtime Variable</span>
-                    <span className="text-[10px] text-muted-foreground">Available to your app</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <p className="text-xs text-muted-foreground">
-                  {bulkContent.split('\n').filter(l => l.trim() && !l.trim().startsWith('#') && l.includes('=')).length} variables detected
-                </p>
-                <Button 
-                  onClick={handleBulkImport} 
-                  disabled={bulkAdding} 
-                  className="px-8 h-11 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl shadow-lg shadow-cyan-600/20 font-bold transition-all"
-                >
-                  {bulkAdding ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Plus className="h-4 w-4 mr-2" />}
-                  Import All
-                </Button>
+              <div className="flex flex-wrap gap-x-6 gap-y-3">
+                <Option
+                  checked={isBuildArg}
+                  onToggle={() => setIsBuildArg(!isBuildArg)}
+                  label="Build argument"
+                  hint="Used during Docker build"
+                />
+                <Option
+                  checked={isRuntime}
+                  onToggle={() => setIsRuntime(!isRuntime)}
+                  label="Runtime variable"
+                  hint="Available to your app"
+                />
               </div>
             </div>
-          ) : (
-          <>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-2">
-              <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider ml-1">Key Name</label>
-              <Input
-                placeholder="e.g. DATABASE_URL"
-                value={newKey}
-                onChange={(e) => setNewKey(e.target.value.toUpperCase().replace(/\s+/g, '_'))}
-                className="font-mono h-11 border-border/60 focus:border-cyan-500/50 bg-background/50"
-              />
+
+            <div className="flex items-center justify-between gap-3 border-t border-border px-4 py-3">
+              <p className="text-xs text-muted-foreground">
+                <span className="font-mono">
+                  {bulkContent.split('\n').filter(l => l.trim() && !l.trim().startsWith('#') && l.includes('=')).length}
+                </span>{" "}
+                variables detected
+              </p>
+              <Button onClick={handleBulkImport} disabled={bulkAdding}>
+                {bulkAdding && <Loader2 className="animate-spin" />}
+                Import all
+              </Button>
             </div>
-            <div className="space-y-2">
-              <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider ml-1">Secret Value</label>
-              <Input
-                placeholder="••••••••••••"
-                value={newValue}
-                onChange={(e) => setNewValue(e.target.value)}
-                className="h-11 border-border/60 focus:border-cyan-500/50 bg-background/50"
-                type="password"
-              />
-            </div>
-          </div>
-
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 rounded-xl bg-secondary/30 border border-border/40">
-            <div className="flex items-center gap-6">
-              <div className="flex items-center gap-2 group cursor-pointer" onClick={() => setIsBuildArg(!isBuildArg)}>
-                <div className={cn(
-                  "h-4 w-4 rounded border transition-colors flex items-center justify-center",
-                  isBuildArg ? "bg-cyan-500 border-cyan-500" : "bg-transparent border-muted-foreground/40"
-                )}>
-                  {isBuildArg && <Check className="h-3 w-3 text-white" strokeWidth={4} />}
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-xs font-semibold">Build Argument</span>
-                  <span className="text-[10px] text-muted-foreground">Used during Docker build</span>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 group cursor-pointer" onClick={() => setIsRuntime(!isRuntime)}>
-                <div className={cn(
-                  "h-4 w-4 rounded border transition-colors flex items-center justify-center",
-                  isRuntime ? "bg-blue-500 border-blue-500" : "bg-transparent border-muted-foreground/40"
-                )}>
-                  {isRuntime && <Check className="h-3 w-3 text-white" strokeWidth={4} />}
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-xs font-semibold">Runtime Variable</span>
-                  <span className="text-[10px] text-muted-foreground">Available to your app</span>
-                </div>
-              </div>
-
-              {isBuildArg && (
-                <div className="flex items-center gap-2 group cursor-pointer" onClick={() => setIsSecret(!isSecret)}>
-                  <div className={cn(
-                    "h-4 w-4 rounded border transition-colors flex items-center justify-center",
-                    isSecret ? "bg-rose-500 border-rose-500" : "bg-transparent border-muted-foreground/40"
-                  )}>
-                    {isSecret && <Check className="h-3 w-3 text-white" strokeWidth={4} />}
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-xs font-semibold">BuildKit secret</span>
-                    <span className="text-[10px] text-muted-foreground">Not --build-arg; needs secret mount in Dockerfile</span>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <Button 
-              onClick={handleAdd} 
-              disabled={adding} 
-              className="w-full sm:w-auto px-8 h-11 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl shadow-lg shadow-cyan-600/20 font-bold transition-all"
-            >
-              {adding ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Plus className="h-4 w-4 mr-2" />}
-              Save Variable
-            </Button>
-          </div>
           </>
-          )}
-        </div>
-      </Card>
-
-      <div className="bg-amber-500/5 border border-amber-500/10 p-4 rounded-xl flex items-start gap-3">
-        <AlertCircle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
-        <div className="text-xs text-amber-600/80 leading-relaxed font-medium">
-          <span className="font-bold text-amber-600">Redeploy Required:</span> Any changes here will not take effect on currently running containers. You must trigger a fresh deploy from the main project page to inject updated variables.
-        </div>
-      </div>
-
-      <div className="bg-blue-500/5 border border-blue-500/10 p-4 rounded-xl flex items-start gap-3">
-        <Info className="h-5 w-5 text-blue-500 shrink-0 mt-0.5" />
-        <div className="text-xs text-blue-600/80 leading-relaxed font-medium">
-          <span className="font-bold text-blue-600">Docker Build & Runtime:</span> If you are using these variables during build (e.g. Prisma), ensure you add <code className="bg-blue-500/10 px-1 rounded border border-blue-500/20">ARG VARIABLE_NAME</code> in your Dockerfile. For runtime access, consider adding <code className="bg-blue-500/10 px-1 rounded border border-blue-500/20">ENV VARIABLE_NAME=$VARIABLE_NAME</code> if your framework requires it.
-        </div>
-      </div>
-
-      {/* Modern List Header */}
-      <div className="flex items-center justify-between px-1">
-        <h4 className="text-sm font-bold text-muted-foreground/80 flex items-center gap-2 uppercase tracking-widest">
-          Active Environment ({envVars.length})
-        </h4>
-        <div className="flex items-center gap-4 text-[10px] font-bold text-muted-foreground/40 uppercase tracking-widest">
-          <span className="flex items-center gap-1"><FlaskConical className="h-3 w-3" /> Build</span>
-          <span className="flex items-center gap-1"><Globe className="h-3 w-3" /> Run</span>
-        </div>
-      </div>
-
-      {/* List of variables */}
-      {envVars.length === 0 ? (
-        <Card className="p-20 text-center border-dashed border-border/60 bg-transparent flex flex-col items-center gap-4">
-          <div className="h-16 w-16 rounded-full bg-secondary/30 flex items-center justify-center">
-            <Key className="h-8 w-8 text-muted-foreground/20" />
-          </div>
-          <div className="space-y-1">
-            <p className="font-bold text-muted-foreground/80">Ambient variables empty</p>
-            <p className="text-xs text-muted-foreground max-w-[200px]">Define your application secrets in the form above.</p>
-          </div>
-        </Card>
-      ) : (
-        <Card className="divide-y divide-border/30 border-border/40 overflow-hidden shadow-xl shadow-black/5 bg-background/40 backdrop-blur-xl">
-          {envVars.map((env) => (
-            <div key={env.id} className="group flex flex-col sm:flex-row sm:items-center justify-between p-5 gap-4 hover:bg-secondary/20 transition-all">
-              <div className="flex items-start gap-4 flex-1 min-w-0">
-                <div className="h-10 w-10 rounded-xl bg-secondary/80 flex items-center justify-center shrink-0 group-hover:bg-background transition-colors">
-                  <Key className="h-5 w-5 text-muted-foreground" />
+        ) : (
+          <>
+            <div className="space-y-4 p-4 sm:p-5">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div className="space-y-1.5">
+                  <label className="text-[13px] font-medium">Key</label>
+                  <Input
+                    placeholder="DATABASE_URL"
+                    value={newKey}
+                    onChange={(e) => setNewKey(e.target.value.toUpperCase().replace(/\s+/g, '_'))}
+                    className="font-mono"
+                  />
                 </div>
-                <div className="flex flex-col gap-1.5 flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-sm font-bold text-foreground truncate">{env.key}</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <p className="font-mono text-[11px] text-muted-foreground bg-secondary/50 px-2 py-1 rounded truncate flex-1 min-w-[120px]">
-                      {visibleValues.has(env.id) ? env.value : maskValue(env.value)}
-                    </p>
-                    <button
-                      onClick={() => toggleVisibility(env.id)}
-                      className="text-muted-foreground hover:text-cyan-500 transition-colors p-1"
-                    >
-                      {visibleValues.has(env.id) ? (
-                        <EyeOff className="h-3.5 w-3.5" />
-                      ) : (
-                        <Eye className="h-3.5 w-3.5" />
-                      )}
-                    </button>
-                  </div>
+                <div className="space-y-1.5">
+                  <label className="text-[13px] font-medium">Value</label>
+                  <Input
+                    placeholder="••••••••••••"
+                    value={newValue}
+                    onChange={(e) => setNewValue(e.target.value)}
+                    className="font-mono"
+                    type="password"
+                  />
                 </div>
               </div>
 
-              <div className="flex items-center justify-between sm:justify-end gap-6 sm:pl-4 border-t sm:border-t-0 pt-4 sm:pt-0 border-border/20">
-                <div className="flex items-center gap-3">
-                  <div className={cn(
-                    "h-6 px-2.5 rounded-full flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-widest transition-all",
-                    env.is_build_arg 
-                      ? "bg-orange-100 text-orange-600 border border-orange-300" 
-                      : "bg-gray-100 text-gray-400 border border-gray-200"
-                  )}>
-                    <FlaskConical className="h-3 w-3" />
-                    Bld
-                  </div>
-                  <div className={cn(
-                    "h-6 px-2.5 rounded-full flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-widest transition-all",
-                    env.is_runtime 
-                      ? "bg-orange-100 text-orange-600 border border-orange-300" 
-                      : "bg-gray-100 text-gray-400 border border-gray-200"
-                  )}>
-                    <Globe className="h-3 w-3" />
-                    Run
-                  </div>
-                </div>
-
-                <div className="h-8 w-px bg-border/40 hidden sm:block" />
-
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleDelete(env.id, env.key)}
-                  className="h-9 w-9 p-0 rounded-xl text-destructive/40 hover:text-white hover:bg-destructive transition-all"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
+              <div className="flex flex-wrap gap-x-6 gap-y-3">
+                <Option
+                  checked={isBuildArg}
+                  onToggle={() => setIsBuildArg(!isBuildArg)}
+                  label="Build argument"
+                  hint="Used during Docker build"
+                />
+                <Option
+                  checked={isRuntime}
+                  onToggle={() => setIsRuntime(!isRuntime)}
+                  label="Runtime variable"
+                  hint="Available to your app"
+                />
+                {isBuildArg && (
+                  <Option
+                    checked={isSecret}
+                    onToggle={() => setIsSecret(!isSecret)}
+                    label="BuildKit secret"
+                    hint="Not --build-arg; needs a secret mount in the Dockerfile"
+                  />
+                )}
               </div>
             </div>
-          ))}
-        </Card>
-      )}
+
+            <div className="flex justify-end border-t border-border px-4 py-3">
+              <Button onClick={handleAdd} disabled={adding} className="w-full sm:w-auto">
+                {adding && <Loader2 className="animate-spin" />}
+                Save variable
+              </Button>
+            </div>
+          </>
+        )}
+      </section>
+
+      <div className="rounded-md border border-warn/40 bg-secondary/60 px-3 py-2.5 text-[13px] leading-5 text-muted-foreground">
+        <span className="font-medium text-foreground">Redeploy required.</span>{" "}
+        Changes here do not take effect on running containers. Trigger a fresh deploy from
+        the project page to inject updated variables.
+      </div>
+
+      <div className="rounded-md border border-info/40 bg-secondary/60 px-3 py-2.5 text-[13px] leading-5 text-muted-foreground">
+        <span className="font-medium text-foreground">Docker build and runtime.</span>{" "}
+        If you use these variables during build (e.g. Prisma), add{" "}
+        <code className="font-mono text-foreground">ARG VARIABLE_NAME</code> to your Dockerfile.
+        For runtime access, consider adding{" "}
+        <code className="font-mono text-foreground">ENV VARIABLE_NAME=$VARIABLE_NAME</code> if
+        your framework requires it.
+      </div>
+    </div>
+  );
+}
+
+function Tag({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="rounded-sm border border-border px-1.5 text-xs leading-5 text-muted-foreground">
+      {children}
+    </span>
+  );
+}
+
+/** Checkbox-style toggle row (click target is the whole row, as before). */
+function Option({
+  checked,
+  onToggle,
+  label,
+  hint,
+}: {
+  checked: boolean;
+  onToggle: () => void;
+  label: string;
+  hint: string;
+}) {
+  return (
+    <div className="flex cursor-pointer items-start gap-2" onClick={onToggle}>
+      <div
+        className={cn(
+          "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-sm border transition-colors duration-150",
+          checked ? "border-brand bg-brand" : "border-input bg-card",
+        )}
+      >
+        {checked && <Check className="size-3 stroke-[3] text-brand-foreground" />}
+      </div>
+      <div className="flex flex-col">
+        <span className="text-[13px] font-medium leading-5">{label}</span>
+        <span className="text-xs text-muted-foreground">{hint}</span>
+      </div>
     </div>
   );
 }

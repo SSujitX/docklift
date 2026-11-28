@@ -6,15 +6,11 @@ import {
   Check,
   Copy,
   ExternalLink,
-  Globe,
   Loader2,
-  Lock,
   Plus,
   RefreshCw,
   ScrollText,
   Search,
-  ShieldAlert,
-  ShieldOff,
   Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -27,14 +23,22 @@ import {
   dnsRecordHint,
   normalizeDomainInput,
 } from "@/lib/domain";
+import {
+  dismissSuggestion,
+  panelAccessSuggestion,
+  suggestionDismissed,
+  type PanelAccess,
+} from "@/lib/panelAccess";
 import type { DomainDnsCheck, SslEvent } from "@/lib/types";
 import { API_URL, cn, copyToClipboard } from "@/lib/utils";
+import { PanelAccessSuggestion, PanelAccessSwitch, usePanelAccess } from "./PanelAccess";
 import { sslFixFor } from "./sslHelp";
 
 export interface PanelDomain {
   domain: string;
   port: number;
   ssl?: SslInfo | null;
+  access?: PanelAccess;
 }
 
 type BusyAction = "add" | "remove" | "retry";
@@ -44,73 +48,53 @@ const DEFAULT_PANEL_PORT = 8080;
 
 const STATUS_META: Record<
   SslInfo["status"],
-  { label: string; className: string; icon: typeof Lock }
+  { label: string; dot: string; text: string }
 > = {
-  active: {
-    label: "HTTPS active",
-    className: "bg-emerald-500/10 text-emerald-600 border-emerald-500/30",
-    icon: Lock,
-  },
-  expiring: {
-    label: "Renews soon",
-    className: "bg-amber-500/10 text-amber-600 border-amber-500/30",
-    icon: Lock,
-  },
-  expired: {
-    label: "Certificate expired",
-    className: "bg-red-500/10 text-red-600 border-red-500/30",
-    icon: ShieldAlert,
-  },
-  failed: {
-    label: "HTTPS setup failed",
-    className: "bg-red-500/10 text-red-600 border-red-500/30",
-    icon: ShieldAlert,
-  },
+  active: { label: "HTTPS active", dot: "bg-ok", text: "text-foreground" },
+  expiring: { label: "Renews soon", dot: "bg-warn", text: "text-foreground" },
+  expired: { label: "Certificate expired", dot: "bg-danger", text: "text-danger" },
+  failed: { label: "HTTPS setup failed", dot: "bg-danger", text: "text-danger" },
   pending: {
     label: "Issuing certificate",
-    className: "bg-brand/10 text-brand border-brand/30",
-    icon: Loader2,
+    dot: "bg-warn animate-pulse motion-reduce:animate-none",
+    text: "text-foreground",
   },
   missing: {
     label: "HTTP only — no certificate yet",
-    className: "bg-secondary text-muted-foreground border-border/60",
-    icon: ShieldOff,
+    dot: "bg-subtle",
+    text: "text-muted-foreground",
   },
 };
 
 const LEVEL_STYLES: Record<SslEvent["level"], string> = {
-  info: "text-foreground/80",
-  success: "text-emerald-600",
-  warn: "text-amber-600",
-  error: "text-red-500",
+  info: "text-foreground/85",
+  success: "text-ok",
+  warn: "text-warn",
+  error: "text-danger",
 };
 
 const DNS_STYLES: Record<DomainDnsCheck["status"], string> = {
-  ok: "text-emerald-600",
-  mismatch: "text-amber-600",
-  missing: "text-red-500",
+  ok: "text-ok",
+  mismatch: "text-warn",
+  missing: "text-danger",
   unknown: "text-muted-foreground",
 };
 
 function SslPill({ ssl }: { ssl?: SslInfo | null }) {
   const status = ssl?.status || "missing";
   const meta = STATUS_META[status];
-  const Icon = meta.icon;
   const expiry =
     ssl?.expiresAt && (status === "active" || status === "expiring")
       ? new Date(ssl.expiresAt).toLocaleDateString()
       : null;
 
   return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-[11px] font-medium",
-        meta.className,
-      )}
-    >
-      <Icon className={cn("h-3 w-3 shrink-0", status === "pending" && "animate-spin")} />
+    <span className={cn("inline-flex items-center gap-1.5 text-[13px] font-medium", meta.text)}>
+      <span aria-hidden="true" className={cn("size-2 shrink-0 rounded-full", meta.dot)} />
       {meta.label}
-      {expiry && <span className="opacity-70">· until {expiry}</span>}
+      {expiry && (
+        <span className="font-normal text-muted-foreground">· until {expiry}</span>
+      )}
     </span>
   );
 }
@@ -118,15 +102,15 @@ function SslPill({ ssl }: { ssl?: SslInfo | null }) {
 function CopyableCommand({ command }: { command: string }) {
   const [copied, setCopied] = useState(false);
   return (
-    <div className="flex items-stretch gap-1">
-      <code className="shell-scroll min-w-0 flex-1 overflow-x-auto whitespace-nowrap rounded bg-background px-2 py-1.5 text-[11px] select-all">
+    <div className="flex items-center gap-1 rounded-md border border-input bg-card pl-2.5">
+      <code className="shell-scroll min-w-0 flex-1 overflow-x-auto whitespace-nowrap py-1.5 font-mono text-xs select-all">
         {command}
       </code>
       <Button
         type="button"
         variant="ghost"
         size="icon"
-        className="h-8 w-8 shrink-0"
+        className="shrink-0 text-subtle"
         onClick={async () => {
           await copyToClipboard(command);
           setCopied(true);
@@ -134,11 +118,7 @@ function CopyableCommand({ command }: { command: string }) {
         }}
         aria-label="Copy command"
       >
-        {copied ? (
-          <Check className="h-3.5 w-3.5 text-emerald-500" />
-        ) : (
-          <Copy className="h-3.5 w-3.5" />
-        )}
+        {copied ? <Check className="text-ok" /> : <Copy />}
       </Button>
     </div>
   );
@@ -183,6 +163,8 @@ export function PanelDomainCard({
   const logRef = useRef<HTMLDivElement>(null);
   // After a successful mutation, ignore stale parent props until GET catches up.
   const expectHostnames = useRef<string[] | null>(null);
+  const panelAccess = usePanelAccess(serverIP, onUpdate);
+  const [dismissed, setDismissed] = useState<string[]>([]);
 
   useEffect(() => {
     domainsRef.current = domains;
@@ -463,78 +445,92 @@ export function PanelDomainCard({
   };
 
   const hint = parsed.value ? dnsRecordHint(parsed.value) : null;
+  const suggestion =
+    busy === null
+      ? panelAccessSuggestion(domains, (d) => dismissed.includes(d) || suggestionDismissed(d))
+      : null;
 
   return (
-    <Card className="border-border/50 p-4 sm:p-6">
-      <div className="space-y-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="flex min-w-0 items-start gap-3">
-            <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-brand/10">
-              <Globe className="h-5 w-5 text-brand" />
-            </div>
-            <div className="min-w-0">
-              <h4 className="truncate text-base font-bold">Panel domain</h4>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                Docklift dashboard · port {DEFAULT_PANEL_PORT} by default ·{" "}
-                {domains.length === 0
-                  ? "no domains"
-                  : `${domains.length} domain${domains.length > 1 ? "s" : ""}`}
-              </p>
-            </div>
-          </div>
-
-          {domains.length > 0 && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-9 gap-1.5 text-xs"
-              onClick={() => void handleRetry()}
-              disabled={busy !== null}
-              title="Ask Let's Encrypt again for every panel domain"
-            >
-              {busy === "retry" ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <RefreshCw className="h-3.5 w-3.5" />
-              )}
-              Retry HTTPS
-            </Button>
-          )}
+    <Card>
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border px-4 py-3 sm:px-5">
+        <div className="min-w-[16rem] flex-1">
+          <h3 className="text-[15px] font-semibold leading-5">Panel domain</h3>
+          <p className="mt-0.5 text-[13px] leading-5 text-muted-foreground">
+            Maps a hostname to this Docklift dashboard, wires the reverse proxy, and requests a
+            certificate.
+          </p>
+          <p className="mt-1 font-mono text-xs text-muted-foreground">
+            Docklift dashboard · port {DEFAULT_PANEL_PORT} by default ·{" "}
+            {domains.length === 0
+              ? "no domains"
+              : `${domains.length} domain${domains.length > 1 ? "s" : ""}`}
+          </p>
         </div>
 
-        <form onSubmit={(e) => void handleAdd(e)} className="space-y-2">
-          <label
-            htmlFor="panel-domain-input"
-            className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground"
+        {domains.length > 0 && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => void handleRetry()}
+            disabled={busy !== null}
+            title="Ask Let's Encrypt again for every panel domain"
           >
-            Add a domain
-          </label>
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <div className="relative min-w-0 flex-1">
-              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 font-mono text-sm text-muted-foreground">
-                https://
-              </span>
-              <input
-                id="panel-domain-input"
-                value={input}
-                onChange={(e) => setInput(displayHostnameFromInput(e.target.value))}
-                onPaste={(e) => {
-                  const pasted = e.clipboardData.getData("text");
-                  if (!pasted) return;
-                  const cleaned = displayHostnameFromInput(pasted);
-                  if (cleaned !== pasted) {
-                    e.preventDefault();
-                    setInput(cleaned);
-                  }
-                }}
-                onBlur={() => setInput((v) => displayHostnameFromInput(v))}
-                placeholder="panel.example.com"
-                spellCheck={false}
-                autoComplete="off"
-                className="h-11 w-full rounded-lg border border-input bg-background pl-[4.75rem] pr-3 font-mono text-sm ring-offset-background transition-colors placeholder:font-sans placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
-              />
-            </div>
+            {busy === "retry" ? (
+              <Loader2 className="animate-spin" />
+            ) : (
+              <RefreshCw className="text-subtle" />
+            )}
+            Retry HTTPS
+          </Button>
+        )}
+      </div>
+
+      {suggestion && (
+        <div className="px-4 pt-4 sm:px-5">
+          <PanelAccessSuggestion
+            domain={suggestion}
+            serverIP={serverIP}
+            busy={panelAccess.busy}
+            onEnable={panelAccess.requestEnable}
+            onDismiss={(d) => {
+              dismissSuggestion(d);
+              setDismissed((prev) => [...prev, d]);
+            }}
+          />
+        </div>
+      )}
+
+      <form onSubmit={(e) => void handleAdd(e)} className="space-y-2 p-4 sm:p-5">
+        <label htmlFor="panel-domain-input" className="block text-[13px] font-medium">
+          Add a domain
+        </label>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <div className="relative min-w-0 flex-1">
+            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 font-mono text-sm text-subtle">
+              https://
+            </span>
+            <input
+              id="panel-domain-input"
+              value={input}
+              onChange={(e) => setInput(displayHostnameFromInput(e.target.value))}
+              onPaste={(e) => {
+                const pasted = e.clipboardData.getData("text");
+                if (!pasted) return;
+                const cleaned = displayHostnameFromInput(pasted);
+                if (cleaned !== pasted) {
+                  e.preventDefault();
+                  setInput(cleaned);
+                }
+              }}
+              onBlur={() => setInput((v) => displayHostnameFromInput(v))}
+              placeholder="panel.example.com"
+              spellCheck={false}
+              autoComplete="off"
+              className="h-9 w-full rounded-md border border-input bg-card pl-[4.75rem] pr-3 font-mono text-sm text-foreground transition-[border-color,box-shadow] duration-150 placeholder:font-sans placeholder:text-subtle focus:border-brand focus:outline-hidden focus:ring-3 focus:ring-brand/20 pointer-coarse:h-10"
+            />
+          </div>
+          <div className="flex gap-2">
             <input
               type="number"
               min={1}
@@ -543,10 +539,11 @@ export function PanelDomainCard({
               onChange={(e) => setPortInput(e.target.value)}
               title="Docklift panel port"
               aria-label="Panel port"
-              className="h-11 w-full rounded-lg border border-input bg-background px-3 font-mono text-sm sm:w-28"
+              className="h-9 w-24 min-w-0 rounded-md border border-input bg-card px-3 font-mono text-sm text-foreground tabular-nums transition-[border-color,box-shadow] duration-150 focus:border-brand focus:outline-hidden focus:ring-3 focus:ring-brand/20 pointer-coarse:h-10 max-sm:flex-1"
             />
             <Button
               type="submit"
+              size="lg"
               disabled={
                 !parsed.value ||
                 Boolean(parsed.error) ||
@@ -554,254 +551,254 @@ export function PanelDomainCard({
                 isDuplicate ||
                 busy !== null
               }
-              className="h-11 gap-2 font-semibold"
+              className="shrink-0"
             >
-              {busy === "add" ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Plus className="h-4 w-4" />
-              )}
+              {busy === "add" ? <Loader2 className="animate-spin" /> : <Plus />}
               Add domain
             </Button>
           </div>
+        </div>
 
-          {parsed.error ? (
-            <p className="flex items-start gap-1.5 text-xs text-red-500">
-              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              {parsed.error}
-            </p>
-          ) : portError && (parsed.value || portInput.trim() !== String(DEFAULT_PANEL_PORT)) ? (
-            <p className="flex items-start gap-1.5 text-xs text-red-500">
-              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              {portError}
-            </p>
-          ) : isDuplicate ? (
-            <p className="flex items-start gap-1.5 text-xs text-amber-600">
-              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              {parsed.value} is already mapped to the panel.
-            </p>
-          ) : parsed.value && panelPort != null ? (
-            <div className="space-y-1 text-xs">
-              <p className="text-muted-foreground">
-                Saves as <code className="font-mono text-foreground">{parsed.value}</code>
-                {hint && (
-                  <>
-                    {" "}
-                    — needs an <strong className="text-foreground">A</strong> record named{" "}
-                    <code className="font-mono text-foreground">{hint.name}</code> pointing at{" "}
-                    <code className="font-mono text-foreground">{serverIP}</code>
-                  </>
-                )}
+        {parsed.error ? (
+          <p className="flex items-start gap-1.5 text-xs leading-[1.125rem] text-danger">
+            <AlertTriangle className="mt-px size-3.5 shrink-0" />
+            {parsed.error}
+          </p>
+        ) : portError && (parsed.value || portInput.trim() !== String(DEFAULT_PANEL_PORT)) ? (
+          <p className="flex items-start gap-1.5 text-xs leading-[1.125rem] text-danger">
+            <AlertTriangle className="mt-px size-3.5 shrink-0" />
+            {portError}
+          </p>
+        ) : isDuplicate ? (
+          <p className="flex items-start gap-1.5 text-xs leading-[1.125rem] text-warn">
+            <AlertTriangle className="mt-px size-3.5 shrink-0" />
+            {parsed.value} is already mapped to the panel.
+          </p>
+        ) : parsed.value && panelPort != null ? (
+          <p className="text-xs leading-[1.125rem] text-muted-foreground">
+            Saves as <code className="font-mono text-foreground">{parsed.value}</code>
+            {hint && (
+              <>
                 {" "}
-                · proxies to panel port{" "}
-                <code className="font-mono text-foreground">{panelPort}</code>
-              </p>
-            </div>
-          ) : (
-            <p className="text-xs text-muted-foreground">
-              Paste a URL — only <code className="font-mono">https://</code> and a trailing{" "}
-              <code className="font-mono">/</code> (or path) are removed. Subdomains stay as-is.
-              Change the port only if Docklift is not on {DEFAULT_PANEL_PORT}.
-            </p>
-          )}
-        </form>
+                — needs an <strong className="font-medium text-foreground">A</strong> record named{" "}
+                <code className="font-mono text-foreground">{hint.name}</code> pointing at{" "}
+                <code className="font-mono text-foreground">{serverIP}</code>
+              </>
+            )}
+            {" "}
+            · proxies to panel port{" "}
+            <code className="font-mono text-foreground">{panelPort}</code>
+          </p>
+        ) : (
+          <p className="text-xs leading-[1.125rem] text-muted-foreground">
+            Paste a URL — only <code className="font-mono">https://</code> and a trailing{" "}
+            <code className="font-mono">/</code> (or path) are removed. Subdomains stay as-is.
+            Change the port only if Docklift is not on {DEFAULT_PANEL_PORT}.
+          </p>
+        )}
+      </form>
 
-        {domains.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-border/60 bg-secondary/20 p-5 text-center">
-            <Globe className="mx-auto h-6 w-6 text-muted-foreground/40" />
-            <p className="mt-2 text-sm font-medium">No domain mapped yet</p>
-            <p className="mt-1 text-xs text-muted-foreground">
+      {domains.length === 0 ? (
+        <div className="border-t border-border">
+          <div className="px-4 pb-6 pt-8 text-center">
+            <p className="text-[15px] font-semibold">No domain mapped yet</p>
+            <p className="mx-auto mt-1 max-w-sm text-[13.5px] text-muted-foreground">
               Access the panel at a hostname like{" "}
-              <code className="font-mono">panel.example.com</code> instead of IP:port.
+              <code className="font-mono text-foreground">panel.example.com</code> instead of
+              IP:port.
             </p>
           </div>
-        ) : (
-          <div className="space-y-2">
-            {domains.map((entry) => {
-              const domain = entry.domain;
-              const ssl = sslMap[domain] || entry.ssl;
-              const secure = ssl?.status === "active" || ssl?.status === "expiring";
-              const dns = dnsChecks[domain];
-              const fix =
-                ssl?.status === "failed" || ssl?.status === "expired"
-                  ? sslFixFor(ssl?.error, serverIP)
-                  : null;
+          <div className="px-4 pb-4 sm:px-5 sm:pb-5">
+            <PanelAccessSwitch
+              domain={null}
+              serverIP={serverIP}
+              busy={panelAccess.busy}
+              onEnable={panelAccess.requestEnable}
+              onDisable={(d) => void panelAccess.disable(d)}
+            />
+          </div>
+        </div>
+      ) : (
+        <ul className="divide-y divide-border border-t border-border">
+          {domains.map((entry) => {
+            const domain = entry.domain;
+            const ssl = sslMap[domain] || entry.ssl;
+            const secure = ssl?.status === "active" || ssl?.status === "expiring";
+            const dns = dnsChecks[domain];
+            const fix =
+              ssl?.status === "failed" || ssl?.status === "expired"
+                ? sslFixFor(ssl?.error, serverIP)
+                : null;
 
-              return (
-                <div
-                  key={domain}
-                  className="space-y-3 rounded-xl border border-border/50 bg-secondary/10 p-3 sm:p-4"
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div className="min-w-0 space-y-1.5">
-                      <a
-                        href={`${secure ? "https" : "http"}://${domain}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-start gap-1.5 font-mono text-sm font-semibold break-all transition-colors hover:text-brand"
-                      >
-                        {domain}
-                        <ExternalLink className="mt-0.5 h-3.5 w-3.5 shrink-0 opacity-60" />
-                      </a>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <SslPill ssl={ssl} />
-                        <span className="text-[11px] text-muted-foreground">
-                          → port{" "}
-                          <code className="font-mono text-foreground/80">{entry.port}</code>
-                        </span>
-                      </div>
+            return (
+              <li key={domain} className="space-y-3 px-4 py-3.5 sm:px-5">
+                <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
+                  <div className="min-w-0 space-y-1">
+                    <a
+                      href={`${secure ? "https" : "http"}://${domain}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-start gap-1.5 font-mono text-sm font-medium break-all text-foreground transition-colors hover:text-brand"
+                    >
+                      {domain}
+                      <ExternalLink className="mt-0.5 size-3.5 shrink-0 text-subtle" />
+                    </a>
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <SslPill ssl={ssl} />
+                      <span className="font-mono text-xs text-muted-foreground">
+                        → port <span className="text-foreground">{entry.port}</span>
+                      </span>
                     </div>
-
-                    {confirmRemove === domain ? (
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xs text-muted-foreground">Remove?</span>
-                        <Button
-                          type="button"
-                          variant="destructive"
-                          size="sm"
-                          className="h-8 text-xs"
-                          onClick={() => void handleRemove(domain)}
-                          disabled={busy !== null}
-                        >
-                          {busy === "remove" ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          ) : (
-                            "Remove"
-                          )}
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="h-8 text-xs"
-                          onClick={() => setConfirmRemove(null)}
-                        >
-                          Cancel
-                        </Button>
-                      </div>
-                    ) : (
-                      <div className="flex shrink-0 items-center gap-1">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="h-8 gap-1.5 text-xs"
-                          onClick={() => void runDnsCheck([domain])}
-                          disabled={checking !== null}
-                        >
-                          {checking === domain ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          ) : (
-                            <Search className="h-3.5 w-3.5" />
-                          )}
-                          Check DNS
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-muted-foreground hover:bg-red-500/10 hover:text-red-500"
-                          onClick={() => setConfirmRemove(domain)}
-                          aria-label={`Remove ${domain}`}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    )}
                   </div>
 
-                  {dns && (
-                    <p className={cn("text-[11px] break-words", DNS_STYLES[dns.status])}>
-                      {dns.message}
-                    </p>
-                  )}
-
-                  {fix && (
-                    <div className="space-y-2 rounded-lg border border-red-500/30 bg-red-500/5 p-3">
-                      <p className="flex items-start gap-1.5 text-xs font-semibold text-red-500">
-                        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                        {fix.title}
-                      </p>
-                      {ssl?.error && (
-                        <p className="text-[11px] text-muted-foreground break-words">{ssl.error}</p>
-                      )}
-                      <ol className="space-y-1">
-                        {fix.steps.map((step, i) => (
-                          <li key={i} className="flex gap-2 text-[11px] text-foreground/80">
-                            <span className="font-bold text-red-500/70">{i + 1}.</span>
-                            <span className="min-w-0">{step}</span>
-                          </li>
-                        ))}
-                      </ol>
-                      {ssl?.diagnosticCommand && (
-                        <CopyableCommand command={ssl.diagnosticCommand} />
-                      )}
+                  {confirmRemove === domain ? (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[13px] text-muted-foreground">Remove?</span>
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => void handleRemove(domain)}
+                        disabled={busy !== null}
+                      >
+                        {busy === "remove" ? <Loader2 className="animate-spin" /> : "Remove"}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setConfirmRemove(null)}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex shrink-0 items-center gap-1">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => void runDnsCheck([domain])}
+                        disabled={checking !== null}
+                      >
+                        {checking === domain ? (
+                          <Loader2 className="animate-spin" />
+                        ) : (
+                          <Search className="text-subtle" />
+                        )}
+                        Check DNS
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="text-subtle hover:text-danger"
+                        onClick={() => setConfirmRemove(domain)}
+                        aria-label={`Remove ${domain}`}
+                      >
+                        <Trash2 />
+                      </Button>
                     </div>
                   )}
                 </div>
-              );
-            })}
-          </div>
-        )}
 
-        {(events.length > 0 || busy !== null) && (
-          <div className="overflow-hidden rounded-xl border border-border/50">
-            <div className="flex items-center justify-between gap-2 bg-secondary/40 px-3 py-2">
-              <span className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
-                {activityRunning ? (
-                  <Loader2 className="h-3 w-3 animate-spin text-brand" />
-                ) : (
-                  <ScrollText className="h-3 w-3" />
+                {entry.port === DEFAULT_PANEL_PORT && (
+                  <PanelAccessSwitch
+                    domain={domain}
+                    access={entry.access}
+                    serverIP={serverIP}
+                    busy={panelAccess.busy || busy !== null}
+                    onEnable={panelAccess.requestEnable}
+                    onDisable={(d) => void panelAccess.disable(d)}
+                  />
                 )}
-                Let&apos;s Encrypt activity
-              </span>
-              {pollExpired && (
-                <span className="ml-auto text-[11px] text-muted-foreground">
-                  auto-refresh paused
-                </span>
-              )}
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-7 gap-1.5 text-[11px]"
-                onClick={() => {
-                  setPollExpired(false);
-                  void fetchSsl(true);
-                }}
-              >
-                <RefreshCw className="h-3 w-3" />
-                Refresh
-              </Button>
-            </div>
-            <div
-              ref={logRef}
-              className="shell-scroll max-h-48 divide-y divide-border/30 overflow-y-auto bg-background/60"
-            >
-              {events.length === 0 ? (
-                <p className="px-3 py-3 text-[11px] text-muted-foreground">
-                  Setting up routing and requesting a certificate…
-                </p>
-              ) : (
-                events.map((event, i) => (
-                  <div key={`${event.at}-${i}`} className="flex gap-2 px-3 py-1.5 text-[11px]">
-                    <span className="shrink-0 font-mono text-muted-foreground/70">
-                      {new Date(event.at).toLocaleTimeString([], {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                        second: "2-digit",
-                      })}
-                    </span>
-                    <span className={cn("min-w-0 break-words", LEVEL_STYLES[event.level])}>
-                      {event.message}
-                    </span>
+
+                {dns && (
+                  <p className={cn("text-xs leading-[1.125rem] wrap-break-word", DNS_STYLES[dns.status])}>
+                    {dns.message}
+                  </p>
+                )}
+
+                {fix && (
+                  <div className="space-y-2 rounded-md border border-danger/40 bg-secondary/60 px-3 py-2.5">
+                    <p className="text-[13px] font-medium leading-5 text-danger">{fix.title}</p>
+                    {ssl?.error && (
+                      <p className="font-mono text-xs leading-[1.125rem] text-muted-foreground wrap-break-word">
+                        {ssl.error}
+                      </p>
+                    )}
+                    <ol className="list-decimal space-y-1 pl-4 text-[13px] leading-5 text-foreground/85 marker:font-mono marker:text-xs marker:text-subtle">
+                      {fix.steps.map((step, i) => (
+                        <li key={i} className="min-w-0 pl-1">
+                          {step}
+                        </li>
+                      ))}
+                    </ol>
+                    {ssl?.diagnosticCommand && (
+                      <CopyableCommand command={ssl.diagnosticCommand} />
+                    )}
                   </div>
-                ))
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {(events.length > 0 || busy !== null) && (
+        <div className="border-t border-border">
+          <div className="flex h-9 items-center justify-between gap-2 px-4 sm:px-5">
+            <span className="flex items-center gap-2 text-[13px] font-medium">
+              {activityRunning ? (
+                <Loader2 className="size-3.5 animate-spin text-subtle" />
+              ) : (
+                <ScrollText className="size-3.5 text-subtle" />
               )}
-            </div>
+              Let&apos;s Encrypt activity
+            </span>
+            {pollExpired && (
+              <span className="ml-auto text-xs text-muted-foreground">auto-refresh paused</span>
+            )}
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground"
+              onClick={() => {
+                setPollExpired(false);
+                void fetchSsl(true);
+              }}
+            >
+              <RefreshCw className="size-3.5" />
+              Refresh
+            </Button>
           </div>
-        )}
-      </div>
+          <div
+            ref={logRef}
+            className="shell-scroll max-h-48 overflow-y-auto rounded-b-lg border-t border-border bg-secondary/40 px-4 py-2 font-mono text-xs leading-5 sm:px-5"
+          >
+            {events.length === 0 ? (
+              <p className="py-1 text-muted-foreground">Setting up routing and requesting a certificate…</p>
+            ) : (
+              events.map((event, i) => (
+                <div key={`${event.at}-${i}`} className="flex gap-3 py-0.5">
+                  <span className="shrink-0 text-subtle tabular-nums">
+                    {new Date(event.at).toLocaleTimeString([], {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                      second: "2-digit",
+                    })}
+                  </span>
+                  <span className={cn("min-w-0 wrap-break-word", LEVEL_STYLES[event.level])}>
+                    {event.message}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+      {panelAccess.dialog}
     </Card>
   );
 }

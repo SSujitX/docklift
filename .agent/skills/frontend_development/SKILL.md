@@ -5,7 +5,10 @@ description: Guide for developing features in the Vite + React Router frontend.
 
 # Frontend Development Guide
 
-Docklift uses **Vite + React + React Router** for its dashboard (static SPA in production).
+Docklift uses **Vite + React 19 + React Router 7** and **Tailwind CSS 4** for its dashboard. In
+production it is a static SPA that is built into `frontend/dist` and **embedded in the Go binary**
+(`server/web`, `go:embed`); the Go server serves it with SPA fallback on the same origin as `/api` and
+`/ws`. There is no frontend container and no dashboard nginx.
 
 ## Directory Structure (`frontend/src/`)
 
@@ -24,7 +27,8 @@ Docklift uses **Vite + React + React Router** for its dashboard (static SPA in p
 | `/databases/new` | `pages/NewDatabase.tsx` | Full-width create + sticky CTA (matches New Project) |
 | — | `components/databases/*` | Connection, link, attach panels |
 | `/settings` | `pages/Settings.tsx` | Settings + GitHub |
-| Docs | external | https://docklift.dev (VitePress site in `website/`) |
+| `/developer` | `pages/Developer.tsx` | API & MCP: API tokens (create with password, shown once; revoke with password), "Connect an AI" snippets, endpoint browser from `/api/openapi.json`. Pure helpers in `lib/developer.ts` (tested) |
+| `/docs`, `/docs/*` | redirect | `DocsRedirect` sends the browser to https://docklift.dev (VitePress site in `website/`) |
 
 Router: `src/app/router.tsx` (lazy route chunks). `/sign-in` and `/setup` render
 bare; every other route is nested under `app/AppShell.tsx`.
@@ -96,16 +100,50 @@ elements and `top-20` for spaced ones.
 -   Settings → Domain (`/settings?tab=domain`): same guide + inline add (no popup),
     SSL status pills, Check DNS, Retry HTTPS, and Let’s Encrypt activity log via
     `PanelDomainCard` — mirror project Domain, not a table/dialog.
+    Under each dashboard-port domain, `PanelAccessSwitch` (`components/domains/PanelAccess.tsx`)
+    is "Only allow access through the domain": state and the disabled reason come only from
+    the API (`access {domainOnly, canEnable, reason?}` in `GET /api/domains`; logic in
+    `lib/panelAccess.ts`, tested). Turning on opens the step-up password dialog
+    (`usePanelAccess`); a dismissible `PanelAccessSuggestion` appears when the page is viewed
+    through an HTTPS panel domain and nothing is restricted yet.
 -   Env manager: optional **BuildKit secret** flag (`is_secret`) when `is_build_arg` is on.
 
 ## Dev server
 
-- Default port: **3600** (`PORT` in `frontend/.env`)
-- Proxy: `/api` and `/ws` → `http://127.0.0.1:8000`
-- Leave `VITE_API_URL` empty for same-origin / proxy
+- `make dev` from the repo root runs the Go API and Vite together; or `cd frontend && bun run dev`
+  with the API already running on `:8000`.
+- Default port: **3600** (`PORT` in `frontend/.env`, bound to `127.0.0.1`, `strictPort`)
+- Proxy (`vite.config.ts`): `/api` -> `http://127.0.0.1:8000`, `/ws` -> `ws://127.0.0.1:8000`; the
+  `/api` proxy forwards `X-Forwarded-Host` / `X-Forwarded-Proto: http` so cookies and the GitHub
+  `setup_url` stay on the Vite origin, and uses its own keep-alive `http.Agent` (without one the
+  proxy sends `Connection: close` on a reused keep-alive socket: intermittent `ECONNRESET` / 502)
+- Leave `VITE_API_URL` empty for same-origin / proxy (the production build does the same)
+- `__APP_VERSION__` is injected from `frontend/package.json` (shown in the sidebar footer)
+- Path alias: `@/` -> `frontend/src/`
+
+## Checks
+
+```bash
+cd frontend
+bun install --frozen-lockfile
+bunx tsc -p tsconfig.app.json --noEmit    # typecheck (CI)
+bunx vite build                           # production build into dist/ (CI)
+bun audit --prod                          # must be clean (CI)
+```
+
+`bun run build` runs the typecheck and the build together. `tsc` is TypeScript 7's native compiler
+(about a second for the app). `package.json` has no `overrides`: add one only to pin a transitive
+security fix that `bun audit` reports, and drop it once the parent's own range includes the fix.
 
 ## Production
 
-- `bun run build` → `dist/`
-- Docker image `docklift-frontend` serves static files with nginx on **3000**
-- Gateway `nginx.conf` proxies `/` → `docklift-frontend:3000` and keeps `/api`, `/ws/`, SSE rules
+- The root `Dockerfile` runs `bunx vite build` (stage `web`, no typecheck: CI runs tsc) with
+  `VITE_API_URL` empty, copies `dist/`
+  into `server/web/dist`, and `go build` embeds it. `make build` does the same locally.
+- `server/web/dist/index.html` is a tracked placeholder so the Go module always compiles; never
+  commit real build output there (`dist/` contents other than the placeholder are gitignored).
+- The Go server sets the Content-Security-Policy from the embedded build (see `server/web/web.go`):
+  scripts are same-origin plus the pinned Monaco CDN path found in the bundle. Inline scripts in
+  `index.html` are allowed by hash; a new third-party script origin needs a matching change there,
+  or the browser blocks it in production.
+- Hashed `/assets/` files are cached immutably; `index.html` is never cached.

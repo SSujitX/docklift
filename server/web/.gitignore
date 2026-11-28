@@ -1,0 +1,5 @@
+# The frontend build (frontend/dist) is copied here at image build time; only
+# the placeholder index.html that keeps go:embed compiling is tracked.
+!/dist/
+/dist/*
+!/dist/index.html

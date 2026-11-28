@@ -1,0 +1,7 @@
+# Migration checksums recorded in _prisma_migrations are sha256 over the exact
+# file bytes. Linux installs applied them with LF endings, so a Windows checkout
+# must not convert them to CRLF.
+internal/db/migrations/**/*.sql text eol=lf
+
+# Everything else in the Go module is LF too: golden tests compare bytes
+* text=auto eol=lf

@@ -1,15 +1,29 @@
 name: docklift
 
+# Three containers:
+#   backend      Go server: API, WebSocket terminal and the embedded dashboard (:8080 on the host)
+#   nginx-proxy  user app domains and the optional panel domain (:80/:443)
+#   certbot      Let's Encrypt renewals (webroot); the backend triggers issuance via docker exec
+
 services:
   backend:
     image: docklift-backend
-    build: ./backend
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # Empty = the version in the root package.json.
+        VERSION: ${DOCKLIFT_BUILD_VERSION:-}
     container_name: docklift-backend
     hostname: docklift
     restart: unless-stopped
-    expose:
-      - "8000"
-    # privileged required for nsenter into host PID 1 (system update / reboot)
+    # Dashboard on :8080 — public by default so install can open http://SERVER_IP:8080.
+    # First account still requires the server-printed bootstrap secret.
+    # Harden later: Settings → Domain (HTTPS) with "Only allow access through the domain",
+    # a firewall, or DASHBOARD_BIND=127.0.0.1.
+    ports:
+      - "${DASHBOARD_BIND:-0.0.0.0}:8080:8000"
+    # privileged + host PID: nsenter into host PID 1 (system update / reboot / upgrade)
     privileged: true
     pid: host
     volumes:
@@ -24,7 +38,6 @@ services:
       - /etc/os-release:/host/os-release:ro
       - /proc:/host/proc:ro
     environment:
-      - NODE_ENV=production
       - DATABASE_URL=file:/app/data/docklift.db
       - PORT=8000
       - DEPLOYMENTS_PATH=/deployments
@@ -39,47 +52,24 @@ services:
       - INTERNAL_API_SECRET=${INTERNAL_API_SECRET:-}
       # Comma-separated browser origins if dashboard is not same-host as API
       - CORS_ORIGIN=${CORS_ORIGIN:-}
+      # Peers whose X-Forwarded-* headers are trusted: loopback plus the fixed
+      # addresses of docklift-nginx-proxy below. App containers on
+      # docklift_network (and the network gateway, which fronts :8080 clients)
+      # are not trusted, so they cannot spoof client IPs.
+      - TRUSTED_PROXIES=${TRUSTED_PROXIES:-127.0.0.0/8,::1/128,172.28.255.254,fd12:3456:789a::ffff:fffe}
       - DOCKLIFT_FRONTEND_URL=${DOCKLIFT_FRONTEND_URL:-http://localhost:8080}
       - CERTBOT_EMAIL=${CERTBOT_EMAIL:-}
       - CERTBOT_STAGING=${CERTBOT_STAGING:-false}
       - LETSENCRYPT_PATH=/etc/letsencrypt
       - CERTBOT_CONTAINER=docklift-certbot
+      - NGINX_PROXY_CONTAINER=docklift-nginx-proxy
     networks:
       - docklift_network
     depends_on:
       - nginx-proxy
 
-  frontend:
-    image: docklift-frontend
-    build: ./frontend
-    container_name: docklift-frontend
-    restart: unless-stopped
-    expose:
-      - "3000"
-    networks:
-      - docklift_network
-    depends_on:
-      - backend
-
-  nginx:
-    image: nginx:stable-alpine
-    container_name: docklift-nginx
-    restart: unless-stopped
-    # Dashboard on :8080 — public by default so install can open http://SERVER_IP:8080.
-    # First account still requires the server-printed bootstrap secret.
-    # Harden later: Settings → Domain (HTTPS), firewall, or DASHBOARD_BIND=127.0.0.1.
-    ports:
-      - "${DASHBOARD_BIND:-0.0.0.0}:8080:80"
-    volumes:
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
-    networks:
-      - docklift_network
-    depends_on:
-      - frontend
-      - backend
-
   nginx-proxy:
-    image: nginx:stable-alpine
+    image: nginx:1.30.8-alpine  # nginx stable; bump deliberately (upgrade.sh pulls it)
     container_name: docklift-nginx-proxy
     restart: unless-stopped
     extra_hosts:
@@ -94,13 +84,17 @@ services:
       - ./nginx-proxy/certbot/www:/var/www/certbot:ro
       - ./nginx-proxy/certbot/conf:/etc/letsencrypt:ro
     networks:
-      - docklift_network
+      docklift_network:
+        # Fixed, at the top of each subnet (Docker allocates dynamic addresses
+        # from the bottom), so TRUSTED_PROXIES can name exactly this container.
+        ipv4_address: 172.28.255.254
+        ipv6_address: fd12:3456:789a::ffff:fffe
     depends_on:
       - certbot
 
   # Let's Encrypt ACME sidecar (webroot). Backend triggers issue via docker exec.
   certbot:
-    image: certbot/certbot
+    image: certbot/certbot:v5.10.0  # bump deliberately (upgrade.sh pulls it)
     container_name: docklift-certbot
     restart: unless-stopped
     entrypoint: /bin/sh

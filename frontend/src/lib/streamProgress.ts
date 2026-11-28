@@ -1,6 +1,8 @@
 // Consume a text streaming response (backup/restore) and surface failures
 // that arrive as HTTP errors or `[ERROR]` markers after a 200 status.
 
+import { apiCache } from "./auth";
+
 export type StreamProgressResult = {
   ok: boolean;
   lines: string[];
@@ -13,6 +15,19 @@ export type StreamProgressResult = {
  * - Any line containing `[ERROR]` → failure even if status is 200
  */
 export async function consumeProgressStream(
+  res: Response,
+  onLine?: (line: string) => void,
+): Promise<StreamProgressResult> {
+  try {
+    return await readProgressStream(res, onLine);
+  } finally {
+    // The work behind a stream (backup, restore, deploy) finishes when the stream ends, so data
+    // read while it ran may already be out of date.
+    apiCache.invalidate();
+  }
+}
+
+async function readProgressStream(
   res: Response,
   onLine?: (line: string) => void,
 ): Promise<StreamProgressResult> {

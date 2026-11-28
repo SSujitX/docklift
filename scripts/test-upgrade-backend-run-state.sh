@@ -125,6 +125,7 @@ fi
 # Probe-error (2) must also be capturable without aborting the shell
 write_stub compose-fail
 PATH="$STUB_BIN:$PATH"
+# shellcheck disable=SC1090
 source "$FN_FILE"
 STATE="$(capture_state)"
 AFTER=1

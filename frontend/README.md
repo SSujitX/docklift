@@ -1,29 +1,34 @@
-# DockLift frontend
+# Docklift dashboard
 
-Vite + React + React Router dashboard.
+React 19 + Vite 8 + TypeScript 7 + Tailwind CSS 4 + React Router. The production build is embedded in the Go binary
+(`server/web`), which serves it on the same port as the API and the WebSocket terminal.
 
-## Dev
+## Development
 
 ```bash
-# Backend on :8000
-cd backend && bun run dev
+# from the repository root: Go API on :8000 and this dev server together
+make dev
 
+# or by hand
+cd server && go run ./cmd/docklift     # API on :8000
 cd frontend
-bun install
+bun install --frozen-lockfile
 bun run dev
 ```
 
-Open http://127.0.0.1:3600 (set `PORT` in `.env` to change).  
-`/api` and `/ws` proxy to the backend — leave `VITE_API_URL` empty.
+Open http://127.0.0.1:3600 (set `PORT` in `.env` to change it). `/api` and `/ws` are proxied to the
+backend on `127.0.0.1:8000`; leave `VITE_API_URL` empty.
 
-## Build
+## Checks
 
 ```bash
-bun run build    # → dist/
-bun run preview
+bun test                                # unit tests (src/**/*.test.ts)
+bunx tsc -p tsconfig.app.json --noEmit  # typecheck
+bun run build                           # typecheck + production build into dist/
 ```
 
 ## Production
 
-Built into the `docklift-frontend` image (static nginx on port 3000).  
-Gateway `nginx.conf` on `:8080` proxies `/` → frontend and keeps `/api` + `/ws` + SSE rules.
+The root `Dockerfile` builds this directory with Bun (`bunx vite build`; CI runs the typecheck), copies `dist/` into
+`server/web/dist` and compiles it into the `docklift` binary with `go:embed`. There is no separate
+frontend container. `make build` does the same without Docker and writes `bin/docklift`.

@@ -6,13 +6,14 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Loader2, CheckCircle, ExternalLink } from "lucide-react";
+import { Loader2, ExternalLink } from "lucide-react";
 import { GithubIcon } from "./icons/GithubIcon";
-import { getAuthHeaders, startGithubInstallAndNavigate } from "@/lib/auth";
+import { apiCache, getAuthHeaders, startGithubInstallAndNavigate } from "@/lib/auth";
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 
@@ -142,6 +143,8 @@ export function GitHubConnect({ open, onOpenChange, onConnected }: GitHubConnect
     } catch (error) {
       console.error("Failed to disconnect:", error);
     } finally {
+      // Raw fetch skips authFetch's mutation hook; drop cached GitHub data here.
+      apiCache.invalidate();
       setLoading(false);
     }
   };
@@ -160,6 +163,7 @@ export function GitHubConnect({ open, onOpenChange, onConnected }: GitHubConnect
         const data = await res.json();
         if (data.found) {
           setIsPolling(false);
+          apiCache.invalidate();
           await fetchStatus();
           onConnected?.();
         }
@@ -179,6 +183,7 @@ export function GitHubConnect({ open, onOpenChange, onConnected }: GitHubConnect
       const data = await res.json();
       if (data.found) {
         setIsPolling(false);
+        apiCache.invalidate();
         // Refresh status
         await fetchStatus();
         onConnected?.();
@@ -199,191 +204,183 @@ export function GitHubConnect({ open, onOpenChange, onConnected }: GitHubConnect
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent>
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <GithubIcon className="h-5 w-5" />
-            {status?.configured ? "GitHub App Connected" : "Connect GitHub App"}
+          <DialogTitle>
+            {status?.configured ? "GitHub App connected" : "Connect GitHub App"}
           </DialogTitle>
           <DialogDescription>
-            {status?.configured 
+            {status?.configured
               ? "Your GitHub App is configured. You can now deploy private repositories."
               : "Create a GitHub App to deploy public and private repositories."}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-4">
-          {/* Already configured and installed */}
-          {status?.configured && status?.installed && (
-            <div className="space-y-4">
-              <div className="flex items-center gap-3 p-4 bg-green-500/10 border border-green-500/20 rounded-lg">
-                <CheckCircle className="h-8 w-8 text-green-500" />
-                <div>
-                  <p className="font-medium text-green-400">Connected</p>
-                  <p className="text-sm text-muted-foreground">
-                    {status.appName} • @{status.username}
-                  </p>
-                </div>
+        {/* Already configured and installed */}
+        {status?.configured && status?.installed && (
+          <div className="space-y-4">
+            <dl className="divide-y divide-border border-y border-border text-[13px]">
+              <div className="flex items-center justify-between gap-4 py-2.5">
+                <dt className="text-muted-foreground">Status</dt>
+                <dd className="inline-flex items-center gap-1.5 font-medium">
+                  <span aria-hidden="true" className="size-2 rounded-full bg-ok" />
+                  Connected
+                </dd>
               </div>
-
-              {/* Multi-account info */}
-              <div className="p-3 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-xs space-y-1">
-                <p className="text-cyan-400 font-medium">💡 Multi-Account Support</p>
-                <p className="text-gray-600 dark:text-gray-300">
-                  You can install this app on multiple accounts (Personal + Organizations). 
-                  All repositories will appear together in one list.
-                </p>
+              <div className="flex items-center justify-between gap-4 py-2.5">
+                <dt className="text-muted-foreground">App</dt>
+                <dd className="min-w-0 truncate font-mono text-xs">{status.appName}</dd>
               </div>
+              <div className="flex items-center justify-between gap-4 py-2.5">
+                <dt className="text-muted-foreground">Account</dt>
+                <dd className="min-w-0 truncate font-mono text-xs">@{status.username}</dd>
+              </div>
+            </dl>
 
-              <Button
-                className="w-full bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700"
-                onClick={handleAddAccount}
-                disabled={loading}
-              >
-                <ExternalLink className="h-4 w-4 mr-2" />
-                Add Another Account
-              </Button>
-              
+            <div className="rounded-md border border-info/40 bg-secondary/60 px-3 py-2.5 text-[13px] leading-5">
+              <p className="font-medium">Multi-account support</p>
+              <p className="mt-0.5 text-muted-foreground">
+                You can install this app on multiple accounts (personal and organizations). All
+                repositories will appear together in one list.
+              </p>
+            </div>
+
+            <DialogFooter>
               <Button
                 variant="outline"
-                className="w-full text-destructive hover:bg-destructive/10"
+                className="text-danger sm:mr-auto"
                 onClick={handleDisconnect}
                 disabled={loading}
               >
-                {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                {loading ? <Loader2 className="animate-spin" /> : null}
                 Disconnect GitHub
               </Button>
-            </div>
-          )}
+              <Button variant="outline" onClick={handleAddAccount} disabled={loading}>
+                <ExternalLink className="text-subtle" />
+                Add another account
+              </Button>
+            </DialogFooter>
+          </div>
+        )}
 
-          {/* Configured but not installed */}
-          {status?.configured && !status?.installed && (
-            <div className="space-y-4">
-              {/* Show polling state */}
-              {isPolling ? (
-                <>
-                  <div className="flex items-center gap-3 p-4 bg-cyan-500/10 border border-cyan-500/20 rounded-lg">
-                    <Loader2 className="h-8 w-8 text-cyan-500 animate-spin" />
-                    <div>
-                      <p className="font-medium text-cyan-600 dark:text-cyan-400">Waiting for installation...</p>
-                      <p className="text-sm text-muted-foreground">
-                        Complete the installation on GitHub, then come back here
-                      </p>
-                    </div>
+        {/* Configured but not installed */}
+        {status?.configured && !status?.installed && (
+          <div className="space-y-4">
+            {/* Show polling state */}
+            {isPolling ? (
+              <>
+                <div className="flex items-start gap-2.5 border-y border-border py-3">
+                  <Loader2 className="mt-0.5 shrink-0 animate-spin text-subtle" />
+                  <div className="min-w-0 text-[13px] leading-5">
+                    <p className="font-medium">Waiting for installation…</p>
+                    <p className="text-muted-foreground">
+                      Complete the installation on GitHub, then come back here
+                    </p>
                   </div>
+                </div>
 
-                  <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-xs space-y-1">
-                    <p className="text-blue-400 font-medium">📝 On GitHub:</p>
-                    <ol className="text-gray-600 dark:text-gray-300 list-decimal list-inside space-y-0.5">
-                      <li>Select which repositories to grant access</li>
-                      <li>Click &quot;Install&quot; or &quot;Save&quot;</li>
-                      <li>Return here - we&apos;ll detect it automatically!</li>
-                    </ol>
-                  </div>
+                <div className="text-[13px] leading-5">
+                  <p className="font-medium">On GitHub:</p>
+                  <ol className="mt-1 list-decimal space-y-0.5 pl-5 text-muted-foreground marker:font-mono marker:text-xs">
+                    <li>Select which repositories to grant access</li>
+                    <li>Click &quot;Install&quot; or &quot;Save&quot;</li>
+                    <li>Return here — we&apos;ll detect it automatically</li>
+                  </ol>
+                </div>
 
-                  <Button
-                    variant="outline"
-                    className="w-full"
-                    onClick={handleStopPolling}
-                  >
+                <DialogFooter>
+                  <Button variant="outline" onClick={handleStopPolling}>
                     Cancel
                   </Button>
-                </>
-              ) : (
-                <>
-                  <div className="flex items-center gap-3 p-4 bg-amber-100 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-800 rounded-lg">
-                    <GithubIcon className="h-8 w-8 text-amber-700 dark:text-amber-600" />
-                    <div>
-                      <p className="font-medium text-amber-800 dark:text-amber-500">App Created</p>
-                      <p className="text-sm text-amber-700/70 dark:text-amber-400/70">
-                        {status.appName} - needs installation
-                      </p>
-                    </div>
+                </DialogFooter>
+              </>
+            ) : (
+              <>
+                <dl className="divide-y divide-border border-y border-border text-[13px]">
+                  <div className="flex items-center justify-between gap-4 py-2.5">
+                    <dt className="text-muted-foreground">Status</dt>
+                    <dd className="inline-flex items-center gap-1.5 font-medium">
+                      <span aria-hidden="true" className="size-2 rounded-full bg-warn" />
+                      App created — needs installation
+                    </dd>
                   </div>
-                  
-                  <Button
-                    className="w-full bg-gradient-to-r from-gray-800 to-gray-900 hover:from-gray-700 hover:to-gray-800"
-                    onClick={handleInstall}
-                  >
-                    <ExternalLink className="h-4 w-4 mr-2" />
-                    Install GitHub App
-                  </Button>
-                  
-                  <Button
-                    variant="secondary"
-                    className="w-full"
-                    onClick={handleCheckInstallation}
-                    disabled={loading}
-                  >
-                    {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <CheckCircle className="h-4 w-4 mr-2" />}
-                    I Already Installed
-                  </Button>
+                  <div className="flex items-center justify-between gap-4 py-2.5">
+                    <dt className="text-muted-foreground">App</dt>
+                    <dd className="min-w-0 truncate font-mono text-xs">{status.appName}</dd>
+                  </div>
+                </dl>
 
-                  {checkMessage && (
-                    <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/20 text-sm text-rose-600 dark:text-rose-400">
-                      {checkMessage}
-                    </div>
-                  )}
+                {checkMessage && (
+                  <div className="rounded-md border border-danger/40 bg-secondary/60 px-3 py-2.5 text-[13px] leading-5">
+                    {checkMessage}
+                  </div>
+                )}
 
+                <DialogFooter>
                   <Button
-                    variant="outline"
-                    className="w-full"
+                    variant="ghost"
+                    className="text-muted-foreground sm:mr-auto"
                     onClick={handleDisconnect}
                     disabled={loading}
                   >
-                    Start Over
+                    Start over
                   </Button>
-                </>
-              )}
+                  <Button variant="outline" onClick={handleCheckInstallation} disabled={loading}>
+                    {loading ? <Loader2 className="animate-spin" /> : null}
+                    I already installed
+                  </Button>
+                  <Button onClick={handleInstall}>
+                    <ExternalLink />
+                    Install GitHub App
+                  </Button>
+                </DialogFooter>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Not configured - show creation form */}
+        {!status?.configured && (
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <label htmlFor="appName" className="text-[13px] font-medium">
+                GitHub App name
+              </label>
+              <Input
+                id="appName"
+                placeholder="my-docklift"
+                value={appName}
+                onChange={(e) => setAppName(e.target.value)}
+                disabled={loading}
+              />
+              <p className="text-xs text-muted-foreground">
+                This will create:{" "}
+                <code className="font-mono text-foreground">docklift-{appName || "my-app"}</code>
+              </p>
             </div>
-          )}
 
-          {/* Not configured - show creation form */}
-          {!status?.configured && (
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <label htmlFor="appName" className="text-sm font-medium">GitHub App Name</label>
-                <Input
-                  id="appName"
-                  placeholder="my-docklift"
-                  value={appName}
-                  onChange={(e) => setAppName(e.target.value)}
-                  disabled={loading}
-                />
-                <p className="text-xs text-muted-foreground">
-                  This will create: <code className="bg-muted px-1 rounded">docklift-{appName || "my-app"}</code>
-                </p>
-              </div>
+            <div className="text-[13px] leading-5">
+              <p className="font-medium">What happens next</p>
+              <ol className="mt-1 list-decimal space-y-0.5 pl-5 text-muted-foreground marker:font-mono marker:text-xs">
+                <li>You&apos;ll be redirected to GitHub</li>
+                <li>Create and install the app on your repos</li>
+                <li>
+                  {typeof window !== 'undefined' && window.location.hostname === 'localhost'
+                    ? <span className="text-warn">Return here manually after installation</span>
+                    : "You'll be redirected back automatically"
+                  }
+                </li>
+              </ol>
+            </div>
 
-              <Button
-                className="w-full bg-gradient-to-r from-gray-800 to-gray-900 hover:from-gray-700 hover:to-gray-800"
-                onClick={handleCreateApp}
-                disabled={loading || !appName.trim()}
-              >
-                {loading ? (
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                ) : (
-                  <GithubIcon className="h-4 w-4 mr-2" />
-                )}
+            <DialogFooter>
+              <Button onClick={handleCreateApp} disabled={loading || !appName.trim()}>
+                {loading ? <Loader2 className="animate-spin" /> : <GithubIcon className="size-4" />}
                 Create GitHub App
               </Button>
-
-              <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-xs space-y-1">
-                <p className="text-blue-400 font-medium">What happens next:</p>
-                <ol className="text-gray-700 dark:text-gray-300 list-decimal list-inside space-y-0.5">
-                  <li>You&apos;ll be redirected to GitHub</li>
-                  <li>Create and install the app on your repos</li>
-                  <li>
-                    {typeof window !== 'undefined' && window.location.hostname === 'localhost' 
-                      ? <span className="text-amber-600 dark:text-yellow-400">Return here manually after installation</span>
-                      : "You'll be redirected back automatically"
-                    }
-                  </li>
-                </ol>
-              </div>
-            </div>
-          )}
-        </div>
+            </DialogFooter>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );

@@ -1,6 +1,21 @@
 // Utility functions - cn() for Tailwind merging, API_URL, fetchAPI helper
 import { clsx, type ClassValue } from "clsx";
-import { twMerge } from "tailwind-merge";
+import { extendTailwindMerge } from "tailwind-merge";
+
+/**
+ * tailwind-merge does not know the v3 `bg-gradient-to-*` utilities, so it filed them under the
+ * background-colour group: a later `bg-<colour>` replaced the gradient and a gradient replaced an
+ * earlier `bg-<colour>`. Components (e.g. `<Button className="bg-brand">`) rely on that. The v4
+ * `bg-linear-to-*` utilities are a separate group, so register them under the same group to keep
+ * the merge result unchanged.
+ */
+const twMerge = extendTailwindMerge({
+  extend: {
+    classGroups: {
+      "bg-color": [{ "bg-linear-to": ["t", "tr", "r", "br", "b", "bl", "l", "tl"] }],
+    },
+  },
+});
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));

@@ -15,6 +15,39 @@ Access Docklift itself via hostname instead of `http://SERVER_IP:8080`.
 
 Unknown hostnames on ports 80/443 are rejected — they never fall through to the dashboard.
 
+### Only allow access through the domain
+
+With a panel domain on HTTPS, `http://SERVER_IP:8080` still works and is not encrypted. To close it:
+
+1. Open the dashboard at `https://panel.example.com` (the switch can only be turned on from there;
+   Docklift suggests it once you are on the domain)
+2. **Settings → Domain** → under the domain, turn on **Only allow access through the domain** and
+   confirm with your password
+
+From then on, requests that did not come through nginx-proxy are not served: a browser opening
+`http://SERVER_IP:8080` is redirected to `https://panel.example.com`, and API, terminal and live-log
+requests on that port get `403 {"error":"Dashboard access by IP is disabled. Use https://panel.example.com"}`.
+The decision uses the address of the connection (nginx-proxy's fixed addresses in `TRUSTED_PROXIES`),
+never a header a client could forge. Notes:
+
+- `http://127.0.0.1:8080` on the server and SSH tunnels to port 8080 are refused too: Docker's port
+  publishing makes them look like any other direct client.
+- `/api/health` still answers `{"status":"ok"}` on port 8080 (health checks), and signed GitHub
+  webhooks are still accepted there (a GitHub App created over the IP address sends them to it).
+- Removing the panel domain, or an SSL retry that ends without a certificate, turns the switch off.
+  So does a server start that finds no HTTPS panel domain for it.
+- Turning it off needs no password.
+
+If the domain stops working, reopen port 8080 from the server — it applies within 2 seconds, no
+restart:
+
+```bash
+docker exec docklift-backend docklift panel-access open
+```
+
+`docklift panel-access status` shows the state and `docklift panel-access close` turns it on from the
+server. To close port 8080 on the network entirely, set `DASHBOARD_BIND=127.0.0.1` instead.
+
 ## Service domains
 
 Each Dockerfile/service can have multiple domains.

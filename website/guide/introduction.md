@@ -21,16 +21,15 @@ Think of it as a lighter Coolify / Dokku-style workflow with a real dashboard: g
 | Host monitoring | CPU, RAM, GPU, disk, network, top processes |
 | Web terminal | Root shell in the browser, behind step-up password |
 | Backup & restore | Control DB, sources, vhosts, and certificates in one archive |
+| [API](./api.md) and [MCP](./mcp.md) | Every dashboard action is a REST endpoint ([full reference](./api-reference.md), OpenAPI at `/api/openapi.json`); AI agents (Claude Code, Cursor, VS Code, Codex and others) connect to `/mcp`. Both use scoped API tokens (read or full, optional dangerous actions, expiry) |
 
 ## How it works
 
-Docklift is a small Docker Compose stack: a React dashboard, an Express backend that talks to the Docker socket, and two nginx containers with different jobs.
+Docklift is a small Docker Compose stack: one Go backend that talks to the Docker socket and serves the React dashboard, plus an nginx proxy and a certbot sidecar for domains and certificates.
 
 | Container | Role |
 |-----------|------|
-| `docklift-frontend` | Dashboard UI |
-| `docklift-backend` | Deploy, auth, GitHub App, nginx/SSL orchestration |
-| `docklift-nginx` | Dashboard gateway on **`:8080`** |
+| `docklift-backend` | One Go binary: API, WebSocket terminal, embedded dashboard (container port 8000, published on **`:8080`**), deploys, auth, GitHub App, nginx/SSL orchestration |
 | `docklift-nginx-proxy` | Public **`:80` / `:443`** for project and panel domains |
 | `docklift-certbot` | Issues and renews Let's Encrypt certificates (HTTP-01) |
 
@@ -46,7 +45,7 @@ Docklift writes its own runtime Compose file under `deployments/.docklift/<proje
 
 ### Access model
 
-- **Admin UI:** `http://SERVER_IP:8080` by default. Prefer an HTTPS panel domain under **Settings → Domain** when you can. Optional: `DASHBOARD_BIND=127.0.0.1` plus an SSH tunnel for localhost-only.
+- **Admin UI:** `http://SERVER_IP:8080` by default. Prefer an HTTPS panel domain under **Settings → Domain** when you can, and turn on **Only allow access through the domain** there so `:8080` stops answering. Optional: `DASHBOARD_BIND=127.0.0.1` plus an SSH tunnel for localhost-only.
 - **Your apps:** public hostnames on `:80`/`:443` via nginx-proxy. Host ports are opt-in.
 - **First login:** a one-time bootstrap secret (setup code) is required before the first admin account can be created.
 
@@ -57,3 +56,4 @@ Raw HTTP on a public IP is convenient for first-run — it is **not** private or
 1. [Install](./installation.md) on your VPS
 2. Follow the [Quick Start](./quick-start.md)
 3. Connect [GitHub](./github.md), [deploy](./deployment.md), and attach a [domain](./domains.md)
+4. Automate it with the [API](./api.md) or hand it to an AI agent over [MCP](./mcp.md)

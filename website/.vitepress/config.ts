@@ -26,8 +26,13 @@ const operate = [
   { text: "Backup & Restore", link: "/guide/backup" },
   { text: "Profile", link: "/guide/profile" },
   { text: "Reset Password", link: "/guide/reset-password" },
-  { text: "API Reference", link: "/guide/api" },
   { text: "Troubleshooting", link: "/guide/troubleshooting" },
+];
+
+const automate = [
+  { text: "API Guide", link: "/guide/api" },
+  { text: "Full API Reference", link: "/guide/api-reference" },
+  { text: "AI Agents (MCP)", link: "/guide/mcp" },
 ];
 
 export default defineConfig({
@@ -41,7 +46,16 @@ export default defineConfig({
   markdown: { html: false },
   head: [
     ["link", { rel: "icon", href: "/favicon.svg" }],
-    ["meta", { name: "theme-color", content: "#0891b2" }],
+    ["meta", { name: "theme-color", content: "#107480" }],
+    ["link", { rel: "preconnect", href: "https://fonts.googleapis.com" }],
+    ["link", { rel: "preconnect", href: "https://fonts.gstatic.com", crossorigin: "" }],
+    [
+      "link",
+      {
+        rel: "stylesheet",
+        href: "https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap",
+      },
+    ],
     [
       "meta",
       {
@@ -64,6 +78,7 @@ export default defineConfig({
     nav: [
       { text: "Quick Start", link: "/guide/quick-start" },
       { text: "Commands", link: "/guide/commands" },
+      { text: "API & MCP", link: "/guide/api" },
       { text: "Changelog", link: "/changelog" },
       { text: "Install", link: "/guide/installation" },
       {
@@ -75,6 +90,7 @@ export default defineConfig({
       { text: "Get started", items: guide },
       { text: "Deploy", items: deploy },
       { text: "Operate", items: operate },
+      { text: "API & agents", items: automate },
     ],
     socialLinks: [
       { icon: "github", link: "https://github.com/SSujitX/docklift" },

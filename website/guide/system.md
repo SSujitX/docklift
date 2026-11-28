@@ -42,21 +42,22 @@ After every **successful** deploy, Docklift also keeps only two images per proje
 
 Dangerous host actions from the terminal strip also require step-up password confirmation. Cancel aborts — the action does not continue.
 
+Step-up password prompts (purge, reboot, reset, execute, restore, rollback) are throttled: after 10 wrong passwords for the same user and client address within 15 minutes, further attempts are refused until the window passes.
+
 ## Logs
 
 Dashboard → **Logs** streams platform containers over SSE:
 
-- Backend
-- Frontend
-- Nginx (dashboard gateway on `:8080`)
+- Backend (API, terminal, dashboard on `:8080`)
 - Nginx Proxy (public `:80`/`:443`)
+- Certbot
 
 From the host:
 
 ```bash
 docker logs docklift-backend -f --tail 100
-docker logs docklift-nginx -f --tail 100
 docker logs docklift-nginx-proxy -f --tail 100
+docker logs docklift-certbot -f --tail 50
 ```
 
 ## Health

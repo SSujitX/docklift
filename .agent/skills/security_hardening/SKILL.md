@@ -1,317 +1,213 @@
 ---
 name: Security Hardening
-description: Security patterns, guards, and best practices enforced across the Docklift codebase.
+description: Security patterns, guards, and limits enforced in the Docklift Go backend. Follow them when adding features.
 ---
 
 # Security Hardening Guide
 
-This skill documents all security patterns implemented in Docklift. Follow these conventions when adding new features to maintain the security posture.
+This skill lists the security controls of the Go backend (`server/`) and the stack around it. Follow these conventions when adding endpoints or features. Token and password details are in the `authentication` skill; the GitHub App flow is in `github_integration`.
 
-## Authentication & Authorization
+## Stack and Trust Boundaries
 
-### JWT Tokens
--   **Signing**: `jsonwebtoken` with `JWT_SECRET` from environment (auto-generated on first run if empty).
--   **Expiry**: 7 days for session tokens.
--   **`pwdv` claim**: must equal `User.passwordChangedAt.getTime()`; middleware rejects mismatch or missing claim.
--   **Middleware**: All protected routes use `authMiddleware` from `lib/authMiddleware.ts` — never manually decode JWTs in route handlers.
--   **Storage**: Frontend stores in `localStorage` key `docklift_token`.
--   **Frontend**: use `authFetch()` so 401 clears session app-wide.
--   **Download Safety**: Backup downloads use `authFetch` + blob pattern — **never** put JWTs in URL query parameters.
--   **Bootstrap registration**: atomic rename claim of `.bootstrap-secret` (see `authentication` skill).
+Three containers (`docker-compose.yml`):
 
-### SSE Tokens (Short-lived)
--   SSE connections use dedicated 5-minute tokens (`purpose: 'sse'`).
--   Generated via `POST /api/auth/sse-token` (Bearer session JWT required).
--   Passed as query param `?token=<sseToken>` (not the long-lived session JWT).
--   **`authMiddleware`**: Bearer session JWT only — query tokens are ignored/rejected.
--   **`sseAuthMiddleware`**: query SSE token only — mounted exclusively on log stream routes (`/api/system/logs/:service`, `/api/logs/.../stream/...`).
--   An SSE token in `?token=` cannot authorize DELETE/reboot or other protected APIs.
+| Container | Role |
+|-----------|------|
+| `docklift-backend` | Go binary: API, WebSocket terminal, embedded dashboard. Listens on 8000 in the container, published as host `:8080`. Runs as root, `privileged: true`, `pid: host`, with the Docker socket mounted. |
+| `docklift-nginx-proxy` | Public `:80`/`:443` for app domains and the optional panel domain. Fixed address `172.28.255.254` / `fd12:3456:789a::ffff:fffe` on `docklift_network`. |
+| `docklift-certbot` | Let's Encrypt renewals. |
 
-### Rate Limiting
--   All `/api/auth` routes: general limiter (**100 / 15 min**).
--   Setup surface: `/api/auth/register` and `/api/auth/setup-token` also get **setupLimiter (10 / 15 min)**.
--   Mounted in `index.ts` before the auth router.
+The backend can control the host, so anything that reaches the API with a valid session is effectively root on the host. Treat every route accordingly.
 
-### Dangerous ops (password step-up)
--   `lib/stepUpAuth.ts` — re-verify account password (JWT alone is not enough).
--   Required on: backup restore paths, `POST /api/system/purge`, `POST /api/deployments/:projectId/rollback`, **`/upgrade`**, **`/update-system`**, **`/reboot`**, **`/reset`**.
--   Terminal WebSocket still requires a separate password after the short-lived `purpose: terminal` token.
--   Frontend must send `{ password }` and abort when the operator cancels the prompt — never fire host actions on cancel.
+**Build trust**: all projects are built by the same Docker daemon and share one BuildKit cache. A hostile repository can influence what other projects build. Deploy only repositories you trust.
 
-### Password Hashing
--   Uses `bcrypt` with **12 salt rounds**.
--   Never store or log plaintext passwords.
+## Authentication Summary
 
-## Route Protection
+-   JWT HS256 only, `JWT_SECRET` from the environment or `DATA_PATH/.secrets`. Sessions last 7 days; SSE and terminal tokens last 5 minutes.
+-   `pwdv` must equal the user's `passwordChangedAt` (Unix ms). A password change ends all older tokens.
+-   `RequireSession` accepts only `Authorization: Bearer <session JWT>`. Query tokens exist only for log streams (`RequireSSE`) and the terminal upgrade, and only with the matching `purpose`.
+-   **`X-Internal-Secret` is no longer accepted.** `INTERNAL_API_SECRET` is still read and generated for compatibility and grants nothing.
+-   **Request bodies are parsed only after rate limiting and authentication.** Each route group in `server/internal/app/router/router.go` applies limiter, guard, then body parser. Never add a body parser in front of a guard.
+-   Backup downloads use `fetch` with the Bearer header and a blob. Never put a token in a URL except the 5 minute purpose tokens.
 
-### Public vs Protected Routes (in `index.ts`)
-| Route | Access |
-|-------|--------|
-| `/api/auth/register`, `/login`, `/status` | Public (rate limited) |
-| `/api/github/webhook`, `/manifest/callback`, `/setup` | Public (GitHub App flow; legacy OAuth `/callback` disabled) |
-| `/api/backup/restore-upload` with valid setup token | Public (one-time restore) |
-| All other `/api/*` routes | Requires JWT via `authMiddleware` |
+## API Tokens and the MCP Endpoint
 
-### Internal API Secret
--   `X-Internal-Secret` header used for backend-to-backend calls (e.g., webhook → deploy).
--   Stored in `INTERNAL_API_SECRET` env var.
+Details in the `authentication` skill (API Tokens). The rules that matter when adding code:
 
-## Origin Validation (CORS & WebSocket)
+-   `Bearer dl_...` API tokens pass `RequireSession`. Scope `read` is GET/HEAD only. A route no token may reach, whatever its flags, gets `r.With(auth.SessionOnly)`; a GET a read token must not use gets `r.With(auth.FullScopeOnly)`. Both run after routing, so they cannot be bypassed by path spelling.
+-   A step-up check must go through `RequireStepUpPassword` / `VerifyStepUpPassword` (or call `TokenStepUp` first, as `/api/system/execute` does). Comparing the password yourself would let every token fail or, worse, skip the check. Tokens pass step-up only with `allow_dangerous`.
+-   Only the SHA-256 of a token is stored; the plain token appears in exactly one response (create) and never in logs.
+-   A full token can deploy any repository and so control the host, even without `allow_dangerous`. `allow_dangerous` only adds the step-up actions (restore, rollback, purge, reboot, reset, update, upgrade, shell commands).
 
-`lib/originCheck.ts` is the single implementation, shared by the CORS middleware in `index.ts` and
-the terminal WebSocket upgrade in `services/terminal.ts`.
+**MCP** (`/mcp`, `server/internal/api/mcp`, official Go SDK, stateless Streamable HTTP, JSON responses):
 
-**RULE**: An origin is trusted only when it matches **scheme + host + port** of the request the
-browser actually made, or when it appears *exactly* in the operator allowlist (`CORS_ORIGIN`,
-`DOCKLIFT_FRONTEND_URL`).
+-   Registered on the root router inside the `SecurityHeaders`/`CORS` group, so the trusted-proxy and domain-only middleware run first. API token only (`RequireAPIToken`), checked before the body is read; body limit 4 MiB. A browser `Origin` that is not the dashboard or an allowlisted origin gets 403 (DNS-rebinding rule of the transport). GET and DELETE answer 405.
+-   Every tool call is one or more requests built in process and served by the **root handler** (`router.New`), with only `Authorization`, `X-Forwarded-*`, `User-Agent`, the socket address, host and TLS state of the MCP request, on a fresh context (nothing from the MCP request's context leaks in). So scope, `allow_dangerous`, `SessionOnly`, validation, rate limits, the maintenance gate and audit logs are exactly those of HTTP.
+-   The generic `docklift_api_request` tool accepts only clean `/api/...` paths (no `..`, empty segments or encoded slashes), so it cannot call `/mcp` itself or the dashboard.
+-   Streams are followed until they end or a wait limit (default 10 min, max 30), keeping the last 64 KiB; JSON answers are cut after 256 KiB.
 
-```typescript
-const allowed = isTrustedOrigin(origin, req.headers, {
-  fallbackProto: req.protocol,
-  allow: [config.frontendUrl],
-});
-```
+## Password Step-up
 
--   `requestOrigin()` reconstructs the browser-facing origin from the forwarded `Host`/proto headers.
--   Scheme mismatches are tolerated **only on default ports**, to survive TLS termination at the proxy.
--   Requests with no `Origin` header (non-browser clients) are allowed — the JWT is still the gate.
+`Service.RequireStepUpPassword` (`server/internal/auth/service.go`) re-verifies the account password from the JSON body.
 
-### Why hostname-only matching is a real vulnerability
+-   Required for: all backup restore routes and `clear-critical-restore`, `POST /api/system/purge`, `reboot`, `reset`, `update-system`, `upgrade`, `POST /api/system/execute`, and `POST /api/deployments/:projectId/rollback`.
+-   **Throttled to 10 wrong passwords per user and client address per 15 minutes**, then 429 with `Retry-After`. A correct password resets the count.
+-   The frontend must abort when the operator cancels the prompt.
+-   A fresh-install restore authorised by the setup token skips step-up because no admin exists yet.
 
-A previous refactor compared **hostnames only**. On a Docklift server that is exactly wrong: user apps
-are deployed on the *same host* under other ports and subdomains. Any co-located app could then make
-credentialed cross-origin requests to the dashboard API. Port and scheme are part of the origin —
-keep them in the comparison.
+## Rate Limits and Client Address
 
-### Nginx must not pass through a client `X-Forwarded-Host`
+All limits are per client address, fixed 15 minute windows, in memory (`server/internal/httpx/ratelimit.go`, bounded at 50,000 tracked clients).
 
-Because `requestOrigin()` trusts the forwarded host, every proxy config sets it from the connection
-itself:
+| Scope | Limit |
+|-------|-------|
+| `/api/auth/*` | 100 requests |
+| `/api/auth/register`, `/api/auth/setup-token` | also 10 requests |
+| `/api/auth/me`, `/sse-token`, `/terminal-token` | own limiter, 1000 requests (not in the shared auth limit) |
+| step-up password failures | 10 per user and address |
+| invalid API tokens | 20 per address (a valid token does not reset it) |
+| terminal password failures | 5 per session, 20 per address and user |
 
-```nginx
-proxy_set_header X-Forwarded-Host $http_host;
-```
+IPv6 clients are keyed by their `/56`.
 
-Without this line a client can send its own `X-Forwarded-Host` and forge the origin the backend
-believes it is serving, defeating the same-origin check. Applies to `nginx.conf` and every template
-in `services/nginxSsl.ts`.
+### Trusted proxy model (`TRUSTED_PROXIES`)
 
-## Command Execution Security
+`X-Forwarded-For`, `X-Forwarded-Proto` and `X-Forwarded-Host` are honoured **only when the socket peer is trusted** (`server/internal/httpx/proxy.go`, `server/internal/config/proxies.go`).
 
-### spawnSync over execSync
-**RULE**: Never use `execSync()` with string concatenation. Always use `spawnSync()` with argument arrays to prevent command injection.
+-   Default: `127.0.0.0/8,::1/128,172.28.255.254,fd12:3456:789a::ffff:fffe`, which is loopback plus the single fixed address of `docklift-nginx-proxy`. Deployed apps on `docklift_network` and the network gateway (which fronts clients of `:8080`) are **not** trusted, so they cannot forge their address, scheme or host.
+-   Syntax: comma-separated IPs or CIDRs, `!entry` excludes, the single value `none` trusts no peer.
+-   With a trusted peer the client address is the **last** `X-Forwarded-For` entry (the one nginx appended).
+-   If you put another reverse proxy in front, add it to `TRUSTED_PROXIES`, otherwise every user shares that proxy's rate-limit bucket.
+-   Do not widen the default to the whole Docker subnet.
 
-```typescript
-// ✅ CORRECT — argument array, no shell injection possible
-import { spawnSync } from 'child_process';
-spawnSync('docker', ['rm', '-f', containerName], { stdio: 'ignore' });
+## Security Headers and CSP
 
-// ❌ WRONG — string interpolation allows injection
-execSync(`docker rm -f ${containerName}`);
-```
+-   `httpx.SecurityHeaders` sets `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN`, `X-XSS-Protection`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy` (camera, microphone, geolocation off). `Strict-Transport-Security` (1 year, includeSubDomains) only when the request itself was HTTPS (TLS, or `X-Forwarded-Proto: https` from a trusted proxy).
+-   The dashboard responses (`server/web/web.go`) add a `Content-Security-Policy`: scripts from `'self'`, the one pinned Monaco path on jsDelivr found in the bundle, and hashes of inline scripts (no `'unsafe-inline'` for scripts); `connect-src` is same origin, the request host over `ws:`/`wss:`, and `api.github.com`; `object-src 'none'`, `frame-ancestors 'self'`, `base-uri 'self'`. `/api/*` and `/ws/*` never fall through to the SPA; unknown API paths return JSON 404.
+-   If the frontend starts loading a new third-party origin, the CSP must be updated in `web.go` in the same change.
 
-Applied in: `deployments.ts` (container teardown/migration) and `projects.ts` (volume lifecycle).
+## Origin Validation (CORS and WebSocket)
 
-### Build Argument Allowlisting
-`validateDockerBuildArgs()` (`services/compose.ts`) passes only the build args a Dockerfile actually
-declares with `ARG`. Forwarding every project env var into `docker build` would bake runtime secrets
-into image layers, where they stay readable via `docker history`.
+`server/internal/httpx/origin.go` is the single implementation, used by the CORS middleware and the terminal upgrade.
 
-`buildServiceImage()` additionally **rejects** protected host variables (e.g. `PATH`, `HOME`,
-`DOCKER_HOST`) as build variables, so a project setting cannot repoint the builder's toolchain or
-Docker endpoint. Covered by `buildResolver.test.ts`.
+**Rule**: an origin is trusted only when scheme + host + port match the request the browser made, or it matches **exactly** an entry in `CORS_ORIGIN` or `DOCKLIFT_FRONTEND_URL`.
 
-### Path Resolution for User-Supplied Directories
-`resolveProjectPath()` (`services/buildResolver.ts`) resolves `base_directory` / `dockerfile_path`
-and rejects anything that escapes the deployment root, so a crafted project setting cannot make the
-builder read from elsewhere on the host.
+-   The request origin is rebuilt from `Host` (or, from a trusted proxy, `X-Forwarded-Host` / `X-Forwarded-Proto`).
+-   A scheme mismatch is tolerated only when both sides use their default port (TLS terminated at the proxy).
+-   Requests without `Origin` pass CORS (the JWT is still the gate). The terminal upgrade is stricter: no `Origin` is refused unless `TERMINAL_ALLOW_NO_ORIGIN=true`.
+-   Never compare hostnames alone. Apps deployed on the same host under other ports or subdomains would then pass as the dashboard.
+-   Every nginx panel template sets `proxy_set_header X-Forwarded-Host $http_host;` from the connection (`server/internal/nginx/templates.go`) so a client cannot supply its own. Keep that when adding templates.
 
-## Error Handling
+## Maintenance Gate and Restore Seal
 
-### Error Message Sanitization
-**RULE**: Never expose `error.message` in API responses. Always return generic messages.
+`httpx.MaintenanceGate` (`server/internal/httpx/gate.go`) with state from `server/internal/maintenance`:
 
-```typescript
-// ✅ CORRECT
-catch (error: any) {
-  console.error('Login error:', error);
-  res.status(500).json({ error: 'Login failed' });
-}
+-   During a restore (maintenance on) **every** `/api/*` request except `/api/health` and `/api/backup/restore*` gets 503.
+-   While the **restore-critical seal** (`DATA_PATH/.restore-critical`, mode 0600) exists, only `/api/health`, `GET /api/backup/critical-status` and `POST /api/backup/clear-critical-restore` pass. The seal is re-applied at boot (`LoadCriticalOnBoot`), blocks all restores, and is removed only by `clear-critical-restore` with step-up. If the file cannot be deleted, maintenance stays on.
+-   A global restore lock is taken before any upload byte is read; a second restore gets 409.
+-   **Restore only starts Docklift-generated runtime compose files** (`DEPLOYMENTS_PATH/.docklift/<projectId>/compose.yml`), run from that directory. A repository's own `docker-compose.yml` is never started by a restore. Projects without a runtime file are skipped and need a manual deploy.
 
-// ❌ WRONG — leaks internal details
-catch (error: any) {
-  res.status(500).json({ error: error.message });
-}
-```
+See `system_administration` for the full restore flow.
 
-Currently enforced in: `auth.ts`. Remaining: `system.ts` `/version` endpoint (low risk).
+## File Modes
+
+-   Data and backup directories (`DATA_PATH`, the database directory, `BACKUP_PATH`, `BACKUP_PATH/uploads`) are `0700`; files holding secrets or data are `0600`: the SQLite database and `-wal`/`-shm`, `.secrets`, `.bootstrap-secret`, `.setup-token`, `.restore-critical`, backup and uploaded archives, the generated runtime compose files, GitHub setup state files, and the GitHub App key file.
+-   `backup.TightenModes` fixes older installs on every boot (`server/internal/backup/modes.go`). nginx and Let's Encrypt directories are excluded because other containers read them.
+-   New code that writes secrets must create files with `0o600` and directories with `0o700`.
+
+## Child Processes
+
+All programs (docker, compose, buildx, railpack, git, the terminal shell, `/api/system/execute`) run through `server/internal/execx`:
+
+-   Arguments are passed as an array, never through `sh -c` with user input. (`/api/system/execute` is the one deliberate shell: it runs the given command with `/bin/bash -c`, after step-up, a 30 s timeout, 1 MiB output cap, and kills the whole process group.)
+-   `JWT_SECRET`, `INTERNAL_API_SECRET` and every `DOCKLIFT_GITHUB_*` variable are removed from the child environment (`IsSensitiveEnv`). Add new backend secrets to that list.
+-   Errors name the program, not its arguments, because arguments can carry secrets.
+
+## Build Inputs
+
+-   Only variables the user marked as build variables are passed to `docker build`; secret build variables go as BuildKit secrets, never `--build-arg` (`server/internal/deploy/build_runner.go`). Forwarding every project variable would bake runtime secrets into image layers.
+-   Reserved names (`PATH`, `HOME`, `PORT`, `NODE_OPTIONS`, `LD_PRELOAD`, `LD_LIBRARY_PATH`, `DOCKER_*`, `BUILDKIT_*`) are rejected as build variables.
+-   `base_directory` and `dockerfile_path` go through `ResolveProjectPath` (`build_resolver.go`): absolute paths and `..` are refused.
+-   User apps run on per-project networks (`ProjectNetworkName`). Do not put them on `docklift_network` by default.
+
+## Paths and Files
+
+`server/internal/pathsec`:
+
+-   `IsInside(base, candidate)`: resolves both to absolute clean paths, rejects `..`, absolute escapes and sibling prefixes. Never use `strings.HasPrefix` on paths.
+-   `TouchesGitDir`: the file editor never reads or writes `.git` (git runs hooks and config on the next pull). On Windows, spellings that map to `.git` (trailing dots, `::$DATA`, `GIT~1`) count too.
+-   `RealPath` / `FinalPath`: resolve symlinks and junctions from the open handle, so a swap between check and use cannot escape. `OpenOverwrite` never follows a final symlink.
+-   The file editor opens the file, resolves the handle's real path, and requires it to stay inside the real project directory and outside `.git`. Editable files are capped at 10 MiB.
+-   Backup and upload names must match `^[a-zA-Z0-9._-]+\.zip$` without `..`, and their real path must stay inside the backup or uploads directory. Uploaded names are replaced by server-chosen `restore-<ms>-<hex>.zip`.
+
+## Archives (`server/internal/safeunzip`)
+
+-   Every archive goes through `safeunzip.Extract`. It rejects empty, absolute, NUL, `..` and (on Windows) drive or stream paths, re-checks the real parent directory against the destination (also through links already present), and never creates symlinks (a link entry is written as a regular file holding the link text).
+-   Quotas count real bytes written: default 50,000 files and 2 GiB (restore); project ZIP uploads allow 100 MiB compressed, 20,000 files, 512 MiB expanded. Backup uploads allow 500 MiB, aligned with nginx `client_max_body_size 500M`.
+-   Never extract with `archive/zip` directly.
+
+## Git (`server/internal/gitops`)
+
+-   git runs without a shell, with a timeout (10 min network, 2 min local), hooks disabled (`core.hooksPath=/dev/null`), no fsmonitor, no credential helper, no prompts, `GIT_*` variables from the parent dropped, and `GIT_CEILING_DIRECTORIES` so discovery cannot climb out of the project.
+-   Only `https` is allowed (`GIT_ALLOW_PROTOCOL`): `http`, `ssh`, `file://`, `ext::` and local paths are refused. URLs starting with `-` or containing whitespace are refused; refs are validated (`ValidateRef`) and passed after `--` or `--end-of-options`.
+-   **Credentials** (a GitHub App installation token) are sent as an `Authorization` header through `GIT_CONFIG_*` scoped to the remote origin, so the token is never written to `.git/config` or the process arguments. They are only sent to `https://github.com`, and on a pull only when the checkout's origin equals the project's stored URL; otherwise `ErrCredentialsOrigin`.
+-   After clone and pull the origin is scrubbed (`ScrubOrigin`) and verified (`VerifyNoCredentials`). If that fails, fail the deploy or roll back project creation. Logs and errors go through `Redact` (URL userinfo and the token).
+
+## Webhooks
+
+`POST /api/github/webhook` (public):
+
+1.  Only `push` events are processed; others get 200 "Ignoring".
+2.  **Fail closed**: no webhook secret stored gives 401.
+3.  A missing `X-Hub-Signature-256` gives 401 before the body is read.
+4.  The HMAC-SHA256 is computed over the **raw body bytes** and compared with `hmac.Equal`. The JSON is decoded only after the signature matches.
+5.  Body limit 10 MiB from the budget reserved for unauthenticated routes.
+6.  Matching projects are queued, not deployed inline: per project at most one running and one pending deploy, the latest request replaces the pending one. A 10 second cooldown per project suppresses push bursts.
+
+## Terminal
+
+`/ws/terminal` (`server/internal/api/terminal`, `server/internal/terminal`):
+
+-   Handled before the HTTP middleware stack, so only the upgrade checks run: path, `Origin`, then the **single-use terminal token** (5 min, random `jti`).
+-   After connecting, the client has **60 seconds** (`AuthTimeout`) to send its password; 5 wrong passwords per session and 20 per `address:user` per 15 minutes.
+-   Max 3 sessions, 30 minute idle timeout, 1 MiB client frame limit, 30 s ping with 75 s pong wait.
+-   **Changing the password closes the user's terminals and SSE log streams.** The context is bound with `BindSession` and rechecked every 30 s for changes made by another process (`reset-password`).
+-   Resize accepts only integers with `0 < cols,rows < 500`.
+-   The shell is `/bin/bash` in `/root` on Linux, with the backend secrets removed from its environment. It is host root: keep every auth layer.
 
 ## Streaming Safety
 
-### Disconnection Guard Pattern
-All streaming endpoints must use the `writeLog` guard to prevent crashes on client disconnect:
+-   SSE writes use a 30 s write deadline per event; after the first failed write, further writes are dropped and the Docker log connection is closed when the request context ends.
+-   Docker errors are sent as events on a 200 stream so the browser shows the message.
+-   Backup and restore keep running if the client disconnects; their progress writer ignores a dead client.
 
-```typescript
-const writeLog = (text: string) => {
-  try { if (!res.writableEnded) res.write(text); } catch {}
-  logs.push(text);
-};
-```
+## Error Handling
 
-Applied in: all 4 streaming handlers in `deployments.ts` (deploy, stop, restart, redeploy).
+-   Return fixed messages for failures (`Login failed`, `Failed to list backups`). Log the real error with `d.Log`. Panics are caught by `httpx.Recover` and answered `500 {"error":"Something went wrong!"}`.
+-   Write `[AUDIT]` log lines for destructive host actions (reboot, reset, update, upgrade, purge) with `httpx.ClientIP(r)`; `[SECURITY]` for suspicious auth events.
+-   Some operator-facing routes still echo `err.Error()` in a `details` field (system actions). Do not copy that into new routes.
 
-Also in `docker.ts` `streamContainerLogs`: uses `safeWrite()` + `closed` flag + `res.on('close')` cleanup.
+## Infrastructure
 
-## Webhook Security
-
-### GitHub Webhook Signature Verification
--   Uses `crypto.timingSafeEqual` (prevents timing attacks).
--   Signature verified against `github_webhook_secret` stored in DB.
--   **Fail closed**: If the webhook secret is not configured, the endpoint returns 401 (unsigned webhooks are never accepted).
--   **Verification order**: Signature is verified FIRST — before any database queries or processing. This prevents unauthenticated requests from triggering DB lookups.
--   Raw body (`req.rawBody`) is captured via `express.json({ verify })` callback for accurate HMAC comparison.
--   Debounced via `recentDeploys` Map with 10-second cooldown per project.
-
-## Git Token Security
-
-### Just-in-Time Token Pattern
-GitHub installation tokens are set just-in-time and scrubbed after use (deploy pull **and** initial clone via `scrubOriginRemote`). After scrub, origin is verified to contain no credentials. **If scrub/verify fails, fail the deploy or roll back project create** — never continue with a token left in `.git/config`.
-
-Applied in: `deployments.ts` (deploy handler), `projects.ts` (clone).
-
-## Terminal Security
-
-### WebSocket Authentication
--   **JWT**: Required to establish WebSocket connection (query param `?token=`).
--   **Password Re-verification**: After WS connect, user must enter account password.
--   **Rate Limiting**: Max 5 logins/minute.
--   **Session Limits**: Max 3 concurrent connections per user.
--   **Idle Timeout**: Auto-disconnect after 30 minutes of inactivity.
-
-### Resize Input Validation
-Terminal resize messages are validated to prevent injection:
-
-```typescript
-if (!Number.isInteger(cols) || !Number.isInteger(rows) ||
-    cols < 1 || cols > 500 || rows < 1 || rows > 200) {
-  return; // silently ignore invalid resize
-}
-```
-
-Applied in: `terminal.ts`.
-
-## Path Security
-
-### Path Traversal Prevention (`files.ts`)
-```typescript
-const resolved = path.resolve(projectDir, relativePath);
-if (!resolved.startsWith(projectDir)) {
-  return res.status(403).json({ error: 'Access denied: path traversal detected' });
-}
-```
-
-### Symlink Protection
-```typescript
-const realPath = fs.realpathSync(resolved);
-if (!realPath.startsWith(projectDir)) {
-  return res.status(403).json({ error: 'Access denied: symlink escape' });
-}
-```
-
-### Project ID Validation
-```typescript
-const projectIdRegex = /^[a-f0-9-]{36}$/;
-```
-
-## File Upload Safety
-
-### Safe ZIP Extraction
-Project uploads and backup archives are extracted through `lib/safeUnzip.ts`, which rejects absolute
-paths and `..` entries. A raw `unzipper` extract would happily write outside the destination
-directory (zip-slip).
-
-### Multer Configuration
--   Upload destination uses **absolute path**: `path.join(config.dataPath, 'uploads')`.
--   Temp files are **always cleaned up** via `try/finally`:
-```typescript
-try {
-  // extract zip...
-} finally {
-  try { fs.unlinkSync(req.file.path); } catch {}
-}
-```
-
-## Infrastructure Security
-
-### Security Headers
--   Applied in `index.ts` via custom middleware: `X-Content-Type-Options`, `X-Frame-Options`,
-    `X-XSS-Protection`, `Referrer-Policy`, `Permissions-Policy`, and `Strict-Transport-Security`
-    (only when the request itself arrived over HTTPS). Helmet is not used.
-
-### Trusted Proxy Depth
--   `app.set('trust proxy', 1)` — exactly one proxy (nginx). A larger value would let clients spoof
-    `X-Forwarded-For` and evade rate limiting.
-
-### Public Proxy Hostname Isolation
--   Hostnames with no generated vhost are rejected at the edge rather than falling through to the
-    dashboard, so the admin UI is never served on an unconfigured domain.
-
-### Access Log Hygiene
--   `nginx-proxy/nginx.conf` logs `$uri` rather than the full request line, keeping SSE `?token=`
-    query parameters out of access logs.
-
-### CORS
--   Strict same-origin via `isTrustedOrigin()`, plus exact `CORS_ORIGIN` entries — see
-    [Origin Validation](#origin-validation-cors--websocket) above.
-
-### Setup Token (Backup Restore)
--   One-time token stored under `config.dataPath` (`.setup-token`) — never a hardcoded `./data` path.
--   Middleware **validates** the token and sets `req.setupTokenAuth` but does **not** delete it yet.
--   Fresh-install restore skips password step-up (no admin user); authenticated restores still require it.
--   Commit gate (`decideRestoreCommit`): consume secrets only when reconcile OK **and** restored DB has
-    an admin. Incomplete setup restore rolls DB back and retains the token for retry.
--   All restore routes roll back from `.pre-restore` when a later stage throws.
--   Failed rollback → `.restore-critical` seal (persisted); further restores blocked until
-    `POST /api/backup/clear-critical-restore` with password step-up. Clear verifies deletion
-    (fail closed — do not exit maintenance if the marker remains).
--   Failed rollback → `enterRestoreCritical` (`.restore-critical` marker). Restores stay blocked across
-    restarts until `POST /api/backup/clear-critical-restore` with password step-up.
-
--   Frontend Setup page fetches token via `GET /api/auth/setup-token` (bootstrap secret required) and sends `x-setup-token`.
-
-### Graceful Shutdown
-Backend handles SIGTERM/SIGINT for clean exit:
-```typescript
-const shutdown = async (signal: string) => {
-  server.close();           // Stop accepting new connections
-  cleanupAllSessions();     // Kill all terminal PTY sessions
-  await prisma.$disconnect(); // Close database connection
-  process.exit(0);
-};
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('SIGINT', () => shutdown('SIGINT'));
-```
-
-Applied in: `index.ts`.
+-   `nginx-proxy/conf.d/default.conf` answers unknown hostnames with `444`, so the dashboard is never served on an unconfigured domain.
+-   `nginx-proxy/nginx.conf` logs `$uri`, not the full request line, which keeps `?token=` query values out of access logs.
+-   Keep the dashboard bind in mind: `:8080` is published on `0.0.0.0` by default. With an HTTPS panel domain, **Only allow access through the domain** (`internal/panelaccess`, settings row `panel_domain_only`) refuses or redirects every request whose socket peer is not a trusted proxy; it never trusts a header for this. Exceptions while it is on: `/api/health` (`{"status":"ok"}` only) and the HMAC-signed `POST /api/github/webhook`. Recovery is `docker exec docklift-backend docklift panel-access open` (applies within 2 s). `DASHBOARD_BIND=127.0.0.1` closes the port entirely.
+-   Graceful shutdown on SIGINT/SIGTERM: the HTTP server drains for up to 10 s, terminal sessions are closed, shutdown hooks run.
 
 ## Checklist for New Features
 
-When adding new endpoints or features, verify:
-- [ ] Route is protected by `authMiddleware` (or has explicit reason to be public)
-- [ ] Error responses use generic messages, not `error.message`
-- [ ] Streaming endpoints use disconnection guards
-- [ ] File paths are validated against traversal and symlink escapes
-- [ ] Temp files are cleaned up in `finally` blocks
-- [ ] Destructive operations include audit logging (`console.log(\`[AUDIT]...\`)`)
-- [ ] Shell commands use `spawnSync()` with argument arrays, never `execSync()` with strings
-- [ ] Sensitive tokens (JWT, Git) are never placed in URLs — use Authorization headers
-- [ ] Terminal/WebSocket inputs are validated (type, bounds) before processing
-- [ ] Cross-origin checks go through `isTrustedOrigin()` — never compare hostnames alone
-- [ ] User-supplied paths go through `resolveProjectPath()` / `pathSecurity.ts`
-- [ ] Archives are extracted via `safeUnzip.ts`, never raw `unzipper`
-- [ ] New build inputs are allowlisted, not forwarded wholesale into `docker build`
-- [ ] New nginx templates set `X-Forwarded-Host` from `$http_host`
-- [ ] User apps stay on per-project networks; do not put them on `docklift_network` by default
-- [ ] Do not add host-wide prune / OS maintenance to normal product APIs
-- [ ] Dangerous ops use password step-up where JWT alone is insufficient
-- [ ] Major behavior changes update `.agent/skills` + README/commands in the same PR
+-   [ ] The route sits in a group whose guard is `RequireSession` (or has a written reason to be public) and a rate limiter if public.
+-   [ ] No body parsing before the guard; unauthenticated bodies use `publicBody`.
+-   [ ] Dangerous host or data operations call `RequireStepUpPassword` (which also applies the API-token `allow_dangerous` rule).
+-   [ ] Account, token-management and lock-out switches are `auth.SessionOnly`; GETs that leak every secret (backup download) are `auth.FullScopeOnly`.
+-   [ ] The route is in `server/internal/api/openapi/routes.go` with accurate body fields (`TestOpenAPITableMatchesRouter` fails otherwise) and in `tests/contract/ROUTES.md`.
+-   [ ] Error responses are fixed strings; details are logged.
+-   [ ] Paths use `pathsec` and real-path checks; archives use `safeunzip`.
+-   [ ] Child processes go through `execx` with an argument array; new secrets are added to `IsSensitiveEnv`.
+-   [ ] Files with secrets are `0600`, directories `0700`.
+-   [ ] Cross-origin decisions use `httpx.IsTrustedOrigin`, forwarded headers are read only through the trusted proxy helpers (`ClientIP`, `RequestProtocol`).
+-   [ ] Tokens go in headers; only 5 minute purpose tokens may appear in a query string, and only on the routes that accept them.
+-   [ ] Long streams bind to the session (`BindSession`) so a password change ends them.
+-   [ ] New nginx templates set `X-Forwarded-Host` from `$http_host`.
+-   [ ] No host-wide prune or OS maintenance in normal product APIs; purge stays Docklift-scoped.
+-   [ ] Behaviour changes update `.agent/skills`, README and `commands.md` in the same PR.

@@ -1,41 +1,21 @@
 # Docklift - Ignore List
 
+# Build output (make build / make server)
+/bin/
+
 # Node.js
 node_modules/
-.next/
-out/
 dist/
 build/
-
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-*.egg
-*.egg-info/
-.eggs/
-*.manifest
-*.spec
-pip-log.txt
-pip-delete-this-directory.txt
-.venv/
-venv/
-ENV/
 
 # Database
 *.db
 *.sqlite
 *.sqlite3
 data/*.db
-# Accidental Prisma/SQLite scratch DBs (no extension — *.db does not match)
-backend/prisma/memdb*
-
 # Secrets (auto-generated, never commit)
 .secrets
 data/.secrets
-backend/data/.secrets
 .bootstrap-secret
 data/.bootstrap-secret
 **/.bootstrap-secret
@@ -44,18 +24,13 @@ data/.setup-token
 **/.setup-token
 
 # Local overrides only (committed .env = server/production defaults)
-# Template to copy: backend/.env.local.example  →  backend/.env.local
 .env.local
-backend/.env.local
-frontend/.env.local
 **/.env.local
 # Do NOT ignore *.example — those are committed templates
 
 # Logs
 *.log
 logs/
-# Allow Next.js app route for /logs page
-!frontend/app/logs/
 
 # OS
 .DS_Store
@@ -70,10 +45,6 @@ Thumbs.db
 *.sublime-project
 *.sublime-workspace
 
-# Deployments (user project files)
-backend/deployments/*
-!backend/deployments/.gitkeep
-
 # Nginx proxy configs (auto-generated, keep default)
 **/nginx-proxy/conf.d/*
 !nginx-proxy/conf.d/.gitkeep
@@ -85,10 +56,8 @@ backend/deployments/*
 **/nginx-proxy/certbot/www/*
 !nginx-proxy/certbot/www/.gitkeep
 
-# `bun run dev` resolves ./nginx-proxy and ./data from backend/, so a local run
-# scatters generated vhosts, certs and uploads there. None of it belongs in git.
-backend/nginx-proxy/
-backend/data/
-
 .claude/
 .cursor/
+# Local dev/test notes and credentials (never commit)
+.devlocal/
+!server/internal/api/logs/

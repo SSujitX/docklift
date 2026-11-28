@@ -165,7 +165,7 @@ export function SystemLogsPanel({
       <LogViewer
         logs={logs}
         connected={connected}
-        title={`${title} Logs`}
+        title={`${title} logs`}
         subtitle={containerName}
         onClear={() => setLogs([])}
         downloadFilename={`${containerName}-logs.txt`}

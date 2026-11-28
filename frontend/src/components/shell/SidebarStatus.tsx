@@ -183,20 +183,30 @@ export function SidebarStatus({ collapsed }: { collapsed: boolean }) {
   const updateAvailable = Boolean(version?.updateAvailable);
   const checkFailed = Boolean(version && version.githubOk === false && !updateAvailable);
 
+  const focusRing =
+    "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring";
+
   if (collapsed) {
     return (
-      <div className="flex flex-col items-center gap-2">
+      <div className="flex flex-col items-center gap-1">
         {updateAvailable && (
           <button
             type="button"
             onClick={handleUpgrade}
             title={`Upgrade to v${version!.latest}`}
-            className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand/15 text-brand transition-colors hover:bg-brand/25"
+            className={cn(
+              "relative flex size-8 items-center justify-center rounded-md text-subtle transition-colors duration-150 hover:bg-sidebar-accent hover:text-sidebar-foreground pointer-coarse:size-10",
+              focusRing,
+            )}
           >
-            <ArrowUp className="h-4 w-4" />
+            <ArrowUp className="size-4" />
+            <span aria-hidden="true" className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-info" />
           </button>
         )}
-        <p className="text-[9px] font-semibold tracking-wide text-sidebar-muted/70">
+        <p
+          className="max-w-full truncate font-mono text-xs text-sidebar-muted"
+          title={`v${currentVersion}`}
+        >
           v{currentVersion}
         </p>
       </div>
@@ -204,34 +214,32 @@ export function SidebarStatus({ collapsed }: { collapsed: boolean }) {
   }
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-0.5">
       {updateAvailable && (
-        <div className="rounded-2xl border border-brand/25 bg-brand/10 p-3">
-          <div className="flex items-center gap-2 text-xs font-semibold text-brand">
-            <ArrowUp className="h-3.5 w-3.5" />
-            Update available
-          </div>
-          <p className="mt-1 text-[11px] text-sidebar-muted">
-            v{version!.current} → v{version!.latest}
-          </p>
-          <button
-            type="button"
-            onClick={handleUpgrade}
-            className={cn(
-              "mt-2.5 flex h-8 w-full items-center justify-center gap-1.5 rounded-lg text-xs font-semibold transition-colors",
-              "bg-brand text-brand-foreground hover:brightness-110",
-            )}
-          >
-            Upgrade now
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={handleUpgrade}
+          title={`Upgrade from v${version!.current} to v${version!.latest}`}
+          className={cn(
+            "flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[13px] font-medium text-sidebar-foreground transition-colors duration-150 hover:bg-sidebar-accent pointer-coarse:h-10",
+            focusRing,
+          )}
+        >
+          <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-info" />
+          <span className="min-w-0 flex-1 truncate">Update available</span>
+          <span className="shrink-0 font-mono text-xs text-sidebar-muted">
+            v{version!.latest}
+          </span>
+          <span className="sr-only">Upgrade now</span>
+        </button>
       )}
 
-      <p className="px-2.5 text-[10px] font-medium tracking-wide text-sidebar-muted/70">
-        v{currentVersion}
+      <p className="flex h-6 items-center gap-2 px-2 font-mono text-xs text-sidebar-muted">
+        <span className="truncate">v{currentVersion}</span>
       </p>
       {checkFailed && (
-        <p className="px-2.5 text-[10px] text-amber-600/90 dark:text-amber-400/90">
+        <p className="flex items-center gap-2 px-2 pb-0.5 text-xs text-sidebar-muted">
+          <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-warn" />
           Update check unavailable
         </p>
       )}

@@ -13,11 +13,11 @@ curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh 
 Pin a specific release (see [Releases](https://github.com/SSujitX/docklift/releases)). Pass the version to bash, not in the curl URL:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh | sudo bash -s -- v=2.0.2
+curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh | sudo bash -s -- v=3.0.0
 ```
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh | sudo DOCKLIFT_VERSION=2.0.2 bash
+curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh | sudo DOCKLIFT_VERSION=3.0.0 bash
 ```
 
 Tags may include or omit a leading `v`. Omitting the pin installs latest.
@@ -41,7 +41,7 @@ Setup code: <bootstrap-secret>
 
 Raw HTTP on a public IP is intentional for first-run convenience — it is not encrypted. Later options:
 
-- **Settings → Domain** for an HTTPS panel hostname
+- **Settings → Domain** for an HTTPS panel hostname, then **Only allow access through the domain** so `:8080` stops answering (undo from the server: `docker exec docklift-backend docklift panel-access open`)
 - Firewall rules limiting who can reach `:8080`
 - `DASHBOARD_BIND=127.0.0.1` in `/opt/docklift/.env` for localhost-only access (then use an SSH tunnel)
 
@@ -104,32 +104,44 @@ Installs unreleased code from `master`. Use the production install for stable de
 
 ## Local development
 
-Prerequisites: Docker and [Bun](https://bun.sh/).
+Prerequisites: Go (version in `server/go.mod`), [Bun](https://bun.sh/) 1.4.5, bash and make. Docker is needed for deploy features.
 
 ```bash
 git clone https://github.com/SSujitX/docklift.git
 cd docklift
+make dev
 ```
 
-**Backend** (`http://localhost:8000`):
+`make dev` runs the Go API on `http://localhost:8000` and the Vite dev server on `http://127.0.0.1:3600`, which proxies `/api` and `/ws` to the API. Local state lives in `./data`, `./deployments`, `./backups`, and `./nginx-proxy`.
+
+Without make, use two terminals:
 
 ```bash
-cd backend
-cp .env.local.example .env.local
-bun install
-bun run db:generate && bun run db:push
-bun run dev
+cd server
+go run ./cmd/docklift          # reads .env / .env.local from the working directory
 ```
-
-**Frontend** (separate terminal, `http://127.0.0.1:3600`):
 
 ```bash
 cd frontend
-bun install
+bun install --frozen-lockfile
 bun run dev
 ```
 
-`backend/.env` is server/production config (committed). Copy `.env.local.example` → `.env.local` (gitignored) for the Vite origin in `CORS_ORIGIN` and optional GitHub App credentials.
+The SQLite file defaults to `data/docklift.db`. Migrations are embedded in the binary and applied on start; `docklift migrate` applies them and exits. See [Commands](./commands.md#_10-local-development) for the other `make` targets (`build`, `test`, `contract`, `lint`, `docker`).
+
+## Upgrading from 2.x
+
+Run the new `upgrade.sh` from GitHub:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/upgrade.sh | sudo bash
+```
+
+- The old `docklift-frontend` and `docklift-nginx` containers and the `docklift-frontend` image are removed. The stack is now `docklift-backend`, `docklift-nginx-proxy`, and `docklift-certbot`.
+- The dashboard stays on `:8080`; the Go backend serves it directly.
+- A panel domain nginx conf is rewritten once when the new backend boots (its upstream becomes `docklift-backend.docklift_network:8000`), then nginx is reloaded.
+- Do not use the **Upgrade** button on a 2.1.x dashboard for this step. It runs the old local script, which cannot switch the container layout (it fails safely and rolls back).
+- The database is snapshotted before the upgrade and restored automatically if the upgrade fails.
 
 ## Optional configuration
 
@@ -143,6 +155,8 @@ Create `/opt/docklift/.env` and re-run `docker compose up -d` from that director
 | `CERTBOT_STAGING` | `false` | Staging CA while testing (avoid rate limits) |
 | `CORS_ORIGIN` | — | Extra allowed browser origins |
 | `DOCKLIFT_FRONTEND_URL` | `http://localhost:8080` | Public dashboard URL (GitHub App callbacks) |
-| `JWT_SECRET` / `INTERNAL_API_SECRET` | auto-generated | Override only if you manage secrets yourself |
+| `JWT_SECRET` | auto-generated | Override only if you manage secrets yourself |
+| `INTERNAL_API_SECRET` | auto-generated | Unused (the `X-Internal-Secret` header is no longer accepted); still kept in `.secrets` for compatibility |
+| `TRUSTED_PROXIES` | loopback + nginx-proxy's fixed IPs | Peers whose `X-Forwarded-*` headers are trusted (default `127.0.0.0/8,::1/128,172.28.255.254,fd12:3456:789a::ffff:fffe`; `none` = never) |
 
 Secrets auto-generate and persist under `data/.secrets`.

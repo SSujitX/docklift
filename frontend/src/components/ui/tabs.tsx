@@ -1,10 +1,10 @@
-
 import * as React from "react";
 import * as TabsPrimitive from "@radix-ui/react-tabs";
 import { cn } from "@/lib/utils";
 
 const Tabs = TabsPrimitive.Root;
 
+/** Underline tabs: left aligned, full-width hairline, scrolls sideways when it overflows. */
 const TabsList = React.forwardRef<
   React.ElementRef<typeof TabsPrimitive.List>,
   React.ComponentPropsWithoutRef<typeof TabsPrimitive.List>
@@ -12,7 +12,7 @@ const TabsList = React.forwardRef<
   <TabsPrimitive.List
     ref={ref}
     className={cn(
-      "inline-flex h-auto items-center justify-center rounded-2xl bg-secondary/30 p-1.5 text-muted-foreground border border-white/[0.08] dark:border-white/[0.05] backdrop-blur-xl",
+      "hairline-b scrollbar-none flex w-full items-stretch justify-start gap-5 overflow-x-auto text-muted-foreground",
       className
     )}
     {...props}
@@ -27,16 +27,16 @@ const TabsTrigger = React.forwardRef<
   <TabsPrimitive.Trigger
     ref={ref}
     className={cn(
-      "inline-flex items-center justify-center whitespace-nowrap rounded-xl px-6 py-2.5 text-sm font-bold transition-all duration-300 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:text-cyan-500 data-[state=active]:shadow-[0_4px_20px_-4px_rgba(6,182,212,0.2)] dark:data-[state=active]:shadow-[0_4px_25px_-4px_rgba(6,182,212,0.15)] hover:text-foreground/80 relative overflow-hidden group",
+      "inline-flex h-10 shrink-0 items-center gap-2 whitespace-nowrap border-b-2 border-transparent px-0.5 text-sm font-medium text-muted-foreground transition-colors duration-150",
+      "hover:text-foreground",
+      "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring",
+      "disabled:pointer-events-none disabled:opacity-50",
+      "data-[state=active]:border-brand data-[state=active]:text-foreground",
+      "[&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-subtle data-[state=active]:[&_svg]:text-foreground",
       className
     )}
     {...props}
-  >
-    <span className="relative z-10 flex items-center gap-2">
-      {props.children}
-    </span>
-    <div className="absolute inset-0 bg-gradient-to-tr from-cyan-500/0 via-cyan-500/0 to-cyan-500/5 opacity-0 data-[state=active]:opacity-100 transition-opacity" />
-  </TabsPrimitive.Trigger>
+  />
 ));
 TabsTrigger.displayName = TabsPrimitive.Trigger.displayName;
 
@@ -46,7 +46,10 @@ const TabsContent = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <TabsPrimitive.Content
     ref={ref}
-    className={cn("mt-6 focus-visible:outline-none animate-in fade-in slide-in-from-bottom-2 duration-300", className)}
+    className={cn(
+      "mt-5 rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring data-[state=active]:animate-in data-[state=active]:fade-in-0 data-[state=active]:duration-150",
+      className
+    )}
     {...props}
   />
 ));

@@ -1,6 +1,7 @@
 // Utility hook for making authenticated API calls
 
-import { API_URL } from "@/lib/utils";
+import { API_URL } from "./utils";
+import { createApiCache } from "./apiCache";
 
 let unauthorizedHandler: (() => void) | null = null;
 
@@ -69,6 +70,32 @@ export async function startGithubInstallAndNavigate(
   }
 }
 
+/**
+ * App-wide GET cache (memory only). Pages call `apiCache.fetch(url)` for primary data and
+ * `apiCache.peek(url)` to draw the last known data at once. See `lib/apiCache.ts`.
+ */
+export const apiCache = createApiCache((url) => authFetch(url));
+
+// Another tab signed in or out: whatever this tab cached may belong to another session.
+if (typeof window !== "undefined") {
+  window.addEventListener("storage", (event) => {
+    if (event.key === null || event.key === "docklift_token") apiCache.clear();
+  });
+}
+
+/** POSTs that only mint short-lived tokens or run read-only checks; they change no cached data. */
+const READ_ONLY_POST = [
+  /\/api\/auth\/(sse|terminal|setup)-token(\?|$)/,
+  /\/dns-check(\?|$)/,
+  /\/api\/github\/install-session(\?|$)/,
+];
+
+function isMutation(url: string, options: RequestInit): boolean {
+  const method = (options.method || "GET").toUpperCase();
+  if (method === "GET" || method === "HEAD" || method === "OPTIONS") return false;
+  return !READ_ONLY_POST.some((pattern) => pattern.test(url));
+}
+
 // Authenticated fetch wrapper
 export async function authFetch(url: string, options: RequestInit = {}): Promise<Response> {
   const headers = {
@@ -76,10 +103,21 @@ export async function authFetch(url: string, options: RequestInit = {}): Promise
     ...options.headers,
   };
 
-  const response = await fetch(url, {
-    ...options,
-    headers,
-  });
+  // Any change can touch more than one resource (a deploy moves project status, ports and
+  // stats), so a mutation drops the whole GET cache before it is sent and again once it answers,
+  // which also discards reads that raced with it.
+  const mutation = isMutation(url, options);
+  if (mutation) apiCache.invalidate();
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      ...options,
+      headers,
+    });
+  } finally {
+    if (mutation) apiCache.invalidate();
+  }
+  if (response.status === 401) apiCache.clear();
   handleUnauthorized(response);
   return response;
 }

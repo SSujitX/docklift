@@ -21,4 +21,4 @@ Choose a strong unique password. The same password is required again for step-up
 
 ## Lost password
 
-If you cannot sign in, use the emergency reset on the server — see [Reset Password](./reset-password.md). That script cannot be run from the web dashboard alone.
+If you cannot sign in, use the emergency reset on the server — see [Reset Password](./reset-password.md). That command cannot be run from the web dashboard alone.

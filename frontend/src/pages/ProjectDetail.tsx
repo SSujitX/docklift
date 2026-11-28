@@ -1,6 +1,6 @@
 ﻿// Project detail page - overview, deployments, env vars, source files, and domain management
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, type ReactNode } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useBreadcrumbLeaf } from "@/components/shell/ShellContext";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -19,7 +19,6 @@ import { ProjectActionBar } from "@/components/project/ProjectActionBar";
 import { ManagedDatabasePanel } from "@/components/databases/ManagedDatabasePanel";
 import { AttachDatabasePanel } from "@/components/databases/AttachDatabasePanel";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -32,47 +31,17 @@ import {
   StorageMount,
 } from "@/lib/types";
 import { API_URL, cn } from "@/lib/utils";
-import { authFetch } from "@/lib/auth";
+import { apiCache, authFetch } from "@/lib/auth";
+import { API, projectAPI } from "@/lib/prefetch";
 import { consumeProgressStream } from "@/lib/streamProgress";
 import {
-  ArrowLeft,
-  Play,
-  Square,
-  RotateCw,
-  FileCode,
-  Terminal as TerminalIcon,
-  History,
-  Globe,
-  GitBranch,
   Loader2,
   ExternalLink,
-  XCircle,
-  Server,
-  Key,
-  LayoutDashboard,
-  Settings,
-  Shield,
-  Activity,
-  Cpu,
-  Database,
-  Cloud,
-  Clock,
   Trash2,
-  Info,
-  AlertTriangle,
-  Plus,
-  Rocket,
-  Calendar,
   RefreshCw,
-  ScrollText,
-  Download,
-  Pause,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  Box,
-  HardDrive,
-  Undo2,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
@@ -87,16 +56,87 @@ import {
 
 const HISTORY_PAGE_SIZE = 6;
 
-/** Operate-mode project chrome — neutrals first; brand only for the primary deploy action. */
-const PROJECT_TAB_TRIGGER =
-  "gap-1.5 sm:gap-2 rounded-lg px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium transition-colors border border-transparent text-muted-foreground hover:bg-secondary/70 hover:text-foreground whitespace-nowrap data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:border-border data-[state=active]:shadow-sm";
+function deploymentList(payload: unknown): Deployment[] {
+  if (Array.isArray(payload)) return payload;
+  const items = (payload as { items?: unknown } | undefined)?.items;
+  return Array.isArray(items) ? items : [];
+}
 
-const PROJECT_ACTION_PRIMARY =
-  "bg-brand text-brand-foreground border-transparent hover:bg-brand hover:brightness-110 hover:text-brand-foreground shadow-none";
+/** Last known data for a project (memory cache only); `project` is null when not cached. */
+function readProjectCache(projectId: string) {
+  const historyPayload = apiCache.peek<{ total?: number } | Deployment[]>(
+    projectAPI.history(projectId, HISTORY_PAGE_SIZE, 0),
+  );
+  const deployments = deploymentList(historyPayload);
+  const total = (historyPayload as { total?: number } | undefined)?.total;
+  const latestSuccess = apiCache.peek(projectAPI.latestSuccess(projectId));
+  return {
+    project: apiCache.peek<Project>(projectAPI.project(projectId)) ?? null,
+    files: apiCache.peek<ProjectFile[]>(projectAPI.files(projectId)),
+    services: apiCache.peek<Service[]>(projectAPI.services(projectId)),
+    deployments,
+    deploymentTotal: typeof total === "number" ? total : deployments.length,
+    latestSuccessId:
+      latestSuccess === undefined ? null : deploymentList(latestSuccess)[0]?.id ?? null,
+    autoDeploy: Boolean(
+      apiCache.peek<{ auto_deploy?: boolean }>(projectAPI.autoDeploy(projectId))?.auto_deploy,
+    ),
+  };
+}
 
-/** Shared width for every project tab — matches shell content, no per-tab max-w. */
-const PROJECT_TAB_PANEL =
-  "w-full space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-400";
+const DEPLOY_STATUS: Record<string, { label: string; dot: string }> = {
+  success: { label: "Succeeded", dot: "bg-ok" },
+  failed: { label: "Failed", dot: "bg-danger" },
+  cancelled: { label: "Cancelled", dot: "bg-subtle" },
+  in_progress: {
+    label: "In progress",
+    dot: "bg-warn animate-pulse motion-reduce:animate-none",
+  },
+  queued: { label: "Queued", dot: "bg-info" },
+  pending: { label: "Pending", dot: "bg-info" },
+};
+
+function deploymentTriggerLabel(trigger?: string) {
+  switch (trigger) {
+    case "webhook":
+      return "Auto-deploy (GitHub)";
+    case "restart":
+      return "Restart";
+    case "stop":
+      return "Stop";
+    case "redeploy":
+      return "Manual redeploy";
+    case "rollback":
+      return "Restore previous";
+    default:
+      return "Manual deploy";
+  }
+}
+
+function formatDuration(start: string, end: string | null) {
+  if (!end) return null;
+  const ms = new Date(end).getTime() - new Date(start).getTime();
+  if (!Number.isFinite(ms) || ms < 0) return null;
+  const total = Math.round(ms / 1000);
+  const m = Math.floor(total / 60);
+  const sec = total % 60;
+  return m > 0 ? `${m}m ${sec}s` : `${sec}s`;
+}
+
+function repoPath(url: string | null) {
+  if (!url) return null;
+  return url
+    .replace(/^https?:\/\/(www\.)?github\.com\//i, "")
+    .replace(/\.git$/i, "");
+}
+
+/** Hairline-divided definition strip cell (2 columns on mobile, 4 on lg). */
+const STRIP_CELL = [
+  "",
+  "border-l border-border",
+  "border-t border-border lg:border-t-0 lg:border-l",
+  "border-l border-t border-border lg:border-t-0",
+];
 
 const MAX_LOG_LINES = 10000;
 
@@ -279,52 +319,38 @@ function ContainerLogsPanel({
 
   if (containersWithNames.length === 0) {
     return (
-      <div className="text-center py-16 text-muted-foreground">
-        <ScrollText className="h-12 w-12 mx-auto mb-4 opacity-30" />
-        <p className="text-lg font-semibold">No containers found</p>
-        <p className="text-sm mt-1">
-          Deploy your project first to view container logs.
+      <div className="rounded-lg border border-border bg-card py-14 text-center">
+        <p className="text-[15px] font-semibold">No containers found</p>
+        <p className="mx-auto mt-1 max-w-sm text-[13.5px] text-muted-foreground">
+          Deploy the project first to view container logs.
         </p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-xl font-bold flex items-center gap-2">
-          <ScrollText className="h-5 w-5 text-emerald-500" />
-          Container Logs
-        </h3>
-        <div className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 uppercase tracking-widest">
-          Real-time
-        </div>
-      </div>
-
-      {/* Container selector tabs */}
+    <div className="space-y-3">
+      {/* Container selector */}
       {containersWithNames.length > 1 && (
-        <div className="flex flex-wrap gap-2">
+        <div className="scrollbar-none inline-flex max-w-full gap-0.5 overflow-x-auto rounded-md border border-input bg-card p-0.5">
           {containersWithNames.map((svc) => (
             <button
               key={svc.id}
               onClick={() => setActiveContainer(svc.container_name!)}
               className={cn(
-                "flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all duration-300 border",
+                "inline-flex h-7 shrink-0 items-center gap-2 rounded-[4px] px-2.5 text-[13px] font-medium transition-colors duration-150 pointer-coarse:h-9",
                 activeContainer === svc.container_name
-                  ? "bg-emerald-500/15 text-emerald-500 border-emerald-500/30 shadow-sm"
-                  : "bg-secondary/50 text-muted-foreground border-border/50 hover:bg-secondary hover:text-foreground"
+                  ? "bg-secondary text-foreground"
+                  : "text-muted-foreground hover:text-foreground",
               )}
             >
-              <Server className="h-3.5 w-3.5" />
-              {svc.name}
               <span
                 className={cn(
-                  "h-2 w-2 rounded-full",
-                  connected[svc.container_name!]
-                    ? "bg-emerald-500 animate-pulse"
-                    : "bg-muted-foreground/30"
+                  "size-2 shrink-0 rounded-full",
+                  connected[svc.container_name!] ? "bg-ok" : "bg-subtle",
                 )}
               />
+              {svc.name}
             </button>
           ))}
         </div>
@@ -364,16 +390,18 @@ export default function ProjectDetail() {
   const [searchParams, setSearchParams] = useSearchParams();
   const projectId = params.id as string;
 
-  const [project, setProject] = useState<Project | null>(null);
+  // Last known data for this project draws at once on a revisit; the first poll refreshes it.
+  const [initial] = useState(() => readProjectCache(projectId));
+  const [project, setProject] = useState<Project | null>(initial.project);
   useBreadcrumbLeaf(project?.name);
-  const [files, setFiles] = useState<ProjectFile[]>([]);
-  const [deployments, setDeployments] = useState<Deployment[]>([]);
-  const [services, setServices] = useState<Service[]>([]);
+  const [files, setFiles] = useState<ProjectFile[]>(initial.files ?? []);
+  const [deployments, setDeployments] = useState<Deployment[]>(initial.deployments);
+  const [services, setServices] = useState<Service[]>(initial.services ?? []);
   const [selectedServiceId, setSelectedServiceId] = useState<string | null>(
     null,
   );
   const [logs, setLogs] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(initial.project === null);
   const [actionLoading, setActionLoading] = useState(false);
   const [currentAction, setCurrentAction] = useState<string | null>(null);
   const [editingFile, setEditingFile] = useState<{
@@ -396,7 +424,10 @@ export default function ProjectDetail() {
   }, [searchParams]);
   /** Source tab file browser — open by default; user can collapse via chevron */
   const [sourceFilesOpen, setSourceFilesOpen] = useState(true);
-  const [serverIP, setServerIP] = useState<string>("...");
+  const [serverIP, setServerIP] = useState<string>(() => {
+    const cached = apiCache.peek<{ ip?: string }>(API.systemIP);
+    return cached ? cached.ip || "N/A" : "...";
+  });
   const [buildType, setBuildType] = useState<BuildType>("auto");
   const [baseDirectory, setBaseDirectory] = useState(".");
   const [dockerfilePath, setDockerfilePath] = useState("Dockerfile");
@@ -540,15 +571,15 @@ export default function ProjectDetail() {
   const [rollbackPassword, setRollbackPassword] = useState("");
   const [rollbackLoading, setRollbackLoading] = useState(false);
   /** Global latest success id (not page-local) — Restore must never offer this row. */
-  const [latestSuccessId, setLatestSuccessId] = useState<string | null>(null);
+  const [latestSuccessId, setLatestSuccessId] = useState<string | null>(initial.latestSuccessId);
 
   // Auto-deploy state
-  const [autoDeploy, setAutoDeploy] = useState(false);
+  const [autoDeploy, setAutoDeploy] = useState(initial.autoDeploy);
   const [autoDeployLoading, setAutoDeployLoading] = useState(false);
 
   // Deployment history pagination (6 per page)
   const [historyPage, setHistoryPage] = useState(0);
-  const [deploymentTotal, setDeploymentTotal] = useState(0);
+  const [deploymentTotal, setDeploymentTotal] = useState(initial.deploymentTotal);
   const [historyLoading, setHistoryLoading] = useState(false);
   const historyFetchGen = useRef(0);
   const deploymentsAbortRef = useRef<AbortController | null>(null);
@@ -562,7 +593,7 @@ export default function ProjectDetail() {
   useEffect(() => {
     const fetchServerIP = async () => {
       try {
-        const res = await authFetch(`${API_URL}/api/system/ip`);
+        const res = await apiCache.fetch(API.systemIP);
         if (res.ok) {
           const data = await res.json();
           setServerIP(data.ip || "N/A");
@@ -586,23 +617,21 @@ export default function ProjectDetail() {
 
       const [projectRes, filesRes, deploymentsRes, servicesRes, latestRes, latestSuccessRes] =
         await Promise.all([
-          authFetch(`${API_URL}/api/projects/${projectId}`),
-          authFetch(`${API_URL}/api/files/${projectId}`),
-          authFetch(
-            `${API_URL}/api/deployments/${projectId}?limit=${HISTORY_PAGE_SIZE}&offset=${historyOffset}&meta=1`,
+          apiCache.fetch(projectAPI.project(projectId)),
+          apiCache.fetch(projectAPI.files(projectId)),
+          apiCache.fetch(
+            projectAPI.history(projectId, HISTORY_PAGE_SIZE, historyOffset),
             { signal: deploymentsAbort.signal },
           ),
-          authFetch(`${API_URL}/api/deployments/${projectId}/services`),
+          apiCache.fetch(projectAPI.services(projectId)),
           // Always resolve the newest deployment for live log tracking when not on page 1
           historyPage > 0
-            ? authFetch(
+            ? apiCache.fetch(
                 `${API_URL}/api/deployments/${projectId}?limit=1&offset=0`,
               )
             : Promise.resolve(null),
           // Latest success for Restore eligibility on every history page
-          authFetch(
-            `${API_URL}/api/deployments/${projectId}?limit=1&offset=0&status=success`,
-          ),
+          apiCache.fetch(projectAPI.latestSuccess(projectId)),
         ]);
 
       if (!projectRes.ok) {
@@ -738,11 +767,21 @@ export default function ProjectDetail() {
 
   useEffect(() => {
     historyFetchGen.current += 1;
+    // Start from this project's cached history (or empty); a cached project replaces the one
+    // shown when the route switches projects without remounting.
+    const cached = readProjectCache(projectId);
     setHistoryPage(0);
-    setDeploymentTotal(0);
-    setDeployments([]);
+    setDeploymentTotal(cached.deploymentTotal);
+    setDeployments(cached.deployments);
     setViewingDeploymentId(null);
     setLogs("");
+    if (cached.project) {
+      setProject(cached.project);
+      if (cached.files) setFiles(cached.files);
+      if (cached.services) setServices(cached.services);
+      setLatestSuccessId(cached.latestSuccessId);
+      setAutoDeploy(cached.autoDeploy);
+    }
   }, [projectId]);
 
   // Apps + databases: when history arrives and nothing is selected, show latest logs
@@ -925,9 +964,7 @@ export default function ProjectDetail() {
 
     const fetchAutoDeploy = async () => {
       try {
-        const res = await authFetch(
-          `${API_URL}/api/projects/${projectId}/auto-deploy`,
-        );
+        const res = await apiCache.fetch(projectAPI.autoDeploy(projectId));
         if (res.ok) {
           const data = await res.json();
           setAutoDeploy(data.auto_deploy || false);
@@ -957,7 +994,7 @@ export default function ProjectDetail() {
         const data = await res.json();
         setAutoDeploy(data.auto_deploy);
         toast.success(
-          enabled ? "Auto-deploy enabled!" : "Auto-deploy disabled",
+          enabled ? "Auto-deploy enabled" : "Auto-deploy disabled",
         );
       } else {
         toast.error("Failed to update auto-deploy");
@@ -974,17 +1011,20 @@ export default function ProjectDetail() {
     setIsConfirmOpen(true);
   };
 
-  const getActionDetails = () => {
+  const getActionDetails = (): {
+    title: string;
+    description: string;
+    confirmText: string;
+    confirmVariant: "default" | "destructive";
+  } => {
     switch (pendingAction) {
       case "delete":
         return {
-          title: "Delete Project",
+          title: "Delete project",
           description:
-            "Are you sure you want to delete this project? This action cannot be undone and will explicitly remove all associated data, containers, and configurations.",
-          confirmText: "Yes, Delete Project",
-          confirmClassName:
-            "bg-destructive text-destructive-foreground hover:bg-destructive/90 shadow-none",
-          icon: <Trash2 className="h-5 w-5 text-destructive" />,
+            "This permanently deletes the project and removes all associated data, containers, and configuration. This cannot be undone.",
+          confirmText: "Delete project",
+          confirmVariant: "destructive",
         };
       case "stop":
         return {
@@ -994,9 +1034,7 @@ export default function ProjectDetail() {
               ? "Stops every service in this project. Public endpoints will return errors until you deploy or restart again."
               : "Stop the running containers? The app will be unreachable until you deploy or restart again.",
           confirmText: "Stop project",
-          confirmClassName:
-            "bg-foreground text-background hover:opacity-90 shadow-none",
-          icon: <Square className="h-5 w-5 text-foreground" />,
+          confirmVariant: "default",
         };
       case "restart":
         return {
@@ -1006,8 +1044,7 @@ export default function ProjectDetail() {
               ? "Restarts every service in this project without rebuilding images. Expect brief downtime across all apps."
               : "Restart without rebuilding? Expect a brief period of downtime.",
           confirmText: "Restart project",
-          confirmClassName: PROJECT_ACTION_PRIMARY,
-          icon: <RotateCw className="h-5 w-5 text-brand" />,
+          confirmVariant: "default",
         };
       case "redeploy":
         return {
@@ -1016,36 +1053,31 @@ export default function ProjectDetail() {
             multiService
               ? "Rebuilds from source and redeploys the whole project — every service, not only the one open in Workspace."
               : "Rebuild from source and deploy a new version. This may take a few minutes.",
-          confirmText: "Start redeploy",
-          confirmClassName: PROJECT_ACTION_PRIMARY,
-          icon: <Play className="h-5 w-5 text-brand" />,
+          confirmText: "Redeploy",
+          confirmVariant: "default",
         };
       case "cancel":
         return {
-          title: "Cancel Build",
+          title: "Cancel build",
           description:
-            "Are you sure you want to abort the current build process? Partial artifacts may be left behind.",
-          confirmText: "Abort Build",
-          confirmClassName:
-            "bg-destructive text-destructive-foreground hover:bg-destructive/90 shadow-none",
-          icon: <XCircle className="h-5 w-5 text-destructive" />,
+            "Abort the current build? Partial artifacts may be left behind.",
+          confirmText: "Cancel build",
+          confirmVariant: "destructive",
         };
       case "deploy":
         return {
-          title: "Deploy Application",
+          title: "Deploy project",
           description:
-            "Ready to launch? This will start a new build and deployment process for your application.",
-          confirmText: "Deploy Now",
-          confirmClassName: PROJECT_ACTION_PRIMARY,
-          icon: <Play className="h-5 w-5 text-brand" />,
+            "Starts a new build and deployment for this application.",
+          confirmText: "Deploy",
+          confirmVariant: "default",
         };
       default:
         return {
-          title: "Confirm Action",
+          title: "Confirm action",
           description: "Are you sure you want to proceed?",
           confirmText: "Confirm",
-          confirmClassName: PROJECT_ACTION_PRIMARY,
-          icon: <AlertTriangle className="h-5 w-5 text-muted-foreground" />,
+          confirmVariant: "default",
         };
     }
   };
@@ -1120,7 +1152,7 @@ export default function ProjectDetail() {
       }
 
       toast.success(
-        `${action.charAt(0).toUpperCase() + action.slice(1)} completed!`,
+        `${action.charAt(0).toUpperCase() + action.slice(1)} completed`,
       );
     } catch (error) {
       console.error(error);
@@ -1236,62 +1268,76 @@ export default function ProjectDetail() {
 
   if (loading) {
     return (
-      <div>
-        <div className="shimmer h-10 w-48 bg-secondary rounded-xl mb-6" />
-        <div className="shimmer h-64 bg-secondary rounded-2xl" />
+      <div aria-hidden="true">
+        <div className="h-6 w-48 rounded-md bg-secondary" />
+        <div className="mt-2 h-4 w-72 rounded-md bg-secondary/70" />
+        <div className="mt-8 h-10 border-b border-border" />
+        <div className="mt-5 h-64 rounded-lg border border-border bg-card" />
       </div>
     );
   }
 
   if (!project) return null;
 
+  const isDb = project.project_type === "database";
+  const latestDeployment = historyPage === 0 ? deployments[0] : undefined;
+  const latestSha = latestDeployment?.commit_sha?.slice(0, 7) || null;
+  const manifestParts: string[] = [
+    isDb ? project.db_engine || "database" : project.project_type,
+    project.source_type === "github"
+      ? repoPath(project.github_url) || "github"
+      : project.source_type,
+    ...(project.source_type === "github" && project.github_branch
+      ? [project.github_branch]
+      : []),
+    ...(latestSha ? [latestSha] : []),
+    `created ${new Date(project.created_at).toLocaleString([], {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    })}`,
+    project.id.split("-")[0],
+  ];
+  const scopedService =
+    workspace === "service" && selectedService ? selectedService : null;
+  const viewedDeployment = viewingDeploymentId
+    ? deployments.find((d) => d.id === viewingDeploymentId) || null
+    : null;
+
   return (
     <>
       <div>
+        {/* Mobile only: the top bar shows just the current item, so keep a way back. */}
         <Link
-          to={project.project_type === "database" ? "/databases" : "/"}
-          className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground mb-6 transition-colors"
+          to={isDb ? "/databases" : "/"}
+          className="-ml-1 mb-3 inline-flex h-8 items-center gap-1 rounded-md px-1 text-[13px] text-muted-foreground transition-colors hover:text-foreground sm:hidden"
         >
-          <ArrowLeft className="h-4 w-4" />
-          {project.project_type === "database" ? "Back to Databases" : "Back to Projects"}
+          <ChevronLeft className="size-4" />
+          {isDb ? "Databases" : "Projects"}
         </Link>
 
-        <div className="mb-6 flex min-w-0 flex-col gap-4 sm:mb-10 md:flex-row md:items-start md:justify-between md:gap-6">
-          <div className="flex min-w-0 flex-1 items-start gap-3 sm:items-center sm:gap-4">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border/60 bg-secondary/40 sm:h-12 sm:w-12">
-              {project.project_type === "database" ? (
-                <Database className="h-5 w-5 text-muted-foreground sm:h-6 sm:w-6" />
-              ) : (
-                <Cloud className="h-5 w-5 text-muted-foreground sm:h-6 sm:w-6" />
-              )}
+        <header className="flex min-w-0 flex-col gap-4 md:flex-row md:items-start md:justify-between md:gap-6">
+          <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+              <h1 className="max-w-full truncate text-xl font-semibold leading-7 tracking-[-0.01em]">
+                {project.name}
+              </h1>
+              <StatusBadge status={project.status} />
             </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
-                <h1 className="max-w-full truncate text-xl font-semibold tracking-tight sm:text-3xl">
-                  {project.name}
-                </h1>
-                <StatusBadge status={project.status} />
-              </div>
-              <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground sm:gap-x-4 sm:text-sm">
-                <span className="capitalize font-medium text-foreground/80">
-                  {project.project_type}
+            <p className="mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 font-mono text-xs leading-5 text-muted-foreground">
+              {manifestParts.map((part, i) => (
+                <span key={i} className="inline-flex min-w-0 items-center gap-x-1.5">
+                  <span className="min-w-0 truncate">{part}</span>
+                  {i < manifestParts.length - 1 && (
+                    <span aria-hidden="true" className="text-subtle">
+                      ·
+                    </span>
+                  )}
                 </span>
-                <span className="flex items-center gap-1.5">
-                  <Calendar className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
-                  <span className="hidden sm:inline">Created </span>
-                  {new Date(project.created_at).toLocaleString([], {
-                    month: "short",
-                    day: "numeric",
-                    year: "numeric",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </span>
-                <span className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-muted-foreground">
-                  {project.id.split("-")[0]}
-                </span>
-              </p>
-            </div>
+              ))}
+            </p>
           </div>
 
           {/* Project-wide lifecycle actions — always header top-right (whole stack). */}
@@ -1302,22 +1348,18 @@ export default function ProjectDetail() {
             onAction={confirmAction}
             placement="header"
             multiService={multiService}
-            className="w-full shrink-0 md:w-auto md:self-start"
+            className="shrink-0"
             title={
               multiService
                 ? "Affects every service in this project"
                 : undefined
             }
           />
-        </div>
+        </header>
 
-        <Tabs
-          value={activeTab}
-          onValueChange={setActiveTab}
-          className="space-y-6"
-        >
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-6">
           {multiService && (
-            <div className="min-w-0 space-y-3 border-b border-border/60 pb-4">
+            <div className="mb-4 min-w-0">
               <ServiceSwitcher
                 services={services}
                 workspace={workspace}
@@ -1328,111 +1370,123 @@ export default function ProjectDetail() {
             </div>
           )}
 
-          {/* Match AppShell padding (px-3 / sm:px-4) — old -mx-4 overflowed phones */}
-          <div className="sticky top-14 z-10 -mx-3 min-w-0 overflow-x-auto px-3 [-ms-overflow-style:none] [scrollbar-width:none] sm:-mx-4 sm:px-4 md:mx-0 md:overflow-visible md:px-0 md:flex md:justify-center [&::-webkit-scrollbar]:hidden">
-            <TabsList className="inline-flex w-max max-w-none items-center justify-start gap-0.5 rounded-xl border border-border/60 bg-secondary/40 p-1 md:justify-center">
-              <TabsTrigger value="overview" className={PROJECT_TAB_TRIGGER}>
-                <LayoutDashboard className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                <span className="hidden sm:inline">
-                  {workspace === "service" && multiService
-                    ? selectedService?.name || "Service"
-                    : "Overview"}
-                </span>
-                <span className="sm:hidden">View</span>
+          <div className="sticky top-12 z-10 min-w-0 bg-background">
+            <TabsList>
+              <TabsTrigger value="overview">
+                {workspace === "service" && multiService
+                  ? selectedService?.name || "Service"
+                  : "Overview"}
               </TabsTrigger>
 
               {(!multiService || workspace === "project") && (
-                <TabsTrigger value="deployments" className={PROJECT_TAB_TRIGGER}>
-                  <Activity className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                  <span className="hidden sm:inline">Deployments</span>
-                  <span className="sm:hidden">Deploy</span>
-                </TabsTrigger>
+                <TabsTrigger value="deployments">Deployments</TabsTrigger>
               )}
 
               {!isDatabase && (
                 <>
-                  <TabsTrigger value="env" className={PROJECT_TAB_TRIGGER}>
-                    <Key className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                    <span className="hidden sm:inline">
-                      {workspace === "service" && multiService
-                        ? "Env"
-                        : "Environment"}
-                    </span>
-                    <span className="sm:hidden">Env</span>
-                  </TabsTrigger>
+                  <TabsTrigger value="env">Environment</TabsTrigger>
 
                   {(!multiService || workspace === "project") && (
-                    <TabsTrigger value="build" className={PROJECT_TAB_TRIGGER}>
-                      <Box className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                      Build
-                    </TabsTrigger>
+                    <TabsTrigger value="build">Build</TabsTrigger>
                   )}
 
                   {(!multiService || workspace === "service") && (
-                    <TabsTrigger value="storage" className={PROJECT_TAB_TRIGGER}>
-                      <HardDrive className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                      <span className="hidden sm:inline">Storage</span>
-                      <span className="sm:hidden">Disk</span>
-                    </TabsTrigger>
+                    <TabsTrigger value="storage">Storage</TabsTrigger>
                   )}
 
                   {(!multiService || workspace === "project") && (
-                    <TabsTrigger value="source" className={PROJECT_TAB_TRIGGER}>
-                      <FileCode className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                      Source
-                    </TabsTrigger>
+                    <TabsTrigger value="source">Source</TabsTrigger>
                   )}
 
                   {(!multiService || workspace === "service") && (
-                    <TabsTrigger value="domains" className={PROJECT_TAB_TRIGGER}>
-                      <Globe className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                      Domain
-                    </TabsTrigger>
+                    <TabsTrigger value="domains">Domains</TabsTrigger>
                   )}
                 </>
               )}
 
               {(!multiService || workspace === "service") && (
-                <TabsTrigger value="logs" className={PROJECT_TAB_TRIGGER}>
-                  <ScrollText className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                  Logs
-                </TabsTrigger>
+                <TabsTrigger value="logs">Logs</TabsTrigger>
               )}
             </TabsList>
           </div>
 
-          <TabsContent value="overview" className={PROJECT_TAB_PANEL}>
-            {/* Real Services Card */}
+          <TabsContent value="overview" className="space-y-5">
+            {/* Summary strip */}
+            <section className="grid grid-cols-2 rounded-lg border border-border bg-card lg:grid-cols-4">
+              {(
+                [
+                  {
+                    label: "Status",
+                    value: (
+                      <span className="capitalize">{project.status}</span>
+                    ),
+                    note: "Main service status",
+                  },
+                  {
+                    label: "Deployments",
+                    value: (
+                      <span className="font-mono tabular-nums">
+                        {deploymentTotal}
+                      </span>
+                    ),
+                    note: "Total deployments",
+                  },
+                  {
+                    label: "Source",
+                    value:
+                      project.source_type === "github" ? "GitHub" : "Upload",
+                    note: "Source type",
+                  },
+                  {
+                    label: "Network",
+                    value: "Shared host",
+                    note: "Same Docker host & bridge (not multi-tenant isolation)",
+                  },
+                ] as const
+              ).map((cell, i) => (
+                <div key={cell.label} className={cn("min-w-0 px-4 py-3", STRIP_CELL[i])}>
+                  <p className="text-xs text-muted-foreground">{cell.label}</p>
+                  <p className="mt-1 truncate text-[15px] font-semibold leading-6">
+                    {cell.value}
+                  </p>
+                  <p className="mt-0.5 text-xs leading-4 text-muted-foreground">
+                    {cell.note}
+                  </p>
+                </div>
+              ))}
+            </section>
+
+            {/* Services & endpoints */}
             {services.length > 0 && (
-              <div className="grid gap-6">
-                <div className="flex items-baseline justify-between gap-3">
-                  <div>
-                    <h3 className="text-lg font-semibold tracking-tight">
-                      {workspace === "service" && selectedService
-                        ? selectedService.name
-                        : "Services & Endpoints"}
-                    </h3>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                      {workspace === "service" && selectedService
-                        ? `${selectedService.dockerfile_path} · runtime endpoints for this service`
+              <section className="rounded-lg border border-border bg-card">
+                <div className="flex items-start justify-between gap-3 border-b border-border px-4 py-3">
+                  <div className="min-w-0">
+                    <h2 className="truncate text-[15px] font-semibold leading-5">
+                      {scopedService ? "Endpoints" : "Services"}
+                    </h2>
+                    <p className="mt-0.5 text-[13px] text-muted-foreground">
+                      {scopedService
+                        ? `${scopedService.dockerfile_path} · runtime endpoints for this service`
                         : multiService
                           ? "Open a service for env, domains, storage, and logs."
                           : "Live endpoints for this project."}
                     </p>
                   </div>
-                  <span className="text-[11px] font-medium text-muted-foreground">
-                    {workspace === "service"
-                      ? "Service"
-                      : multiService
-                        ? `${services.length} services`
-                        : "Live"}
+                  <span className="shrink-0 pt-0.5 text-xs text-muted-foreground">
+                    {workspace === "service" ? (
+                      "Service"
+                    ) : multiService ? (
+                      <>
+                        <span className="font-mono">{services.length}</span>{" "}
+                        services
+                      </>
+                    ) : (
+                      "Live"
+                    )}
                   </span>
                 </div>
-                <div className="grid gap-4">
-                  {(workspace === "service" && selectedService
-                    ? [selectedService]
-                    : services
-                  ).map((svc) => {
+                <div className="divide-y divide-border">
+                  {(scopedService ? [scopedService] : services).map((svc) => {
                     const domains = svc.domain
                       ? svc.domain
                           .split(",")
@@ -1466,455 +1520,336 @@ export default function ProjectDetail() {
                     const awaitingHostPortPublish =
                       notPublicYet &&
                       Boolean(project?.publish_host_port);
+                    const opensWorkspace =
+                      multiService && workspace === "project";
 
                     return (
-                      <Card
+                      <div
                         key={svc.id}
                         className={cn(
-                          "group border-border p-0 shadow-none transition-colors",
-                          multiService &&
-                            workspace === "project" &&
-                            "hover:bg-secondary/20",
+                          "px-4 py-3 transition-colors duration-150",
+                          opensWorkspace && "hover:bg-secondary/50",
                         )}
                       >
-                        <div className="flex flex-col gap-4 p-4 sm:p-5">
-                          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-5">
-                            {/* Left: open service workspace (avoid nesting controls in a button) */}
-                            <div
-                              className={cn(
-                                "flex min-w-0 items-start gap-3 sm:items-center sm:gap-4",
-                                multiService &&
-                                  workspace === "project" &&
-                                  "cursor-pointer rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                              )}
-                              role={
-                                multiService && workspace === "project"
-                                  ? "button"
-                                  : undefined
-                              }
-                              tabIndex={
-                                multiService && workspace === "project"
-                                  ? 0
-                                  : undefined
-                              }
-                              onClick={() => {
-                                if (multiService && workspace === "project") {
-                                  selectService(svc.id);
-                                }
-                              }}
-                              onKeyDown={(e) => {
-                                if (!(multiService && workspace === "project")) {
-                                  return;
-                                }
-                                if (e.key === "Enter" || e.key === " ") {
-                                  e.preventDefault();
-                                  selectService(svc.id);
-                                }
-                              }}
-                            >
-                              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border bg-secondary/40 sm:h-11 sm:w-11">
-                                <Server className="h-4 w-4 text-muted-foreground sm:h-5 sm:w-5" />
-                              </div>
-                              <div className="min-w-0 flex-1">
-                                <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-                                  <span className="truncate text-base font-semibold sm:text-lg">
-                                    {svc.name}
-                                  </span>
-                                  <StatusBadge status={svc.status} />
-                                </div>
-                                <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground sm:mt-1 sm:gap-2 sm:text-xs">
-                                  <span className="rounded bg-secondary/80 px-1 py-0.5 font-mono text-[9px] sm:px-1.5 sm:text-xs">
-                                    Port {svc.internal_port}
-                                  </span>
-                                  <span className="hidden text-muted-foreground/30 sm:inline">
-                                    ·
-                                  </span>
-                                  <span className="flex min-w-0 items-center gap-1 truncate">
-                                    <FileCode className="h-2.5 w-2.5 shrink-0 sm:h-3 sm:w-3" />
-                                    <span className="truncate">
-                                      {svc.dockerfile_path}
-                                    </span>
-                                  </span>
-                                </p>
-                              </div>
-                            </div>
-
-                            {/* Public endpoints when available */}
-                            {(hostPortReady ||
-                              (hasHostPort && !hostPortReady) ||
-                              domainLinks.length > 0) && (
-                              <div className="flex flex-wrap gap-2 sm:items-end sm:justify-end">
-                                {hostPortReady && (
-                                  <a
-                                    href={`http://${portHost}:${svc.port}`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    onClick={(e) => e.stopPropagation()}
-                                    className="flex h-8 items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 font-mono text-[10px] font-medium text-foreground transition-colors hover:bg-secondary sm:h-9 sm:px-3 sm:text-xs"
-                                  >
-                                    <span className="truncate max-w-[120px] sm:max-w-none">
-                                      {portHost}:{svc.port}
-                                    </span>
-                                    <ExternalLink className="h-2.5 w-2.5 shrink-0 sm:h-3 sm:w-3" />
-                                  </a>
-                                )}
-                                {hasHostPort && !hostPortReady && (
-                                  <span className="inline-flex h-7 items-center rounded-lg border border-border/50 bg-secondary/50 px-2.5 font-mono text-[10px] font-bold text-muted-foreground sm:h-9 sm:rounded-xl sm:px-4 sm:text-xs">
-                                    Host port {svc.port}
-                                  </span>
-                                )}
-                                {domainLinks.map((link, idx) => (
-                                  <a
-                                    key={idx}
-                                    href={link.url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    onClick={(e) => e.stopPropagation()}
-                                    className="flex h-8 items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 font-mono text-[10px] font-medium text-foreground transition-colors hover:bg-secondary sm:h-9 sm:px-3 sm:text-xs"
-                                  >
-                                    <span className="truncate max-w-[120px] sm:max-w-none">
-                                      {link.label}
-                                    </span>
-                                    <ExternalLink className="h-2.5 w-2.5 shrink-0 sm:h-3 sm:w-3" />
-                                  </a>
-                                ))}
-                              </div>
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+                          {/* Left: open service workspace (avoid nesting controls in a button) */}
+                          <div
+                            className={cn(
+                              "min-w-0 flex-1",
+                              opensWorkspace &&
+                                "-m-1 cursor-pointer rounded-md p-1 focus-visible:outline-2 focus-visible:outline-ring",
                             )}
+                            role={opensWorkspace ? "button" : undefined}
+                            tabIndex={opensWorkspace ? 0 : undefined}
+                            onClick={() => {
+                              if (multiService && workspace === "project") {
+                                selectService(svc.id);
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              if (!(multiService && workspace === "project")) {
+                                return;
+                              }
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                selectService(svc.id);
+                              }
+                            }}
+                          >
+                            <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5">
+                              <span className="truncate text-sm font-medium">
+                                {svc.name}
+                              </span>
+                              <StatusBadge status={svc.status} />
+                            </div>
+                            <p className="mt-0.5 truncate font-mono text-xs text-muted-foreground">
+                              port {svc.internal_port}
+                              {svc.dockerfile_path && (
+                                <>
+                                  <span className="text-subtle"> · </span>
+                                  {svc.dockerfile_path}
+                                </>
+                              )}
+                            </p>
                           </div>
 
-                          {notPublicYet && (
-                            <div className="rounded-xl border border-border bg-secondary/30 px-4 py-3.5">
-                              <p className="text-sm font-semibold tracking-tight text-foreground">
-                                Private by default
-                              </p>
-                              <p className="mt-1.5 max-w-2xl text-xs leading-relaxed text-muted-foreground sm:text-[13px]">
-                                {awaitingHostPortPublish ? (
-                                  <>
-                                    Publish host ports is on — redeploy to open
-                                    an{" "}
-                                    <span className="font-mono text-foreground/80">
-                                      IP:port
-                                    </span>
-                                    , or add a domain for HTTPS on{" "}
-                                    <span className="font-mono text-foreground/80">
-                                      :80/:443
-                                    </span>
-                                    . Prefer a domain: raw host ports advertise
-                                    your server’s real IP and are easier to
-                                    scan.
-                                  </>
-                                ) : (
-                                  <>
-                                    This service is not on the public internet
-                                    yet. Add a domain for HTTPS — that is the
-                                    safe path. Avoid sharing{" "}
-                                    <span className="font-mono text-foreground/80">
-                                      IP:port
-                                    </span>
-                                    : it reveals your origin server address and
-                                    can expose apps on this host to anyone who
-                                    finds the port.
-                                  </>
-                                )}
-                              </p>
-                              <div className="mt-3 flex flex-wrap gap-2">
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    if (multiService) {
-                                      selectService(svc.id, "domains");
-                                    } else {
-                                      setActiveTab("domains");
-                                    }
-                                  }}
-                                  className="h-8 rounded-lg border border-border bg-background px-3 text-xs font-medium text-foreground transition-colors hover:bg-secondary"
+                          {/* Public endpoints when available */}
+                          {(hostPortReady ||
+                            (hasHostPort && !hostPortReady) ||
+                            domainLinks.length > 0) && (
+                            <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 sm:justify-end">
+                              {hostPortReady && (
+                                <a
+                                  href={`http://${portHost}:${svc.port}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="inline-flex min-w-0 items-center gap-1 font-mono text-[13px] text-foreground underline-offset-4 hover:underline"
                                 >
-                                  Add domain
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    if (awaitingHostPortPublish) {
-                                      confirmAction("redeploy");
-                                    } else {
-                                      goToProjectTab("build");
-                                    }
-                                  }}
-                                  className="h-8 rounded-lg border border-border bg-background px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                                  <span className="truncate">
+                                    {portHost}:{svc.port}
+                                  </span>
+                                  <ExternalLink className="size-3.5 shrink-0 text-subtle" />
+                                </a>
+                              )}
+                              {hasHostPort && !hostPortReady && (
+                                <span className="rounded-sm border border-border px-1.5 py-0.5 font-mono text-xs text-muted-foreground">
+                                  Host port {svc.port}
+                                </span>
+                              )}
+                              {domainLinks.map((link, idx) => (
+                                <a
+                                  key={idx}
+                                  href={link.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="inline-flex min-w-0 items-center gap-1 font-mono text-[13px] text-foreground underline-offset-4 hover:underline"
                                 >
-                                  {awaitingHostPortPublish
-                                    ? "Redeploy"
-                                    : "Build settings"}
-                                </button>
-                              </div>
+                                  <span className="truncate">{link.label}</span>
+                                  <ExternalLink className="size-3.5 shrink-0 text-subtle" />
+                                </a>
+                              ))}
                             </div>
                           )}
                         </div>
-                      </Card>
+
+                        {notPublicYet && (
+                          <div className="mt-3 rounded-md border border-info/40 bg-secondary/60 px-3 py-2.5 text-[13px]">
+                            <p className="font-medium text-foreground">
+                              Private by default
+                            </p>
+                            <p className="mt-1 max-w-2xl leading-5 text-muted-foreground">
+                              {awaitingHostPortPublish ? (
+                                <>
+                                  Publish host ports is on — redeploy to open
+                                  an <span className="font-mono text-foreground">IP:port</span>,
+                                  or add a domain for HTTPS on{" "}
+                                  <span className="font-mono text-foreground">:80/:443</span>.
+                                  Prefer a domain: raw host ports advertise
+                                  your server’s real IP and are easier to
+                                  scan.
+                                </>
+                              ) : (
+                                <>
+                                  This service is not on the public internet
+                                  yet. Add a domain for HTTPS — that is the
+                                  safe path. Avoid sharing{" "}
+                                  <span className="font-mono text-foreground">IP:port</span>:
+                                  it reveals your origin server address and
+                                  can expose apps on this host to anyone who
+                                  finds the port.
+                                </>
+                              )}
+                            </p>
+                            <div className="mt-2.5 flex flex-wrap gap-2">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (multiService) {
+                                    selectService(svc.id, "domains");
+                                  } else {
+                                    setActiveTab("domains");
+                                  }
+                                }}
+                              >
+                                Add domain
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="text-muted-foreground"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (awaitingHostPortPublish) {
+                                    confirmAction("redeploy");
+                                  } else {
+                                    goToProjectTab("build");
+                                  }
+                                }}
+                              >
+                                {awaitingHostPortPublish
+                                  ? "Redeploy"
+                                  : "Build settings"}
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     );
                   })}
                 </div>
-              </div>
+              </section>
             )}
 
-            {project.project_type === "database" && project.db_engine ? (
-              <div className="mt-6">
-                <ManagedDatabasePanel
-                  databaseId={project.id}
-                  engineLabel={
-                    (
-                      {
-                        postgres: "PostgreSQL",
-                        mysql: "MySQL",
-                        mariadb: "MariaDB",
-                        redis: "Redis",
-                        mongodb: "MongoDB",
-                      } as Record<string, string>
-                    )[project.db_engine] || project.db_engine
-                  }
-                />
-              </div>
-            ) : project.project_type !== "database" ? (
-              <div className="mt-6">
-                <AttachDatabasePanel
-                  appProjectId={project.id}
-                  services={services.map((s) => ({ id: s.id, name: s.name }))}
-                  lockedServiceName={
-                    workspace === "service" && selectedService
-                      ? selectedService.name
-                      : null
-                  }
-                />
-              </div>
-            ) : null}
-
-            {/* Quick Stats Grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-5">
-              <Card className="p-4 sm:p-6 border-border/40 hover:border-border transition-colors">
-                <div className="flex items-center justify-between mb-2 sm:mb-4">
-                  <div className="p-2 sm:p-2.5 rounded-lg sm:rounded-xl bg-orange-500/10">
-                    <Activity className="h-4 w-4 sm:h-5 sm:w-5 text-orange-500" />
-                  </div>
-                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
-                    Health
-                  </span>
-                </div>
-                <div className="space-y-0.5 sm:space-y-1">
-                  <p className="text-lg sm:text-2xl font-bold tracking-tight capitalize">
-                    {project.status}
-                  </p>
-                  <p className="text-[10px] sm:text-xs text-muted-foreground">
-                    Main service status
-                  </p>
-                </div>
-              </Card>
-
-              <Card className="p-4 sm:p-6 border-border/40 hover:border-border transition-colors">
-                <div className="flex items-center justify-between mb-2 sm:mb-4">
-                  <div className="p-2 sm:p-2.5 rounded-lg sm:rounded-xl bg-purple-500/10">
-                    <History className="h-4 w-4 sm:h-5 sm:w-5 text-purple-500" />
-                  </div>
-                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
-                    Activity
-                  </span>
-                </div>
-                <div className="space-y-0.5 sm:space-y-1">
-                  <p className="text-lg sm:text-2xl font-bold tracking-tight">
-                    {deploymentTotal}
-                  </p>
-                  <p className="text-[10px] sm:text-xs text-muted-foreground">
-                    Total deployments
-                  </p>
-                </div>
-              </Card>
-
-              <Card className="p-4 sm:p-6 border-border/40 hover:border-border transition-colors">
-                <div className="flex items-center justify-between mb-2 sm:mb-4">
-                  <div className="p-2 sm:p-2.5 rounded-lg sm:rounded-xl bg-blue-500/10">
-                    <Cpu className="h-4 w-4 sm:h-5 sm:w-5 text-blue-500" />
-                  </div>
-                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
-                    Resource
-                  </span>
-                </div>
-                <div className="space-y-0.5 sm:space-y-1">
-                  <p className="text-lg sm:text-2xl font-bold tracking-tight">
-                    {project.source_type === "github" ? "GitHub" : "Upload"}
-                  </p>
-                  <p className="text-[10px] sm:text-xs text-muted-foreground">
-                    Source type
-                  </p>
-                </div>
-              </Card>
-
-              <Card className="p-4 sm:p-6 border-border/40 hover:border-border transition-colors">
-                <div className="flex items-center justify-between mb-2 sm:mb-4">
-                  <div className="p-2 sm:p-2.5 rounded-lg sm:rounded-xl bg-cyan-500/10">
-                    <Shield className="h-4 w-4 sm:h-5 sm:w-5 text-cyan-500" />
-                  </div>
-                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
-                    Network
-                  </span>
-                </div>
-                <div className="space-y-0.5 sm:space-y-1">
-                  <p className="text-lg sm:text-2xl font-bold tracking-tight">
-                    Shared host
-                  </p>
-                  <p className="text-[10px] sm:text-xs text-muted-foreground">
-                    Same Docker host &amp; bridge (not multi-tenant isolation)
-                  </p>
-                </div>
-              </Card>
-            </div>
-
-            {/* GitHub Info if applicable */}
+            {/* Source configuration (GitHub) */}
             {project.source_type === "github" && (
-              <Card className="p-0 border-border/40 overflow-hidden">
-                <div className="bg-secondary/30 px-6 py-4 border-b flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <GitBranch className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-sm font-semibold italic text-muted-foreground uppercase tracking-widest">
-                      Source Configuration
-                    </span>
-                  </div>
+              <section className="rounded-lg border border-border bg-card">
+                <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+                  <h2 className="text-[15px] font-semibold leading-5">Source</h2>
                   <a
                     href={project.github_url || "#"}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-xs font-bold text-cyan-500 hover:text-cyan-400 flex items-center gap-1.5 transition-colors"
+                    className="inline-flex items-center gap-1 text-[13px] text-brand underline-offset-4 hover:underline"
                   >
-                    VIEW REPO <ExternalLink className="h-3 w-3" />
+                    View repository
+                    <ExternalLink className="size-3.5" />
                   </a>
                 </div>
-                <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-8">
-                  <div className="space-y-4">
-                    <div className="flex flex-col gap-1.5">
-                      <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
-                        Repository URL
-                      </span>
-                      <p className="text-sm font-mono bg-secondary/50 p-3 rounded-xl border border-border/50 truncate">
-                        {project.github_url}
-                      </p>
-                    </div>
+                <dl className="divide-y divide-border text-[13px]">
+                  <div className="grid gap-1 px-4 py-3 sm:grid-cols-[160px_minmax(0,1fr)] sm:gap-4">
+                    <dt className="text-muted-foreground">Repository URL</dt>
+                    <dd className="min-w-0 truncate font-mono text-foreground">
+                      {project.github_url}
+                    </dd>
                   </div>
-                  <div className="flex items-center gap-6">
-                    <div className="flex flex-col gap-1.5">
-                      <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
-                        Selected Branch
-                      </span>
-                      <div className="flex items-center gap-2 px-3 py-1.5 bg-cyan-500/10 text-cyan-500 rounded-lg border border-cyan-500/20 font-mono text-xs font-bold">
-                        <GitBranch className="h-3.5 w-3.5" />
-                        {project.github_branch}
-                      </div>
-                    </div>
+                  <div className="grid gap-1 px-4 py-3 sm:grid-cols-[160px_minmax(0,1fr)] sm:gap-4">
+                    <dt className="text-muted-foreground">Branch</dt>
+                    <dd className="min-w-0 truncate font-mono text-foreground">
+                      {project.github_branch}
+                    </dd>
                   </div>
-                </div>
+                </dl>
 
-                {/* Auto-Deploy Section */}
-                <div className="border-t border-border/40 p-4 sm:p-6">
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="p-2 rounded-lg bg-emerald-500/10 shrink-0">
-                        <Rocket className="h-4 w-4 text-emerald-500" />
-                      </div>
-                      <div className="min-w-0">
-                        <span className="font-semibold text-sm sm:text-base">
-                          Auto-Deploy
-                        </span>
-                        <p className="text-[10px] sm:text-xs text-muted-foreground">
-                          {autoDeploy
-                            ? "Pushes to this branch will trigger automatic deployment"
-                            : "Enable to auto-redeploy when commits are pushed"}
-                        </p>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => handleAutoDeployToggle(!autoDeploy)}
-                      disabled={autoDeployLoading}
-                      className={cn(
-                        "relative h-6 w-11 rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 shrink-0 self-end sm:self-auto",
-                        autoDeploy ? "bg-emerald-500" : "bg-secondary",
-                      )}
-                    >
-                      <span
-                        className={cn(
-                          "absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200",
-                          autoDeploy ? "translate-x-5" : "translate-x-0",
-                        )}
-                      />
-                    </button>
+                {/* Auto-deploy */}
+                <div className="flex items-center justify-between gap-4 border-t border-border px-4 py-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium">Auto-deploy</p>
+                    <p className="mt-0.5 text-[13px] text-muted-foreground">
+                      {autoDeploy
+                        ? "Pushes to this branch will trigger automatic deployment."
+                        : "Enable to redeploy automatically when commits are pushed."}
+                    </p>
                   </div>
+                  <button
+                    onClick={() => handleAutoDeployToggle(!autoDeploy)}
+                    disabled={autoDeployLoading}
+                    className={cn(
+                      "relative h-5 w-9 shrink-0 rounded-full transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-50",
+                      autoDeploy ? "bg-brand" : "bg-input",
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "absolute left-0.5 top-0.5 size-4 rounded-full bg-white transition-transform duration-150",
+                        autoDeploy ? "translate-x-4" : "translate-x-0",
+                      )}
+                    />
+                  </button>
                 </div>
-              </Card>
+              </section>
             )}
+
+            {project.project_type === "database" && project.db_engine ? (
+              <ManagedDatabasePanel
+                databaseId={project.id}
+                engineLabel={
+                  (
+                    {
+                      postgres: "PostgreSQL",
+                      mysql: "MySQL",
+                      mariadb: "MariaDB",
+                      redis: "Redis",
+                      mongodb: "MongoDB",
+                    } as Record<string, string>
+                  )[project.db_engine] || project.db_engine
+                }
+              />
+            ) : project.project_type !== "database" ? (
+              <AttachDatabasePanel
+                appProjectId={project.id}
+                services={services.map((s) => ({ id: s.id, name: s.name }))}
+                lockedServiceName={scopedService ? scopedService.name : null}
+              />
+            ) : null}
           </TabsContent>
 
           {showProjectTabs && (
-          <TabsContent value="deployments" className={PROJECT_TAB_PANEL}>
-            <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-              <div className="min-w-0 space-y-4 sm:space-y-6 xl:col-span-2">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h3 className="text-lg font-bold flex items-center gap-2 sm:text-xl">
-                    <TerminalIcon className="h-5 w-5 text-amber-500" />
-                    Live Terminal Output
-                  </h3>
+          <TabsContent value="deployments">
+            <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
+              <section className="min-w-0 xl:col-span-2">
+                <div className="mb-3 flex min-h-7 flex-wrap items-center justify-between gap-2">
+                  <h2 className="flex min-w-0 items-baseline gap-2 text-[15px] font-semibold leading-5">
+                    Deployment log
+                    {viewedDeployment && (
+                      <span className="truncate font-mono text-xs font-normal text-muted-foreground">
+                        {viewedDeployment.commit_sha
+                          ? viewedDeployment.commit_sha.slice(0, 7)
+                          : `#${viewedDeployment.id.split("-")[0]}`}
+                        {" · "}
+                        {deploymentTriggerLabel(viewedDeployment.trigger)}
+                      </span>
+                    )}
+                  </h2>
                   {project.status === "building" && (
-                    <div className="flex items-center gap-2 text-xs font-bold text-amber-500 animate-pulse">
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                      BUILDING IN PROGRESS
-                    </div>
+                    <span className="inline-flex items-center gap-2 text-[13px] text-muted-foreground">
+                      <Loader2 className="size-3.5 animate-spin text-warn" />
+                      Building…
+                    </span>
                   )}
                 </div>
                 <Terminal
                   logs={logs}
                   isBuilding={project?.status === "building"}
-                  className="h-[min(55vh,28rem)] sm:h-[550px]"
+                  className="h-[min(55vh,28rem)] sm:h-[540px]"
                 />
-              </div>
+              </section>
 
-              <div className="min-w-0 space-y-4 sm:space-y-6">
-                <div className="flex flex-wrap items-end justify-between gap-2">
-                  <h3 className="text-lg font-bold flex items-center gap-2 sm:text-xl">
-                    <History className="h-5 w-5 text-muted-foreground" />
-                    Recent History
-                  </h3>
+              <section className="min-w-0">
+                <div className="mb-3 flex min-h-7 flex-wrap items-center justify-between gap-2">
+                  <h2 className="text-[15px] font-semibold leading-5">
+                    History
+                  </h2>
                   {deploymentTotal > 0 && (
-                    <span className="text-[11px] tabular-nums text-muted-foreground">
+                    <span className="font-mono text-xs tabular-nums text-muted-foreground">
                       {historyFrom}–{historyTo} of {deploymentTotal}
                     </span>
                   )}
                 </div>
-                <Card
+                <div
                   className={cn(
-                    "divide-y divide-border/40 border-border/40 overflow-hidden relative transition-opacity",
+                    "overflow-hidden rounded-lg border border-border bg-card transition-opacity duration-150",
                     historyLoading && "opacity-60",
                   )}
                 >
-                  {project.status === "building" && (
-                    <div className="absolute top-0 left-0 w-full h-1 bg-secondary overflow-hidden z-10">
-                      <div className="absolute top-0 h-full w-1/3 bg-brand/70 animate-progress-scan" />
-                    </div>
-                  )}
                   {deployments.length === 0 ? (
-                    <div className="text-muted-foreground text-sm py-16 sm:py-20 text-center flex flex-col items-center gap-3 px-4">
-                      <div className="p-4 rounded-full bg-secondary/50">
-                        <History className="h-8 w-8 text-muted-foreground/30" />
-                      </div>
-                      No deployments found
+                    <div className="px-4 py-14 text-center">
+                      <p className="text-[15px] font-semibold">
+                        No deployments yet
+                      </p>
+                      <p className="mx-auto mt-1 max-w-sm text-[13.5px] text-muted-foreground">
+                        Deploy the project to build it and see its history here.
+                      </p>
                     </div>
                   ) : (
-                    deployments.map((deployment) => {
+                    <>
+                    <p className="border-b border-border px-4 py-2 text-xs text-muted-foreground">
+                      Select a deployment to show its log.
+                    </p>
+                    <ul className="divide-y divide-border">
+                    {deployments.map((deployment) => {
                       const isViewing = viewingDeploymentId === deployment.id;
-                      const isInProgress = deployment.status === "in_progress";
+                      const meta =
+                        DEPLOY_STATUS[deployment.status] || DEPLOY_STATUS.pending;
+                      const isLive = deployment.id === latestSuccessId;
+                      const duration = formatDuration(
+                        deployment.created_at,
+                        deployment.finished_at,
+                      );
+                      const started = new Date(deployment.created_at);
                       return (
-                        <div
+                        <li
                           key={deployment.id}
                           className={cn(
-                            "flex min-w-0 cursor-pointer flex-col gap-2 px-3 py-3 transition-colors sm:px-5 sm:py-4 lg:hover:bg-secondary/40",
-                            isViewing && "bg-secondary/30",
-                            isInProgress && isViewing && "animate-pulse",
+                            "relative grid min-w-0 cursor-pointer grid-cols-[auto_minmax(0,1fr)_auto] gap-x-3 px-4 py-3 transition-colors duration-150",
+                            isViewing
+                              ? "bg-secondary/70"
+                              : "hover:bg-secondary/50",
                           )}
                           onClick={() => {
                             setLogs(
@@ -1930,105 +1865,89 @@ export default function ProjectDetail() {
                             });
                           }}
                         >
-                          <div className="flex items-start justify-between gap-2 min-w-0">
-                            <div className="flex flex-col gap-1 min-w-0">
-                              <span className="font-bold text-sm tracking-tight truncate">
-                                {deployment.trigger === "webhook"
-                                  ? "Auto-Deploy (GitHub)"
-                                  : deployment.trigger === "restart"
-                                    ? "Restart Action"
-                                    : deployment.trigger === "stop"
-                                      ? "Stop Action"
-                                      : deployment.trigger === "redeploy"
-                                        ? "Manual Redeploy"
-                                        : deployment.trigger === "rollback"
-                                          ? "Restore Previous"
-                                          : "Manual Deployment"}
+                          <span
+                            aria-hidden="true"
+                            className={cn(
+                              "mt-1.5 size-2 shrink-0 rounded-full",
+                              meta.dot,
+                            )}
+                          />
+                          <div className="min-w-0">
+                            <div className="flex min-w-0 items-center gap-2">
+                              <span className="truncate text-sm font-medium">
+                                {deploymentTriggerLabel(deployment.trigger)}
                               </span>
-                              <div className="flex flex-wrap items-center gap-1.5">
-                                <span
-                                  className={cn(
-                                    "text-[10px] font-bold px-1.5 py-0.5 rounded-md uppercase tracking-wider",
-                                    deployment.status === "success"
-                                      ? "bg-emerald-500/10 text-emerald-500"
-                                      : deployment.status === "failed"
-                                        ? "bg-red-500/10 text-red-500"
-                                        : deployment.status === "cancelled"
-                                          ? "bg-slate-500/10 text-slate-500"
-                                        : "bg-amber-500/10 text-amber-500",
-                                  )}
-                                >
-                                  {deployment.status}
+                              {isLive && (
+                                <span className="shrink-0 rounded-sm border border-border px-1.5 text-xs leading-5 text-muted-foreground">
+                                  Live
                                 </span>
-                                <span className="text-[10px] font-mono text-muted-foreground opacity-60">
-                                  # {deployment.id.split("-")[0]}
-                                </span>
-                              </div>
-                            </div>
-                            <div className="flex shrink-0 flex-col items-end gap-1">
-                              <span className="text-[10px] font-medium text-muted-foreground flex items-center gap-1 sm:gap-1.5 bg-secondary/30 px-1.5 sm:px-2 py-0.5 rounded-full border border-border/20 whitespace-nowrap">
-                                <Clock className="h-3 w-3" />
-                                {new Date(
-                                  deployment.created_at,
-                                ).toLocaleTimeString([], {
-                                  hour: "2-digit",
-                                  minute: "2-digit",
-                                })}
-                              </span>
-                              <span className="text-[10px] text-muted-foreground/60 flex items-center gap-1 sm:gap-1.5 whitespace-nowrap">
-                                <Calendar className="h-3 w-3" />
-                                {new Date(
-                                  deployment.created_at,
-                                ).toLocaleDateString([], {
-                                  month: "short",
-                                  day: "numeric",
-                                  year: "numeric",
-                                })}
-                              </span>
-                              {canRestoreDeployment(deployment) && (
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  size="sm"
-                                  className="mt-1 h-7 gap-1 px-2 text-[10px] font-semibold"
-                                  disabled={
-                                    actionLoading ||
-                                    rollbackLoading ||
-                                    project.status === "building"
-                                  }
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setRollbackPassword("");
-                                    setRollbackTarget(deployment);
-                                  }}
-                                >
-                                  <Undo2 className="h-3 w-3" />
-                                  Restore
-                                </Button>
                               )}
                             </div>
-                          </div>
-                          <p className="text-[11px] text-muted-foreground line-clamp-1 italic hidden sm:block">
-                            {isViewing
-                              ? "Showing in terminal"
-                              : "Click to show logs in terminal"}
-                          </p>
-
-                          {deployment.commit_message && (
-                            <div className="mt-1 sm:mt-2 flex items-center gap-2 px-2.5 py-1.5 sm:px-3 sm:py-2 bg-secondary/30 rounded-lg border border-border/20 min-w-0">
-                              <GitBranch className="h-3 w-3 shrink-0 text-cyan-500" />
-                              <span className="text-[10px] font-medium text-foreground/80 line-clamp-1 min-w-0">
-                                {deployment.commit_message}
+                            <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                              <span className="font-mono">
+                                {deployment.commit_sha
+                                  ? deployment.commit_sha.slice(0, 7)
+                                  : `#${deployment.id.split("-")[0]}`}
                               </span>
-                            </div>
-                          )}
-                        </div>
+                              <span className="text-subtle"> · </span>
+                              {meta.label}
+                              {duration && (
+                                <>
+                                  <span className="text-subtle"> · </span>
+                                  <span className="font-mono">{duration}</span>
+                                </>
+                              )}
+                            </p>
+                            {deployment.commit_message && (
+                              <p className="mt-0.5 truncate text-[13px] text-foreground/80">
+                                {deployment.commit_message}
+                              </p>
+                            )}
+                          </div>
+                          <div className="flex shrink-0 flex-col items-end gap-0.5 text-right">
+                            <span className="font-mono text-xs tabular-nums text-muted-foreground">
+                              {started.toLocaleTimeString([], {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
+                            </span>
+                            <span className="whitespace-nowrap text-xs text-subtle">
+                              {started.toLocaleDateString([], {
+                                month: "short",
+                                day: "numeric",
+                                year: "numeric",
+                              })}
+                            </span>
+                            {canRestoreDeployment(deployment) && (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="-mr-2 mt-1 text-muted-foreground"
+                                disabled={
+                                  actionLoading ||
+                                  rollbackLoading ||
+                                  project.status === "building"
+                                }
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setRollbackPassword("");
+                                  setRollbackTarget(deployment);
+                                }}
+                              >
+                                Restore
+                              </Button>
+                            )}
+                          </div>
+                        </li>
                       );
-                    })
+                    })}
+                    </ul>
+                    </>
                   )}
 
                   {deploymentTotal > HISTORY_PAGE_SIZE && (
-                    <div className="p-3 sm:p-4 bg-secondary/20 flex flex-wrap items-center justify-between gap-2 border-t border-border/40">
+                    <div className="flex items-center justify-between gap-2 border-t border-border px-2 py-1.5">
                       <Button
                         variant="ghost"
                         size="sm"
@@ -2037,14 +1956,14 @@ export default function ProjectDetail() {
                           e.stopPropagation();
                           goHistoryPage(historyPage - 1);
                         }}
-                        className="text-xs font-bold gap-1.5 hover:bg-cyan-500/10 hover:text-cyan-500 transition-all"
+                        className="text-muted-foreground"
                         aria-label="Previous history page"
                       >
-                        <ChevronLeft className="h-3.5 w-3.5" />
-                        Prev
+                        <ChevronLeft className="size-4" />
+                        Previous
                       </Button>
-                      <span className="text-[11px] font-medium tabular-nums text-muted-foreground order-first w-full text-center sm:order-none sm:w-auto">
-                        Page {historyPage + 1} of {historyPageCount}
+                      <span className="font-mono text-xs tabular-nums text-muted-foreground">
+                        {historyPage + 1} / {historyPageCount}
                       </span>
                       <Button
                         variant="ghost"
@@ -2056,39 +1975,38 @@ export default function ProjectDetail() {
                           e.stopPropagation();
                           goHistoryPage(historyPage + 1);
                         }}
-                        className="text-xs font-bold gap-1.5 hover:bg-cyan-500/10 hover:text-cyan-500 transition-all ml-auto sm:ml-0"
+                        className="text-muted-foreground"
                         aria-label="Next history page"
                       >
                         Next
-                        <ChevronRight className="h-3.5 w-3.5" />
+                        <ChevronRight className="size-4" />
                       </Button>
                     </div>
                   )}
-                </Card>
-              </div>
+                </div>
+              </section>
             </div>
           </TabsContent>
           )}
 
           {!isDatabase && (
-          <TabsContent value="env" className={PROJECT_TAB_PANEL}>
-            <div>
-              <h3 className="flex items-center gap-2 text-xl font-semibold tracking-tight">
-                <Key className="h-5 w-5 text-muted-foreground" />
-                {workspace === "service" && selectedService
-                  ? `Environment · ${selectedService.name}`
+          <TabsContent value="env" className="space-y-4">
+            <SectionHeading
+              title={
+                scopedService
+                  ? `Environment · ${scopedService.name}`
                   : multiService
                     ? "Shared environment"
-                    : "Environment"}
-              </h3>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {workspace === "service" && selectedService
+                    : "Environment"
+              }
+              description={
+                scopedService
                   ? "Only this service’s build and runtime. Overrides shared keys with the same name."
                   : multiService
                     ? "Injected into every service. Open a service for app-specific secrets."
-                    : "Secrets and configuration for this project’s build and runtime."}
-              </p>
-            </div>
+                    : "Secrets and configuration for this project’s build and runtime."
+              }
+            />
             <EnvVarsManager
               key={`${projectId}:${
                 workspace === "service" && selectedService
@@ -2107,117 +2025,130 @@ export default function ProjectDetail() {
           )}
 
           {!isDatabase && showProjectTabs && (
-          <TabsContent value="build" className={PROJECT_TAB_PANEL}>
-              <div>
-                <h3 className="text-xl font-bold flex items-center gap-2">
-                  <Box className="h-5 w-5 text-orange-500" />
-                  Build Settings
-                </h3>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Configure the builder, source directory, and container port used by deployments.
-                </p>
-              </div>
+          <TabsContent value="build" className="space-y-5">
+              <section className="rounded-lg border border-border bg-card">
+                <div className="border-b border-border px-4 py-3">
+                  <h2 className="text-[15px] font-semibold leading-5">
+                    Build settings
+                  </h2>
+                  <p className="mt-0.5 text-[13px] text-muted-foreground">
+                    Builder, source directory, and container port used by deployments.
+                  </p>
+                </div>
 
-              <Card className="p-6 space-y-6 border-border/40">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  {([
-                    ["auto", "Auto", "Detect Dockerfile or app manifests"],
-                    ["dockerfile", "Dockerfile", "Build with a specific Dockerfile"],
-                    ["railpack", "Railpack", "Generate an image from manifests"],
-                  ] as const).map(([value, label, description]) => (
-                    <button
-                      key={value}
-                      type="button"
-                      onClick={() => setBuildType(value)}
-                      className={cn(
-                        "p-4 rounded-xl border text-left transition-all",
-                        buildType === value
-                          ? "border-orange-500/40 bg-orange-500/5"
-                          : "border-border/40 hover:bg-secondary/30",
-                      )}
-                    >
-                      <span className="font-bold text-sm">{label}</span>
-                      <span className="block text-[11px] text-muted-foreground mt-1">
-                        {description}
+                <div className="space-y-5 p-4 sm:p-5">
+                  <fieldset>
+                    <legend className="mb-1.5 text-[13px] font-medium">
+                      Builder
+                    </legend>
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                      {([
+                        ["auto", "Auto", "Detect Dockerfile or app manifests"],
+                        ["dockerfile", "Dockerfile", "Build with a specific Dockerfile"],
+                        ["railpack", "Railpack", "Generate an image from manifests"],
+                      ] as const).map(([value, label, description]) => (
+                        <button
+                          key={value}
+                          type="button"
+                          onClick={() => setBuildType(value)}
+                          className={cn(
+                            "rounded-lg border bg-card p-3 text-left transition-colors duration-150",
+                            buildType === value
+                              ? "border-brand ring-1 ring-brand"
+                              : "border-input hover:bg-secondary/50",
+                          )}
+                        >
+                          <span className="block text-sm font-medium text-foreground">
+                            {label}
+                          </span>
+                          <span className="mt-0.5 block text-xs text-muted-foreground">
+                            {description}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </fieldset>
+
+                  <div className="grid max-w-2xl grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div className="space-y-1.5">
+                      <label className="text-[13px] font-medium">Base directory</label>
+                      <Input
+                        value={baseDirectory}
+                        onChange={(e) => setBaseDirectory(e.target.value)}
+                        placeholder="."
+                        className="font-mono"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Relative to the repository root, such as{" "}
+                        <code className="font-mono">apps/web</code>.
+                      </p>
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[13px] font-medium">Internal port</label>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={65535}
+                        value={internalPort}
+                        onChange={(e) => setInternalPort(Number(e.target.value))}
+                        className="font-mono"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Port the application listens on inside its container.
+                      </p>
+                    </div>
+
+                    {buildType === "dockerfile" && (
+                      <div className="space-y-1.5 sm:col-span-2">
+                        <label className="text-[13px] font-medium">Dockerfile path</label>
+                        <Input
+                          value={dockerfilePath}
+                          onChange={(e) => setDockerfilePath(e.target.value)}
+                          placeholder="Dockerfile"
+                          className="font-mono"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Path relative to the base directory.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  <label className="flex max-w-2xl cursor-pointer items-start gap-3">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 size-4 shrink-0 accent-brand"
+                      checked={publishHostPort}
+                      onChange={(e) => setPublishHostPort(e.target.checked)}
+                    />
+                    <span>
+                      <span className="block text-[13px] font-medium">
+                        Publish host ports
                       </span>
-                    </button>
-                  ))}
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Base Directory</label>
-                    <Input
-                      value={baseDirectory}
-                      onChange={(e) => setBaseDirectory(e.target.value)}
-                      placeholder="."
-                      className="font-mono bg-secondary/20"
-                    />
-                    <p className="text-[11px] text-muted-foreground">
-                      Relative to the repository root, such as <code>apps/web</code>.
-                    </p>
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Internal Port</label>
-                    <Input
-                      type="number"
-                      min={1}
-                      max={65535}
-                      value={internalPort}
-                      onChange={(e) => setInternalPort(Number(e.target.value))}
-                      className="font-mono bg-secondary/20"
-                    />
-                    <p className="text-[11px] text-muted-foreground">
-                      Port exposed by the application inside its container.
-                    </p>
-                  </div>
-                </div>
-
-                {buildType === "dockerfile" && (
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Dockerfile Path</label>
-                    <Input
-                      value={dockerfilePath}
-                      onChange={(e) => setDockerfilePath(e.target.value)}
-                      placeholder="Dockerfile"
-                      className="font-mono bg-secondary/20"
-                    />
-                    <p className="text-[11px] text-muted-foreground">
-                      Path relative to the base directory.
-                    </p>
-                  </div>
-                )}
-
-                <label className="flex items-start gap-3 rounded-xl border border-border/40 p-4 cursor-pointer hover:bg-secondary/20">
-                  <input
-                    type="checkbox"
-                    className="mt-1"
-                    checked={publishHostPort}
-                    onChange={(e) => setPublishHostPort(e.target.checked)}
-                  />
-                  <span>
-                    <span className="block text-sm font-medium">Publish host ports</span>
-                    <span className="block text-[11px] text-muted-foreground mt-1">
-                      Off by default. Traffic should use your domain via nginx-proxy on an
-                      isolated project network. Enable only if you need a raw host port from the pool.
+                      <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">
+                        Off by default. Traffic should use your domain via nginx-proxy on an
+                        isolated project network. Enable only if you need a raw host port from the pool.
+                      </span>
                     </span>
-                  </span>
-                </label>
+                  </label>
+                </div>
 
-                <div className="flex justify-end">
+                <div className="flex justify-end border-t border-border px-4 py-3">
                   <Button onClick={handleSaveBuild} disabled={buildSaving}>
-                    {buildSaving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-                    Save Build Settings
+                    {buildSaving && <Loader2 className="animate-spin" />}
+                    Save build settings
                   </Button>
                 </div>
-              </Card>
+              </section>
 
-              <Card className="p-6 border-border/40">
-                <div className="flex items-center justify-between gap-4 mb-5">
-                  <div>
-                    <h4 className="font-bold">Detected Build</h4>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      DockLift&apos;s current resolution for this source.
+              <section className="rounded-lg border border-border bg-card">
+                <div className="flex items-start justify-between gap-4 border-b border-border px-4 py-3">
+                  <div className="min-w-0">
+                    <h2 className="text-[15px] font-semibold leading-5">
+                      Detected build
+                    </h2>
+                    <p className="mt-0.5 text-[13px] text-muted-foreground">
+                      How Docklift currently resolves this source.
                     </p>
                   </div>
                   <Button
@@ -2226,81 +2157,82 @@ export default function ProjectDetail() {
                     onClick={fetchBuildDetection}
                     disabled={buildDetecting}
                   >
-                    <RefreshCw className={cn("h-3.5 w-3.5 mr-2", buildDetecting && "animate-spin")} />
-                    Detect Again
+                    <RefreshCw className={cn("size-3.5", buildDetecting && "animate-spin")} />
+                    Detect again
                   </Button>
                 </div>
                 {buildDetection ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="p-4 rounded-xl bg-secondary/30 border border-border/40">
-                      <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                        Requested
-                      </span>
-                      <p className="font-bold capitalize mt-1">{buildDetection.requestedType}</p>
-                    </div>
-                    <div className="p-4 rounded-xl bg-orange-500/5 border border-orange-500/20">
-                      <span className="text-[10px] font-bold uppercase tracking-widest text-orange-500">
-                        Resolved
-                      </span>
-                      <p className="font-bold capitalize mt-1">{buildDetection.resolvedType}</p>
-                    </div>
-                    <div className="sm:col-span-2 text-xs text-muted-foreground space-y-2">
-                      <p>
-                        Base: <code>{buildDetection.baseDirectory}</code>
-                        {buildDetection.dockerfilePath && (
-                          <> · Dockerfile: <code>{buildDetection.dockerfilePath}</code></>
-                        )}
-                      </p>
-                      <p>
-                        {buildDetection.detected}
-                        {buildDetection.manifests.length > 0 && (
-                          <> Manifests: {buildDetection.manifests.join(", ")}</>
-                        )}
-                      </p>
-                    </div>
-                  </div>
+                  <dl className="divide-y divide-border text-[13px]">
+                    {(
+                      [
+                        ["Requested", <span className="capitalize">{buildDetection.requestedType}</span>],
+                        ["Resolved", <span className="font-medium capitalize">{buildDetection.resolvedType}</span>],
+                        ["Base directory", <code className="font-mono">{buildDetection.baseDirectory}</code>],
+                        ...(buildDetection.dockerfilePath
+                          ? [["Dockerfile", <code className="font-mono">{buildDetection.dockerfilePath}</code>]]
+                          : []),
+                        ["Detected", <span className="text-muted-foreground">{buildDetection.detected}</span>],
+                        ...(buildDetection.manifests.length > 0
+                          ? [["Manifests", <span className="font-mono">{buildDetection.manifests.join(", ")}</span>]]
+                          : []),
+                      ] as Array<[string, ReactNode]>
+                    ).map(([label, value]) => (
+                      <div
+                        key={label}
+                        className="grid gap-1 px-4 py-2.5 sm:grid-cols-[160px_minmax(0,1fr)] sm:gap-4"
+                      >
+                        <dt className="text-muted-foreground">{label}</dt>
+                        <dd className="min-w-0 break-words text-foreground">{value}</dd>
+                      </div>
+                    ))}
+                  </dl>
                 ) : (
-                  <div className="py-8 text-center text-sm text-muted-foreground">
+                  <div className="flex items-center justify-center gap-2 px-4 py-10 text-[13px] text-muted-foreground">
+                    {buildDetecting && <Loader2 className="size-4 animate-spin" />}
                     {buildDetecting ? "Detecting build configuration…" : "No detection result available."}
                   </div>
                 )}
-              </Card>
+              </section>
           </TabsContent>
           )}
 
           {!isDatabase && showServiceTabs && (
-          <TabsContent value="storage" className={PROJECT_TAB_PANEL}>
-              <div>
-                <h3 className="flex items-center gap-2 text-xl font-semibold tracking-tight">
-                  <HardDrive className="h-5 w-5 text-muted-foreground" />
-                  {workspace === "service" && selectedService
-                    ? `Storage · ${selectedService.name}`
-                    : "Persistent Storage"}
-                </h3>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Attach Docker volumes to keep application data across redeployments.
-                  Deploy after changing mounts.
-                  {workspace === "service" && selectedService
-                    ? ` Mounts below belong to ${selectedService.name} only.`
-                    : ""}
+          <TabsContent value="storage" className="space-y-5">
+              <SectionHeading
+                title={
+                  scopedService
+                    ? `Storage · ${scopedService.name}`
+                    : "Persistent storage"
+                }
+                description={
+                  <>
+                    Attach Docker volumes to keep application data across redeployments.
+                    Deploy after changing mounts.
+                    {scopedService
+                      ? ` Mounts below belong to ${scopedService.name} only.`
+                      : ""}
+                  </>
+                }
+              />
+
+              <div className="space-y-1 rounded-md border border-info/40 bg-secondary/60 px-3 py-2.5 text-[13px] leading-5 text-muted-foreground">
+                <p>
+                  An external <code className="font-mono text-foreground">DATABASE_URL</code> points
+                  to a separate database and is unaffected by these mounts.
+                </p>
+                <p>
+                  SQLite files and user uploads need a mount at the directory where the app writes
+                  them. Application migrations may still modify or remove stored data, so keep backups.
                 </p>
               </div>
 
-              <Card className="p-5 border-blue-500/20 bg-blue-500/5">
-                <div className="flex gap-3">
-                  <Info className="h-5 w-5 text-blue-500 shrink-0 mt-0.5" />
-                  <div className="text-xs text-muted-foreground leading-relaxed space-y-1">
-                    <p>An external <code>DATABASE_URL</code> points to a separate database and is unaffected by these mounts.</p>
-                    <p>SQLite files and user uploads need a mount at the directory where the app writes them. Application migrations may still modify or remove stored data, so keep backups.</p>
-                  </div>
+              <section className="rounded-lg border border-border bg-card">
+                <div className="border-b border-border px-4 py-3">
+                  <h2 className="text-[15px] font-semibold leading-5">Attach storage</h2>
                 </div>
-              </Card>
-
-              <Card className="p-6 space-y-5 border-border/40">
-                <h4 className="font-bold">Attach Storage</h4>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Service</label>
+                <div className="grid grid-cols-1 gap-4 p-4 sm:grid-cols-3 sm:p-5">
+                  <div className="space-y-1.5">
+                    <label className="text-[13px] font-medium">Service</label>
                     <select
                       value={storageService}
                       onChange={(e) => setStorageService(e.target.value)}
@@ -2309,7 +2241,7 @@ export default function ProjectDetail() {
                         workspace === "service" ||
                         !multiService
                       }
-                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                      className="h-9 w-full rounded-md border border-input bg-card px-3 text-sm transition-colors focus-visible:border-brand focus-visible:outline-hidden focus-visible:ring-3 focus-visible:ring-brand/20 disabled:opacity-60 pointer-coarse:h-10"
                     >
                       {services.length === 0 && <option value="">No services available</option>}
                       {services.map((service) => (
@@ -2317,39 +2249,44 @@ export default function ProjectDetail() {
                       ))}
                     </select>
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Label</label>
+                  <div className="space-y-1.5">
+                    <label className="text-[13px] font-medium">Label</label>
                     <Input
                       value={storageName}
                       onChange={(e) => setStorageName(e.target.value)}
                       placeholder="uploads"
                     />
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Absolute Mount Path</label>
+                  <div className="space-y-1.5">
+                    <label className="text-[13px] font-medium">Mount path</label>
                     <Input
                       value={storagePath}
                       onChange={(e) => setStoragePath(e.target.value)}
                       placeholder="/app/uploads"
                       className="font-mono"
                     />
+                    <p className="text-xs text-muted-foreground">Absolute path inside the container.</p>
                   </div>
                 </div>
-                <div className="flex justify-end">
+                <div className="flex justify-end border-t border-border px-4 py-3">
                   <Button
                     onClick={handleAddStorage}
                     disabled={storageSaving || services.length === 0}
                   >
-                    {storageSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Plus className="h-4 w-4 mr-2" />}
-                    Attach Storage
+                    {storageSaving && <Loader2 className="animate-spin" />}
+                    Attach storage
                   </Button>
                 </div>
-              </Card>
+              </section>
 
-              <div className="space-y-3">
-                <h4 className="font-semibold">Attached Mounts</h4>
+              <section className="rounded-lg border border-border bg-card">
+                <div className="border-b border-border px-4 py-3">
+                  <h2 className="text-[15px] font-semibold leading-5">Attached mounts</h2>
+                </div>
                 {storageLoading ? (
-                  <div className="flex justify-center py-10"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+                  <div className="flex justify-center py-10">
+                    <Loader2 className="size-5 animate-spin text-subtle" />
+                  </div>
                 ) : (() => {
                   const visibleMounts =
                     workspace === "service" && selectedService
@@ -2359,107 +2296,104 @@ export default function ProjectDetail() {
                       : storageMounts;
                   if (visibleMounts.length === 0) {
                     return (
-                      <Card className="border-dashed p-10 text-center text-sm text-muted-foreground">
-                        No persistent storage attached
-                        {workspace === "service" && selectedService
-                          ? ` for ${selectedService.name}`
-                          : ""}
-                        .
-                      </Card>
+                      <div className="px-4 py-12 text-center">
+                        <p className="text-[15px] font-semibold">
+                          No persistent storage attached
+                          {workspace === "service" && selectedService
+                            ? ` for ${selectedService.name}`
+                            : ""}
+                        </p>
+                        <p className="mx-auto mt-1 max-w-sm text-[13.5px] text-muted-foreground">
+                          Attach a volume above, then deploy to mount it.
+                        </p>
+                      </div>
                     );
                   }
-                  return visibleMounts.map((mount) => (
-                  <Card key={mount.id} className="border-border p-4 shadow-none">
-                    <div className="flex items-center justify-between gap-4">
-                      <div className="flex min-w-0 items-center gap-3">
-                        <div className="rounded-lg border border-border bg-secondary/40 p-2.5">
-                          <HardDrive className="h-5 w-5 text-muted-foreground" />
-                        </div>
-                        <div className="min-w-0">
-                          <p className="truncate font-semibold">{mount.display_name || mount.name}</p>
-                          <p className="truncate text-xs text-muted-foreground">
-                            {mount.service_name} · <code>{mount.mount_path}</code>
-                          </p>
-                        </div>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setStorageToDelete(mount)}
-                        className="shrink-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                        title="Delete storage"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </Card>
-                  ));
+                  return (
+                    <ul className="divide-y divide-border">
+                      {visibleMounts.map((mount) => (
+                        <li
+                          key={mount.id}
+                          className="group flex min-h-11 items-center justify-between gap-4 px-4 py-2.5 transition-colors duration-150 hover:bg-secondary/50"
+                        >
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium">
+                              {mount.display_name || mount.name}
+                            </p>
+                            <p className="truncate font-mono text-xs text-muted-foreground">
+                              {mount.service_name}
+                              <span className="text-subtle"> · </span>
+                              {mount.mount_path}
+                            </p>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => setStorageToDelete(mount)}
+                            className="shrink-0 text-subtle opacity-60 hover:text-danger group-hover:opacity-100 focus-visible:opacity-100"
+                            title="Delete storage"
+                          >
+                            <Trash2 />
+                          </Button>
+                        </li>
+                      ))}
+                    </ul>
+                  );
                 })()}
-              </div>
+              </section>
           </TabsContent>
           )}
 
           {!isDatabase && showProjectTabs && (
-          <TabsContent value="source" className={PROJECT_TAB_PANEL}>
-            <Card className="overflow-hidden rounded-2xl border-border/60">
+          <TabsContent value="source">
+            <section className="overflow-hidden rounded-lg border border-border bg-card">
               <button
                 type="button"
                 onClick={() => setSourceFilesOpen((open) => !open)}
                 aria-expanded={sourceFilesOpen}
-                className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left transition-colors hover:bg-secondary/40 sm:px-5"
+                className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors duration-150 hover:bg-secondary/50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
               >
-                <span className="flex min-w-0 items-center gap-2">
-                  <FileCode className="h-5 w-5 shrink-0 text-muted-foreground" />
-                  <span className="truncate text-base font-semibold tracking-tight sm:text-lg">
-                    Project Files & Source
+                <span className="min-w-0">
+                  <span className="block truncate text-[15px] font-semibold leading-5">
+                    Project files
+                  </span>
+                  <span className="mt-0.5 block text-[13px] text-muted-foreground">
+                    Source uploaded or cloned for this project.
                   </span>
                 </span>
-                <span
-                  className={cn(
-                    "flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-border/60 bg-secondary/40 text-muted-foreground transition-colors",
-                    sourceFilesOpen && "border-brand/30 bg-brand/10 text-brand",
-                  )}
+                <ChevronDown
                   aria-hidden
-                >
-                  {sourceFilesOpen ? (
-                    <ChevronDown className="h-4 w-4" />
-                  ) : (
-                    <ChevronRight className="h-4 w-4" />
+                  className={cn(
+                    "size-4 shrink-0 text-subtle transition-transform duration-150",
+                    !sourceFilesOpen && "-rotate-90",
                   )}
-                </span>
+                />
               </button>
               {sourceFilesOpen && (
-                <div className="border-t border-border/60">
+                <div className="border-t border-border">
                   <FileTree files={files} onFileEdit={openFileEditor} />
                 </div>
               )}
-            </Card>
+            </section>
           </TabsContent>
           )}
 
           {!isDatabase && showServiceTabs && (
-          <TabsContent value="domains" className={PROJECT_TAB_PANEL}>
+          <TabsContent value="domains" className="space-y-5">
             <DnsGuideCard serverIP={serverIP} />
 
             <div className="space-y-3">
-              <div>
-                <h3 className="flex items-center gap-2 text-lg font-semibold tracking-tight sm:text-xl">
-                  <Globe className="h-5 w-5 text-muted-foreground" />
-                  {workspace === "service" && selectedService
-                    ? `Domain · ${selectedService.name}`
-                    : "Service domain"}
-                </h3>
-                <p className="mt-1 text-xs text-muted-foreground sm:text-sm">
-                  Belongs to this service. Saves the hostname, wires the reverse
-                  proxy, and requests a certificate.
-                </p>
-              </div>
+              <SectionHeading
+                title={
+                  scopedService
+                    ? `Domains · ${scopedService.name}`
+                    : "Service domains"
+                }
+                description="Belongs to this service. Saves the hostname, wires the reverse proxy, and requests a certificate."
+              />
 
               <div className="grid gap-4">
-                {(workspace === "service" && selectedService
-                  ? [selectedService]
-                  : services
-                ).map((svc) => (
+                {(scopedService ? [scopedService] : services).map((svc) => (
                   <ServiceDomainCard
                     key={svc.id}
                     service={svc}
@@ -2470,8 +2404,11 @@ export default function ProjectDetail() {
                 ))}
 
                 {services.length === 0 && (
-                  <div className="rounded-xl border border-dashed border-border bg-secondary/20 py-12 text-center text-muted-foreground">
-                    No services found for this project.
+                  <div className="rounded-lg border border-border bg-card py-14 text-center">
+                    <p className="text-[15px] font-semibold">No services found</p>
+                    <p className="mx-auto mt-1 max-w-sm text-[13.5px] text-muted-foreground">
+                      Deploy the project to create its services, then add a domain.
+                    </p>
                   </div>
                 )}
               </div>
@@ -2480,19 +2417,19 @@ export default function ProjectDetail() {
           )}
 
           {showServiceTabs && (
-          <TabsContent value="logs" className={PROJECT_TAB_PANEL}>
-            <div>
-              <h3 className="text-lg font-semibold tracking-tight">
-                {workspace === "service" && selectedService
-                  ? `Runtime logs · ${selectedService.name}`
-                  : "Runtime logs"}
-              </h3>
-              <p className="mt-0.5 text-sm text-muted-foreground">
-                {workspace === "service"
+          <TabsContent value="logs" className="space-y-4">
+            <SectionHeading
+              title={
+                scopedService
+                  ? `Runtime logs · ${scopedService.name}`
+                  : "Runtime logs"
+              }
+              description={
+                workspace === "service"
                   ? "Live container output for this service only — not the whole project."
-                  : "Live container output for this project’s service."}
-              </p>
-            </div>
+                  : "Live container output for this project’s service."
+              }
+            />
             <ContainerLogsPanel
               projectId={projectId}
               services={
@@ -2526,32 +2463,21 @@ export default function ProjectDetail() {
       )}
 
       <Dialog open={isConfirmOpen} onOpenChange={setIsConfirmOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              {actionDetails.icon}
-              {actionDetails.title}
-            </DialogTitle>
-            <DialogDescription className="pt-2">
-              {actionDetails.description}
-            </DialogDescription>
+            <DialogTitle>{actionDetails.title}</DialogTitle>
+            <DialogDescription>{actionDetails.description}</DialogDescription>
           </DialogHeader>
-          <DialogFooter className="gap-2 sm:gap-0">
+          <DialogFooter>
             <Button variant="outline" onClick={() => setIsConfirmOpen(false)}>
               Cancel
             </Button>
             <Button
-              variant="bare"
-              className={cn(
-                "h-10 px-4 text-sm font-medium",
-                actionDetails.confirmClassName,
-              )}
+              variant={actionDetails.confirmVariant}
               onClick={executeAction}
               disabled={actionLoading}
             >
-              {actionLoading ? (
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              ) : null}
+              {actionLoading && <Loader2 className="animate-spin" />}
               {actionDetails.confirmText}
             </Button>
           </DialogFooter>
@@ -2566,32 +2492,34 @@ export default function ProjectDetail() {
           }
         }}
       >
-        <DialogContent className="sm:max-w-md">
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Undo2 className="h-5 w-5 text-amber-600" />
-              Restore previous deployment
-            </DialogTitle>
-            <DialogDescription className="pt-2">
+            <DialogTitle>Restore previous deployment</DialogTitle>
+            <DialogDescription>
               Reverts runtime containers to images from deployment{" "}
-              <span className="font-mono">
+              <span className="font-mono text-foreground">
                 #{rollbackTarget?.id.split("-")[0]}
               </span>
-              {rollbackTarget?.commit_sha
-                ? ` and resets git to ${rollbackTarget.commit_sha.slice(0, 12)}`
-                : ""}
+              {rollbackTarget?.commit_sha ? (
+                <>
+                  {" "}and resets git to{" "}
+                  <span className="font-mono text-foreground">
+                    {rollbackTarget.commit_sha.slice(0, 12)}
+                  </span>
+                </>
+              ) : null}
               . Does not rebuild. Requires your account password.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-2 py-2">
-            <label className="text-xs font-semibold text-muted-foreground">
-              Confirm with account password
+          <div className="space-y-1.5">
+            <label className="text-[13px] font-medium">
+              Account password
             </label>
             <Input
               type="password"
               value={rollbackPassword}
               onChange={(e) => setRollbackPassword(e.target.value)}
-              placeholder="Your DockLift password"
+              placeholder="Your Docklift password"
               autoComplete="current-password"
               disabled={rollbackLoading}
               onKeyDown={(e) => {
@@ -2602,7 +2530,7 @@ export default function ProjectDetail() {
               }}
             />
           </div>
-          <DialogFooter className="gap-2 sm:gap-0">
+          <DialogFooter>
             <Button
               variant="outline"
               disabled={rollbackLoading}
@@ -2616,11 +2544,8 @@ export default function ProjectDetail() {
             <Button
               onClick={() => void handleRollback()}
               disabled={!rollbackPassword.trim() || rollbackLoading}
-              className="bg-amber-600 hover:bg-amber-700 text-white"
             >
-              {rollbackLoading && (
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              )}
+              {rollbackLoading && <Loader2 className="animate-spin" />}
               Restore previous
             </Button>
           </DialogFooter>
@@ -2630,31 +2555,51 @@ export default function ProjectDetail() {
         open={!!storageToDelete}
         onOpenChange={(open) => !open && setStorageToDelete(null)}
       >
-        <DialogContent className="sm:max-w-md">
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Trash2 className="h-6 w-6 text-red-600" />
-              Delete Persistent Storage
-            </DialogTitle>
-            <DialogDescription className="pt-2">
-              This permanently deletes the <strong>{storageToDelete?.display_name || storageToDelete?.name}</strong> mount and its Docker volume. Stop the project first. Stored files cannot be recovered.
+            <DialogTitle>Delete persistent storage</DialogTitle>
+            <DialogDescription>
+              This permanently deletes the{" "}
+              <span className="font-mono text-foreground">
+                {storageToDelete?.display_name || storageToDelete?.name}
+              </span>{" "}
+              mount and its Docker volume. Stop the project first. Stored files cannot be recovered.
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter className="gap-2 sm:gap-0">
+          <DialogFooter>
             <Button variant="outline" onClick={() => setStorageToDelete(null)}>
               Cancel
             </Button>
             <Button
+              variant="destructive"
               onClick={handleDeleteStorage}
               disabled={storageSaving}
-              className="bg-red-600 hover:bg-red-700 text-white"
             >
-              {storageSaving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-              Delete Storage and Data
+              {storageSaving && <Loader2 className="animate-spin" />}
+              Delete storage and data
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
     </>
+  );
+}
+
+function SectionHeading({
+  title,
+  description,
+}: {
+  title: string;
+  description?: ReactNode;
+}) {
+  return (
+    <div className="min-w-0">
+      <h2 className="truncate text-[15px] font-semibold leading-5">{title}</h2>
+      {description && (
+        <p className="mt-0.5 max-w-3xl text-[13px] leading-5 text-muted-foreground">
+          {description}
+        </p>
+      )}
+    </div>
   );
 }

@@ -37,16 +37,16 @@ export function VersionChecker() {
               
               console.log(`Update detected: version=${data.version}, instance=${data.instanceId}`);
               
-              const message = versionMismatch 
-                ? `Refreshing to load version ${data.version}...` 
-                : "New deployment detected. Refreshing...";
+              const message = versionMismatch
+                ? `Reloading to load version ${data.version}…`
+                : "New deployment detected. Reloading…";
 
               toast.info(
-                <div className="flex flex-col gap-1">
-                  <span className="font-bold">New update available!</span>
-                  <span className="text-xs">{message}</span>
+                <div className="flex flex-col gap-0.5">
+                  <span className="font-medium">Update available</span>
+                  <span className="text-[13px] text-muted-foreground">{message}</span>
                 </div>,
-                { duration: 5000, icon: <Loader2 className="h-4 w-4 animate-spin" /> }
+                { duration: 5000, icon: <Loader2 className="size-4 animate-spin" /> }
               );
               
               // Force hard reload after a short delay to let user see the toast

@@ -115,6 +115,13 @@ export const router = createBrowserRouter([
               return { Component: m.default };
             },
           },
+          {
+            path: "developer",
+            lazy: async () => {
+              const m = await import("@/pages/Developer");
+              return { Component: m.default };
+            },
+          },
           { path: "docs/*", element: <DocsRedirect /> },
           { path: "docs", element: <DocsRedirect /> },
         ],

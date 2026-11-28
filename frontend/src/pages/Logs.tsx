@@ -2,14 +2,7 @@
 
 import { useState } from "react";
 import { SystemLogsPanel } from "@/components/SystemLogsPanel";
-import {
-  ScrollText,
-  Server,
-  Globe,
-  Shield,
-  Network,
-  LockKeyhole,
-} from "lucide-react";
+import { PageHeader } from "@/components/shell/PageHeader";
 import { cn } from "@/lib/utils";
 
 // One entry per container in docker-compose.yml — `container` must match the name
@@ -19,40 +12,21 @@ const SERVICES = [
     id: "backend",
     label: "Backend",
     short: "API",
-    icon: Server,
-    description: "API & business logic",
+    description: "API and business logic",
     container: "docklift-backend",
   },
   {
-    id: "frontend",
-    label: "Frontend",
-    short: "UI",
-    icon: Globe,
-    description: "Vite SPA dashboard",
-    container: "docklift-frontend",
-  },
-  {
     id: "proxy",
-    label: "Public Proxy",
+    label: "Public proxy",
     short: "Proxy",
-    icon: Shield,
-    description: "Domains + HTTPS :80/:443",
+    description: "Domains and HTTPS on :80 and :443",
     container: "docklift-nginx-proxy",
-  },
-  {
-    id: "nginx",
-    label: "Dashboard Gateway",
-    short: "Gate",
-    icon: Network,
-    description: "Panel on :8080",
-    container: "docklift-nginx",
   },
   {
     id: "certbot",
     label: "Certbot",
     short: "TLS",
-    icon: LockKeyhole,
-    description: "Cert renewals (12h)",
+    description: "Certificate renewals every 12 hours",
     container: "docklift-certbot",
   },
 ] as const;
@@ -66,76 +40,53 @@ export default function LogsPage() {
     <div
       className={cn(
         "flex flex-col",
-        "h-[calc(100dvh-var(--shell-topbar)-2.5rem)]",
-        "sm:h-[calc(100dvh-var(--shell-topbar)-4rem)]",
+        // main has py-6 (3rem total) under the 48px top bar
+        "h-[calc(100dvh-var(--shell-topbar)-3rem)] min-h-[28rem]",
       )}
     >
-      {/* Compact header */}
-      <div className="mb-2 flex shrink-0 items-center gap-2.5 sm:mb-3 sm:gap-3">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-brand/20 bg-brand/10 sm:h-10 sm:w-10 sm:rounded-2xl">
-          <ScrollText className="h-4 w-4 text-brand sm:h-[1.125rem] sm:w-[1.125rem]" />
-        </span>
-        <div className="min-w-0">
-          <h1 className="truncate text-lg font-bold tracking-tight sm:text-xl">
-            System Logs
-          </h1>
-          <p className="truncate text-[11px] text-muted-foreground sm:text-xs">
-            Live streams from Docklift control-plane containers
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        title="Logs"
+        description="Live output from the Docklift control-plane containers."
+        className="mb-4 shrink-0"
+      />
 
-      {/* Service picker — horizontal scroll on small screens */}
-      <div
-        className="-mx-3 mb-2 flex shrink-0 gap-1.5 overflow-x-auto px-3 pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] sm:mx-0 sm:mb-3 sm:flex-wrap sm:gap-2 sm:overflow-visible sm:px-0 [&::-webkit-scrollbar]:hidden"
-        role="tablist"
-        aria-label="Docklift services"
-      >
-        {SERVICES.map(({ id, label, short, icon: Icon, description }) => {
-          const selected = activeService === id;
-          return (
-            <button
-              key={id}
-              type="button"
-              role="tab"
-              aria-selected={selected}
-              onClick={() => setActiveService(id)}
-              className={cn(
-                "group flex shrink-0 items-center gap-2 rounded-xl border px-2.5 py-1.5 text-left text-sm font-medium transition-colors sm:gap-2.5 sm:px-3 sm:py-2",
-                selected
-                  ? "border-brand/30 bg-brand/10 text-brand"
-                  : "border-border/60 bg-card/50 text-muted-foreground hover:border-border hover:bg-card hover:text-foreground",
-              )}
-            >
-              <Icon
+      {/* Toolbar: source tabs + what the selected source is */}
+      <div className="mb-3 flex shrink-0 flex-col gap-x-6 gap-y-2 sm:hairline-b sm:flex-row sm:items-center sm:justify-between">
+        <div
+          className="hairline-b flex gap-5 overflow-x-auto scrollbar-none sm:shadow-none"
+          role="tablist"
+          aria-label="Docklift services"
+        >
+          {SERVICES.map(({ id, label }) => {
+            const selected = activeService === id;
+            return (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                onClick={() => setActiveService(id)}
                 className={cn(
-                  "h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4",
+                  "flex h-10 shrink-0 items-center whitespace-nowrap border-b-2 text-[13.5px] font-medium transition-colors duration-150",
                   selected
-                    ? "text-brand"
-                    : "text-muted-foreground/60 group-hover:text-foreground",
+                    ? "border-brand text-foreground"
+                    : "border-transparent text-muted-foreground hover:text-foreground",
                 )}
-              />
-              <span className="sm:hidden text-xs font-semibold">{short}</span>
-              <span className="hidden min-w-0 sm:block">
-                <span className="block text-sm font-semibold leading-tight">
-                  {label}
-                </span>
-                <span
-                  className={cn(
-                    "block text-[10px] leading-tight",
-                    selected ? "text-brand/70" : "text-muted-foreground/60",
-                  )}
-                >
-                  {description}
-                </span>
-              </span>
-            </button>
-          );
-        })}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+        <p className="min-w-0 truncate pb-0 text-[13px] leading-5 text-muted-foreground">
+          {active.description}
+          <span className="text-subtle"> · </span>
+          <span className="font-mono text-xs">{active.container}</span>
+        </p>
       </div>
 
-      {/* Log viewer fills the rest of the viewport */}
-      <div className="min-h-0 flex-1 overflow-hidden rounded-2xl border border-border/60">
+      {/* Log viewer fills the rest of the viewport; LogViewer draws its own box */}
+      <div className="min-h-0 flex-1">
         <SystemLogsPanel
           key={active.id}
           service={active.id}

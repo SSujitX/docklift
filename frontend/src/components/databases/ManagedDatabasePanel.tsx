@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
-import { Copy, Check, Eye, EyeOff, Link2, Unlink, Loader2, Database } from "lucide-react";
+import { Copy, Check, Eye, EyeOff, Link2, Unlink, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { API_URL, copyToClipboard } from "@/lib/utils";
 import { authFetch } from "@/lib/auth";
 import { toast } from "sonner";
@@ -173,43 +179,67 @@ export function ManagedDatabasePanel({
 
   if (loading) {
     return (
-      <Card className="border-border shadow-none">
-        <CardContent className="flex items-center gap-2 py-8 text-sm text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" />
+      <Card>
+        <CardContent className="flex items-center gap-2 py-8 text-[13px] text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" />
           Loading connection…
         </CardContent>
       </Card>
     );
   }
 
+  const selectClass =
+    "flex h-9 w-full rounded-md border border-input bg-card px-3 text-sm text-foreground transition-[border-color,box-shadow] duration-150 focus:border-brand focus:outline-hidden focus:ring-3 focus:ring-brand/20 disabled:opacity-50 pointer-coarse:h-10";
+
   return (
     <div className="space-y-4">
-      <Card className="border-border shadow-none">
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Database className="h-4 w-4 text-muted-foreground" />
+      <Card>
+        <CardHeader className="flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2">
+          <CardTitle className="flex items-baseline gap-2">
             Connection
             {engineLabel || conn?.engine.label ? (
-              <span className="text-xs font-normal text-muted-foreground">
-                · {engineLabel || conn?.engine.label}
+              <span className="text-[13px] font-normal text-muted-foreground">
+                {engineLabel || conn?.engine.label}
               </span>
             ) : null}
           </CardTitle>
+          {conn && (
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setShowSecret((v) => !v)}
+              >
+                {showSecret ? <EyeOff /> : <Eye />}
+                {showSecret ? "Hide secrets" : "Reveal secrets"}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => copy("url", conn.connection_url)}
+              >
+                {copied === "url" ? <Check className="text-ok" /> : <Copy />}
+                Copy URL
+              </Button>
+            </div>
+          )}
         </CardHeader>
-        <CardContent className="space-y-3">
+        <CardContent className="space-y-4">
           {!conn ? (
-            <p className="text-sm text-muted-foreground">
+            <p className="text-[13px] leading-5 text-muted-foreground">
               Deploy this database to generate a connection URL. Prefer linking to apps
               over publishing host ports.
             </p>
           ) : (
             <>
-              <p className="text-xs leading-relaxed text-muted-foreground">
+              <p className="text-[13px] leading-5 text-muted-foreground">
                 {conn.note ||
                   "Internal Docker DNS only until you link an app. Do not share IP:port publicly."}
               </p>
               {conn.credentials_init_only === true && (
-                <p className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-[11px] leading-relaxed text-amber-800 dark:text-amber-200/90">
+                <p className="rounded-md border border-warn/40 bg-secondary/60 px-3 py-2.5 text-[13px] leading-5 text-foreground">
                   Passwords for this engine are applied only on first volume init.
                   Changing env and redeploying will not rotate the server password —
                   recreate the database to rotate.
@@ -222,63 +252,40 @@ export function ManagedDatabasePanel({
                 copied={copied === "url"}
                 onCopy={() => copy("url", conn.connection_url)}
               />
-              <div className="grid gap-2 sm:grid-cols-2">
+              <dl className="grid gap-x-8 sm:grid-cols-2">
                 <Meta label="Host" value={conn.host} />
                 <Meta label="Port" value={String(conn.port)} />
                 {conn.username ? <Meta label="User" value={conn.username} /> : null}
                 <Meta label="Database" value={conn.database} />
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowSecret((v) => !v)}
-                >
-                  {showSecret ? (
-                    <EyeOff className="h-3.5 w-3.5" />
-                  ) : (
-                    <Eye className="h-3.5 w-3.5" />
-                  )}
-                  {showSecret ? "Hide secrets" : "Reveal secrets"}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => copy("url", conn.connection_url)}
-                >
-                  {copied === "url" ? (
-                    <Check className="h-3.5 w-3.5 text-emerald-500" />
-                  ) : (
-                    <Copy className="h-3.5 w-3.5" />
-                  )}
-                  Copy URL
-                </Button>
-              </div>
+              </dl>
             </>
           )}
         </CardContent>
       </Card>
 
-      <Card className="border-border shadow-none">
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Link2 className="h-4 w-4 text-muted-foreground" />
-            Linked apps
-          </CardTitle>
+      <Card>
+        <CardHeader>
+          <CardTitle>Linked apps</CardTitle>
+          <CardDescription>
+            Injects{" "}
+            <span className="font-mono text-xs text-foreground">
+              {conn?.engine.defaultEnvKey || "DATABASE_URL"}
+            </span>{" "}
+            into the app (or one service). Redeploy the app afterward. Database must be
+            running.
+          </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-            <label className="flex-1 space-y-1 text-xs">
-              <span className="text-muted-foreground">Project</span>
+        <CardContent className="space-y-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <label className="flex-1 space-y-1.5">
+              <span className="block text-[13px] font-medium">Project</span>
               <select
                 value={appId}
                 onChange={(e) => {
                   setAppId(e.target.value);
                   setServiceName("");
                 }}
-                className="flex h-9 w-full rounded-lg border border-border bg-background px-3 text-sm"
+                className={selectClass}
               >
                 <option value="">Select project…</option>
                 {apps.map((a) => (
@@ -288,13 +295,13 @@ export function ManagedDatabasePanel({
                 ))}
               </select>
             </label>
-            <label className="flex-1 space-y-1 text-xs">
-              <span className="text-muted-foreground">Service (optional)</span>
+            <label className="flex-1 space-y-1.5">
+              <span className="block text-[13px] font-medium">Service (optional)</span>
               <select
                 value={serviceName}
                 onChange={(e) => setServiceName(e.target.value)}
                 disabled={!appId}
-                className="flex h-9 w-full rounded-lg border border-border bg-background px-3 text-sm disabled:opacity-50"
+                className={selectClass}
               >
                 <option value="">All services (shared env)</option>
                 {services.map((s) => (
@@ -306,58 +313,58 @@ export function ManagedDatabasePanel({
             </label>
             <Button
               type="button"
+              variant="outline"
               onClick={link}
               disabled={linking || !appId}
-              className="h-9 bg-brand text-brand-foreground"
+              className="h-9 pointer-coarse:h-10"
             >
-              {linking ? <Loader2 className="h-4 w-4 animate-spin" /> : <Link2 className="h-4 w-4" />}
+              {linking ? <Loader2 className="animate-spin" /> : <Link2 />}
               Link
             </Button>
           </div>
-          <label className="flex items-center gap-2 text-[11px] text-muted-foreground">
+          <label className="flex items-center gap-2 text-[13px] text-muted-foreground">
             <input
               type="checkbox"
               checked={overwrite}
               onChange={(e) => setOverwrite(e.target.checked)}
-              className="rounded border-border"
+              className="size-4 rounded-sm border-input accent-brand"
             />
             Overwrite existing env key if present
           </label>
-          <p className="text-[11px] text-muted-foreground">
-            Injects {conn?.engine.defaultEnvKey || "DATABASE_URL"} into the app (or one
-            service). Redeploy the app afterward. Database must be running.
-          </p>
-          {links.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No apps linked yet.</p>
-          ) : (
-            <ul className="space-y-2">
-              {links.map((l) => (
-                <li
-                  key={l.id}
-                  className="flex items-center justify-between gap-2 rounded-lg border border-border/60 px-3 py-2 text-sm"
-                >
-                  <div className="min-w-0">
-                    <div className="truncate font-medium">{l.app_project.name}</div>
-                    <div className="text-[11px] text-muted-foreground">
-                      {l.service_name ? `Service ${l.service_name}` : "All services"} ·{" "}
-                      <span className="font-mono">{l.env_key}</span>
-                    </div>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => unlink(l.id)}
-                    className="text-muted-foreground hover:text-destructive"
-                  >
-                    <Unlink className="h-3.5 w-3.5" />
-                    Unlink
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          )}
         </CardContent>
+        {links.length === 0 ? (
+          <p className="border-t border-border px-4 py-3 text-[13px] text-muted-foreground">
+            No apps linked yet.
+          </p>
+        ) : (
+          <ul className="divide-y divide-border border-t border-border">
+            {links.map((l) => (
+              <li
+                key={l.id}
+                className="flex items-center justify-between gap-3 px-4 py-2.5"
+              >
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-medium">{l.app_project.name}</div>
+                  <div className="truncate font-mono text-xs text-muted-foreground">
+                    {l.service_name ? `service ${l.service_name}` : "all services"}
+                    <span className="text-subtle"> · </span>
+                    {l.env_key}
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => unlink(l.id)}
+                  className="shrink-0 text-muted-foreground hover:text-danger"
+                >
+                  <Unlink />
+                  Unlink
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
       </Card>
     </div>
   );
@@ -365,9 +372,9 @@ export function ManagedDatabasePanel({
 
 function Meta({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg border border-border/50 bg-secondary/20 px-3 py-2">
-      <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</div>
-      <div className="mt-0.5 truncate font-mono text-xs">{value}</div>
+    <div className="flex items-baseline justify-between gap-4 border-b border-border py-2">
+      <dt className="shrink-0 text-[13px] text-muted-foreground">{label}</dt>
+      <dd className="min-w-0 truncate font-mono text-[13px] text-foreground">{value}</dd>
     </div>
   );
 }
@@ -386,23 +393,21 @@ function SecretRow({
   onCopy: () => void;
 }) {
   return (
-    <div className="rounded-lg border border-border/50 bg-secondary/20 px-3 py-2">
-      <div className="mb-1 flex items-center justify-between gap-2">
-        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
-          {label}
-        </span>
+    <div>
+      <div className="mb-1.5 flex items-center justify-between gap-2">
+        <span className="text-[13px] font-medium">{label}</span>
         <button
           type="button"
           onClick={onCopy}
           className={cn(
-            "inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground",
+            "inline-flex items-center gap-1 rounded-sm text-xs text-muted-foreground transition-colors duration-150 hover:text-foreground",
           )}
         >
-          {copied ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
+          {copied ? <Check className="size-3.5 text-ok" /> : <Copy className="size-3.5" />}
           Copy
         </button>
       </div>
-      <code className="block break-all font-mono text-xs text-foreground/90">
+      <code className="block break-all rounded-md bg-secondary/60 px-3 py-2 font-mono text-[13px] leading-5 text-foreground">
         {reveal ? value : "••••••••••••••••••••••••"}
       </code>
     </div>

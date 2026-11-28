@@ -9,20 +9,13 @@ import {
   type KeyboardEvent,
 } from "react";
 import { useNavigate } from "react-router-dom";
+import { PageHeader } from "@/components/shell/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Port } from "@/lib/types";
-import { API_URL, cn } from "@/lib/utils";
-import { authFetch } from "@/lib/auth";
-import {
-  Anchor,
-  ChevronLeft,
-  ChevronRight,
-  ExternalLink,
-  Lock,
-  Network,
-  RefreshCw,
-  Unlock,
-} from "lucide-react";
+import { cn } from "@/lib/utils";
+import { apiCache } from "@/lib/auth";
+import { API } from "@/lib/prefetch";
+import { ChevronLeft, ChevronRight, RefreshCw } from "lucide-react";
 
 type PortFilter = "all" | "allocated" | "available";
 
@@ -42,6 +35,15 @@ const DESKTOP_HEAD_PX = 36;
 /** Mobile list row height */
 const MOBILE_ROW_PX = 52;
 
+/** New shape: { ports, private_running } — still accept a bare array. */
+function parsePorts(data: any): { ports: Port[]; privateRunning: PrivateRunning[] } {
+  if (Array.isArray(data)) return { ports: data, privateRunning: [] };
+  return {
+    ports: Array.isArray(data?.ports) ? data.ports : [],
+    privateRunning: Array.isArray(data?.private_running) ? data.private_running : [],
+  };
+}
+
 function openFromKeyboard(event: KeyboardEvent, open: () => void) {
   if (event.target !== event.currentTarget) return;
   if (event.key === "Enter" || event.key === " ") {
@@ -53,9 +55,16 @@ function openFromKeyboard(event: KeyboardEvent, open: () => void) {
 export default function PortsPage() {
   const navigate = useNavigate();
   const listRef = useRef<HTMLDivElement>(null);
-  const [ports, setPorts] = useState<Port[]>([]);
-  const [privateRunning, setPrivateRunning] = useState<PrivateRunning[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Last known data draws at once on a revisit; the mount fetch below refreshes it.
+  const [cached] = useState(() => {
+    const data = apiCache.peek(API.ports);
+    return data === undefined ? null : parsePorts(data);
+  });
+  const [ports, setPorts] = useState<Port[]>(cached?.ports ?? []);
+  const [privateRunning, setPrivateRunning] = useState<PrivateRunning[]>(
+    cached?.privateRunning ?? [],
+  );
+  const [loading, setLoading] = useState(cached === null);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<PortFilter>("all");
   const [page, setPage] = useState(0);
@@ -63,7 +72,7 @@ export default function PortsPage() {
 
   const fetchPorts = useCallback(async () => {
     try {
-      const res = await authFetch(`${API_URL}/api/ports`);
+      const res = await apiCache.fetch(API.ports);
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(
@@ -71,17 +80,9 @@ export default function PortsPage() {
             `Failed to load ports (${res.status})`,
         );
       }
-      const data = await res.json();
-      // New shape: { ports, private_running } — still accept a bare array
-      if (Array.isArray(data)) {
-        setPorts(data);
-        setPrivateRunning([]);
-      } else {
-        setPorts(Array.isArray(data?.ports) ? data.ports : []);
-        setPrivateRunning(
-          Array.isArray(data?.private_running) ? data.private_running : [],
-        );
-      }
+      const parsed = parsePorts(await res.json());
+      setPorts(parsed.ports);
+      setPrivateRunning(parsed.privateRunning);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load ports");
@@ -187,69 +188,60 @@ export default function PortsPage() {
         "sm:h-[calc(100dvh-var(--shell-topbar)-4rem)]",
       )}
     >
-      {/* Compact title row */}
-      <div className="mb-2 flex shrink-0 items-center justify-between gap-3 sm:mb-3">
-        <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-brand/20 bg-brand/10 sm:h-10 sm:w-10 sm:rounded-2xl">
-            <Anchor className="h-4 w-4 text-brand sm:h-[1.125rem] sm:w-[1.125rem]" />
-          </span>
-          <div className="min-w-0">
-            <h1 className="truncate text-lg font-bold tracking-tight sm:text-xl">
-              Ports
-            </h1>
-            <p className="truncate text-[11px] text-muted-foreground sm:text-xs">
-              Opt-in host pool · {poolRange} · private apps/DBs won&apos;t appear
-              here
-            </p>
-          </div>
-        </div>
-        <Button
-          variant="outline"
-          size="icon"
-          onClick={() => {
-            setLoading(true);
-            void fetchPorts();
-          }}
-          title="Refresh ports"
-          className="h-9 w-9 shrink-0 border-border/60 bg-background hover:bg-secondary/80 sm:h-10 sm:w-10"
-        >
-          <RefreshCw className="h-4 w-4 text-muted-foreground" />
-        </Button>
-      </div>
+      <PageHeader
+        title="Ports"
+        description={`Opt-in host port pool ${poolRange}. Private apps and databases don't appear here.`}
+        className="mb-4 shrink-0"
+        actions={
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => {
+              setLoading(true);
+              void fetchPorts();
+            }}
+            title="Refresh ports"
+          >
+            <RefreshCw className="text-subtle" />
+          </Button>
+        }
+      />
 
-      {/* Running without a host port — explains ALLOCATED 0 */}
+      {/* Running without a host port — explains an allocated count of 0 */}
       {!loading && privateRunning.length > 0 && (
-        <div className="mb-2 shrink-0 rounded-xl border border-border/60 bg-secondary/25 px-3 py-2 sm:mb-3 sm:px-3.5 sm:py-2.5">
-          <p className="text-[11px] font-semibold text-foreground sm:text-xs">
+        <div className="mb-4 shrink-0 rounded-md border border-info/40 bg-secondary/60 px-3 py-2.5 text-[13px] leading-5">
+          <p className="font-medium text-foreground">
             {privateRunning.length} running without a host port
           </p>
-          <p className="mt-0.5 text-[10px] leading-relaxed text-muted-foreground sm:text-[11px]">
+          <p className="text-muted-foreground">
             Host ports are opt-in. Databases stay private (link over Docker DNS).
-            Apps need <span className="font-medium text-foreground/80">Build → Publish host ports</span>{" "}
-            + redeploy, or a domain.
+            Apps need{" "}
+            <span className="text-foreground">Build → Publish host ports</span> +
+            redeploy, or a domain.
           </p>
-          <div className="mt-2 flex flex-wrap gap-1.5">
+          <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1">
             {privateRunning.map((p) => (
               <button
                 key={p.id}
                 type="button"
                 title={p.reason}
                 onClick={() => navigate(`/projects/${p.id}`)}
-                className="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-border/60 bg-background px-2 py-1 text-[11px] font-medium transition-colors hover:border-brand/40 hover:bg-brand/5"
+                className="inline-flex max-w-full items-center gap-1.5 rounded-sm text-[13px] text-foreground underline-offset-4 transition-colors duration-150 hover:underline pointer-coarse:min-h-10"
               >
                 <span
+                  aria-hidden="true"
                   className={cn(
-                    "h-1.5 w-1.5 shrink-0 rounded-full",
+                    "size-1.5 shrink-0 rounded-full",
                     p.status === "running"
-                      ? "bg-emerald-500"
+                      ? "bg-ok"
                       : p.status === "building" || p.status === "pending"
-                        ? "animate-pulse bg-amber-500"
-                        : "bg-orange-500",
+                        ? "animate-pulse bg-warn motion-reduce:animate-none"
+                        : "bg-warn",
                   )}
                 />
                 <span className="truncate">{p.name}</span>
-                <span className="shrink-0 text-[9px] uppercase tracking-wider text-muted-foreground">
-                  {p.project_type === "database" ? "DB" : "App"}
+                <span className="shrink-0 font-mono text-xs text-subtle">
+                  {p.project_type === "database" ? "db" : "app"}
                 </span>
               </button>
             ))}
@@ -258,9 +250,9 @@ export default function PortsPage() {
       )}
 
       {/* Filters + pool meta — one row */}
-      <div className="mb-2 flex shrink-0 flex-wrap items-center gap-2 sm:mb-3">
+      <div className="hairline-b mb-4 flex shrink-0 items-center gap-4">
         <div
-          className="flex min-w-0 flex-1 gap-1.5 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          className="flex min-w-0 flex-1 gap-5 overflow-x-auto scrollbar-none"
           role="group"
           aria-label="Filter ports"
         >
@@ -273,67 +265,61 @@ export default function PortsPage() {
                 aria-pressed={active}
                 onClick={() => setFilter(tab.id)}
                 className={cn(
-                  "inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors sm:rounded-xl sm:px-3 sm:py-1.5 sm:text-sm",
+                  "inline-flex h-10 shrink-0 items-center gap-1.5 border-b-2 text-[13.5px] transition-colors duration-150 focus-visible:-outline-offset-2",
                   active
-                    ? tab.tone === "success"
-                      ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-                      : tab.tone === "warning"
-                        ? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300"
-                        : "border-brand/30 bg-brand/10 text-brand"
-                    : "border-border/60 bg-secondary/40 text-muted-foreground hover:text-foreground",
+                    ? "border-brand font-medium text-foreground"
+                    : "border-transparent text-muted-foreground hover:text-foreground",
                 )}
               >
-                <span className="text-[10px] font-semibold uppercase tracking-wider opacity-70">
-                  {tab.label}
+                {tab.label}
+                <span className="font-mono text-[13px] tabular-nums text-subtle">
+                  {tab.count}
                 </span>
-                <span className="font-bold tabular-nums">{tab.count}</span>
               </button>
             );
           })}
         </div>
-        <span className="hidden items-center gap-1.5 rounded-lg border border-border/60 bg-secondary/30 px-2 py-1 font-mono text-[10px] text-muted-foreground tabular-nums sm:inline-flex">
-          <Network className="h-3 w-3" />
+        <span className="hidden shrink-0 font-mono text-xs text-subtle tabular-nums sm:inline">
           {ports.length} · docklift_network
         </span>
       </div>
 
       {error && (
-        <div className="mb-2 shrink-0 rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-600 dark:text-red-400 sm:text-sm">
+        <div className="mb-4 shrink-0 rounded-md border border-danger/40 bg-secondary/60 px-3 py-2.5 text-[13px] text-foreground">
           {error}
         </div>
       )}
 
       {/* Fill remaining height — scroll only here */}
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border/60 bg-card">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-card">
         {loading ? (
-          <div className="space-y-0 overflow-hidden">
+          <div className="divide-y divide-border overflow-hidden" aria-hidden="true">
             {[1, 2, 3, 4, 5, 6].map((i) => (
-              <div
-                key={i}
-                className="h-11 animate-pulse border-b border-border/40 bg-secondary/20 last:border-b-0"
-              />
+              <div key={i} className="flex h-11 items-center px-4">
+                <div className="h-2.5 w-16 rounded-sm bg-secondary" />
+              </div>
             ))}
           </div>
         ) : ports.length === 0 ? (
-          <div className="flex flex-1 flex-col items-center justify-center px-4 py-10 text-center">
-            <Anchor className="mb-3 h-8 w-8 text-muted-foreground/40" />
-            <p className="text-sm font-semibold">No ports in the pool</p>
-            <p className="mt-1 max-w-xs text-xs text-muted-foreground">
+          <div className="flex flex-1 flex-col items-center justify-center px-4 py-14 text-center">
+            <p className="text-[15px] font-semibold">No ports in the pool</p>
+            <p className="mx-auto mt-1 max-w-sm text-[13.5px] text-muted-foreground">
               Filled from the configured host port range at startup.
             </p>
           </div>
         ) : filtered.length === 0 ? (
-          <div className="flex flex-1 flex-col items-center justify-center px-4 py-10 text-center">
-            <p className="text-sm text-muted-foreground">
+          <div className="flex flex-1 flex-col items-center justify-center px-4 py-14 text-center">
+            <p className="text-[13.5px] text-muted-foreground">
               No ports match this filter.
             </p>
-            <button
+            <Button
               type="button"
+              variant="link"
               onClick={() => setFilter("all")}
-              className="mt-2 text-sm font-semibold text-brand hover:underline"
+              className="mt-1 h-auto px-0 text-[13.5px]"
             >
               Show all ports
-            </button>
+            </Button>
           </div>
         ) : (
           <>
@@ -342,7 +328,7 @@ export default function PortsPage() {
               className="shell-scroll min-h-0 flex-1 overflow-hidden overscroll-contain"
             >
               {/* Mobile */}
-              <div className="divide-y divide-border/40 md:hidden">
+              <div className="divide-y divide-border md:hidden">
                 {pageItems.map((port) => {
                   const allocated = port.is_locked;
                   const clickable = Boolean(port.project_id);
@@ -361,47 +347,45 @@ export default function PortsPage() {
                         clickable && openFromKeyboard(e, () => openPort(port))
                       }
                       className={cn(
-                        "flex items-center gap-3 px-3 py-2.5",
+                        "flex h-13 items-center gap-3 px-4",
                         clickable &&
-                          "cursor-pointer hover:bg-secondary/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand/40",
+                          "cursor-pointer transition-colors duration-150 hover:bg-secondary/50 focus-visible:bg-secondary/50 focus-visible:-outline-offset-2",
                       )}
                     >
                       <span
                         className={cn(
-                          "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border",
+                          "w-14 shrink-0 font-mono text-sm tabular-nums",
                           allocated
-                            ? "border-amber-500/25 bg-amber-500/10 text-amber-600 dark:text-amber-400"
-                            : "border-emerald-500/25 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+                            ? "font-medium text-foreground"
+                            : "text-muted-foreground",
                         )}
                       >
-                        {allocated ? (
-                          <Lock className="h-3.5 w-3.5" />
-                        ) : (
-                          <Unlock className="h-3.5 w-3.5" />
-                        )}
+                        :{port.port}
                       </span>
                       <div className="min-w-0 flex-1">
-                        <p className="font-mono text-sm font-semibold tabular-nums">
-                          :{port.port}
-                          <span
-                            className={cn(
-                              "ml-2 text-[10px] font-semibold uppercase tracking-wider",
-                              allocated
-                                ? "text-amber-700 dark:text-amber-300"
-                                : "text-emerald-700 dark:text-emerald-300",
-                            )}
-                          >
-                            {allocated ? "In use" : "Free"}
-                          </span>
-                        </p>
-                        <p className="truncate text-[11px] text-muted-foreground">
-                          {allocated
-                            ? port.project?.name || "Unknown project"
-                            : "Free for assignment"}
-                        </p>
+                        {allocated ? (
+                          <>
+                            <p className="truncate text-sm font-medium leading-5">
+                              {port.project?.name || "Unknown project"}
+                            </p>
+                            <p className="truncate font-mono text-xs leading-4 text-muted-foreground">
+                              in use
+                              {port.project?.status && (
+                                <>
+                                  <span className="text-subtle"> · </span>
+                                  {port.project.status}
+                                </>
+                              )}
+                            </p>
+                          </>
+                        ) : (
+                          <p className="text-[13px] text-subtle">
+                            Free for assignment
+                          </p>
+                        )}
                       </div>
                       {clickable && (
-                        <ExternalLink className="h-3.5 w-3.5 shrink-0 text-brand" />
+                        <ChevronRight className="size-4 shrink-0 text-subtle" />
                       )}
                     </article>
                   );
@@ -410,15 +394,17 @@ export default function PortsPage() {
 
               {/* Desktop */}
               <table className="hidden w-full text-left text-sm md:table">
-                <thead className="sticky top-0 z-10 bg-secondary/95 backdrop-blur-sm">
-                  <tr className="border-b border-border/60 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                    <th className="px-4 py-2.5 font-semibold">Port</th>
-                    <th className="px-4 py-2.5 font-semibold">Status</th>
-                    <th className="px-4 py-2.5 font-semibold">Project</th>
-                    <th className="px-4 py-2.5 text-right font-semibold"> </th>
+                <thead className="sticky top-0 z-10 bg-card">
+                  <tr className="h-9 border-b border-border text-xs text-muted-foreground">
+                    <th className="w-32 px-4 font-medium">Port</th>
+                    <th className="w-36 px-4 font-medium">Status</th>
+                    <th className="px-4 font-medium">Project</th>
+                    <th className="px-4 text-right font-medium">
+                      <span className="sr-only">Open</span>
+                    </th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="divide-y divide-border">
                   {pageItems.map((port) => {
                     const allocated = port.is_locked;
                     const clickable = Boolean(port.project_id);
@@ -438,63 +424,67 @@ export default function PortsPage() {
                           openFromKeyboard(e, () => openPort(port))
                         }
                         className={cn(
-                          "border-b border-border/40 last:border-b-0",
+                          "group h-11",
                           clickable &&
-                            "cursor-pointer hover:bg-secondary/40 focus-visible:bg-secondary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand/40",
+                            "cursor-pointer transition-colors duration-150 hover:bg-secondary/50 focus-visible:bg-secondary/50 focus-visible:-outline-offset-2",
                         )}
                       >
-                        <td className="px-4 py-2">
-                          <div className="flex items-center gap-2">
-                            <span
-                              className={cn(
-                                "flex h-7 w-7 shrink-0 items-center justify-center rounded-md border",
-                                allocated
-                                  ? "border-amber-500/25 bg-amber-500/10 text-amber-600 dark:text-amber-400"
-                                  : "border-emerald-500/25 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
-                              )}
-                            >
-                              {allocated ? (
-                                <Lock className="h-3 w-3" />
-                              ) : (
-                                <Unlock className="h-3 w-3" />
-                              )}
-                            </span>
-                            <span className="font-mono text-sm font-semibold tabular-nums">
-                              :{port.port}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-2">
+                        <td className="px-4">
                           <span
                             className={cn(
-                              "inline-flex rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider",
+                              "font-mono text-sm tabular-nums",
                               allocated
-                                ? "bg-amber-500/10 text-amber-700 dark:text-amber-300"
-                                : "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+                                ? "font-medium text-foreground"
+                                : "text-muted-foreground",
                             )}
                           >
-                            {allocated ? "Allocated" : "Available"}
+                            :{port.port}
                           </span>
                         </td>
-                        <td className="px-4 py-2">
+                        <td className="px-4">
+                          {allocated ? (
+                            <span className="inline-flex items-center gap-2 text-[13px] font-medium text-foreground">
+                              <span
+                                aria-hidden="true"
+                                className="size-2 rounded-full bg-foreground/70"
+                              />
+                              Allocated
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-2 text-[13px] text-subtle">
+                              <span
+                                aria-hidden="true"
+                                className="size-2 rounded-full border border-subtle/60"
+                              />
+                              Available
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4">
                           {allocated ? (
                             <div className="min-w-0">
-                              <p className="truncate text-sm font-medium tracking-tight">
+                              <p className="truncate text-sm font-medium leading-5">
                                 {port.project?.name || "Unknown project"}
                               </p>
-                              <p className="font-mono text-[10px] text-muted-foreground">
+                              <p className="truncate font-mono text-xs leading-4 text-muted-foreground">
                                 {port.project_id?.split("-")[0] || "—"}
+                                {port.project?.status && (
+                                  <>
+                                    <span className="text-subtle"> · </span>
+                                    {port.project.status}
+                                  </>
+                                )}
                               </p>
                             </div>
                           ) : (
-                            <span className="text-muted-foreground">—</span>
+                            <span className="text-subtle">—</span>
                           )}
                         </td>
-                        <td className="px-4 py-2 text-right">
+                        <td className="px-4 text-right">
                           {clickable ? (
-                            <span className="inline-flex items-center gap-1 text-xs font-medium text-brand">
+                            <span className="inline-flex items-center gap-1 text-[13px] text-muted-foreground transition-colors duration-150 group-hover:text-foreground group-focus-visible:text-foreground">
                               Open
-                              <ExternalLink className="h-3 w-3" />
+                              <ChevronRight className="size-4 text-subtle" />
                             </span>
                           ) : null}
                         </td>
@@ -505,43 +495,48 @@ export default function PortsPage() {
               </table>
             </div>
 
-            <div className="flex shrink-0 items-center justify-between gap-2 border-t border-border/60 px-3 py-2 sm:px-4">
-              <p className="text-[11px] text-muted-foreground tabular-nums">
-                {filtered.length === 0
-                  ? "0"
-                  : `${safePage * pageSize + 1}–${Math.min(
-                      (safePage + 1) * pageSize,
-                      filtered.length,
-                    )}`}{" "}
-                of {filtered.length}
+            <div className="flex shrink-0 items-center justify-between gap-2 border-t border-border px-4 py-2">
+              <p className="text-[13px] text-muted-foreground">
+                <span className="font-mono text-foreground tabular-nums">
+                  {filtered.length === 0
+                    ? "0"
+                    : `${safePage * pageSize + 1}–${Math.min(
+                        (safePage + 1) * pageSize,
+                        filtered.length,
+                      )}`}
+                </span>{" "}
+                of{" "}
+                <span className="font-mono text-foreground tabular-nums">
+                  {filtered.length}
+                </span>
               </p>
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1">
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="ghost"
                   size="sm"
                   disabled={safePage <= 0}
                   onClick={() => setPage((p) => Math.max(0, p - 1))}
-                  className="h-8 gap-1 border-border/60 px-2"
+                  className="gap-1 px-2"
                 >
-                  <ChevronLeft className="h-3.5 w-3.5" />
+                  <ChevronLeft />
                   <span className="hidden sm:inline">Prev</span>
                 </Button>
-                <span className="min-w-[3.5rem] text-center text-[11px] tabular-nums text-muted-foreground">
-                  {safePage + 1}/{pageCount}
+                <span className="min-w-12 text-center font-mono text-xs text-muted-foreground tabular-nums">
+                  {safePage + 1} / {pageCount}
                 </span>
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="ghost"
                   size="sm"
                   disabled={safePage >= pageCount - 1}
                   onClick={() =>
                     setPage((p) => Math.min(pageCount - 1, p + 1))
                   }
-                  className="h-8 gap-1 border-border/60 px-2"
+                  className="gap-1 px-2"
                 >
                   <span className="hidden sm:inline">Next</span>
-                  <ChevronRight className="h-3.5 w-3.5" />
+                  <ChevronRight />
                 </Button>
               </div>
             </div>

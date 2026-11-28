@@ -1,30 +1,11 @@
 // SystemOverview component - displays CPU, memory, disk, network, GPU stats with live updates
 
-import { useEffect, useState, useCallback } from "react";
-import {
-  Cpu,
-  HardDrive,
-  Wifi,
-  Server,
-  Activity,
-  RefreshCw,
-  Gauge,
-  CheckCircle2,
-  CircuitBoard,
-  ArrowDownToLine,
-  ArrowUpFromLine,
-  Clock,
-  Monitor,
-  Globe,
-  Zap,
-  Calendar,
-  Network,
-  MapPin,
-  Trash2,
-} from "lucide-react";
+import { useEffect, useState, useCallback, type ReactNode } from "react";
+import { ArrowDown, ArrowUp, RefreshCw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { API_URL, cn } from "@/lib/utils";
-import { authFetch } from "@/lib/auth";
+import { apiCache, authFetch } from "@/lib/auth";
+import { API } from "@/lib/prefetch";
 import {
   Dialog,
   DialogContent,
@@ -34,7 +15,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { PageHeader } from "@/components/shell/PageHeader";
 interface SystemStats {
   cpu: {
     usage: number;
@@ -120,178 +103,150 @@ function formatSpeed(bytesPerSec: number): string {
   return parseFloat((bytesPerSec / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
 }
 
-// Circular Progress Component
-function CircularProgress({
-  value,
-  size = 120,
-  strokeWidth = 10,
-  label,
-  sublabel,
-  color = "cyan",
-}: {
-  value: number;
-  size?: number;
-  strokeWidth?: number;
-  label: string;
-  sublabel?: string;
-  color?: "cyan" | "purple" | "amber" | "emerald" | "rose";
-}) {
-  const radius = (size - strokeWidth) / 2;
-  const circumference = radius * 2 * Math.PI;
-  const offset = circumference - (value / 100) * circumference;
+// ─── Presentation helpers ────────────────────────────────────────────────────
 
-  const colorClasses = {
-    cyan: "stroke-cyan-500",
-    purple: "stroke-purple-500",
-    amber: "stroke-amber-500",
-    emerald: "stroke-emerald-500",
-    rose: "stroke-rose-500",
-  };
+/** Meters are ink until they cross a threshold: warn at 75%, danger at 90%. */
+function meterFill(percent: number) {
+  if (percent >= 90) return "bg-danger";
+  if (percent >= 75) return "bg-warn";
+  return "bg-foreground/70";
+}
 
-  const gradientIds = {
-    cyan: "gradient-cyan",
-    purple: "gradient-purple",
-    amber: "gradient-amber",
-    emerald: "gradient-emerald",
-    rose: "gradient-rose",
-  };
-
+function Meter({ value, className }: { value: number; className?: string }) {
+  const pct = Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0));
   return (
-    <div className="relative flex flex-col items-center">
-      <svg width={size} height={size} className="transform -rotate-90">
-        <defs>
-          <linearGradient
-            id="gradient-cyan"
-            x1="0%"
-            y1="0%"
-            x2="100%"
-            y2="100%"
+    <div
+      aria-hidden="true"
+      className={cn("h-1 overflow-hidden rounded-full bg-secondary", className)}
+    >
+      <div
+        className={cn(
+          "h-full rounded-full transition-[width,background-color] duration-300 ease-out motion-reduce:transition-none",
+          meterFill(pct),
+        )}
+        style={{ width: `${pct}%` }}
+      />
+    </div>
+  );
+}
+
+/** "184.3 KB/s" -> ["184.3", "KB/s"] so the number can carry the figure size. */
+function splitUnit(formatted: string): [string, string] {
+  const at = formatted.lastIndexOf(" ");
+  return at === -1 ? [formatted, ""] : [formatted.slice(0, at), formatted.slice(at + 1)];
+}
+
+/** One cell of the Host strip. */
+function Metric({
+  label,
+  aside,
+  asideTitle,
+  children,
+}: {
+  label: string;
+  aside?: ReactNode;
+  asideTitle?: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="flex min-w-0 flex-col bg-card p-4 sm:p-5">
+      <div className="flex items-baseline justify-between gap-3">
+        <h3 className="text-xs leading-4 text-muted-foreground">{label}</h3>
+        {aside != null && (
+          <span
+            className="min-w-0 truncate font-mono text-xs leading-4 text-subtle"
+            title={asideTitle}
           >
-            <stop offset="0%" stopColor="#06b6d4" />
-            <stop offset="100%" stopColor="#3b82f6" />
-          </linearGradient>
-          <linearGradient
-            id="gradient-purple"
-            x1="0%"
-            y1="0%"
-            x2="100%"
-            y2="100%"
-          >
-            <stop offset="0%" stopColor="#a855f7" />
-            <stop offset="100%" stopColor="#6366f1" />
-          </linearGradient>
-          <linearGradient
-            id="gradient-amber"
-            x1="0%"
-            y1="0%"
-            x2="100%"
-            y2="100%"
-          >
-            <stop offset="0%" stopColor="#f59e0b" />
-            <stop offset="100%" stopColor="#ef4444" />
-          </linearGradient>
-          <linearGradient
-            id="gradient-emerald"
-            x1="0%"
-            y1="0%"
-            x2="100%"
-            y2="100%"
-          >
-            <stop offset="0%" stopColor="#10b981" />
-            <stop offset="100%" stopColor="#14b8a6" />
-          </linearGradient>
-          <linearGradient
-            id="gradient-rose"
-            x1="0%"
-            y1="0%"
-            x2="100%"
-            y2="100%"
-          >
-            <stop offset="0%" stopColor="#f43f5e" />
-            <stop offset="100%" stopColor="#ec4899" />
-          </linearGradient>
-        </defs>
-        {/* Background circle */}
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={strokeWidth}
-          className="text-secondary"
-        />
-        {/* Progress circle */}
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          fill="none"
-          stroke={`url(#${gradientIds[color]})`}
-          strokeWidth={strokeWidth}
-          strokeLinecap="round"
-          strokeDasharray={circumference}
-          strokeDashoffset={offset}
-          className="transition-all duration-500 ease-out"
-        />
-      </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center px-1">
-        <span
-          className={cn(
-            "font-bold tabular-nums",
-            size < 110 ? "text-lg" : "text-2xl"
-          )}
-        >
-          {value.toFixed(1)}%
-        </span>
-        <span className="text-[10px] font-medium text-muted-foreground sm:text-xs">
-          {label}
-        </span>
-        {sublabel && (
-          <span className="max-w-full truncate text-[9px] text-muted-foreground/70 sm:text-[10px]">
-            {sublabel}
+            {aside}
           </span>
         )}
       </div>
-    </div>
+      {children}
+    </section>
   );
 }
 
-// Stat Card Component
-function StatCard({
-  icon: Icon,
+function Figure({ value, unit, className }: { value: string; unit?: string; className?: string }) {
+  return (
+    <p
+      className={cn(
+        "font-mono text-[28px] font-medium leading-8 text-foreground tabular-nums",
+        className,
+      )}
+    >
+      {value}
+      {unit && (
+        <span className="ml-0.5 text-[15px] font-normal text-muted-foreground">{unit}</span>
+      )}
+    </p>
+  );
+}
+
+/** `label … value` lines under a figure. */
+function Line({
   label,
   value,
-  sublabel,
-  iconColor = "text-cyan-500",
+  title,
+  mono = true,
 }: {
-  icon: React.ElementType;
   label: string;
-  value: string;
-  sublabel?: string;
-  iconColor?: string;
+  value: ReactNode;
+  title?: string;
+  mono?: boolean;
 }) {
   return (
-    <div className="flex items-center gap-3 p-3 rounded-xl bg-secondary/30 border border-border/50">
-      <div className={`p-2 rounded-lg bg-secondary ${iconColor}`}>
-        <Icon className="h-4 w-4" />
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-xs text-muted-foreground font-medium">{label}</p>
-        <p className="text-sm font-semibold truncate">{value}</p>
-        {sublabel && (
-          <p className="text-[10px] text-muted-foreground/70">{sublabel}</p>
-        )}
-      </div>
+    <div className="flex items-baseline justify-between gap-3">
+      <dt className="shrink-0 text-muted-foreground">{label}</dt>
+      <dd
+        className={cn("min-w-0 truncate text-right text-foreground", mono && "font-mono")}
+        title={title}
+      >
+        {value}
+      </dd>
     </div>
   );
 }
 
+function Lines({ children }: { children: ReactNode }) {
+  return <dl className="mt-4 space-y-1.5 text-[13px] leading-5">{children}</dl>;
+}
+
+/** One row of the server definition list. */
+function Detail({
+  label,
+  title,
+  mono = true,
+  children,
+}: {
+  label: string;
+  title?: string;
+  mono?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <div className="grid grid-cols-[7.5rem_minmax(0,1fr)] items-baseline gap-3 py-2 text-[13px] leading-5 sm:grid-cols-[8.5rem_minmax(0,1fr)]">
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className={cn("min-w-0 break-words text-foreground", mono && "font-mono")} title={title}>
+        {children}
+      </dd>
+    </div>
+  );
+}
+
+const SEGMENT =
+  "inline-flex h-7 items-center rounded-[4px] px-2.5 text-[13px] font-medium transition-colors duration-150 pointer-coarse:h-9";
+
 export function SystemOverview() {
-  const [stats, setStats] = useState<SystemStats | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Last known stats draw at once on a revisit (with their own time); the poll refreshes them.
+  const [stats, setStats] = useState<SystemStats | null>(
+    () => apiCache.peek<SystemStats>(API.systemStats) ?? null,
+  );
+  const [loading, setLoading] = useState(() => apiCache.peek(API.systemStats) === undefined);
   const [error, setError] = useState<string | null>(null);
-  const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(() => {
+    const at = apiCache.storedAt(API.systemStats);
+    return at === undefined ? null : new Date(at);
+  });
   const [purging, setPurging] = useState(false);
   const [showPurgeDialog, setShowPurgeDialog] = useState(false);
   const [purgePassword, setPurgePassword] = useState("");
@@ -299,7 +254,7 @@ export function SystemOverview() {
 
   const fetchStats = useCallback(async () => {
     try {
-      const res = await authFetch(`${API_URL}/api/system/stats`);
+      const res = await apiCache.fetch(API.systemStats);
       const data = await res.json();
       setStats(data);
       setLastUpdate(new Date());
@@ -330,16 +285,16 @@ export function SystemOverview() {
       if (!res.ok) throw new Error(data.error || "Purge failed");
 
       // Show detailed success message with memory savings if available
-      let message = "Server resources purged successfully!";
+      let message = "Server resources purged successfully.";
       if (data.memorySaved && data.memorySaved !== "0%") {
         message += ` Memory reduced: ${data.memoryBefore}% → ${data.memoryAfter}% (${data.memorySaved} saved)`;
       }
-      
+
       toast.success(message, {
         description: data.details?.join(" • ") || undefined,
         duration: 5000,
       });
-      
+
       fetchStats();
     } catch (err: any) {
       toast.error(err.message || "Failed to purge server");
@@ -355,544 +310,406 @@ export function SystemOverview() {
     return () => clearInterval(interval);
   }, [fetchStats]);
 
+  const description = "Live metrics for this host, refreshed every 3 seconds.";
+
   if (loading) {
     return (
-      <div className="space-y-4 sm:space-y-5">
-        <div className="flex items-center gap-2.5 sm:gap-3">
-          <div className="h-9 w-9 shrink-0 rounded-xl bg-card border border-border shimmer sm:h-10 sm:w-10 sm:rounded-2xl" />
-          <div className="min-w-0 flex-1 space-y-2">
-            <div className="h-5 w-28 rounded-md bg-card border border-border shimmer" />
-            <div className="h-3 w-48 max-w-full rounded-md bg-card border border-border shimmer" />
+      <div>
+        <PageHeader title="System" description={description} />
+        <Card className="overflow-hidden">
+          <div className="h-12 border-b border-border" />
+          <div className="grid grid-cols-2 gap-px bg-border lg:grid-cols-4">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="bg-card p-4 sm:p-5">
+                <div className="h-3 w-12 rounded-sm bg-secondary" />
+                <div className="mt-3 h-7 w-20 rounded-sm bg-secondary" />
+                <div className="mt-4 h-1 rounded-full bg-secondary" />
+                <div className="mt-5 space-y-2.5">
+                  <div className="h-3 rounded-sm bg-secondary" />
+                  <div className="h-3 w-4/5 rounded-sm bg-secondary" />
+                  <div className="h-3 w-3/5 rounded-sm bg-secondary" />
+                </div>
+              </div>
+            ))}
           </div>
-        </div>
-        <div className="grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-4">
-          {[1, 2, 3, 4].map((i) => (
-            <div
-              key={i}
-              className="h-44 rounded-xl bg-card border border-border shimmer sm:h-52 sm:rounded-2xl"
-            />
-          ))}
-        </div>
-        <div className="h-64 rounded-xl bg-card border border-border shimmer sm:rounded-2xl" />
+        </Card>
       </div>
     );
   }
 
   if (error || !stats) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 sm:py-16">
-        <div className="mb-4 rounded-2xl border border-destructive/20 bg-destructive/10 p-4">
-          <Server className="h-8 w-8 text-destructive" />
-        </div>
-        <h3 className="mb-2 text-lg font-semibold">
-          Unable to fetch system stats
-        </h3>
-        <p className="mb-4 text-sm text-muted-foreground">{error}</p>
-        <button
-          onClick={fetchStats}
-          className="flex items-center gap-2 rounded-lg bg-secondary px-4 py-2 text-sm font-medium transition-colors hover:bg-secondary/80"
-        >
-          <RefreshCw className="h-4 w-4" />
-          Retry
-        </button>
+      <div>
+        <PageHeader title="System" description={description} />
+        <Card>
+          <div className="px-4 py-14 text-center">
+            <h3 className="text-[15px] font-semibold">Unable to fetch system stats</h3>
+            <p className="mx-auto mt-1 max-w-sm text-[13.5px] text-muted-foreground">
+              {error}
+            </p>
+            <Button variant="outline" onClick={fetchStats} className="mt-5">
+              <RefreshCw />
+              Retry
+            </Button>
+          </div>
+        </Card>
       </div>
     );
   }
 
+  const primaryDisk = stats.disk[0];
+  const [rxValue, rxUnit] = splitUnit(formatSpeed(stats.network.rxSpeed));
+  const [txValue, txUnit] = splitUnit(formatSpeed(stats.network.txSpeed));
+  const cores = stats.cpu.cores || 0;
+  // Load average is a run-queue length: at or above the core count the CPU is
+  // saturated (warn); at twice the core count work is queueing badly (danger).
+  const loadTone = (load: number) =>
+    cores > 0 && load >= cores * 2
+      ? "text-danger"
+      : cores > 0 && load >= cores
+        ? "text-warn"
+        : undefined;
+  const loads = [
+    stats.server.loadAvg?.load1 || 0,
+    stats.server.loadAvg?.load5 || 0,
+    stats.server.loadAvg?.load15 || 0,
+  ];
+  const hasLocation = Boolean(stats.server.location && stats.server.location !== "N/A");
+
   return (
-    <div className="space-y-4 sm:space-y-5">
-      {/* Compact title row — matches Operate pages; page still scrolls */}
-      <div className="flex items-start justify-between gap-3 sm:items-center">
-        <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-brand/20 bg-brand/10 sm:h-10 sm:w-10 sm:rounded-2xl">
-            <Gauge className="h-4 w-4 text-brand sm:h-[1.125rem] sm:w-[1.125rem]" />
-          </span>
-          <div className="min-w-0">
-            <h1 className="truncate text-lg font-bold tracking-tight sm:text-xl">
-              System
-            </h1>
-            <p className="truncate text-[11px] text-muted-foreground sm:text-xs">
-              Live host metrics · Updated{" "}
-              {lastUpdate ? lastUpdate.toLocaleTimeString() : "now"}
-            </p>
-          </div>
-        </div>
-        <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
-          <button
-            onClick={() => setShowPurgeDialog(true)}
-            disabled={purging}
-            title="Remove unused Docklift images + clear BuildKit cache"
-            className={cn(
-              "inline-flex h-9 items-center gap-1.5 rounded-xl border px-2.5 text-xs font-bold transition-all active:scale-95 sm:h-10 sm:gap-2 sm:px-3.5",
-              purging
-                ? "cursor-not-allowed border-rose-500/20 bg-rose-500/10 text-rose-500/30"
-                : "border-rose-500/20 bg-background text-rose-500 hover:border-rose-500/40 hover:bg-rose-500/5"
-            )}
-          >
-            {purging ? (
-              <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Trash2 className="h-3.5 w-3.5" />
-            )}
-            <span className="hidden sm:inline">Purge</span>
-          </button>
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={fetchStats}
-            title="Refresh stats"
-            className="h-9 w-9 shrink-0 border-border/60 bg-background hover:bg-secondary/80 sm:h-10 sm:w-10"
-          >
-            <RefreshCw className="h-4 w-4 text-muted-foreground" />
-          </Button>
-        </div>
-      </div>
-
-      {/* Main Stats Grid */}
-      <div className="grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-4">
-        {/* CPU Card */}
-        <div className="rounded-xl border border-border/50 bg-card p-3 shadow-sm sm:rounded-2xl sm:p-5">
-          <div className="mb-2.5 flex items-center gap-2 sm:mb-3">
-            <div className="rounded-lg bg-cyan-500/10 p-1.5 sm:p-2">
-              <Cpu className="h-3.5 w-3.5 text-cyan-500 sm:h-4 sm:w-4" />
-            </div>
-            <h3 className="text-sm font-semibold sm:text-base">CPU</h3>
-          </div>
-          <div className="flex justify-center">
-            <CircularProgress
-              value={stats.cpu.usage}
-              label="Usage"
-              sublabel={`${stats.cpu.cores} cores`}
-              color="cyan"
-              size={108}
-            />
-          </div>
-          <div className="mt-3 space-y-1 border-t border-border/50 pt-3 sm:mt-4 sm:space-y-1.5 sm:pt-4">
-            <p
-              className="truncate text-[10px] text-muted-foreground sm:text-xs"
-              title={stats.cpu.model}
+    <div className="space-y-4 sm:space-y-6">
+      <PageHeader
+        title="System"
+        description={description}
+        className="mb-0 sm:mb-0"
+        actions={
+          <>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={fetchStats}
+              title="Refresh stats"
             >
-              {stats.cpu.model}
-            </p>
-            <div className="flex justify-between text-[10px] sm:text-xs">
-              <span className="text-muted-foreground">Speed</span>
-              <span className="font-medium">{stats.cpu.speed} GHz</span>
-            </div>
-            {stats.cpu.temperature && (
-              <div className="flex justify-between text-[10px] sm:text-xs">
-                <span className="text-muted-foreground">Temp</span>
-                <span className="font-medium">{stats.cpu.temperature}°C</span>
-              </div>
-            )}
-          </div>
+              <RefreshCw className="text-muted-foreground" />
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setShowPurgeDialog(true)}
+              disabled={purging}
+              title="Remove unused Docklift images + clear BuildKit cache"
+              className="text-danger hover:text-danger"
+            >
+              {purging ? <RefreshCw className="animate-spin" /> : <Trash2 />}
+              Purge
+            </Button>
+          </>
+        }
+      />
+
+      {/* Host: one panel, four metrics divided by hairlines */}
+      <Card className="overflow-hidden">
+        <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3 sm:px-5">
+          <CardTitle>Host</CardTitle>
+          <span className="font-mono text-xs text-subtle">
+            Updated {lastUpdate ? lastUpdate.toLocaleTimeString() : "now"}
+          </span>
         </div>
 
-        {/* Memory Card */}
-        <div className="rounded-xl border border-border/50 bg-card p-3 shadow-sm sm:rounded-2xl sm:p-5">
-          <div className="mb-2.5 flex items-center gap-2 sm:mb-3">
-            <div className="rounded-lg bg-purple-500/10 p-1.5 sm:p-2">
-              <CircuitBoard className="h-3.5 w-3.5 text-purple-500 sm:h-4 sm:w-4" />
-            </div>
-            <h3 className="text-sm font-semibold sm:text-base">Memory</h3>
-          </div>
-          <div className="flex justify-center">
-            <CircularProgress
-              value={stats.memory.usedPercent}
-              label="Used"
-              sublabel={`${formatBytes(stats.memory.used)} / ${formatBytes(
-                stats.memory.total
-              )}`}
-              color="purple"
-              size={108}
-            />
-          </div>
-          <div className="mt-3 space-y-1 border-t border-border/50 pt-3 sm:mt-4 sm:space-y-1.5 sm:pt-4">
-            <div className="flex justify-between text-[10px] sm:text-xs">
-              <span className="text-muted-foreground">Total</span>
-              <span className="font-medium">
-                {formatBytes(stats.memory.total)}
-              </span>
-            </div>
-            <div className="flex justify-between text-[10px] sm:text-xs">
-              <span className="text-muted-foreground">Free</span>
-              <span className="font-medium text-emerald-500">
-                {formatBytes(stats.memory.free)}
-              </span>
-            </div>
-          </div>
-        </div>
+        <div className="grid grid-cols-2 gap-px bg-border lg:grid-cols-4">
+          <Metric label="CPU" aside={`${stats.cpu.cores} cores`}>
+            <Figure value={stats.cpu.usage.toFixed(1)} unit="%" className="mt-2" />
+            <Meter value={stats.cpu.usage} className="mt-3" />
+            <Lines>
+              <Line label="Model" value={stats.cpu.model} title={stats.cpu.model} mono={false} />
+              <Line label="Speed" value={`${stats.cpu.speed} GHz`} />
+              {stats.cpu.temperature && (
+                <Line label="Temp" value={`${stats.cpu.temperature}°C`} />
+              )}
+            </Lines>
+          </Metric>
 
-        {/* Primary Disk Card */}
-        <div className="rounded-xl border border-border/50 bg-card p-3 shadow-sm sm:rounded-2xl sm:p-5">
-          <div className="mb-2.5 flex items-center gap-2 sm:mb-3">
-            <div className="rounded-lg bg-amber-500/10 p-1.5 sm:p-2">
-              <HardDrive className="h-3.5 w-3.5 text-amber-500 sm:h-4 sm:w-4" />
-            </div>
-            <h3 className="text-sm font-semibold sm:text-base">Storage</h3>
-          </div>
-          {stats.disk[0] && (
-            <>
-              <div className="flex justify-center">
-                <CircularProgress
-                  value={stats.disk[0].usedPercent}
-                  label={stats.disk[0].mount}
-                  sublabel={`${formatBytes(stats.disk[0].used)} / ${formatBytes(
-                    stats.disk[0].total
-                  )}`}
-                  color="amber"
-                  size={108}
-                />
-              </div>
-              <div className="mt-3 space-y-1 border-t border-border/50 pt-3 sm:mt-4 sm:space-y-1.5 sm:pt-4">
-                <div className="flex justify-between text-[10px] sm:text-xs">
-                  <span className="text-muted-foreground">Type</span>
-                  <span className="font-medium">
-                    {stats.disk[0].type || "Unknown"}
-                  </span>
-                </div>
-                {stats.disk.length > 1 && (
-                  <p className="text-[10px] text-muted-foreground">
-                    +{stats.disk.length - 1} more disk(s)
-                  </p>
-                )}
-              </div>
-            </>
-          )}
-        </div>
+          <Metric label="Memory" aside={formatBytes(stats.memory.total)}>
+            <Figure value={stats.memory.usedPercent.toFixed(1)} unit="%" className="mt-2" />
+            <Meter value={stats.memory.usedPercent} className="mt-3" />
+            <Lines>
+              <Line label="Used" value={formatBytes(stats.memory.used)} />
+              <Line label="Free" value={formatBytes(stats.memory.free)} />
+              <Line label="Total" value={formatBytes(stats.memory.total)} />
+            </Lines>
+          </Metric>
 
-        {/* Network Card */}
-        <div className="rounded-xl border border-border/50 bg-card p-3 shadow-sm sm:rounded-2xl sm:p-5">
-          <div className="mb-2.5 flex items-center gap-2 sm:mb-3">
-            <div className="rounded-lg bg-emerald-500/10 p-1.5 sm:p-2">
-              <Wifi className="h-3.5 w-3.5 text-emerald-500 sm:h-4 sm:w-4" />
-            </div>
-            <h3 className="text-sm font-semibold sm:text-base">Network</h3>
-          </div>
-          <div className="flex justify-center">
-            <div className="flex h-[108px] w-[108px] items-center justify-center rounded-full border-4 border-secondary bg-secondary/50">
-              <Activity className="h-8 w-8 animate-pulse text-emerald-500 sm:h-9 sm:w-9" />
-            </div>
-          </div>
-          <div className="mt-3 space-y-1.5 border-t border-border/50 pt-3 sm:mt-4 sm:space-y-2 sm:pt-4">
-            <div className="flex items-center justify-between text-[10px] sm:text-xs">
-              <div className="flex items-center gap-1.5 text-muted-foreground">
-                <ArrowDownToLine className="h-3 w-3 text-emerald-500" />
-                Down
-              </div>
-              <span className="font-medium tabular-nums">
-                {formatSpeed(stats.network.rxSpeed)}
-              </span>
-            </div>
-            <div className="flex items-center justify-between text-[10px] sm:text-xs">
-              <div className="flex items-center gap-1.5 text-muted-foreground">
-                <ArrowUpFromLine className="h-3 w-3 text-cyan-500" />
-                Up
-              </div>
-              <span className="font-medium tabular-nums">
-                {formatSpeed(stats.network.txSpeed)}
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Server Details - Full Width Two Column Layout */}
-      <div className="rounded-xl border border-border/50 bg-card p-3 shadow-sm sm:rounded-2xl sm:p-5">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 sm:mb-4">
-          <div className="flex items-center gap-2">
-            <div className="rounded-lg bg-rose-500/10 p-1.5 sm:p-2">
-              <Server className="h-3.5 w-3.5 text-rose-500 sm:h-4 sm:w-4" />
-            </div>
-            <h3 className="text-sm font-semibold sm:text-base">Server Details</h3>
-          </div>
-          <div className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/20 bg-gradient-to-r from-emerald-500/10 to-cyan-500/10 px-2.5 py-1 sm:rounded-full sm:px-3 sm:py-1.5">
-            <Clock className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-            <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 sm:text-xs">
-              {stats.server.uptimeFormatted}
-            </span>
-          </div>
-        </div>
-        <div className="grid grid-cols-1 gap-x-8 gap-y-0 text-xs sm:text-sm md:grid-cols-2">
-          {/* Left Column */}
-          <div className="space-y-0">
-            <div className="flex items-center justify-between gap-3 border-b border-border/30 py-2">
-              <span className="flex shrink-0 items-center gap-2 text-muted-foreground">
-                <Monitor className="h-3.5 w-3.5" /> Hostname
-              </span>
-              <span className="min-w-0 truncate text-right font-medium">
-                {stats.server.hostname}
-              </span>
-            </div>
-            <div className="flex items-center justify-between gap-3 border-b border-border/30 py-2">
-              <span className="flex shrink-0 items-center gap-2 text-muted-foreground">
-                <Server className="h-3.5 w-3.5" /> OS
-              </span>
-              <span className="min-w-0 truncate text-right text-[11px] font-medium sm:text-xs">
-                {stats.server.distro || stats.server.platform}
-              </span>
-            </div>
-            <div className="flex items-center justify-between gap-3 border-b border-border/30 py-2">
-              <span className="flex shrink-0 items-center gap-2 text-muted-foreground">
-                <Zap className="h-3.5 w-3.5" /> Kernel
-              </span>
-              <span className="min-w-0 truncate text-right text-[11px] font-medium sm:text-xs">
-                {stats.server.kernel}
-              </span>
-            </div>
-            <div className="flex items-center justify-between gap-3 border-b border-border/30 py-2">
-              <span className="flex shrink-0 items-center gap-2 text-muted-foreground">
-                <Gauge className="h-3.5 w-3.5" /> Arch
-              </span>
-              <span className="font-medium">{stats.server.arch}</span>
-            </div>
-            <div className="flex items-center justify-between gap-3 border-b border-border/30 py-2">
-              <span className="flex shrink-0 items-center gap-2 text-muted-foreground">
-                <Calendar className="h-3.5 w-3.5" /> Time
-              </span>
-              <span className="min-w-0 truncate text-right text-[11px] font-medium sm:text-xs">
-                {stats.server.serverTime}
-              </span>
-            </div>
-            <div className="flex items-center justify-between gap-3 border-b border-border/30 py-2 md:border-b-0">
-              <span className="flex shrink-0 items-center gap-2 text-muted-foreground">
-                <Network className="h-3.5 w-3.5" /> Connections
-              </span>
-              <span className="font-medium tabular-nums">
-                {stats.server.activeConnections}
-              </span>
-            </div>
-          </div>
-
-          {/* Right Column */}
-          <div className="space-y-0">
-            <div className="flex items-center justify-between gap-3 border-b border-border/30 py-2">
-              <span className="flex shrink-0 items-center gap-2 text-muted-foreground">
-                <Cpu className="h-3.5 w-3.5" /> CPU
-              </span>
-              <span
-                className="min-w-0 truncate text-right text-[11px] font-medium sm:max-w-[200px] sm:text-xs"
-                title={stats.server.cpuModel}
-              >
-                {stats.server.cpuCores}
-              </span>
-            </div>
-            <div className="flex items-center justify-between gap-3 border-b border-border/30 py-2">
-              <span className="flex shrink-0 items-center gap-2 text-muted-foreground">
-                <Activity className="h-3.5 w-3.5" /> Load
-              </span>
-              <span className="font-medium tabular-nums">
-                <span className="text-cyan-500">
-                  {stats.server.loadAvg?.load1 || 0}
-                </span>
-                <span className="mx-1 text-muted-foreground">|</span>
-                <span className="text-amber-500">
-                  {stats.server.loadAvg?.load5 || 0}
-                </span>
-                <span className="mx-1 text-muted-foreground">|</span>
-                <span className="text-emerald-500">
-                  {stats.server.loadAvg?.load15 || 0}
-                </span>
-              </span>
-            </div>
-            {stats.gpu.available && (
-              <div className="flex items-center justify-between gap-3 border-b border-border/30 py-2">
-                <span className="flex shrink-0 items-center gap-2 text-muted-foreground">
-                  <Gauge className="h-3.5 w-3.5" /> GPU
-                </span>
-                <span
-                  className="min-w-0 truncate text-right text-[11px] font-medium sm:max-w-[200px] sm:text-xs"
-                  title={stats.gpu.model || ""}
-                >
-                  {stats.gpu.model}
-                </span>
-              </div>
-            )}
-            <div className="flex items-center justify-between gap-3 border-b border-border/30 py-2">
-              <span className="flex shrink-0 items-center gap-2 text-muted-foreground">
-                <CircuitBoard className="h-3.5 w-3.5" /> Swap
-              </span>
-              <span className="text-right font-medium tabular-nums">
-                {formatBytes(stats.server.swap?.used || 0)} /{" "}
-                {formatBytes(stats.server.swap?.total || 0)}
-              </span>
-            </div>
-            <div className="flex items-center justify-between gap-3 border-b border-border/30 py-2">
-              <span className="flex shrink-0 items-center gap-2 text-muted-foreground">
-                <Globe className="h-3.5 w-3.5" /> IP
-              </span>
-              <span className="font-medium text-cyan-500 tabular-nums">
-                {stats.server.ipAddress}
-              </span>
-            </div>
-            {stats.server.location && stats.server.location !== "N/A" ? (
-              <div className="flex items-center justify-between gap-3 py-2">
-                <span className="flex shrink-0 items-center gap-2 text-muted-foreground">
-                  <MapPin className="h-3.5 w-3.5" /> Location
-                </span>
-                <span className="min-w-0 truncate text-right font-medium">
-                  {stats.server.location}
-                </span>
-              </div>
+          <Metric
+            label="Storage"
+            aside={primaryDisk?.mount}
+            asideTitle={primaryDisk ? `Mount point ${primaryDisk.mount}` : undefined}
+          >
+            {primaryDisk ? (
+              <>
+                <Figure value={primaryDisk.usedPercent.toFixed(1)} unit="%" className="mt-2" />
+                <Meter value={primaryDisk.usedPercent} className="mt-3" />
+                <Lines>
+                  <Line label="Used" value={formatBytes(primaryDisk.used)} />
+                  <Line label="Total" value={formatBytes(primaryDisk.total)} />
+                  <Line label="Type" value={primaryDisk.type || "Unknown"} />
+                </Lines>
+              </>
             ) : (
-              <div className="flex items-center justify-between gap-3 py-2">
-                <span className="flex shrink-0 items-center gap-2 text-muted-foreground">
-                  <Globe className="h-3.5 w-3.5" /> IP
-                </span>
-                <span className="font-medium text-cyan-500 tabular-nums">
-                  {stats.server.ipAddress}
-                </span>
-              </div>
+              <p className="mt-2 text-[13px] text-muted-foreground">No disks reported.</p>
             )}
-          </div>
+          </Metric>
+
+          <Metric label="Network">
+            <div className="mt-2 flex flex-wrap items-baseline gap-x-4">
+              <div className="flex items-baseline">
+                <ArrowDown className="size-3.5 shrink-0 self-center text-subtle" />
+                <span className="sr-only">Down</span>
+                <Figure value={rxValue} unit={rxUnit} className="ml-1" />
+              </div>
+              <div className="flex items-baseline">
+                <ArrowUp className="size-3.5 shrink-0 self-center text-subtle" />
+                <span className="sr-only">Up</span>
+                <Figure value={txValue} unit={txUnit} className="ml-1" />
+              </div>
+            </div>
+            {/* Keeps the lines level with the metered cells */}
+            <div aria-hidden="true" className="mt-3 h-1" />
+            <Lines>
+              <Line label="Received" value={formatBytes(stats.network.bytesReceived)} />
+              <Line label="Sent" value={formatBytes(stats.network.bytesSent)} />
+            </Lines>
+          </Metric>
         </div>
 
-        {/* Top Processes - Full Width Below */}
-        {stats.processes && stats.processes.length > 0 && (
-          <div className="mt-3 border-t border-border/50 pt-3 sm:mt-4 sm:pt-4">
-            <div className="mb-2.5 flex items-center justify-between gap-2 sm:mb-3">
-              <div className="flex items-center gap-2">
-                <Activity className="h-3.5 w-3.5 text-blue-500 sm:h-4 sm:w-4" />
-                <span className="text-sm font-medium">Top Processes</span>
-              </div>
-              <div className="flex items-center gap-0.5 rounded-lg bg-secondary/50 p-0.5">
-                <button
-                  onClick={() => setProcessSortBy("cpu")}
+        {stats.disk.length > 1 && (
+          <div className="border-t border-border">
+            <h3 className="px-4 pb-1 pt-3 text-xs text-muted-foreground sm:px-5">
+              Disks
+            </h3>
+            <ul className="divide-y divide-border">
+              {stats.disk.map((d) => (
+                <li key={d.mount} className="px-4 py-2.5 sm:px-5">
+                  <div className="flex items-center gap-4">
+                    <div className="flex min-w-0 flex-1 items-baseline gap-2 sm:w-52 sm:flex-none">
+                      <span className="truncate font-mono text-[13px] text-foreground">
+                        {d.mount}
+                      </span>
+                      <span className="shrink-0 text-xs text-subtle">
+                        {d.type || "Unknown"}
+                      </span>
+                    </div>
+                    <Meter value={d.usedPercent} className="hidden flex-1 sm:block" />
+                    <span className="hidden w-40 shrink-0 text-right font-mono text-xs text-muted-foreground sm:inline">
+                      {formatBytes(d.used)} of {formatBytes(d.total)}
+                    </span>
+                    <span className="w-12 shrink-0 text-right font-mono text-[13px] text-foreground">
+                      {d.usedPercent.toFixed(1)}%
+                    </span>
+                  </div>
+                  <div className="mt-2 flex items-center gap-3 sm:hidden">
+                    <Meter value={d.usedPercent} className="flex-1" />
+                    <span className="shrink-0 font-mono text-xs text-muted-foreground">
+                      {formatBytes(d.used)} of {formatBytes(d.total)}
+                    </span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </Card>
+
+      {/* Server details: two-column definition list */}
+      <Card>
+        <div className="border-b border-border px-4 py-3 sm:px-5">
+          <CardTitle>Server details</CardTitle>
+        </div>
+        <div className="grid px-4 sm:px-5 md:grid-cols-2 md:gap-x-10">
+          <dl className="divide-y divide-border">
+            <Detail label="Hostname">{stats.server.hostname}</Detail>
+            <Detail label="OS" mono={false}>{stats.server.distro || stats.server.platform}</Detail>
+            <Detail label="Kernel">{stats.server.kernel}</Detail>
+            <Detail label="Architecture">{stats.server.arch}</Detail>
+            <Detail label="Uptime">{stats.server.uptimeFormatted}</Detail>
+            <Detail label="Server time">{stats.server.serverTime}</Detail>
+          </dl>
+          <dl className="divide-y divide-border border-t border-border md:border-t-0">
+            <Detail label="CPU" title={stats.server.cpuModel}>
+              {stats.server.cpuCores}
+            </Detail>
+            <Detail label="Load average">
+              <span className="inline-flex flex-wrap items-baseline gap-x-3">
+                {loads.map((load, i) => (
+                  <span key={i} className={loadTone(load)}>
+                    {load}
+                  </span>
+                ))}
+                <span className="font-sans text-xs text-subtle">1, 5, 15 min</span>
+              </span>
+            </Detail>
+            {stats.gpu.available && (
+              <Detail label="GPU" title={stats.gpu.model || ""}>
+                {stats.gpu.model}
+              </Detail>
+            )}
+            <Detail label="Swap">
+              {formatBytes(stats.server.swap?.used || 0)} of{" "}
+              {formatBytes(stats.server.swap?.total || 0)}
+            </Detail>
+            <Detail label="IP address">{stats.server.ipAddress}</Detail>
+            {hasLocation && <Detail label="Location" mono={false}>{stats.server.location}</Detail>}
+            <Detail label="Connections">{stats.server.activeConnections}</Detail>
+          </dl>
+        </div>
+      </Card>
+
+      {/* Top processes */}
+      {stats.processes && stats.processes.length > 0 && (
+        <Card className="overflow-hidden">
+          <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-2.5 sm:px-5">
+            <CardTitle>Top processes</CardTitle>
+            <div className="inline-flex rounded-md border border-input p-0.5">
+              <button
+                onClick={() => setProcessSortBy("cpu")}
+                className={cn(
+                  SEGMENT,
+                  processSortBy === "cpu"
+                    ? "bg-secondary text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                CPU
+              </button>
+              <button
+                onClick={() => setProcessSortBy("mem")}
+                className={cn(
+                  SEGMENT,
+                  processSortBy === "mem"
+                    ? "bg-secondary text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                Mem
+              </button>
+            </div>
+          </div>
+
+          <table className="w-full text-left text-[13px]">
+            <thead>
+              <tr className="h-9 text-xs text-muted-foreground">
+                <th className="hidden w-24 pl-5 pr-3 font-medium sm:table-cell">PID</th>
+                <th className="pl-4 pr-3 font-medium sm:px-3">Process</th>
+                <th className="hidden px-3 font-medium sm:table-cell">User</th>
+                <th
                   className={cn(
-                    "rounded-md px-2 py-1 text-[11px] font-medium transition-all sm:text-xs",
-                    processSortBy === "cpu"
-                      ? "bg-cyan-500/20 text-cyan-500"
-                      : "text-muted-foreground hover:text-foreground"
+                    "w-20 px-3 text-right font-medium sm:w-28",
+                    processSortBy === "cpu" && "text-foreground",
                   )}
                 >
                   CPU
-                </button>
-                <button
-                  onClick={() => setProcessSortBy("mem")}
+                </th>
+                <th
                   className={cn(
-                    "rounded-md px-2 py-1 text-[11px] font-medium transition-all sm:text-xs",
-                    processSortBy === "mem"
-                      ? "bg-purple-500/20 text-purple-500"
-                      : "text-muted-foreground hover:text-foreground"
+                    "w-20 pl-3 pr-4 text-right font-medium sm:w-28 sm:pr-5",
+                    processSortBy === "mem" && "text-foreground",
                   )}
                 >
-                  Mem
-                </button>
-              </div>
-            </div>
-
-            <div className="overflow-x-auto rounded-xl border border-border/50 [-webkit-overflow-scrolling:touch]">
-              <table className="w-full min-w-[480px] text-left text-xs sm:min-w-[560px]">
-                <thead className="bg-secondary/50 font-medium text-muted-foreground">
-                  <tr>
-                    <th className="px-2.5 py-2 sm:px-3">PID</th>
-                    <th className="px-2.5 py-2 sm:px-3">Process</th>
-                    <th className="px-2.5 py-2 sm:px-3">User</th>
-                    <th className="px-2.5 py-2 text-right sm:px-3">CPU</th>
-                    <th className="px-2.5 py-2 text-right sm:px-3">Memory</th>
+                  Memory
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {[...stats.processes]
+                .sort((a, b) =>
+                  processSortBy === "cpu" ? b.cpu - a.cpu : b.mem - a.mem
+                )
+                .map((proc) => (
+                  <tr
+                    key={proc.pid}
+                    className="h-11 border-t border-border transition-colors duration-150 hover:bg-secondary/50"
+                  >
+                    <td className="hidden pl-5 pr-3 font-mono text-muted-foreground sm:table-cell">
+                      {proc.pid}
+                    </td>
+                    <td className="max-w-0 py-2 pl-4 pr-3 sm:px-3">
+                      <div className="truncate font-medium text-foreground" title={proc.name}>
+                        {proc.name}
+                      </div>
+                      <div className="truncate font-mono text-xs text-muted-foreground sm:hidden">
+                        {proc.pid} · {proc.user}
+                      </div>
+                    </td>
+                    <td className="hidden px-3 font-mono text-muted-foreground sm:table-cell">
+                      {proc.user}
+                    </td>
+                    <td className="px-3 text-right font-mono text-foreground">
+                      {proc.cpu.toFixed(1)}%
+                    </td>
+                    <td className="pl-3 pr-4 text-right font-mono text-foreground sm:pr-5">
+                      {proc.mem.toFixed(1)}%
+                    </td>
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-border/30 bg-card">
-                  {[...stats.processes]
-                    .sort((a, b) =>
-                      processSortBy === "cpu" ? b.cpu - a.cpu : b.mem - a.mem
-                    )
-                    .map((proc) => (
-                      <tr
-                        key={proc.pid}
-                        className="transition-colors hover:bg-secondary/30"
-                      >
-                        <td className="px-2.5 py-2 font-mono text-muted-foreground tabular-nums sm:px-3">
-                          {proc.pid}
-                        </td>
-                        <td
-                          className="max-w-[120px] truncate px-2.5 py-2 font-medium sm:max-w-[180px] sm:px-3"
-                          title={proc.name}
-                        >
-                          {proc.name}
-                        </td>
-                        <td className="px-2.5 py-2 text-muted-foreground sm:px-3">
-                          {proc.user}
-                        </td>
-                        <td className="px-2.5 py-2 text-right font-medium tabular-nums text-cyan-500 sm:px-3">
-                          {proc.cpu.toFixed(1)}%
-                        </td>
-                        <td className="px-2.5 py-2 text-right tabular-nums text-purple-500 sm:px-3">
-                          {proc.mem.toFixed(1)}%
-                        </td>
-                      </tr>
-                    ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-      </div>
+                ))}
+            </tbody>
+          </table>
+        </Card>
+      )}
 
       {/* Purge Confirmation Dialog */}
       <Dialog open={showPurgeDialog} onOpenChange={setShowPurgeDialog}>
-        <DialogContent className="sm:max-w-md bg-background border-border shadow-2xl">
-          <DialogHeader className="space-y-3">
-            <div className="mx-auto w-12 h-12 rounded-2xl bg-rose-500/10 flex items-center justify-center mb-2">
-              <Trash2 className="h-6 w-6 text-rose-500" />
-            </div>
-            <DialogTitle className="text-center text-xl font-bold tracking-tight">
-              Purge unused Docklift images
-            </DialogTitle>
-            <DialogDescription className="text-center text-muted-foreground text-sm">
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Purge unused Docklift images</DialogTitle>
+            <DialogDescription>
               Removes unused Docklift images outside each project&apos;s keep-2 set and clears all BuildKit cache. Does not modify the host OS or other containers.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-2.5 my-4">
-            <div className="p-3 rounded-xl bg-secondary/30 border border-border flex items-center gap-3">
-              <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-              <p className="text-xs font-semibold">
-                Unused Docklift images + full BuildKit wipe
-              </p>
+          <dl className="divide-y divide-border border-y border-border text-[13px] leading-5">
+            <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-3 py-2">
+              <dt className="text-muted-foreground">Removes</dt>
+              <dd className="text-foreground">Unused Docklift images + full BuildKit wipe</dd>
             </div>
-            <div className="p-3 rounded-xl bg-secondary/30 border border-border flex items-center gap-3">
-              <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
-              <p className="text-xs font-semibold text-muted-foreground">
-                Keeps current + previous successful tags per project
-              </p>
+            <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-3 py-2">
+              <dt className="text-muted-foreground">Keeps</dt>
+              <dd className="text-foreground">Current + previous successful tags per project</dd>
             </div>
-            <div className="p-3 rounded-xl bg-secondary/30 border border-border flex items-center gap-3">
-              <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
-              <p className="text-xs font-semibold text-muted-foreground">
-                No host prune, journal, apt, or /tmp wipe
-              </p>
+            <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-3 py-2">
+              <dt className="text-muted-foreground">Leaves alone</dt>
+              <dd className="text-foreground">
+                No host prune, journal, apt, or <span className="font-mono">/tmp</span> wipe
+              </dd>
             </div>
-          </div>
+          </dl>
 
-          <div className="space-y-2 mb-2">
-            <label className="text-xs font-semibold text-muted-foreground">Confirm with account password</label>
+          <label className="block space-y-1.5">
+            <span className="block text-[13px] font-medium text-foreground">
+              Confirm with your account password
+            </span>
             <Input
               type="password"
               value={purgePassword}
               onChange={(e) => setPurgePassword(e.target.value)}
-              placeholder="Your DockLift password"
+              placeholder="Account password"
               autoComplete="current-password"
-              className="rounded-xl"
             />
-          </div>
+          </label>
 
-          <DialogFooter className="flex flex-col sm:flex-row gap-2 pt-2">
+          <DialogFooter className="pt-1">
             <Button
-              variant="ghost"
+              variant="outline"
               onClick={() => {
                 setShowPurgeDialog(false);
                 setPurgePassword("");
               }}
-              className="flex-1 rounded-xl font-bold"
             >
               Cancel
             </Button>
             <Button
+              variant="destructive"
               onClick={handlePurge}
               disabled={!purgePassword.trim()}
-              className="flex-1 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-bold shadow-lg shadow-rose-500/20"
             >
-              Start Purge
+              Purge images
             </Button>
           </DialogFooter>
         </DialogContent>

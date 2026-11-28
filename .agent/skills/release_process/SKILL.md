@@ -16,7 +16,7 @@ Push to master → CI + Install green → Run "Release" → semantic-release + D
 ### Pipeline Steps
 1. **CI** (`ci.yml`) and **Install** (`install.yml`, Ubuntu matrix cell) run on push — not inside Release
 2. You manually run **Release** when those are green
-3. semantic-release analyzes commits, bumps `package.json` (root/frontend/backend), updates `CHANGELOG.md`
+3. semantic-release analyzes commits, bumps the root `package.json` and `frontend/package.json`, updates `CHANGELOG.md`
 4. Commits `chore(release): X.Y.Z [skip ci]`, tags `vX.Y.Z`, creates GitHub Release
 5. Same Release run calls **Docs** (`workflow_call`) so docklift.dev gets the new changelog / Pages deploy
 6. Docs also runs alone on `website/**` / `CHANGELOG.md` pushes (no release needed)
@@ -28,12 +28,12 @@ Homepage preview + `/changelog` sync from root `CHANGELOG.md` at VitePress build
 | File | Purpose |
 |------|---------|
 | `release.config.cjs` | semantic-release config (plugins, release rules, assets) |
-| `.github/workflows/release.yml` | Manual **Release** (semantic-release + Docs) |
-| `.github/workflows/install.yml` | Install smoke matrix (Ubuntu now; extend later) |
-| `.github/workflows/ci.yml` | Fast typecheck / unit / frontend build |
+| `.github/workflows/release.yml` | Manual **Release** (semantic-release + Docs); Node 26 (semantic-release 26 requires >= 26.13) |
+| `.github/workflows/install.yml` | Install smoke matrix (`fresh`, `from-release`; the `fresh` cell also runs `tests/e2e`) |
+| `.github/workflows/ci.yml` | Go fmt/vet/test/govulncheck, contract suite, frontend checks, shell checks, image build + smoke test |
 | `.github/workflows/docs.yml` | VitePress → GitHub Pages |
 | `CHANGELOG.md` | Auto-updated changelog |
-| `package.json` (root) | Root version + semantic-release devDependencies |
+| `package.json` (root) | **Version source of truth** + semantic-release devDependencies |
 
 ## Commit Convention
 
@@ -62,7 +62,7 @@ type(scope): description
 
 ### Examples
 
-Assume current version is **1.3.21** (root + frontend + backend stay in sync):
+Assume current version is **1.3.21** (root and frontend stay in sync):
 
 ```bash
 # 1) Commit with conventional messages on master
@@ -94,8 +94,12 @@ When documenting or changing upgrades:
 - On compose build failure **or** failed `/api/health` after start: checkout previous ref, restore
   `.db.bak`, recreate stack.
 - Stop backend before DB snapshot; prefer `sqlite3 .backup`, else copy while stopped.
-- Tag `docklift-backend:pre-upgrade` / `docklift-frontend:pre-upgrade` before rebuild; rollback
-  retags those images (do not rely only on rebuilding an old git ref).
+- Tag `docklift-backend:pre-upgrade` before rebuild (the script also tags a leftover
+  `docklift-frontend` from a 2.x install); rollback retags those images (do not rely only on
+  rebuilding an old git ref).
+- Upgrading from 2.x removes the obsolete `docklift-frontend` and `docklift-nginx` containers
+  (`OBSOLETE_CONTAINERS` / `remove_obsolete_containers`); the stack is then `backend`, `nginx-proxy`,
+  `certbot`. The new backend applies the embedded SQL migrations on start, over the existing database.
 - Create/validate backup directory **before** stopping backend.
 - `docker compose stop backend` must succeed; probe run-state as running | stopped | probe-error
   (no `|| true` on stop). Abort before DB copy on running **or** probe-error; restart backend on abort.
@@ -104,7 +108,8 @@ When documenting or changing upgrades:
   Behavioral coverage: `scripts/test-upgrade-backend-run-state.sh` (stubbed Docker).
 - `arm_rollback` immediately after verified stop; `disarm_rollback` only after final health OK.
 
-- Health probe: `docker compose exec backend node -e "fetch('http://127.0.0.1:8000/api/health')…"`.
+- Health probe (`health_ok`): `docker exec docklift-backend wget -q -O /dev/null http://127.0.0.1:8000/api/health`
+  (the Go image has busybox `wget`; the `node` fetch fallback only matters when rolling back to a 2.1.x image).
 - Print `http://SERVER_IP:8080` after success.
 - Preserve `data/`, `deployments/`, nginx confs, certs, user `dl_*` containers.
 - `format_time` must tolerate `((0))` under `set -e` (`|| true`).
@@ -133,20 +138,26 @@ git push origin master
 
 ## Version Bump Strategy
 
-The `@semantic-release/exec` plugin bumps versions in sub-packages:
+The root `package.json` `version` is the single source of truth. `@semantic-release/npm` bumps it.
+Nothing else needs a version edit:
+
+- The `Dockerfile` reads it (unless `--build-arg VERSION` is given) and stamps the Go binary with
+  `-ldflags "-X docklift/internal/version.Version=..."`. `make build` and `make dev` do the same.
+- `upgrade.sh` reads it from `package.json` to report the installed version.
+- The dashboard shows `frontend/package.json`'s version (`__APP_VERSION__` in `vite.config.ts`), so
+  `@semantic-release/exec` keeps that one in step:
 
 ```bash
 npm version X.Y.Z --no-git-tag-version --allow-same-version --prefix frontend
-npm version X.Y.Z --no-git-tag-version --allow-same-version --prefix backend
 ```
 
-The `@semantic-release/npm` plugin bumps the root `package.json`.
+The Go module has no version of its own.
 
 The `@semantic-release/git` plugin commits these files back:
 - `CHANGELOG.md`
 - `package.json`, `package-lock.json`
-- `frontend/package.json`, `frontend/package-lock.json`
-- `backend/package.json`, `backend/package-lock.json`
+- `frontend/package.json`
+- `npm-shrinkwrap.json` (listed in the config, not present in the repo today)
 
 ## GitHub Token
 
@@ -160,7 +171,8 @@ The workflow uses `secrets.GH_TOKEN` (not the default `GITHUB_TOKEN`) to allow s
 | "Version not changed" | Add `--allow-same-version` flag |
 | No release created | Ensure commits use conventional format (`type: msg`) |
 | "Not allowed to push" | Check `GH_TOKEN` secret has `repo` scope |
-| Tests fail | Fix tests before release — `test` job must pass first |
+| Release shipped something broken | The Release workflow does not re-test; run CI and Install on master first and wait for green |
+| Binary reports the wrong version | Check the root `package.json` version and that the image build got no stale `VERSION` build arg (`DOCKLIFT_BUILD_VERSION` in compose) |
 
 ## DO NOT Use `bumpp`
 

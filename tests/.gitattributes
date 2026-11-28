@@ -1,0 +1,4 @@
+# Go sources, golden files and test data must be LF on every OS (golden tests compare bytes)
+* text=auto eol=lf
+*.gz binary
+*.pem text eol=lf

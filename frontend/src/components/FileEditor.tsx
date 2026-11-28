@@ -176,60 +176,59 @@ export function FileEditor({
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex flex-col bg-background"
+      className="fixed inset-0 z-100 flex flex-col bg-background"
       role="dialog"
       aria-modal="true"
       aria-label={`Edit ${basename}`}
     >
-      {/* IDE title bar */}
-      <header className="flex shrink-0 flex-col gap-2 border-b border-border/60 bg-secondary/30 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:px-4">
-        <div className="flex min-w-0 items-center gap-3">
+      {/* Title bar */}
+      <header className="flex shrink-0 flex-col gap-2 border-b border-border bg-background px-3 py-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:px-4">
+        <div className="flex min-w-0 items-center gap-2">
           <Button
             type="button"
             variant="ghost"
             size="icon"
             onClick={handleClose}
-            className="h-9 w-9 shrink-0 rounded-xl"
+            className="shrink-0 text-subtle hover:text-foreground"
             title="Close (Esc)"
           >
-            <X className="h-4 w-4" />
+            <X />
           </Button>
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 items-center gap-2">
               {isDirty && (
-                <Circle className="h-2.5 w-2.5 shrink-0 fill-brand text-brand" />
+                <Circle className="size-2 shrink-0 fill-warn text-warn" />
               )}
-              <h2 className="truncate text-sm font-semibold tracking-tight">
+              <h2 className="truncate font-mono text-sm font-medium">
                 {basename}
               </h2>
-              <span className="hidden shrink-0 rounded-md border border-border/60 bg-background/60 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground sm:inline">
+              <span className="hidden shrink-0 rounded-sm border border-border px-1.5 text-xs leading-5 text-muted-foreground sm:inline">
                 {language}
               </span>
               {isDirty && (
-                <span className="shrink-0 text-[10px] font-medium text-brand">
+                <span className="shrink-0 text-xs text-warn">
                   Unsaved
                 </span>
               )}
             </div>
-            <p className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground">
+            <p className="truncate font-mono text-xs text-muted-foreground">
               {pathParts.length > 1 ? pathParts.join(" / ") : filename}
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5 sm:gap-2">
+        <div className="flex items-center gap-2">
           <Button
             type="button"
             variant="outline"
             size="sm"
             onClick={() => setWordWrap((w) => (w === "on" ? "off" : "on"))}
             className={cn(
-              "h-9 rounded-xl border-border/60 px-2.5",
-              wordWrap === "on" && "border-brand/30 bg-brand/10 text-brand",
+              wordWrap === "on" ? "bg-secondary text-foreground" : "text-muted-foreground",
             )}
             title="Toggle word wrap"
           >
-            <WrapText className="h-4 w-4" />
+            <WrapText className="size-3.5" />
             <span className="hidden sm:inline">Wrap</span>
           </Button>
           {!isNarrow && (
@@ -239,12 +238,11 @@ export function FileEditor({
               size="sm"
               onClick={() => setMinimap((m) => !m)}
               className={cn(
-                "h-9 rounded-xl border-border/60 px-2.5",
-                minimap && "border-brand/30 bg-brand/10 text-brand",
+                minimap ? "bg-secondary text-foreground" : "text-muted-foreground",
               )}
               title="Toggle minimap"
             >
-              <MapIcon className="h-4 w-4" />
+              <MapIcon className="size-3.5" />
               <span className="hidden sm:inline">Map</span>
             </Button>
           )}
@@ -252,12 +250,12 @@ export function FileEditor({
             type="button"
             onClick={() => void handleSave()}
             disabled={saving || !isDirty}
-            className="h-9 flex-1 rounded-xl bg-brand px-4 font-semibold text-brand-foreground shadow-lg shadow-brand/15 hover:brightness-110 disabled:opacity-50 sm:flex-none"
+            className="flex-1 sm:flex-none"
           >
             {saving ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <Loader2 className="animate-spin" />
             ) : (
-              <Save className="h-4 w-4" />
+              <Save />
             )}
             Save
           </Button>
@@ -274,15 +272,15 @@ export function FileEditor({
           onChange={(val) => setValue(val ?? "")}
           onMount={onMount}
           loading={
-            <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground">
-              <Loader2 className="h-7 w-7 animate-spin text-brand" />
-              <span className="text-sm">Loading editor…</span>
+            <div className="flex h-full items-center justify-center gap-2 text-[13px] text-muted-foreground">
+              <Loader2 className="size-4 animate-spin" />
+              Loading editor…
             </div>
           }
           options={{
             fontSize: isNarrow ? 13 : 14,
             fontFamily:
-              'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+              '"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
             fontLigatures: true,
             minimap: {
               enabled: minimap && !isNarrow,
@@ -313,17 +311,17 @@ export function FileEditor({
       </div>
 
       {/* Status bar */}
-      <footer className="flex shrink-0 items-center justify-between gap-3 border-t border-border/60 bg-secondary/40 px-3 py-1.5 text-[11px] text-muted-foreground sm:px-4">
+      <footer className="flex shrink-0 items-center justify-between gap-3 border-t border-border bg-background px-3 py-1.5 text-xs text-muted-foreground sm:px-4">
         <div className="flex min-w-0 items-center gap-2 sm:gap-3">
-          <span className="uppercase tracking-wide">{language}</span>
-          <span className="text-border">·</span>
-          <span>UTF-8</span>
-          <span className="hidden text-border sm:inline">·</span>
+          <span className="font-mono">{language}</span>
+          <span className="text-subtle">·</span>
+          <span className="font-mono">UTF-8</span>
+          <span className="hidden text-subtle sm:inline">·</span>
           <span className="hidden truncate sm:inline">
             {isDirty ? "Modified" : "Saved"}
           </span>
         </div>
-        <div className="shrink-0 tabular-nums">
+        <div className="shrink-0 font-mono">
           <span className="hidden sm:inline">Ctrl/⌘S save · Esc close</span>
           <span className="sm:hidden">⌘S · Esc</span>
         </div>

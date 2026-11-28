@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, Suspense } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
 import { BranchSelector, type GitRefKind } from "@/components/BranchSelector";
 import { GithubIcon } from "@/components/icons/GithubIcon";
@@ -12,23 +13,17 @@ import {
   Upload,
   FolderUp,
   Loader2,
-  Sparkles,
   Check,
   Lock,
   Search,
   Globe,
   ArrowLeft,
   ArrowRight,
-  Shield,
-  FlaskConical,
-  Info,
   Plus as PlusIcon,
   Trash2,
   X,
   Eye,
   EyeOff,
-  Box,
-  Container,
 } from "lucide-react";
 import { API_URL, cn } from "@/lib/utils";
 import { authFetch, startGithubInstallAndNavigate } from "@/lib/auth";
@@ -36,6 +31,7 @@ import { toast } from "sonner";
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -487,75 +483,59 @@ function NewProjectContent() {
       ? "Pick a public repository, a private GitHub App repository, or upload source."
       : "Name the project, choose the builder, and set environment variables.";
 
+  const goBack = () => (step > 1 ? setStep(step - 1) : navigate("/"));
+
+  const manifest = [
+    "Application",
+    sourceType === "github" ? "private" : sourceType,
+    buildType,
+    githubBranch ? `${refKind === "tag" ? "tag" : "branch"}:${githubBranch}` : null,
+    envVars.length > 0 ? `${envVars.length} env` : null,
+  ].filter(Boolean);
+
   return (
     <>
-      <button
-        type="button"
-        onClick={() => (step > 1 ? setStep(step - 1) : navigate("/"))}
-        className="mb-6 inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        {step === 1 ? "Back to Projects" : "Back"}
-      </button>
-
       <PageHeader
-        eyebrow="Deploy"
-        title="New Project"
+        title="New project"
         description={stepDescription}
-        icon={Container}
-        actions={
-          <div
-            className="inline-flex items-center gap-2 rounded-xl border border-border/60 bg-secondary/40 px-3 py-1.5"
-            aria-label={`Step ${step} of 2`}
-          >
-            <span
-              className={cn(
-                "flex h-7 w-7 items-center justify-center rounded-lg text-xs font-semibold",
-                step >= 1
-                  ? "bg-brand text-brand-foreground"
-                  : "bg-muted text-muted-foreground",
-              )}
-            >
-              1
+        meta={
+          <div className="flex items-center gap-3" aria-label={`Step ${step} of 2`}>
+            <span className="flex gap-1" aria-hidden="true">
+              <span className="h-0.5 w-6 rounded-full bg-brand" />
+              <span className={cn("h-0.5 w-6 rounded-full", step >= 2 ? "bg-brand" : "bg-border")} />
             </span>
-            <span
-              className={cn(
-                "h-0.5 w-6 rounded-full",
-                step >= 2 ? "bg-brand" : "bg-border",
-              )}
-            />
-            <span
-              className={cn(
-                "flex h-7 w-7 items-center justify-center rounded-lg text-xs font-semibold",
-                step >= 2
-                  ? "bg-brand text-brand-foreground"
-                  : "bg-muted text-muted-foreground",
-              )}
-            >
-              2
+            <span className="text-[13px] text-muted-foreground">
+              Step {step} of 2 · {step === 1 ? "Source" : "Configure"}
             </span>
           </div>
         }
+        actions={
+          step === 1 ? (
+            <Button type="button" variant="ghost" size="sm" className="-ml-2.5 text-muted-foreground sm:ml-0" onClick={goBack}>
+              <ArrowLeft />
+              Back to projects
+            </Button>
+          ) : undefined
+        }
       />
 
-      <div className="w-full space-y-6">
+      <div className="w-full space-y-5">
           {/* STEP 1: Source Selection — same content width as Projects list */}
           {step === 1 && (
-            <div className="w-full space-y-5 sm:space-y-6">
+            <div className="w-full space-y-5">
               <div
-                className="grid w-full grid-cols-3 gap-1.5 sm:gap-2"
+                className="grid w-full grid-cols-3 gap-2"
                 role="tablist"
                 aria-label="Project source"
               >
                 {(
                   [
-                    { id: "public" as const, label: "Public Repository", short: "Public", icon: Globe },
-                    { id: "github" as const, label: "Private Repository", short: "Private", icon: Lock },
-                    { id: "upload" as const, label: "Direct upload", short: "Upload", icon: Upload },
+                    { id: "public" as const, label: "Public repository", short: "Public", hint: "Any public GitHub URL" },
+                    { id: "github" as const, label: "Private repository", short: "Private", hint: "Through the GitHub App" },
+                    { id: "upload" as const, label: "Direct upload", short: "Upload", hint: "A ZIP file or folder" },
                   ] as const
                 ).map((tab) => {
                   const active = sourceType === tab.id;
-                  const Icon = tab.icon;
                   return (
                     <button
                       key={tab.id}
@@ -564,68 +544,69 @@ function NewProjectContent() {
                       aria-selected={active}
                       onClick={() => setSourceType(tab.id)}
                       className={cn(
-                        "inline-flex min-h-11 w-full items-center justify-center gap-1.5 rounded-xl border px-1.5 py-2.5 text-center text-xs font-medium transition-colors sm:min-h-12 sm:gap-2 sm:px-3 sm:text-sm",
+                        "min-h-11 w-full rounded-lg border bg-card px-3 py-2.5 text-left transition-[border-color,box-shadow,color] duration-150",
                         active
-                          ? "border-brand/30 bg-brand/10 text-brand"
-                          : "border-border/60 bg-secondary/40 text-muted-foreground hover:text-foreground",
+                          ? "border-brand text-foreground ring-1 ring-brand"
+                          : "border-input text-muted-foreground hover:border-subtle hover:text-foreground",
                       )}
                     >
-                      <Icon className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />
-                      <span className="hidden truncate sm:inline">{tab.label}</span>
-                      <span className="truncate sm:hidden">{tab.short}</span>
+                      <span className="hidden text-sm font-medium sm:block">{tab.label}</span>
+                      <span className="block text-sm font-medium sm:hidden">{tab.short}</span>
+                      <span className="mt-0.5 hidden text-xs text-muted-foreground sm:block">{tab.hint}</span>
                     </button>
                   );
                 })}
               </div>
 
               {sourceType === "public" && (
-                <Card className="rounded-2xl border-border/60 p-5 sm:p-6">
-                  <div className="space-y-5">
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Repository URL</label>
-                      <Input 
-                        placeholder="https://github.com/username/repo" 
-                        value={githubUrl}
-                        onChange={(e) => setGithubUrl(e.target.value)}
-                        className={cn(
-                          "h-11 bg-secondary/30",
-                          githubUrl && isValidGithubUrl(githubUrl) === false && "border-red-500 focus-visible:ring-red-500",
-                          githubUrl && isValidGithubUrl(githubUrl) === true && "border-emerald-500 focus-visible:ring-emerald-500"
+                <Panel title="Public repository" description="Deploy a public GitHub repository by its URL.">
+                  <PanelBody>
+                    <div className="space-y-5">
+                      <Field label="Repository URL">
+                        <Input
+                          placeholder="https://github.com/username/repo"
+                          value={githubUrl}
+                          onChange={(e) => setGithubUrl(e.target.value)}
+                          className={cn(
+                            "font-mono",
+                            githubUrl && isValidGithubUrl(githubUrl) === false && "border-danger focus:border-danger focus:ring-danger/20",
+                          )}
+                        />
+                        {githubUrl && isValidGithubUrl(githubUrl) === false && (
+                          <span className="flex items-center gap-1 text-xs text-danger">
+                            <X className="size-3.5" /> Invalid URL format
+                          </span>
                         )}
-                      />
-                      {githubUrl && isValidGithubUrl(githubUrl) === false && (
-                        <p className="flex items-center gap-1 text-xs text-red-500">
-                          <X className="h-3 w-3" /> Invalid URL format
-                        </p>
-                      )}
-                      {githubUrl && isValidGithubUrl(githubUrl) === true && (
-                        <p className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400">
-                          <Check className="h-3 w-3" /> Valid URL
-                        </p>
-                      )}
+                        {githubUrl && isValidGithubUrl(githubUrl) === true && (
+                          <span className="flex items-center gap-1 text-xs text-ok">
+                            <Check className="size-3.5" /> Valid URL
+                          </span>
+                        )}
+                      </Field>
+                      <div className="space-y-1.5">
+                        <p className="text-[13px] font-medium leading-5">Deploy from</p>
+                        <BranchSelector
+                          branches={branches}
+                          tags={tags}
+                          value={githubBranch}
+                          onChange={setGithubBranch}
+                          kind={refKind}
+                          onKindChange={handleRefKindChange}
+                          loading={branchesLoading}
+                          tagsLoading={tagsLoading}
+                          disabled={!githubUrl || isValidGithubUrl(githubUrl) !== true}
+                        />
+                        {repoAccessError && (
+                          <div className="rounded-md border border-warn/40 bg-secondary/60 px-3 py-2.5 text-[13px] leading-5">
+                            {repoAccessError}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Deploy from</label>
-                      <BranchSelector
-                        branches={branches}
-                        tags={tags}
-                        value={githubBranch}
-                        onChange={setGithubBranch}
-                        kind={refKind}
-                        onKindChange={handleRefKindChange}
-                        loading={branchesLoading}
-                        tagsLoading={tagsLoading}
-                        disabled={!githubUrl || isValidGithubUrl(githubUrl) !== true}
-                      />
-                      {repoAccessError && (
-                        <div className="flex items-start gap-2 rounded-xl border border-amber-500/20 bg-amber-500/10 p-3">
-                          <Lock className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
-                          <span className="text-xs text-amber-600 dark:text-amber-400">{repoAccessError}</span>
-                        </div>
-                      )}
-                    </div>
-                    <Button 
-                      onClick={handlePublicSubmit} 
+                  </PanelBody>
+                  <PanelFooter>
+                    <Button
+                      onClick={handlePublicSubmit}
                       disabled={
                         !githubUrl ||
                         isValidGithubUrl(githubUrl) !== true ||
@@ -633,33 +614,28 @@ function NewProjectContent() {
                         branchesLoading ||
                         (refKind === "tag" && tagsLoading)
                       }
-                      className="h-11 w-full bg-brand font-semibold text-brand-foreground shadow-lg shadow-brand/20 hover:brightness-110"
                     >
-                      Continue <ArrowRight className="ml-2 h-4 w-4" />
+                      Continue
+                      <ArrowRight />
                     </Button>
-                  </div>
-                </Card>
+                  </PanelFooter>
+                </Panel>
               )}
 
               {sourceType === "github" && (
-                <div className="space-y-4">
+                <>
                   {!githubStatus?.connected ? (
-                    <Card className="flex flex-col items-center rounded-2xl border-2 border-dashed border-border/60 p-8 text-center sm:p-10">
-                      <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-brand/20 bg-brand/10">
-                        <GithubIcon className="h-7 w-7 text-brand" />
-                      </div>
-                      <h3 className="mb-2 text-lg font-semibold tracking-tight">Connect GitHub</h3>
-                      <p className="mb-6 max-w-xs text-sm text-muted-foreground">
+                    <Card className="px-4 py-14 text-center">
+                      <h3 className="text-[15px] font-semibold">Connect GitHub</h3>
+                      <p className="mx-auto mt-1 max-w-sm text-[13.5px] text-muted-foreground">
                         Install the Docklift GitHub App to deploy private repositories.
                       </p>
-                      <Button
-                        onClick={() => setShowGitHubConnect(true)}
-                        className="h-10 bg-brand px-6 font-semibold text-brand-foreground shadow-lg shadow-brand/20 hover:brightness-110"
-                      >
+                      <Button className="mt-5" onClick={() => setShowGitHubConnect(true)}>
+                        <GithubIcon className="size-4" />
                         Connect GitHub
                       </Button>
-                      <GitHubConnect 
-                        open={showGitHubConnect} 
+                      <GitHubConnect
+                        open={showGitHubConnect}
                         onOpenChange={setShowGitHubConnect}
                         onConnected={() => {
                           fetchGitHubStatus();
@@ -668,384 +644,463 @@ function NewProjectContent() {
                       />
                     </Card>
                   ) : (
-                    <Card className="overflow-hidden rounded-2xl border-border/60">
-                      <div className="space-y-3 border-b border-border/60 bg-secondary/30 px-4 py-3">
-                        <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
-                          <div className="flex min-w-0 items-center gap-2">
-                            <div className="h-2 w-2 shrink-0 rounded-full bg-emerald-500" />
-                            <span className="truncate text-xs font-medium text-muted-foreground">
+                    <Card className="overflow-hidden">
+                      <div className="flex flex-col gap-3 border-b border-border px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+                        <div className="min-w-0">
+                          <h3 className="text-[15px] font-semibold leading-5">Private repository</h3>
+                          <p className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[13px] text-muted-foreground">
+                            <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-ok" />
+                            <span className="truncate">
                               {githubInstallations.length > 0
                                 ? `${githubInstallations.length} GitHub account${githubInstallations.length === 1 ? "" : "s"} connected`
                                 : `@${githubStatus.username || "connected"}`}
                             </span>
-                          </div>
-                          <div className="flex w-full items-center gap-2 sm:w-auto">
-                            <div className="relative flex-1 sm:w-56">
-                              <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-                              <Input
-                                placeholder="Search all repos..."
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                className="h-9 border-border/40 bg-background/50 pl-9 text-sm"
-                              />
-                            </div>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="h-9 shrink-0 rounded-xl border-border/60"
-                              title="Add another personal account or organization"
-                              onClick={handleAddGithubAccount}
-                            >
-                              <PlusIcon className="h-3.5 w-3.5 sm:mr-1" />
-                              <span className="hidden sm:inline">Add</span>
-                            </Button>
-                          </div>
+                          </p>
                         </div>
-                        {githubInstallations.length > 0 && (
-                          <div className="flex flex-wrap gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => setAccountFilter(null)}
-                              className={cn(
-                                "h-7 rounded-lg border px-2.5 text-[11px] font-semibold transition-colors",
-                                accountFilter === null
-                                  ? "border-brand/30 bg-brand/10 text-brand"
-                                  : "border-border/40 bg-background/50 text-muted-foreground hover:text-foreground",
-                              )}
-                            >
-                              All
-                            </button>
-                            {githubInstallations.map((inst) => (
-                              <button
-                                key={inst.id}
-                                type="button"
-                                onClick={() => setAccountFilter(inst.login)}
-                                className={cn(
-                                  "inline-flex h-7 max-w-full items-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-semibold transition-colors",
-                                  accountFilter === inst.login
-                                    ? "border-brand/30 bg-brand/10 text-brand"
-                                    : "border-border/40 bg-background/50 text-muted-foreground hover:text-foreground",
-                                )}
-                                title={
-                                  inst.type === "Organization"
-                                    ? "Organization"
-                                    : "Personal"
-                                }
-                              >
-                                {inst.avatar_url ? (
-                                  <img
-                                    src={inst.avatar_url}
-                                    alt=""
-                                    className="h-4 w-4 rounded"
-                                  />
-                                ) : null}
-                                <span className="truncate">@{inst.login}</span>
-                              </button>
-                            ))}
+                        <div className="flex w-full items-center gap-2 sm:w-auto">
+                          <div className="relative min-w-0 flex-1 sm:w-60 sm:flex-none">
+                            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-subtle" />
+                            <Input
+                              placeholder="Search all repos"
+                              value={searchQuery}
+                              onChange={(e) => setSearchQuery(e.target.value)}
+                              className="pl-8"
+                            />
                           </div>
-                        )}
-                        {reposWarning && (
-                          <p className="text-[11px] leading-snug text-amber-600 dark:text-amber-400">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="lg"
+                            className="shrink-0"
+                            title="Add another personal account or organization"
+                            onClick={handleAddGithubAccount}
+                          >
+                            <PlusIcon className="text-subtle" />
+                            <span className="max-sm:sr-only">Add account</span>
+                          </Button>
+                        </div>
+                      </div>
+                      {githubInstallations.length > 0 && (
+                        <div className="hairline-b flex gap-5 overflow-x-auto px-4 scrollbar-none sm:px-5">
+                          <button
+                            type="button"
+                            onClick={() => setAccountFilter(null)}
+                            className={cn(
+                              "h-10 shrink-0 border-b-2 text-[13.5px] transition-colors duration-150",
+                              accountFilter === null
+                                ? "border-brand text-foreground"
+                                : "border-transparent text-muted-foreground hover:text-foreground",
+                            )}
+                          >
+                            All
+                          </button>
+                          {githubInstallations.map((inst) => (
+                            <button
+                              key={inst.id}
+                              type="button"
+                              onClick={() => setAccountFilter(inst.login)}
+                              className={cn(
+                                "inline-flex h-10 shrink-0 items-center gap-1.5 border-b-2 text-[13.5px] transition-colors duration-150",
+                                accountFilter === inst.login
+                                  ? "border-brand text-foreground"
+                                  : "border-transparent text-muted-foreground hover:text-foreground",
+                              )}
+                              title={
+                                inst.type === "Organization"
+                                  ? "Organization"
+                                  : "Personal"
+                              }
+                            >
+                              {inst.avatar_url ? (
+                                <img
+                                  src={inst.avatar_url}
+                                  alt=""
+                                  className="size-4 rounded-sm"
+                                />
+                              ) : null}
+                              <span className="font-mono text-[13px]">@{inst.login}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      {reposWarning && (
+                        <div className="border-b border-border px-4 py-2.5 sm:px-5">
+                          <p className="rounded-md border border-warn/40 bg-secondary/60 px-3 py-2 text-[13px] leading-5">
                             {reposWarning}
                           </p>
-                        )}
-                      </div>
-                      <div className="max-h-80 divide-y divide-border/40 overflow-y-auto">
+                        </div>
+                      )}
+                      <div className="max-h-96 divide-y divide-border overflow-y-auto">
                         {reposLoading || githubLoading ? (
-                          <div className="flex flex-col items-center gap-3 p-12 text-muted-foreground">
-                            <Loader2 className="h-6 w-6 animate-spin" />
-                            <span className="text-sm">Loading repos...</span>
+                          <div className="flex items-center justify-center gap-2 py-14 text-[13px] text-muted-foreground">
+                            <Loader2 className="size-4 animate-spin" />
+                            Loading repositories…
                           </div>
                         ) : filteredRepos.length === 0 ? (
-                          <div className="space-y-2 p-12 text-center text-sm text-muted-foreground">
-                            <p>No repositories found</p>
-                            <p className="text-xs">
+                          <div className="px-4 py-14 text-center">
+                            <p className="text-[15px] font-semibold">No repositories found</p>
+                            <p className="mx-auto mt-1 max-w-sm text-[13.5px] text-muted-foreground">
                               {accountFilter
                                 ? `Nothing matched under @${accountFilter}. Try All, or grant the GitHub App access to more repos.`
-                                : "Install the app on your personal account and orgs (Add), and grant repo access in GitHub."}
+                                : "Install the app on your personal account and orgs (Add account), and grant repo access in GitHub."}
                             </p>
                           </div>
                         ) : filteredRepos.map(repo => (
-                          <div 
+                          <div
                             key={repo.id}
                             onClick={() => handleSelectRepo(repo)}
-                            className="group flex cursor-pointer items-center justify-between p-4 transition-colors hover:bg-secondary/40"
+                            className="group flex cursor-pointer items-center justify-between gap-3 px-4 py-2.5 transition-colors duration-150 hover:bg-secondary/50 sm:px-5"
                           >
-                            <div className="flex min-w-0 items-center gap-3">
-                              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-border/60 bg-secondary/40">
-                                {repo.private ? <Lock className="h-4 w-4 text-muted-foreground" /> : <Globe className="h-4 w-4 text-muted-foreground" />}
-                              </div>
-                              <div className="min-w-0">
-                                <h4 className="truncate text-sm font-medium">{repo.full_name}</h4>
-                                <p className="truncate text-xs text-muted-foreground">{repo.description || "No description"}</p>
-                              </div>
+                            <div className="min-w-0">
+                              <h4 className="flex min-w-0 items-center gap-1.5 text-sm font-medium">
+                                <span className="truncate">{repo.full_name}</span>
+                                {repo.private ? (
+                                  <Lock className="size-3.5 shrink-0 text-subtle" aria-hidden="true" />
+                                ) : (
+                                  <Globe className="size-3.5 shrink-0 text-subtle" aria-hidden="true" />
+                                )}
+                              </h4>
+                              <p className="mt-0.5 truncate text-[13px] text-muted-foreground">
+                                <span className="font-mono text-xs">
+                                  {repo.private ? "private" : "public"} · {repo.default_branch}
+                                </span>
+                                <span className="text-subtle"> · </span>
+                                {repo.description || "No description"}
+                              </p>
                             </div>
-                            <ArrowRight className="ml-2 h-4 w-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+                            <ArrowRight className="size-4 shrink-0 text-subtle opacity-0 transition-opacity duration-150 group-hover:opacity-100" />
                           </div>
                         ))}
                       </div>
                     </Card>
                   )}
-                </div>
+                </>
               )}
 
               {sourceType === "upload" && (
-                <Card 
+                <Card
                   onDragEnter={handleDrag}
                   onDragLeave={handleDrag}
                   onDragOver={handleDrag}
                   onDrop={handleDrop}
-                  className={cn(
-                    "cursor-pointer rounded-2xl border-2 border-dashed p-10 text-center transition-colors sm:p-12",
-                    dragActive ? "border-brand/50 bg-brand/5" : "border-border/60 hover:border-brand/40 hover:bg-secondary/20",
-                    files && "border-brand/40 bg-brand/5"
-                  )}
+                  className="cursor-pointer"
                   onClick={() => document.getElementById("file-upload-input")?.click()}
                 >
                   <input id="file-upload-input" type="file" multiple className="hidden" onChange={(e) => { setFiles(e.target.files); setStep(2); }} />
-                  <div className="flex flex-col items-center">
-                    <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-brand/20 bg-brand/10">
-                      <FolderUp className="h-7 w-7 text-brand" />
-                    </div>
-                    <h3 className="mb-2 text-lg font-semibold tracking-tight">Upload Project</h3>
-                    <p className="max-w-sm text-sm text-muted-foreground">
-                      Drop a ZIP file or click to browse
+                  <div className="border-b border-border px-4 py-3 sm:px-5">
+                    <h3 className="text-[15px] font-semibold leading-5">Upload project</h3>
+                    <p className="mt-0.5 text-[13px] leading-5 text-muted-foreground">
+                      Deploy source files from your computer.
                     </p>
-                    {files && (
-                      <div className="mt-4 inline-flex items-center gap-2 rounded-xl border border-brand/30 bg-brand/10 px-4 py-1.5 text-sm font-medium text-brand">
-                        <Check className="h-4 w-4" /> {files.length} file(s) selected
-                      </div>
-                    )}
+                  </div>
+                  <div className="p-4 sm:p-5">
+                    <div
+                      className={cn(
+                        "flex flex-col items-center rounded-md border border-dashed px-4 py-12 text-center transition-colors duration-150",
+                        dragActive || files ? "border-brand bg-brand/5" : "border-input hover:border-subtle",
+                      )}
+                    >
+                      <FolderUp className={cn("size-5", dragActive ? "text-brand" : "text-subtle")} />
+                      <p className="mt-3 text-sm font-medium">Drop a ZIP file or click to browse</p>
+                      <p className="mt-0.5 text-[13px] text-muted-foreground">
+                        The project continues to configuration once files are selected.
+                      </p>
+                      {files && (
+                        <p className="mt-3 inline-flex items-center gap-1.5 text-[13px] font-medium">
+                          <Check className="size-4 text-ok" /> {files.length} file(s) selected
+                        </p>
+                      )}
+                    </div>
                   </div>
                 </Card>
               )}
             </div>
           )}
           {step === 2 && (
-            <div className="w-full space-y-6 pb-28 sm:pb-24">
-                <Card className="space-y-4 rounded-2xl border-border/60 p-5">
-                  <h3 className="flex items-center gap-2 text-base font-semibold tracking-tight">
-                    <Sparkles className="h-4 w-4 text-brand" />
-                    Configuration
-                  </h3>
-                  
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Project Name</label>
-                    <Input 
-                      placeholder="my-app" 
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      className="h-11 bg-secondary/30" 
-                    />
-                  </div>
+            <div className="w-full space-y-5">
+                <Panel title="Project" description="Name and source of the new project.">
+                  <PanelBody>
+                    <div className="space-y-5">
+                      <Field label="Project name">
+                        <Input
+                          placeholder="my-app"
+                          value={name}
+                          onChange={(e) => setName(e.target.value)}
+                        />
+                      </Field>
 
-                  {(sourceType === "github" || sourceType === "public") && githubUrl && (
-                    <div className="space-y-3 rounded-xl border border-border/60 bg-secondary/30 p-4">
-                      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
-                        <div className="flex min-w-0 items-center gap-3">
-                          <GithubIcon className="h-5 w-5 shrink-0" />
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-medium">
-                              {selectedRepo?.full_name ||
-                                githubUrl
-                                  .replace(/^https:\/\/github\.com\//, "")
-                                  .replace(/\.git$/, "")}
-                            </p>
-                            <p className="mt-0.5 text-xs text-muted-foreground">
-                              Deploy from {refKind === "tag" ? "tag" : "branch"}
-                            </p>
+                      {(sourceType === "github" || sourceType === "public") && githubUrl && (
+                        <div className="space-y-1.5">
+                          <div className="flex items-end justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-[13px] font-medium leading-5">Source</p>
+                              <p className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
+                                <GithubIcon className="size-3.5 shrink-0 text-subtle" />
+                                <span className="truncate font-mono text-[13px] text-foreground">
+                                  {selectedRepo?.full_name ||
+                                    githubUrl
+                                      .replace(/^https:\/\/github\.com\//, "")
+                                      .replace(/\.git$/, "")}
+                                </span>
+                              </p>
+                            </div>
+                            <Button
+                              variant="link"
+                              size="sm"
+                              onClick={() => setStep(1)}
+                              className="shrink-0 px-0"
+                            >
+                              Change
+                            </Button>
                           </div>
+                          <p className="pt-2 text-xs text-muted-foreground">
+                            Deploy from {refKind === "tag" ? "tag" : "branch"}
+                          </p>
+                          <BranchSelector
+                            branches={branches}
+                            tags={tags}
+                            value={githubBranch}
+                            onChange={setGithubBranch}
+                            kind={refKind}
+                            onKindChange={handleRefKindChange}
+                            loading={branchesLoading}
+                            tagsLoading={tagsLoading}
+                          />
                         </div>
-                        <Button 
-                          variant="ghost" 
-                          size="sm" 
-                          onClick={() => setStep(1)} 
-                          className="shrink-0 text-xs font-medium text-brand hover:text-brand"
-                        >
-                          Change
-                        </Button>
+                      )}
+                    </div>
+                  </PanelBody>
+                </Panel>
+
+                <Panel title="Build" description="Choose how Docklift turns your source into a container.">
+                  <PanelBody>
+                    <div className="space-y-5">
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                        {([
+                          ["auto", "Auto", "Detect the best builder"],
+                          ["dockerfile", "Dockerfile", "Use your Dockerfile"],
+                          ["railpack", "Railpack", "Build from app manifests"],
+                        ] as const).map(([value, label, description]) => (
+                          <button
+                            key={value}
+                            type="button"
+                            onClick={() => setBuildType(value)}
+                            className={cn(
+                              "rounded-lg border bg-card p-3 text-left transition-[border-color,box-shadow] duration-150",
+                              buildType === value
+                                ? "border-brand ring-1 ring-brand"
+                                : "border-input hover:border-subtle",
+                            )}
+                          >
+                            <span className={cn("block text-sm font-medium", buildType === value ? "text-foreground" : "text-foreground/85")}>
+                              {label}
+                            </span>
+                            <span className="mt-0.5 block text-xs text-muted-foreground">
+                              {description}
+                            </span>
+                          </button>
+                        ))}
                       </div>
-                      <BranchSelector
-                        branches={branches}
-                        tags={tags}
-                        value={githubBranch}
-                        onChange={setGithubBranch}
-                        kind={refKind}
-                        onKindChange={handleRefKindChange}
-                        loading={branchesLoading}
-                        tagsLoading={tagsLoading}
-                      />
+
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <Field label="Base directory" help={<>Relative to the project root, for example <code className="font-mono">apps/web</code>.</>}>
+                          <Input
+                            value={baseDirectory}
+                            onChange={(e) => setBaseDirectory(e.target.value)}
+                            placeholder="."
+                            className="font-mono"
+                          />
+                        </Field>
+                        <Field label="Internal port" help="The port your application listens on inside its container.">
+                          <Input
+                            type="number"
+                            min={1}
+                            max={65535}
+                            value={internalPort}
+                            onChange={(e) => setInternalPort(Number(e.target.value))}
+                            className="font-mono tabular-nums"
+                          />
+                        </Field>
+                      </div>
+
+                      {buildType === "dockerfile" && (
+                        <Field label="Dockerfile path" help="Path relative to the base directory.">
+                          <Input
+                            value={dockerfilePath}
+                            onChange={(e) => setDockerfilePath(e.target.value)}
+                            placeholder="Dockerfile"
+                            className="font-mono"
+                          />
+                        </Field>
+                      )}
                     </div>
-                  )}
-                </Card>
+                  </PanelBody>
+                </Panel>
 
-                <Card className="space-y-5 rounded-2xl border-border/60 p-5">
-                  <div>
-                    <h3 className="flex items-center gap-2 text-base font-semibold tracking-tight">
-                      <Box className="h-4 w-4 text-muted-foreground" />
-                      Build
-                    </h3>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Choose how Docklift turns your source into a container.
-                    </p>
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                    {([
-                      ["auto", "Auto", "Detect the best builder"],
-                      ["dockerfile", "Dockerfile", "Use your Dockerfile"],
-                      ["railpack", "Railpack", "Build from app manifests"],
-                    ] as const).map(([value, label, description]) => (
-                      <button
-                        key={value}
-                        type="button"
-                        onClick={() => setBuildType(value)}
-                        className={cn(
-                          "rounded-2xl border p-3 text-left transition-colors",
-                          buildType === value
-                            ? "border-brand/40 bg-brand/10"
-                            : "border-border/60 bg-card/40 hover:bg-secondary/40",
+                <Card>
+                  <div className="flex flex-col gap-3 border-b border-border px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+                    <div className="min-w-0">
+                      <h3 className="flex items-baseline gap-2 text-[15px] font-semibold leading-5">
+                        Environment variables
+                        {envVars.length > 0 && (
+                          <span className="font-mono text-[13px] font-normal text-subtle tabular-nums">{envVars.length}</span>
                         )}
-                      >
-                        <span className="text-sm font-semibold">{label}</span>
-                        <span className="mt-1 block text-[10px] leading-relaxed text-muted-foreground">
-                          {description}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Base Directory</label>
-                      <Input
-                        value={baseDirectory}
-                        onChange={(e) => setBaseDirectory(e.target.value)}
-                        placeholder="."
-                        className="h-10 bg-secondary/30 font-mono"
-                      />
-                      <p className="text-[10px] text-muted-foreground">
-                        Relative to the project root, for example <code>apps/web</code>.
+                      </h3>
+                      <p className="mt-0.5 text-[13px] leading-5 text-muted-foreground">
+                        Saved to the project after it is created.
                       </p>
                     </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Internal Port</label>
-                      <Input
-                        type="number"
-                        min={1}
-                        max={65535}
-                        value={internalPort}
-                        onChange={(e) => setInternalPort(Number(e.target.value))}
-                        className="h-10 bg-secondary/30 font-mono"
-                      />
-                      <p className="text-[10px] text-muted-foreground">
-                        The port your application listens on inside its container.
-                      </p>
-                    </div>
-                  </div>
 
-                  {buildType === "dockerfile" && (
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Dockerfile Path</label>
-                      <Input
-                        value={dockerfilePath}
-                        onChange={(e) => setDockerfilePath(e.target.value)}
-                        placeholder="Dockerfile"
-                        className="h-10 bg-secondary/30 font-mono"
-                      />
-                      <p className="text-[10px] text-muted-foreground">
-                        Path relative to the base directory.
-                      </p>
-                    </div>
-                  )}
-                </Card>
-
-                <Card className="space-y-4 rounded-2xl border-border/60 p-5">
-                  <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
-                    <h3 className="flex items-center gap-2 text-base font-semibold tracking-tight">
-                      <Lock className="h-4 w-4 text-muted-foreground" />
-                      Environment Variables
-                    </h3>
-
-                    <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex items-center gap-2">
                     <Dialog open={showAddEnv} onOpenChange={setShowAddEnv}>
                       <DialogTrigger asChild>
-                        <Button variant="outline" size="sm" className="h-9 rounded-xl border-border/60 text-xs">
-                          <PlusIcon className="mr-1.5 h-3.5 w-3.5" /> Add
+                        <Button variant="outline" size="sm" className="max-sm:flex-1">
+                          <PlusIcon className="text-subtle" /> Add
                         </Button>
                       </DialogTrigger>
-                      <DialogContent className="sm:max-w-md">
+                      <DialogContent>
                         <DialogHeader>
-                          <DialogTitle>Add Environment Variable</DialogTitle>
+                          <DialogTitle>Add environment variable</DialogTitle>
                         </DialogHeader>
-                        <div className="space-y-6 pt-4">
-                          <div className="grid grid-cols-1 gap-4">
-                            <div className="space-y-1.5">
-                              <label className="ml-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Key</label>
-                              <Input 
-                                placeholder="e.g. API_KEY" 
-                                value={newEnvKey}
-                                onChange={(e) => setNewEnvKey(e.target.value.toUpperCase().replace(/\s+/g, '_'))}
-                                className="h-11 border-border/40 bg-secondary/20 font-mono"
-                              />
-                            </div>
-                            <div className="space-y-1.5">
-                              <label className="ml-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Value</label>
-                              <Input 
-                                placeholder="Value..." 
-                                type="text"
-                                value={newEnvValue}
-                                onChange={(e) => setNewEnvValue(e.target.value)}
-                                className="h-11 border-border/40 bg-secondary/20 font-mono"
-                              />
-                            </div>
-                          </div>
-                          
-                          <div className="flex flex-wrap items-center gap-4">
-                            <div className="flex flex-col gap-1.5">
-                              <button 
+                        <div className="space-y-4">
+                          <Field label="Key">
+                            <Input
+                              placeholder="e.g. API_KEY"
+                              value={newEnvKey}
+                              onChange={(e) => setNewEnvKey(e.target.value.toUpperCase().replace(/\s+/g, '_'))}
+                              className="font-mono"
+                            />
+                          </Field>
+                          <Field label="Value">
+                            <Input
+                              placeholder="Value"
+                              type="text"
+                              value={newEnvValue}
+                              onChange={(e) => setNewEnvValue(e.target.value)}
+                              className="font-mono"
+                            />
+                          </Field>
+
+                          <div className="space-y-1">
+                            <p className="text-[13px] font-medium leading-5">Inject in</p>
+                            <div className="flex flex-col gap-1 sm:flex-row sm:gap-6">
+                              <button
                                 type="button"
                                 onClick={() => setNewEnvIsBuild(!newEnvIsBuild)}
-                                className={cn(
-                                  "inline-flex w-fit items-center gap-2 rounded-xl border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider transition-colors",
-                                  newEnvIsBuild ? "border-brand/30 bg-brand/10 text-brand" : "border-border/40 text-muted-foreground hover:border-border"
-                                )}
+                                className="flex items-start gap-2.5 rounded-md py-1.5 text-left"
                               >
-                                <FlaskConical className="h-3 w-3" /> Inject in Build
+                                <CheckMark on={newEnvIsBuild} />
+                                <span>
+                                  <span className="block text-[13px] font-medium leading-5">Build</span>
+                                  <span className="block text-xs text-muted-foreground">Next.js/Prisma build-args</span>
+                                </span>
                               </button>
-                              <span className="px-1 text-[9px] font-medium text-muted-foreground">Next.js/Prisma build-args</span>
-                            </div>
-
-                            <div className="flex flex-col gap-1.5">
-                              <button 
+                              <button
                                 type="button"
                                 onClick={() => setNewEnvIsRuntime(!newEnvIsRuntime)}
-                                className={cn(
-                                  "inline-flex w-fit items-center gap-2 rounded-xl border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider transition-colors",
-                                  newEnvIsRuntime ? "border-brand/30 bg-brand/10 text-brand" : "border-border/40 text-muted-foreground hover:border-border"
-                                )}
+                                className="flex items-start gap-2.5 rounded-md py-1.5 text-left"
                               >
-                                <Globe className="h-3 w-3" /> Inject in Runtime
+                                <CheckMark on={newEnvIsRuntime} />
+                                <span>
+                                  <span className="block text-[13px] font-medium leading-5">Runtime</span>
+                                  <span className="block text-xs text-muted-foreground">Available after deploy</span>
+                                </span>
                               </button>
-                              <span className="px-1 text-[9px] font-medium text-muted-foreground">Available after deploy</span>
                             </div>
                           </div>
 
                           {!newEnvIsBuild && !newEnvIsRuntime && (
-                            <div className="flex gap-2 rounded-xl border border-amber-500/20 bg-amber-500/5 p-3">
-                              <Info className="h-4 w-4 shrink-0 text-amber-500" />
-                              <p className="text-[10px] font-medium text-amber-700 dark:text-amber-400">You must select at least one injection scope for this variable to be active.</p>
-                            </div>
+                            <p className="rounded-md border border-warn/40 bg-secondary/60 px-3 py-2.5 text-[13px] leading-5">
+                              You must select at least one injection scope for this variable to be active.
+                            </p>
                           )}
+                        </div>
+                        <DialogFooter>
+                          <Button variant="outline" onClick={() => setShowAddEnv(false)}>Cancel</Button>
+                          <Button
+                            disabled={!newEnvKey || !newEnvValue || (!newEnvIsBuild && !newEnvIsRuntime)}
+                            onClick={() => {
+                              if (!newEnvKey || !newEnvValue) return;
+                              let value = newEnvValue.trim();
+                              if (value.length >= 2) {
+                                const first = value.charAt(0);
+                                const last = value.charAt(value.length - 1);
+                                if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
+                                  value = value.substring(1, value.length - 1);
+                                }
+                              }
+                              setEnvVars([...envVars, {key: newEnvKey, value, is_build_arg: newEnvIsBuild, is_runtime: newEnvIsRuntime}]);
+                              setNewEnvKey("");
+                              setNewEnvValue("");
+                              setShowAddEnv(false);
+                            }}
+                          >
+                            Add variable
+                          </Button>
+                        </DialogFooter>
+                      </DialogContent>
+                    </Dialog>
 
-                          <div className="flex justify-end gap-3 pt-2">
-                            <Button variant="ghost" onClick={() => setShowAddEnv(false)} className="rounded-xl">Cancel</Button>
-                            <Button 
-                              disabled={!newEnvKey || !newEnvValue || (!newEnvIsBuild && !newEnvIsRuntime)}
-                              onClick={() => {
-                                if (!newEnvKey || !newEnvValue) return;
-                                let value = newEnvValue.trim();
+                    <Dialog open={showBulkEnv} onOpenChange={setShowBulkEnv}>
+                      <DialogTrigger asChild>
+                        <Button variant="outline" size="sm" className="max-sm:flex-1">
+                          <Upload className="text-subtle" /> Bulk import
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent className="sm:max-w-lg">
+                        <DialogHeader>
+                          <DialogTitle>Bulk import environment variables</DialogTitle>
+                        </DialogHeader>
+                        <div className="space-y-4">
+                          <label className="block space-y-1.5">
+                            <span className="block text-[13px] font-medium leading-5">
+                              Paste KEY=VALUE pairs (one per line)
+                            </span>
+                            <Textarea
+                              placeholder={`ADMIN_USERNAME=admin
+DATABASE_URL=postgresql://user:pass@host:5432/db
+SESSION_SECRET=your-secret-here
+# Lines starting with # are ignored`}
+                              value={bulkEnvContent}
+                              onChange={(e) => setBulkEnvContent(e.target.value)}
+                              className="h-40 resize-none font-mono text-[13px]"
+                            />
+                          </label>
+
+                          <div className="flex flex-col gap-1 sm:flex-row sm:gap-6">
+                            <div className="flex cursor-pointer items-start gap-2.5 py-1.5" onClick={() => setBulkIsBuild(!bulkIsBuild)}>
+                              <CheckMark on={bulkIsBuild} />
+                              <div className="flex flex-col">
+                                <span className="text-[13px] font-medium leading-5">Build argument</span>
+                                <span className="text-xs text-muted-foreground">Used during Docker build</span>
+                              </div>
+                            </div>
+
+                            <div className="flex cursor-pointer items-start gap-2.5 py-1.5" onClick={() => setBulkIsRuntime(!bulkIsRuntime)}>
+                              <CheckMark on={bulkIsRuntime} />
+                              <div className="flex flex-col">
+                                <span className="text-[13px] font-medium leading-5">Runtime variable</span>
+                                <span className="text-xs text-muted-foreground">Available to your app</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <p className="font-mono text-xs text-muted-foreground tabular-nums">
+                            {bulkEnvContent.split('\n').filter(l => l.trim() && !l.trim().startsWith('#') && l.includes('=')).length} variables detected
+                          </p>
+                        </div>
+                        <DialogFooter>
+                          <Button variant="outline" onClick={() => setShowBulkEnv(false)}>Cancel</Button>
+                          <Button
+                            disabled={!bulkEnvContent.trim()}
+                            onClick={() => {
+                              const lines = bulkEnvContent.split('\n').filter(l => l.trim() && !l.trim().startsWith('#'));
+                              const newVars: typeof envVars = [];
+                              for (const line of lines) {
+                                const eqIndex = line.indexOf('=');
+                                if (eqIndex === -1) continue;
+                                const key = line.substring(0, eqIndex).trim();
+                                let value = line.substring(eqIndex + 1).trim();
                                 if (value.length >= 2) {
                                   const first = value.charAt(0);
                                   const last = value.charAt(value.length - 1);
@@ -1053,235 +1108,106 @@ function NewProjectContent() {
                                     value = value.substring(1, value.length - 1);
                                   }
                                 }
-                                setEnvVars([...envVars, {key: newEnvKey, value, is_build_arg: newEnvIsBuild, is_runtime: newEnvIsRuntime}]);
-                                setNewEnvKey("");
-                                setNewEnvValue("");
-                                setShowAddEnv(false);
-                              }}
-                              className="h-11 rounded-xl bg-brand px-8 font-semibold text-brand-foreground shadow-lg shadow-brand/20 hover:brightness-110 disabled:opacity-50"
-                            >
-                              Add Variable
-                            </Button>
-                          </div>
-                        </div>
-                      </DialogContent>
-                    </Dialog>
-
-                    <Dialog open={showBulkEnv} onOpenChange={setShowBulkEnv}>
-                      <DialogTrigger asChild>
-                        <Button variant="outline" size="sm" className="h-9 w-full rounded-xl border-border/60 px-4 text-xs sm:w-auto">
-                          <Upload className="mr-2 h-4 w-4" /> Bulk Import
-                        </Button>
-                      </DialogTrigger>
-                      <DialogContent className="sm:max-w-lg">
-                        <DialogHeader>
-                          <DialogTitle>Bulk Import Environment Variables</DialogTitle>
-                        </DialogHeader>
-                        <div className="space-y-4 pt-4">
-                          <div className="space-y-2">
-                            <label className="ml-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                              Paste KEY=VALUE pairs (one per line)
-                            </label>
-                            <textarea
-                              placeholder={`ADMIN_USERNAME=admin
-DATABASE_URL=postgresql://user:pass@host:5432/db
-SESSION_SECRET=your-secret-here
-# Lines starting with # are ignored`}
-                              value={bulkEnvContent}
-                              onChange={(e) => setBulkEnvContent(e.target.value)}
-                              className="h-40 w-full resize-none rounded-xl border border-border/40 bg-secondary/20 p-4 font-mono text-sm outline-none focus:border-brand/50 focus:ring-2 focus:ring-brand/20"
-                            />
-                          </div>
-                          
-                          <div className="flex flex-col gap-3 rounded-xl border border-border/40 bg-secondary/30 p-3 sm:flex-row sm:items-center sm:gap-6">
-                            <div className="group flex cursor-pointer items-center gap-2" onClick={() => setBulkIsBuild(!bulkIsBuild)}>
-                              <div className={cn(
-                                "flex h-4 w-4 items-center justify-center rounded border transition-colors",
-                                bulkIsBuild ? "border-brand bg-brand" : "border-muted-foreground/40 bg-transparent"
-                              )}>
-                                {bulkIsBuild && <Check className="h-3 w-3 text-brand-foreground" strokeWidth={4} />}
-                              </div>
-                              <div className="flex flex-col">
-                                <span className="text-xs font-semibold">Build Argument</span>
-                                <span className="text-[10px] text-muted-foreground">Used during Docker build</span>
-                              </div>
-                            </div>
-
-                            <div className="group flex cursor-pointer items-center gap-2" onClick={() => setBulkIsRuntime(!bulkIsRuntime)}>
-                              <div className={cn(
-                                "flex h-4 w-4 items-center justify-center rounded border transition-colors",
-                                bulkIsRuntime ? "border-brand bg-brand" : "border-muted-foreground/40 bg-transparent"
-                              )}>
-                                {bulkIsRuntime && <Check className="h-3 w-3 text-brand-foreground" strokeWidth={4} />}
-                              </div>
-                              <div className="flex flex-col">
-                                <span className="text-xs font-semibold">Runtime Variable</span>
-                                <span className="text-[10px] text-muted-foreground">Available to your app</span>
-                              </div>
-                            </div>
-                          </div>
-
-                          <p className="text-xs text-muted-foreground">
-                            {bulkEnvContent.split('\n').filter(l => l.trim() && !l.trim().startsWith('#') && l.includes('=')).length} variables detected
-                          </p>
-                          <div className="flex justify-end gap-3 pt-2">
-                            <Button variant="ghost" onClick={() => setShowBulkEnv(false)} className="rounded-xl">Cancel</Button>
-                            <Button 
-                              disabled={!bulkEnvContent.trim()}
-                              onClick={() => {
-                                const lines = bulkEnvContent.split('\n').filter(l => l.trim() && !l.trim().startsWith('#'));
-                                const newVars: typeof envVars = [];
-                                for (const line of lines) {
-                                  const eqIndex = line.indexOf('=');
-                                  if (eqIndex === -1) continue;
-                                  const key = line.substring(0, eqIndex).trim();
-                                  let value = line.substring(eqIndex + 1).trim();
-                                  if (value.length >= 2) {
-                                    const first = value.charAt(0);
-                                    const last = value.charAt(value.length - 1);
-                                    if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
-                                      value = value.substring(1, value.length - 1);
-                                    }
-                                  }
-                                  if (key) {
-                                    newVars.push({ key, value, is_build_arg: bulkIsBuild, is_runtime: bulkIsRuntime });
-                                  }
+                                if (key) {
+                                  newVars.push({ key, value, is_build_arg: bulkIsBuild, is_runtime: bulkIsRuntime });
                                 }
-                                if (newVars.length > 0) {
-                                  setEnvVars([...envVars, ...newVars]);
-                                  toast.success(`Added ${newVars.length} environment variable(s)`);
-                                }
-                                setBulkEnvContent("");
-                                setShowBulkEnv(false);
-                              }}
-                              className="h-11 rounded-xl bg-brand px-8 font-semibold text-brand-foreground shadow-lg shadow-brand/20 hover:brightness-110 disabled:opacity-50"
-                            >
-                              Import All
-                            </Button>
-                          </div>
-                        </div>
+                              }
+                              if (newVars.length > 0) {
+                                setEnvVars([...envVars, ...newVars]);
+                                toast.success(`Added ${newVars.length} environment variable(s)`);
+                              }
+                              setBulkEnvContent("");
+                              setShowBulkEnv(false);
+                            }}
+                          >
+                            Import all
+                          </Button>
+                        </DialogFooter>
                       </DialogContent>
                     </Dialog>
                     </div>
                   </div>
 
-                  <div className="space-y-4">
-                    {envVars.length === 0 ? (
-                      <div className="rounded-2xl border border-dashed border-border/60 bg-secondary/10 px-4 py-12 text-center">
-                         <Shield className="mx-auto mb-3 h-8 w-8 text-muted-foreground/30" />
-                         <p className="text-xs font-medium text-muted-foreground">No custom environment variables added yet.</p>
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-1 gap-2">
-                        {envVars.map((env, i) => (
-                          <div key={i} className="group flex items-center justify-between rounded-xl border border-border/60 bg-secondary/30 p-3.5 transition-colors hover:border-brand/30">
-                            <div className="flex min-w-0 items-center gap-3 sm:gap-4">
-                              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-background/50">
-                                <Lock className="h-3.5 w-3.5 text-muted-foreground" />
-                              </div>
-                              <div className="flex min-w-0 flex-col">
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <span className="truncate font-mono text-sm font-semibold tracking-tight">{env.key}</span>
-                                  <div className="flex gap-1.5">
-                                    <div className={cn(
-                                      "flex h-5 items-center gap-1 rounded-md border px-1.5 text-[8px] font-semibold uppercase tracking-wider",
-                                      env.is_build_arg 
-                                        ? "border-brand/30 bg-brand/10 text-brand" 
-                                        : "border-border/60 bg-secondary/40 text-muted-foreground"
-                                    )}>
-                                      <FlaskConical className="h-2.5 w-2.5" />
-                                      Bld
-                                    </div>
-                                    <div className={cn(
-                                      "flex h-5 items-center gap-1 rounded-md border px-1.5 text-[8px] font-semibold uppercase tracking-wider",
-                                      env.is_runtime 
-                                        ? "border-brand/30 bg-brand/10 text-brand" 
-                                        : "border-border/60 bg-secondary/40 text-muted-foreground"
-                                    )}>
-                                      <Globe className="h-2.5 w-2.5" />
-                                      Run
-                                    </div>
-                                  </div>
-                                </div>
-                                <span className="mt-0.5 truncate font-mono text-xs text-muted-foreground opacity-80">
-                                  {revealedEnvs.includes(i) ? env.value : "••••••••••••"}
-                                </span>
-                              </div>
+                  {envVars.length === 0 ? (
+                    <div className="px-4 py-12 text-center">
+                      <p className="text-[15px] font-semibold">No environment variables</p>
+                      <p className="mx-auto mt-1 max-w-sm text-[13.5px] text-muted-foreground">
+                        None added yet. Add them one by one or paste a .env file.
+                      </p>
+                    </div>
+                  ) : (
+                    <ul className="divide-y divide-border">
+                      {envVars.map((env, i) => (
+                        <li key={i} className="group flex items-center justify-between gap-3 px-4 py-2.5 transition-colors duration-150 hover:bg-secondary/50 sm:px-5">
+                          <div className="min-w-0">
+                            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                              <span className="truncate font-mono text-[13px] font-medium">{env.key}</span>
+                              <ScopeTag on={env.is_build_arg}>build</ScopeTag>
+                              <ScopeTag on={env.is_runtime}>runtime</ScopeTag>
                             </div>
-                            <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100">
-                              <button 
-                                type="button"
-                                onClick={() => {
-                                  if (revealedEnvs.includes(i)) {
-                                    setRevealedEnvs(revealedEnvs.filter(idx => idx !== i));
-                                  } else {
-                                    setRevealedEnvs([...revealedEnvs, i]);
-                                  }
-                                }}
-                                className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-secondary"
-                              >
-                                {revealedEnvs.includes(i) ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                              </button>
-                              <button 
-                                type="button"
-                                onClick={() => setEnvVars(envVars.filter((_, idx) => idx !== i))}
-                                className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-destructive/5 hover:text-destructive"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </button>
-                            </div>
+                            <span className="mt-0.5 block truncate font-mono text-xs text-muted-foreground">
+                              {revealedEnvs.includes(i) ? env.value : "••••••••••••"}
+                            </span>
                           </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                          <div className="flex shrink-0 items-center gap-0.5 sm:opacity-60 sm:transition-opacity sm:duration-150 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="text-subtle"
+                              onClick={() => {
+                                if (revealedEnvs.includes(i)) {
+                                  setRevealedEnvs(revealedEnvs.filter(idx => idx !== i));
+                                } else {
+                                  setRevealedEnvs([...revealedEnvs, i]);
+                                }
+                              }}
+                            >
+                              {revealedEnvs.includes(i) ? <EyeOff /> : <Eye />}
+                              <span className="sr-only">{revealedEnvs.includes(i) ? "Hide value" : "Show value"}</span>
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="text-subtle hover:text-danger"
+                              onClick={() => setEnvVars(envVars.filter((_, idx) => idx !== i))}
+                            >
+                              <Trash2 />
+                              <span className="sr-only">Remove {env.key}</span>
+                            </Button>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </Card>
 
-              {/* Sticky one-page CTA — same width as form, no empty sidebar */}
-              <div className="pointer-events-none fixed inset-x-0 bottom-0 z-20 lg:left-[var(--shell-rail,17rem)]">
-                <div className="pointer-events-auto border-t border-border/60 bg-background/90 px-3 py-3 backdrop-blur-xl sm:px-4 md:px-8">
-                  <div className="mx-auto flex w-full max-w-7xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold tracking-tight">
-                        {name || "Untitled project"}
-                      </p>
-                      <div className="mt-1.5 flex flex-wrap gap-1.5">
-                        <span className="inline-flex items-center rounded-lg border border-border/60 bg-secondary/40 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-                          Application
-                        </span>
-                        <span className="inline-flex items-center rounded-lg border border-border/60 bg-secondary/40 px-2 py-0.5 text-[10px] font-medium capitalize text-muted-foreground">
-                          {sourceType === "github" ? "Private" : sourceType}
-                        </span>
-                        <span className="inline-flex items-center rounded-lg border border-border/60 bg-secondary/40 px-2 py-0.5 text-[10px] font-medium capitalize text-muted-foreground">
-                          {buildType}
-                        </span>
-                        {githubBranch && (
-                          <span className="inline-flex max-w-[12rem] items-center truncate rounded-lg border border-brand/25 bg-brand/10 px-2 py-0.5 text-[10px] font-medium text-brand">
-                            {refKind === "tag" ? "tag" : "branch"}:{githubBranch}
-                          </span>
-                        )}
-                        {envVars.length > 0 && (
-                          <span className="inline-flex items-center rounded-lg border border-border/60 bg-secondary/40 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-                            {envVars.length} env
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <Button
-                      onClick={handleSubmit}
-                      disabled={loading || !name.trim()}
-                      className="h-11 w-full shrink-0 bg-brand px-6 font-semibold text-brand-foreground shadow-lg shadow-brand/20 hover:brightness-110 sm:w-auto sm:min-w-[11rem]"
-                    >
-                      {loading ? (
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      ) : (
-                        <Sparkles className="mr-2 h-4 w-4" />
-                      )}
-                      Create Project
-                    </Button>
-                  </div>
+              {/* Summary + create */}
+              <Card className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">
+                    {name || "Untitled project"}
+                  </p>
+                  <p className="mt-0.5 truncate font-mono text-xs text-muted-foreground">
+                    {manifest.join(" · ")}
+                  </p>
                 </div>
-              </div>
+                <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center">
+                  <Button type="button" variant="ghost" className="text-muted-foreground" onClick={goBack}>
+                    <ArrowLeft />
+                    Back
+                  </Button>
+                  <Button
+                    onClick={handleSubmit}
+                    disabled={loading || !name.trim()}
+                    size="lg"
+                  >
+                    {loading && <Loader2 className="animate-spin" />}
+                    Create project
+                  </Button>
+                </div>
+              </Card>
             </div>
           )}
       </div>
@@ -1293,10 +1219,95 @@ export default function NewProjectPage() {
   return (
     <Suspense fallback={
       <div className="flex min-h-[60vh] items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-brand" />
+        <Loader2 className="size-5 animate-spin text-subtle" />
       </div>
     }>
       <NewProjectContent />
     </Suspense>
+  );
+}
+
+/* ---------- presentational helpers (layout only, no state) ---------- */
+
+function Panel({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <Card>
+      <div className="border-b border-border px-4 py-3 sm:px-5">
+        <h3 className="text-[15px] font-semibold leading-5">{title}</h3>
+        {description && (
+          <p className="mt-0.5 text-[13px] leading-5 text-muted-foreground">{description}</p>
+        )}
+      </div>
+      {children}
+    </Card>
+  );
+}
+
+function PanelBody({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="p-4 sm:p-5">
+      <div className="max-w-xl">{children}</div>
+    </div>
+  );
+}
+
+function PanelFooter({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col-reverse gap-2 border-t border-border px-4 py-3 sm:flex-row sm:items-center sm:justify-end sm:px-5">
+      {children}
+    </div>
+  );
+}
+
+function Field({
+  label,
+  help,
+  children,
+}: {
+  label: string;
+  help?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="block space-y-1.5">
+      <span className="block text-[13px] font-medium leading-5">{label}</span>
+      {children}
+      {help && <span className="block text-xs leading-[1.125rem] text-muted-foreground">{help}</span>}
+    </label>
+  );
+}
+
+function CheckMark({ on }: { on: boolean }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={cn(
+        "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-sm border transition-colors duration-150",
+        on ? "border-brand bg-brand text-brand-foreground" : "border-input bg-card",
+      )}
+    >
+      {on && <Check className="size-3 stroke-[2.5]" />}
+    </span>
+  );
+}
+
+function ScopeTag({ on, children }: { on: boolean; children: React.ReactNode }) {
+  return (
+    <span
+      className={cn(
+        "rounded-sm border px-1.5 py-px font-mono text-xs leading-4",
+        on ? "border-border text-muted-foreground" : "border-transparent text-subtle line-through",
+      )}
+    >
+      {children}
+    </span>
   );
 }

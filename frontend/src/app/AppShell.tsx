@@ -29,7 +29,7 @@ function ShellFrame() {
       }
     >
       <aside
-        className="shell-rail fixed inset-y-0 left-0 z-40 hidden transition-[width] duration-200 ease-out lg:block"
+        className="shell-rail fixed inset-y-0 left-0 z-40 hidden transition-[width] duration-150 ease-out motion-reduce:transition-none lg:block"
         onMouseEnter={() => collapsed && setDesktopRailHovered(true)}
         onMouseLeave={() => setDesktopRailHovered(false)}
       >
@@ -38,7 +38,7 @@ function ShellFrame() {
 
       <div
         className={cn(
-          "fixed inset-0 z-50 bg-background/70 backdrop-blur-sm transition-opacity duration-200 lg:hidden",
+          "fixed inset-0 z-50 bg-black/50 transition-opacity duration-150 lg:hidden",
           mobileOpen ? "opacity-100" : "pointer-events-none opacity-0",
         )}
         onClick={() => setMobileOpen(false)}
@@ -47,7 +47,7 @@ function ShellFrame() {
       <aside
         ref={mobileDrawerRef}
         className={cn(
-          "fixed inset-y-0 left-0 z-50 w-[17rem] max-w-[85vw] transition-transform duration-200 ease-out lg:hidden",
+          "fixed inset-y-0 left-0 z-50 w-70 max-w-[85vw] transition-transform duration-200 ease-out motion-reduce:transition-none lg:hidden",
           // `invisible` keeps the closed drawer out of the tab order.
           mobileOpen ? "visible translate-x-0" : "invisible -translate-x-full",
         )}
@@ -56,9 +56,9 @@ function ShellFrame() {
         <Sidebar variant="mobile" />
       </aside>
 
-      <div className="shell-inset transition-[padding] duration-200 ease-out">
+      <div className="shell-inset transition-[padding] duration-150 ease-out motion-reduce:transition-none">
         <TopBar />
-        <main className="mx-auto w-full max-w-7xl px-3 py-5 sm:px-4 sm:py-8 md:px-8">
+        <main className="mx-auto w-full max-w-[1200px] px-4 py-6 sm:px-6 xl:px-8">
           <Outlet />
         </main>
       </div>

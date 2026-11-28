@@ -1,3 +1,10 @@
 # Installer scripts are piped straight into bash on Linux hosts - a CRLF would break
 # the shebang, so never let a Windows checkout commit them back with CRLF.
 *.sh text eol=lf
+
+# Written by `go run ./cmd/gen-docs` (server/) with LF endings (all of
+# api-reference.md, the "Tool reference" section of mcp.md) and compared byte
+# for byte by its test. Pin them to LF so a Windows checkout with
+# core.autocrlf=true does not write CRLF and fail that test.
+website/guide/api-reference.md text eol=lf
+website/guide/mcp.md text eol=lf

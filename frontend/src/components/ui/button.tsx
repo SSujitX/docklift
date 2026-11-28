@@ -1,30 +1,36 @@
-
 import * as React from "react";
 import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
+/*
+  Heights: sm 28px, default 32px, lg 36px, icon 32px square. On touch (pointer: coarse) default,
+  lg and icon grow to 40px; sm keeps its 28px box but its hit area is extended to 40px.
+  Icons inside default to 16px (see [data-slot='button'] in globals.css); a size utility on the
+  icon overrides that.
+*/
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-xl text-sm font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 active:scale-[0.98]",
+  "relative inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-[color,background-color,border-color,opacity] duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-50",
   {
     variants: {
       variant: {
-        default: "bg-gradient-to-r from-violet-500 to-purple-600 text-white shadow-lg shadow-violet-500/25 hover:shadow-xl hover:shadow-violet-500/30 hover:brightness-110",
-        destructive: "bg-gradient-to-r from-red-500 to-rose-600 text-white shadow-lg shadow-red-500/25 hover:shadow-xl hover:shadow-red-500/30",
-        outline: "border-2 border-border bg-transparent hover:bg-secondary hover:border-secondary",
-        secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
-        ghost: "hover:bg-secondary/80",
-        link: "text-primary underline-offset-4 hover:underline",
-        success: "bg-gradient-to-r from-emerald-500 to-green-600 text-white shadow-lg shadow-emerald-500/25 hover:shadow-xl hover:shadow-emerald-500/30",
-        warning: "bg-gradient-to-r from-amber-500 to-orange-600 text-white shadow-lg shadow-amber-500/25 hover:shadow-xl hover:shadow-amber-500/30",
+        default: "bg-brand text-brand-foreground hover:bg-brand/90",
+        destructive:
+          "bg-destructive text-destructive-foreground hover:bg-destructive/90",
+        outline: "border border-input bg-card text-foreground hover:bg-secondary",
+        secondary: "border border-input bg-card text-foreground hover:bg-secondary",
+        ghost: "hover:bg-secondary hover:text-foreground",
+        link: "text-brand underline-offset-4 hover:underline",
+        success: "bg-brand text-brand-foreground hover:bg-brand/90",
+        warning: "border border-input bg-card text-warn hover:bg-secondary",
         /** Solid surface styling comes entirely from className */
         bare: "bg-transparent shadow-none hover:bg-transparent",
       },
       size: {
-        default: "h-11 px-5 py-2",
-        sm: "h-9 rounded-lg px-4 text-xs",
-        lg: "h-12 rounded-xl px-8 text-base",
-        icon: "h-10 w-10 rounded-xl",
+        default: "h-8 px-3 pointer-coarse:h-10",
+        sm: "h-7 gap-1.5 px-2.5 text-[13px] pointer-coarse:after:absolute pointer-coarse:after:inset-x-0 pointer-coarse:after:-inset-y-1.5",
+        lg: "h-9 px-4 pointer-coarse:h-10",
+        icon: "size-8 pointer-coarse:size-10",
       },
     },
     defaultVariants: {
@@ -45,6 +51,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     const Comp = asChild ? Slot : "button";
     return (
       <Comp
+        data-slot="button"
         className={cn(buttonVariants({ variant, size }), className)}
         ref={ref}
         {...props}
