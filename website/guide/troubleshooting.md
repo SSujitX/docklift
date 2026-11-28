@@ -92,6 +92,12 @@ curl -s http://127.0.0.1:8080/api/health
 
 Default bind is `0.0.0.0` so `http://SERVER_IP:8080` works. If you set `DASHBOARD_BIND=127.0.0.1`, use an SSH tunnel or a panel domain on 80/443.
 
+If `:8080` redirects to your panel domain or answers `403 Dashboard access by IP is disabled`, **Only allow access through the domain** is on. Use the domain, or reopen the port from the server (applies within 2 seconds):
+
+```bash
+docker exec docklift-backend docklift panel-access open
+```
+
 ## Bypassing Cloudflare / scraping blocks
 
 If a deployed app is blocked by Cloudflare but works from your SSH shell, Docker's network fingerprint may be detected. Run a lightweight SOCKS proxy on the host network and point the app at it (example):

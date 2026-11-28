@@ -20,9 +20,18 @@ The 2.x gateway container `docklift-nginx` (with its own `nginx.conf` and `dockl
 `docker-compose.yml` publishes `"${DASHBOARD_BIND:-0.0.0.0}:8080:8000"` on `docklift-backend`, so a fresh install is reachable at `http://SERVER_IP:8080`. The installer prints that URL plus the one-time **setup code** (`data/.bootstrap-secret`, also logged by the backend on a fresh install). First account creation still requires that secret; finding the IP alone must not claim the panel.
 
 Optional hardening (operator choice):
-- Add an HTTPS panel domain under **Settings → Domain**
+- Add an HTTPS panel domain under **Settings → Domain**, then turn on **Only allow access through the domain** (below)
 - Firewall / VPN in front of `:8080`
 - Set `DASHBOARD_BIND=127.0.0.1` for localhost-only access
+
+### Only allow access through the domain (`internal/panelaccess`)
+
+The settings row `panel_domain_only` holds the panel domain access is restricted to (no row: off). `panelaccess.Guard.Middleware` runs in the root stack right after `TrustedProxies.Middleware` (before the terminal upgrade, auth guards and body parsing). While it is on, a request whose **socket peer** is not a trusted proxy (`httpx.PeerTrusted`; forwarded headers are never consulted) gets: `GET`/`HEAD /api/health` → `200 {"status":"ok"}` (no version or instance id); `POST /api/github/webhook` → served (HMAC-checked; Apps created over the IP deliver there); a browser navigation (`GET`/`HEAD`, `Accept` has `text/html`, no `Upgrade`) → `302` to `https://<domain>` + same path and query, `Cache-Control: no-store`; everything else (API, `/ws/terminal`, SSE, assets) → `403 {"error":"Dashboard access by IP is disabled. Use https://<domain>"}`.
+
+- Direct means anything not from nginx-proxy's fixed addresses or loopback: clients of the published `:8080` (they arrive from the `docklift_network` gateway, also `127.0.0.1:8080` on the host and SSH tunnels), app containers on `docklift_network` or project networks. In-container loopback (Docker `HEALTHCHECK`, `docker exec … wget 127.0.0.1:8000`) is trusted, so `install.sh`/`upgrade.sh` health checks are unaffected.
+- The value is cached in an atomic pointer: no query per request. Writes through the Guard update it at once; `Guard.Watch` re-reads the row every `panelaccess.RefreshInterval` (2 s) so the CLI (`docklift panel-access open|close|status`, a separate process on the same SQLite file) reaches the running server without a restart.
+- Turning it on: `PUT /api/domains/:domain/access {"domainOnly": true, "password"}` needs a dashboard panel conf (`$dashboard`) with `listen 443 ssl`, a request through a trusted proxy whose forwarded scheme is `https` and host is exactly that domain (else 409), then the step-up password. Off (`{"domainOnly": false}`) needs only the session. `GET /api/domains` entries carry `access {domainOnly, canEnable, reason?}`.
+- Auto-off: `Guard.Reconcile` after `DELETE /api/domains/:domain` and `POST /:domain/ssl/retry`, and at boot (`Guard.Boot`, before listening), turns it off when the domain is no longer an HTTPS dashboard panel domain; the watcher turns it off when the conf file disappears.
 
 Do **not** market raw HTTP as private or encrypted. Do **not** force localhost by default; that breaks the intended server install flow.
 
@@ -118,7 +127,7 @@ Image pins: `nginx:1.30.8-alpine` and `certbot/certbot:v5.10.0` in `docker-compo
 
 ## Panel domains (dashboard behind a domain)
 
-`POST /api/domains {domain, port}` adds a panel domain: `ProvisionPanelSSL` writes the HTTP vhost, reloads, issues a certificate for exactly that hostname (a `www` mapping is a separate entry), then switches to HTTPS once a certificate covers it. Other routes: `GET /api/domains`, `POST /api/domains/dns-check` (up to 10 hosts), `GET /api/domains/:domain/ssl`, `POST /api/domains/:domain/ssl/retry`, `DELETE /api/domains/:domain`, `GET|PUT /api/domains/ssl/email`. Files are `nginx-proxy/conf.d/<domain>.conf`, starting with `# docklift-panel-domain` and `# docklift-panel-port: <port>`.
+`POST /api/domains {domain, port}` adds a panel domain: `ProvisionPanelSSL` writes the HTTP vhost, reloads, issues a certificate for exactly that hostname (a `www` mapping is a separate entry), then switches to HTTPS once a certificate covers it. Other routes: `GET /api/domains`, `POST /api/domains/dns-check` (up to 10 hosts), `GET /api/domains/:domain/ssl`, `POST /api/domains/:domain/ssl/retry`, `DELETE /api/domains/:domain`, `PUT /api/domains/:domain/access` (see above), `GET|PUT /api/domains/ssl/email`. Files are `nginx-proxy/conf.d/<domain>.conf`, starting with `# docklift-panel-domain` and `# docklift-panel-port: <port>`.
 
 -   **Port 8080 means the dashboard.** The conf proxies to the Go backend, resolved through Docker DNS by its network-qualified name:
 
@@ -231,4 +240,4 @@ Server names, certificate name and comment text are validated or sanitized befor
 - **Certificate order fails on a multi-domain request**: one SAN's DNS is missing; ACME fails the whole order. Remove that hostname or create its record.
 - **Config errors**: `docker exec docklift-nginx-proxy nginx -t`
 - **Vhost for a deleted project still answering**: restart the backend (`SyncConfigs` removes orphaned `service-*.conf`), or check the conf directory for a leftover file.
-- **Dashboard unreachable on `:8080`**: check `DASHBOARD_BIND`, the firewall, and `curl http://127.0.0.1:8080/api/health` on the server.
+- **Dashboard unreachable on `:8080`**: check `DASHBOARD_BIND`, the firewall, and `curl http://127.0.0.1:8080/api/health` on the server. A `302` to the panel domain or `403 Dashboard access by IP is disabled` means "Only allow access through the domain" is on: `docker exec docklift-backend docklift panel-access open`.

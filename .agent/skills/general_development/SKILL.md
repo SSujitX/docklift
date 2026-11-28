@@ -20,7 +20,7 @@ local setup and the day-to-day workflow; the other skills go deep on individual 
 
 ```
 server/                  Go module `docklift` (go.mod)
-  cmd/docklift/          main.go: subcommands serve (default), migrate, reset-password
+  cmd/docklift/          main.go: subcommands serve (default), migrate, reset-password, panel-access
   internal/
     api/<group>/         One package per route group (auth, projects, deployments, databases,
                          domains, files, github, health, logs, ports, system, terminal, backup)
@@ -28,6 +28,7 @@ server/                  Go module `docklift` (go.mod)
     auth/                JWT, passwords, persisted secrets, bootstrap/setup tokens
     backup/              Backup and restore archives
     certs/ nginx/ dnscheck/   Let's Encrypt, nginx vhost generation, DNS checks
+    panelaccess/         "Only allow access through the domain": cached setting + root middleware
     config/              Every environment variable the server reads (config.go) + .env loading
     db/                  SQLite open (WAL, writer/reader pools), embedded migrations, ensure/repair
     deploy/              Build resolver, compose generation, ports, env vars, deploy status

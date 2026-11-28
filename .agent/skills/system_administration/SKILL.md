@@ -55,6 +55,9 @@ The binary is `/usr/local/bin/docklift` in the container (working dir `/app`):
 
 ```bash
 docker exec docklift-backend docklift reset-password   # new random admin password, prints it
+docker exec docklift-backend docklift panel-access status   # is :8080 restricted to the panel domain?
+docker exec docklift-backend docklift panel-access open     # allow http://SERVER_IP:8080 again (locked out)
+docker exec docklift-backend docklift panel-access close [domain]   # only through the HTTPS panel domain
 docker exec docklift-backend docklift migrate          # apply migrations and exit
 docker exec docklift-backend docklift serve            # the container entrypoint (default)
 ```
@@ -199,10 +202,11 @@ Per-project failures produce `[ERROR]` lines and the stream ends as incomplete, 
 | `upgrade.sh` | Stops the backend, takes an SQLite backup (`sqlite3 .backup`, or a file copy with the backend stopped), tags the running image `docklift-backend:pre-upgrade`, rebuilds, health-checks `/api/health`, and rolls back (tagged images plus database restore) on failure. Migrates a 2.x layout to the Go backend and removes the obsolete containers and the `docklift-frontend` image once the new backend is healthy. |
 | `uninstall.sh` | Removes Docklift containers, images, volumes, networks, build cache and `/opt/docklift`, restricted to Docklift-owned resources (`docklift*`, `dl_*`, `dl-*`, `dl-net-*`, `com.docklift.*` labels). Never a host-wide prune, never Docker Engine or git. |
 
-The Docker `HEALTHCHECK` calls `GET /api/health` (public), which returns `{ status, timestamp, version, instanceId }`; the dashboard uses `instanceId` to detect restarts.
+The Docker `HEALTHCHECK` calls `GET /api/health` (public), which returns `{ status, timestamp, version, instanceId }`; the dashboard uses `instanceId` to detect restarts. It runs on loopback inside the container, so "Only allow access through the domain" does not affect it; direct clients of `:8080` get only `{"status":"ok"}` while that is on.
 
 ## Pitfalls
 
 -   Changing a path variable in compose without moving the mount makes backups, restores and nginx sync act on the wrong directory.
 -   The panel purge must stay Docklift-scoped. Do not add host-wide prune or OS maintenance to product APIs.
 -   `reset-password` runs as a separate process: running sessions notice within 30 s because bound connections recheck the password version.
+-   `panel-access open|close` also runs as a separate process: the server re-reads the `panel_domain_only` setting every 2 s (`panelaccess.RefreshInterval`), so no restart is needed. While it is on, `curl http://127.0.0.1:8080/api/health` on the host only returns `{"status":"ok"}` (no version); use `docker exec docklift-backend wget -qO- http://127.0.0.1:8000/api/health` for the full body.

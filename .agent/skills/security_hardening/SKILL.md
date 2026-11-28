@@ -174,7 +174,7 @@ All programs (docker, compose, buildx, railpack, git, the terminal shell, `/api/
 
 -   `nginx-proxy/conf.d/default.conf` answers unknown hostnames with `444`, so the dashboard is never served on an unconfigured domain.
 -   `nginx-proxy/nginx.conf` logs `$uri`, not the full request line, which keeps `?token=` query values out of access logs.
--   Keep the dashboard bind in mind: `:8080` is published on `0.0.0.0` by default. Set `DASHBOARD_BIND=127.0.0.1` and use a panel domain with HTTPS to restrict it.
+-   Keep the dashboard bind in mind: `:8080` is published on `0.0.0.0` by default. With an HTTPS panel domain, **Only allow access through the domain** (`internal/panelaccess`, settings row `panel_domain_only`) refuses or redirects every request whose socket peer is not a trusted proxy; it never trusts a header for this. Exceptions while it is on: `/api/health` (`{"status":"ok"}` only) and the HMAC-signed `POST /api/github/webhook`. Recovery is `docker exec docklift-backend docklift panel-access open` (applies within 2 s). `DASHBOARD_BIND=127.0.0.1` closes the port entirely.
 -   Graceful shutdown on SIGINT/SIGTERM: the HTTP server drains for up to 10 s, terminal sessions are closed, shutdown hooks run.
 
 ## Checklist for New Features

@@ -41,7 +41,7 @@ Setup code: <bootstrap-secret>
 
 Raw HTTP on a public IP is intentional for first-run convenience — it is not encrypted. Later options:
 
-- **Settings → Domain** for an HTTPS panel hostname
+- **Settings → Domain** for an HTTPS panel hostname, then **Only allow access through the domain** so `:8080` stops answering (undo from the server: `docker exec docklift-backend docklift panel-access open`)
 - Firewall rules limiting who can reach `:8080`
 - `DASHBOARD_BIND=127.0.0.1` in `/opt/docklift/.env` for localhost-only access (then use an SSH tunnel)
 

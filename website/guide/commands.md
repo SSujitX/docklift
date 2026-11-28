@@ -172,7 +172,25 @@ cd server
 DATA_PATH=../data DATABASE_URL=file:$(pwd)/../data/docklift.db go run ./cmd/docklift reset-password
 ```
 
-Other subcommands: `docklift serve` (default) and `docklift migrate` (apply database migrations and exit).
+Other subcommands: `docklift serve` (default), `docklift migrate` (apply database migrations and exit)
+and `docklift panel-access` (below).
+
+### Dashboard access by IP (`panel-access`)
+
+**Settings → Domain → Only allow access through the domain** makes the dashboard answer only through
+its HTTPS panel domain: `http://SERVER_IP:8080` then redirects browsers to `https://<domain>` and
+refuses API, terminal and live-log requests with `403` (also from the server itself and through SSH
+tunnels). `/api/health` keeps answering `{"status":"ok"}`. The same switch from the server:
+
+```bash
+docker exec docklift-backend docklift panel-access status          # current state
+docker exec docklift-backend docklift panel-access open            # allow http://SERVER_IP:8080 again
+docker exec docklift-backend docklift panel-access close           # only through the HTTPS panel domain
+docker exec docklift-backend docklift panel-access close panel.example.com   # when there are several
+```
+
+`open` is the way back in when the domain stops working. The running server picks up the change
+within 2 seconds; no restart. `close` refuses when no panel domain with HTTPS is configured.
 
 ## 6. Version (check & release)
 
@@ -184,7 +202,7 @@ grep '"version"' package.json
 ```
 
 ```bash
-curl -s http://SERVER_IP:8080/api/health
+curl -s http://SERVER_IP:8080/api/health   # only {"status":"ok"} while "Only allow access through the domain" is on
 # or from the server:
 docker exec docklift-backend wget -qO- http://127.0.0.1:8000/api/health
 ```
@@ -256,7 +274,7 @@ sudo fuser -k 5500/tcp
 
 | Port | Use |
 |------|-----|
-| `8080` | Dashboard + API + terminal (`docklift-backend`, container port 8000) |
+| `8080` | Dashboard + API + terminal (`docklift-backend`, container port 8000); only `/api/health` while "Only allow access through the domain" is on |
 | `80` | Custom domains HTTP + ACME (nginx-proxy) |
 | `443` | Custom domains HTTPS |
 | `5500`–`5600` | Published app ports (opt-in pool) |
@@ -271,7 +289,9 @@ Compose env defaults:
 # DASHBOARD_BIND=0.0.0.0
 ```
 
-Bind the dashboard to localhost only (then use a panel domain or an SSH tunnel):
+To keep the port open on the network but answer only through the panel domain, use **Only allow
+access through the domain** (section 5). Bind the dashboard to localhost only (then use a panel
+domain or an SSH tunnel; with the switch on, an SSH tunnel to `:8080` is refused too):
 
 ```bash
 cd /opt/docklift && DASHBOARD_BIND=127.0.0.1 docker compose up -d backend
@@ -384,7 +404,8 @@ Set in `docker-compose.yml`. Values written as `${…}` can be overridden from t
 | Domain proxy logs | `docker logs docklift-nginx-proxy -f` |
 | Reload domain nginx | `docker exec docklift-nginx-proxy nginx -s reload` |
 | Reset password | `docker exec -it docklift-backend docklift reset-password` |
-| Check version | `grep '"version"' package.json` / `curl -s localhost:8080/api/health` |
+| Reopen `:8080` (domain-only on) | `docker exec docklift-backend docklift panel-access open` |
+| Check version | `grep '"version"' package.json` / `docker exec docklift-backend wget -qO- http://127.0.0.1:8000/api/health` |
 | Run everything CI runs | `make lint test contract frontend docker` |
 | List apps | `docker ps --filter name=dl_` |
 | Ship a release | green CI + Install → Actions → **Release** |

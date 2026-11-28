@@ -99,6 +99,12 @@ elements and `top-20` for spaced ones.
 -   Settings → Domain (`/settings?tab=domain`): same guide + inline add (no popup),
     SSL status pills, Check DNS, Retry HTTPS, and Let’s Encrypt activity log via
     `PanelDomainCard` — mirror project Domain, not a table/dialog.
+    Under each dashboard-port domain, `PanelAccessSwitch` (`components/domains/PanelAccess.tsx`)
+    is "Only allow access through the domain": state and the disabled reason come only from
+    the API (`access {domainOnly, canEnable, reason?}` in `GET /api/domains`; logic in
+    `lib/panelAccess.ts`, tested). Turning on opens the step-up password dialog
+    (`usePanelAccess`); a dismissible `PanelAccessSuggestion` appears when the page is viewed
+    through an HTTPS panel domain and nothing is restricted yet.
 -   Env manager: optional **BuildKit secret** flag (`is_secret`) when `is_build_arg` is on.
 
 ## Dev server

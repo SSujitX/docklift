@@ -132,8 +132,9 @@ Enter the code, create the admin account, and the secret is deleted. Anyone who 
 server address cannot claim the panel. The first screen can also restore a backup instead of
 creating a new account.
 
-Port `8080` is plain HTTP. Put a panel domain on it (see below), restrict it with a firewall, or set
-`DASHBOARD_BIND=127.0.0.1` in `/opt/docklift/.env` and use an SSH tunnel.
+Port `8080` is plain HTTP. Put a panel domain on it and turn on **Only allow access through the
+domain** (see below), restrict it with a firewall, or set `DASHBOARD_BIND=127.0.0.1` in
+`/opt/docklift/.env` and use an SSH tunnel.
 
 ### Deploy from GitHub or a ZIP
 
@@ -168,6 +169,32 @@ reads or modifies a `docker-compose.yml` or `.env` that is in your repository.
 Create the `www` record first, then add it as a second domain. Behind Cloudflare use SSL mode Full
 (strict) and let `/.well-known/acme-challenge/` through on plain HTTP while the certificate is
 issued. Issuance errors are shown in the UI; the full log is `docker logs docklift-certbot`.
+
+#### Only allow access through the domain
+
+Once the dashboard has a panel domain with HTTPS, open it at `https://<domain>` and turn on
+**Settings → Domain → Only allow access through the domain** (it asks for your password). From then
+on `http://SERVER_IP:8080` stops working: browsers are redirected to `https://<domain>`, and API,
+terminal and live-log requests on that port get `403`. Only requests that come through
+`docklift-nginx-proxy` are served; this is decided from the connection's address (the proxy's fixed
+addresses in `TRUSTED_PROXIES`), never from a header a client could send.
+
+- It also applies to `http://127.0.0.1:8080` on the server itself and to SSH tunnels: with Docker's
+  port publishing those reach the backend like any other direct client.
+- `/api/health` keeps answering `{"status":"ok"}` on `:8080`, so health checks keep working, and
+  GitHub webhooks (signed) are still accepted there for GitHub Apps created over the IP address.
+- Removing the panel domain, or a certificate retry that ends without HTTPS, turns the switch off
+  in the same step; so does a server start that finds no such domain.
+- If the domain stops working, reopen the port from the server (no restart needed, applies within
+  2 seconds):
+
+  ```bash
+  docker exec docklift-backend docklift panel-access open     # allow http://SERVER_IP:8080 again
+  docker exec docklift-backend docklift panel-access status   # show the current state
+  docker exec docklift-backend docklift panel-access close    # turn it on from the server
+  ```
+
+`DASHBOARD_BIND=127.0.0.1` remains the way to close port `8080` on the network entirely.
 
 ### Databases
 
@@ -226,6 +253,14 @@ docker exec -it docklift-backend docklift reset-password
 ```
 
 It sets a new random password for the first admin and prints it. Existing sessions stop working.
+
+### Locked out by "Only allow access through the domain"
+
+```bash
+docker exec docklift-backend docklift panel-access open
+```
+
+`http://SERVER_IP:8080` works again within 2 seconds, without a restart.
 
 More commands (logs, nginx, versions, ports): [commands.md](commands.md).
 
@@ -351,7 +386,10 @@ The trust model, in short:
   pinned by digest, the Railpack binary is checksum-verified in the Dockerfile, and CI actions are
   pinned by commit SHA.
 - **Dashboard.** Plain HTTP on `:8080` is the default for first-run convenience and is not
-  encrypted. Use a panel domain with HTTPS, a firewall, or `DASHBOARD_BIND=127.0.0.1`.
+  encrypted. Use a panel domain with HTTPS and turn on **Only allow access through the domain**
+  (requests that did not come through nginx-proxy are redirected or refused; the decision uses the
+  socket address, not forwarded headers; `docklift panel-access open` in the container undoes it),
+  or close the port with a firewall or `DASHBOARD_BIND=127.0.0.1`.
 
 ## Development
 

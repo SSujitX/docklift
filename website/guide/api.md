@@ -101,6 +101,7 @@ curl -s http://SERVER_IP:8080/api/health
 | `GET` | `/api/domains` | Panel/service domain configs |
 | `POST` | `/api/domains` | Add domain |
 | `DELETE` | `/api/domains/:domain` | Remove domain |
+| `PUT` | `/api/domains/:domain/access` | Only allow access through the domain: `{"domainOnly": true, "password": "…"}` (only through that domain over HTTPS) or `{"domainOnly": false}` |
 | `GET` | `/api/ports` | Host port pool + projects running without a host port |
 | `GET` | `/api/files/:projectId` | File tree |
 | `GET` | `/api/files/:projectId/content` | Read file |

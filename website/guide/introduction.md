@@ -44,7 +44,7 @@ Docklift writes its own runtime Compose file under `deployments/.docklift/<proje
 
 ### Access model
 
-- **Admin UI:** `http://SERVER_IP:8080` by default. Prefer an HTTPS panel domain under **Settings → Domain** when you can. Optional: `DASHBOARD_BIND=127.0.0.1` plus an SSH tunnel for localhost-only.
+- **Admin UI:** `http://SERVER_IP:8080` by default. Prefer an HTTPS panel domain under **Settings → Domain** when you can, and turn on **Only allow access through the domain** there so `:8080` stops answering. Optional: `DASHBOARD_BIND=127.0.0.1` plus an SSH tunnel for localhost-only.
 - **Your apps:** public hostnames on `:80`/`:443` via nginx-proxy. Host ports are opt-in.
 - **First login:** a one-time bootstrap secret (setup code) is required before the first admin account can be created.
 
