@@ -4,12 +4,20 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import type { Service } from "@/lib/types";
-import { StatusBadge } from "@/components/StatusBadge";
-import { ChevronLeft, ChevronRight, Layers } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 
 export type ProjectWorkspace = "project" | "service";
 
 const GUTTER_PX = 40;
+
+const STATUS_DOT: Record<string, string> = {
+  running: "bg-ok",
+  building: "bg-warn animate-pulse motion-reduce:animate-none",
+  degraded: "bg-warn",
+  error: "bg-danger",
+  stopped: "bg-subtle",
+  pending: "bg-info",
+};
 
 interface ServiceSwitcherProps {
   services: Service[];
@@ -98,118 +106,115 @@ export function ServiceSwitcher({
 
   if (services.length <= 1) return null;
 
-  const chipBase =
-    "inline-flex shrink-0 items-center gap-1.5 rounded-xl border px-2.5 py-2 text-left transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-brand/40 sm:gap-2 sm:px-3 sm:py-2.5";
+  const itemBase =
+    "inline-flex h-7 shrink-0 items-center gap-2 rounded-[4px] px-2.5 text-[13px] font-medium transition-colors duration-150 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring pointer-coarse:h-9";
 
   return (
-    <div className={cn("flex min-w-0 flex-col gap-2.5 sm:gap-3", className)}>
-      <div className="min-w-0">
-        <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+    <div className={cn("flex min-w-0 flex-col gap-2", className)}>
+      <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+        <span className="shrink-0 text-[13px] text-muted-foreground">
           Workspace
-        </p>
-        <p className="mt-0.5 text-xs text-muted-foreground sm:hidden">
-          All services or one app.
-        </p>
-        <p className="mt-0.5 hidden text-xs text-muted-foreground sm:block">
-          All services covers deploy, build, and shared env. Open one service for
-          that app’s env, domains, storage, and runtime logs.
-        </p>
-      </div>
+        </span>
 
-      <div className="relative min-w-0">
-        {hasOverflow && (
-          <>
-            <button
-              type="button"
-              aria-label="Scroll workspace left"
-              disabled={!canScrollLeft}
-              tabIndex={canScrollLeft ? 0 : -1}
-              onClick={() => scrollByAmount(-1)}
-              className={cn(
-                "absolute left-0 top-1/2 z-10 hidden h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-border/60 bg-background/95 text-foreground shadow-md backdrop-blur-xs transition-opacity hover:bg-secondary disabled:pointer-events-none sm:flex",
-                canScrollLeft ? "opacity-100" : "opacity-0",
-              )}
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              aria-label="Scroll workspace right"
-              disabled={!canScrollRight}
-              tabIndex={canScrollRight ? 0 : -1}
-              onClick={() => scrollByAmount(1)}
-              className={cn(
-                "absolute right-0 top-1/2 z-10 hidden h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-border/60 bg-background/95 text-foreground shadow-md backdrop-blur-xs transition-opacity hover:bg-secondary disabled:pointer-events-none sm:flex",
-                canScrollRight ? "opacity-100" : "opacity-0",
-              )}
-            >
-              <ChevronRight className="h-4 w-4" />
-            </button>
-          </>
-        )}
-
-        <div
-          ref={scrollerRef}
-          role="group"
-          aria-label="All services or one service workspace"
-          className={cn(
-            "flex max-w-full gap-2 overflow-x-auto scroll-smooth py-0.5",
-            "[-ms-overflow-style:none] scrollbar-none [&::-webkit-scrollbar]:hidden",
-            hasOverflow ? "sm:px-10" : "px-0",
-          )}
-        >
-          <button
-            type="button"
-            data-active={workspace === "project" ? "true" : "false"}
-            aria-pressed={workspace === "project"}
-            onClick={onSelectProject}
-            className={cn(
-              chipBase,
-              workspace === "project"
-                ? "border-brand/40 bg-brand/10 text-foreground shadow-xs"
-                : "border-border/60 bg-secondary/40 text-muted-foreground hover:border-border hover:bg-secondary hover:text-foreground",
-            )}
-          >
-            <Layers className="h-3.5 w-3.5 shrink-0" />
-            <span className="text-xs font-semibold">All services</span>
-            <span
-              className={cn(
-                "rounded-md px-1.5 py-0.5 text-[10px] font-medium tabular-nums",
-                workspace === "project"
-                  ? "bg-brand/15 text-foreground"
-                  : "bg-background/80 text-muted-foreground",
-              )}
-            >
-              {services.length}
-            </span>
-          </button>
-
-          {services.map((svc) => {
-            const active = workspace === "service" && svc.id === selectedId;
-            return (
+        <div className="relative min-w-0 max-w-full">
+          {hasOverflow && (
+            <>
               <button
-                key={svc.id}
                 type="button"
-                data-active={active ? "true" : "false"}
-                aria-pressed={active}
-                onClick={() => onSelectService(svc.id)}
+                aria-label="Scroll workspace left"
+                disabled={!canScrollLeft}
+                tabIndex={canScrollLeft ? 0 : -1}
+                onClick={() => scrollByAmount(-1)}
                 className={cn(
-                  chipBase,
-                  "max-w-48 sm:max-w-[16rem]",
-                  active
-                    ? "border-brand/40 bg-brand/10 text-foreground shadow-xs"
-                    : "border-border/60 bg-secondary/40 text-muted-foreground hover:border-border hover:bg-secondary hover:text-foreground",
+                  "absolute left-0 top-1/2 z-10 hidden size-7 -translate-y-1/2 items-center justify-center rounded-md border border-input bg-card text-muted-foreground transition-opacity duration-150 hover:bg-secondary hover:text-foreground disabled:pointer-events-none sm:flex",
+                  canScrollLeft ? "opacity-100" : "opacity-0",
                 )}
               >
-                <span className="min-w-0 truncate text-xs font-semibold">
-                  {svc.name}
-                </span>
-                <StatusBadge status={svc.status || "pending"} size="sm" />
+                <ChevronLeft className="size-4" />
               </button>
-            );
-          })}
+              <button
+                type="button"
+                aria-label="Scroll workspace right"
+                disabled={!canScrollRight}
+                tabIndex={canScrollRight ? 0 : -1}
+                onClick={() => scrollByAmount(1)}
+                className={cn(
+                  "absolute right-0 top-1/2 z-10 hidden size-7 -translate-y-1/2 items-center justify-center rounded-md border border-input bg-card text-muted-foreground transition-opacity duration-150 hover:bg-secondary hover:text-foreground disabled:pointer-events-none sm:flex",
+                  canScrollRight ? "opacity-100" : "opacity-0",
+                )}
+              >
+                <ChevronRight className="size-4" />
+              </button>
+            </>
+          )}
+
+          <div
+            ref={scrollerRef}
+            role="group"
+            aria-label="All services or one service workspace"
+            className={cn(
+              "scrollbar-none flex max-w-full gap-0.5 overflow-x-auto scroll-smooth rounded-md border border-input bg-card p-0.5",
+              hasOverflow ? "sm:mx-9" : "",
+            )}
+          >
+            <button
+              type="button"
+              data-active={workspace === "project" ? "true" : "false"}
+              aria-pressed={workspace === "project"}
+              onClick={onSelectProject}
+              className={cn(
+                itemBase,
+                workspace === "project"
+                  ? "bg-secondary text-foreground"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              All services
+              <span className="font-mono text-xs text-subtle">
+                {services.length}
+              </span>
+            </button>
+
+            {services.map((svc) => {
+              const active = workspace === "service" && svc.id === selectedId;
+              const status = svc.status || "pending";
+              return (
+                <button
+                  key={svc.id}
+                  type="button"
+                  data-active={active ? "true" : "false"}
+                  aria-pressed={active}
+                  onClick={() => onSelectService(svc.id)}
+                  className={cn(
+                    itemBase,
+                    "max-w-48 sm:max-w-64",
+                    active
+                      ? "bg-secondary text-foreground"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  <span
+                    aria-hidden="true"
+                    title={status}
+                    className={cn(
+                      "size-2 shrink-0 rounded-full",
+                      STATUS_DOT[status] || STATUS_DOT.pending,
+                    )}
+                  />
+                  <span className="min-w-0 truncate">{svc.name}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
+      <p className="text-xs text-muted-foreground">
+        <span className="sm:hidden">All services or one app.</span>
+        <span className="hidden sm:inline">
+          All services covers deploy, build, and shared env. Open one service
+          for that app’s env, domains, storage, and runtime logs.
+        </span>
+      </p>
     </div>
   );
 }
