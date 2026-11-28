@@ -1,6 +1,6 @@
 // TerminalView component - interactive xterm.js shell with system controls
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, type CSSProperties } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Maximize2, Minimize2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -39,58 +39,57 @@ let pendingShellDeferForUpgrade = false;
 
 const PASSWORD_CANCEL = Symbol("terminal_password_cancel");
 
-function xtermTheme(mode: "dark" | "light") {
-  if (mode === "light") {
-    return {
-      background: "#fafafa",
-      foreground: "#171717",
-      cursor: "#171717",
-      cursorAccent: "#fafafa",
-      selectionBackground: "#17171722",
-      selectionForeground: "#171717",
-      black: "#171717",
-      red: "#b91c1c",
-      green: "#15803d",
-      yellow: "#a16207",
-      blue: "#1d4ed8",
-      magenta: "#6b21a8",
-      cyan: "#0e7490",
-      white: "#525252",
-      brightBlack: "#737373",
-      brightRed: "#dc2626",
-      brightGreen: "#16a34a",
-      brightYellow: "#ca8a04",
-      brightBlue: "#2563eb",
-      brightMagenta: "#7c3aed",
-      brightCyan: "#0891b2",
-      brightWhite: "#0a0a0a",
-    };
-  }
-  return {
-    background: "#0a0a0a",
-    foreground: "#e5e5e5",
-    cursor: "#e5e5e5",
-    cursorAccent: "#0a0a0a",
-    selectionBackground: "#e5e5e533",
-    selectionForeground: "#fafafa",
-    black: "#0a0a0a",
-    red: "#f87171",
-    green: "#4ade80",
-    yellow: "#facc15",
-    blue: "#93c5fd",
-    magenta: "#d8b4fe",
-    cyan: "#67e8f9",
-    white: "#e5e5e5",
-    brightBlack: "#737373",
-    brightRed: "#fca5a5",
-    brightGreen: "#86efac",
-    brightYellow: "#fde047",
-    brightBlue: "#bfdbfe",
-    brightMagenta: "#e9d5ff",
-    brightCyan: "#a5f3fc",
-    brightWhite: "#fafafa",
-  };
+/**
+ * The terminal is a fixed dark surface in both app themes. These are the only
+ * literal colours in this file: the surface and a restrained 16-colour ANSI set.
+ */
+const TERMINAL_SURFACE = "#0f1215";
+const TERMINAL_FONT = '"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace';
+const XTERM_THEME = {
+  background: TERMINAL_SURFACE,
+  foreground: "#e6eaee",
+  cursor: "#39c1d0", // dark-theme brand teal, hsl(186 62% 52%)
+  cursorAccent: TERMINAL_SURFACE,
+  selectionBackground: "#e6eaee2e",
+  selectionForeground: "#ffffff",
+  black: "#2a3036",
+  red: "#e0726a",
+  green: "#5db48a",
+  yellow: "#d6a75a",
+  blue: "#7aa3d6",
+  magenta: "#ad98cf",
+  cyan: "#5ab3bf",
+  white: "#c5ccd3",
+  brightBlack: "#6b757f",
+  brightRed: "#ec9089",
+  brightGreen: "#83c9a5",
+  brightYellow: "#e5c07f",
+  brightBlue: "#9dbbe3",
+  brightMagenta: "#c4b4e0",
+  brightCyan: "#82c8d1",
+  brightWhite: "#f2f5f7",
+};
+
+// Same palette in light and dark: the surface does not follow the app theme.
+function xtermTheme(_mode: "dark" | "light") {
+  return XTERM_THEME;
 }
+
+const HOST_GROUP =
+  "inline-flex shrink-0 divide-x divide-input overflow-hidden rounded-md border border-input bg-card";
+const HOST_ITEM =
+  "h-[30px] rounded-none px-3 text-[13px] focus-visible:outline-offset-[-2px] pointer-coarse:h-[38px]";
+
+/**
+ * Fixed dark surfaces sit inside light pages too. The `dark` class re-declares the
+ * dark token triples on the element; Tailwind colour utilities read --color-*,
+ * which were resolved at :root, so re-derive the ones used here from the scoped triples.
+ */
+const DARK_SCOPE = Object.fromEntries(
+  ["foreground", "muted-foreground", "subtle", "card", "secondary", "border", "input", "ring", "brand", "ok", "warn", "danger", "info"].map(
+    (name) => [`--color-${name}`, `hsl(var(--${name}))`],
+  ),
+) as CSSProperties;
 
 function formatVersion(v?: string) {
   if (!v) return "—";
@@ -194,10 +193,10 @@ export function TerminalView({ className }: { className?: string }) {
       const term = new Terminal({
         cursorBlink: true,
         cursorStyle: "block",
-        fontSize: 14,
-        fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Menlo', 'Monaco', 'Consolas', monospace",
+        fontSize: 13,
+        fontFamily: TERMINAL_FONT,
         fontWeight: "400",
-        fontWeightBold: "600",
+        fontWeightBold: "500",
         lineHeight: 1.35,
         letterSpacing: 0,
         allowTransparency: false,
@@ -859,7 +858,7 @@ export function TerminalView({ className }: { className?: string }) {
     }, 100);
   };
 
-  const termBg = resolvedTheme === "light" ? "#fafafa" : "#0a0a0a";
+  const termBg = TERMINAL_SURFACE;
   const statusLabel = connected ? "live" : connecting ? "connecting" : "offline";
   const hostLocked =
     !!waitState && !waitState.simulated && waitState.kind === "upgrade";
@@ -874,89 +873,87 @@ export function TerminalView({ className }: { className?: string }) {
           : "unknown";
 
   return (
-    <div className={cn("flex min-h-0 flex-col gap-2", className)}>
-      {/* Host controls — compact strip; scroll horizontally on small screens */}
-      <div className="flex shrink-0 items-center gap-2 border-b border-border/60 pb-2">
-        <p className="hidden shrink-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground sm:block">
-          Host
-        </p>
-        <div className="-mx-1 flex min-w-0 flex-1 gap-1 overflow-x-auto px-1 [-ms-overflow-style:none] scrollbar-none [&::-webkit-scrollbar]:hidden">
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={hostBusy}
-            onClick={() => setShowUpdateConfirm(true)}
-            className="h-8 shrink-0 px-2.5 text-xs font-medium text-muted-foreground hover:text-foreground"
-          >
-            Update packages
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={hostBusy}
-            onClick={() => void openUpgradeConfirm()}
-            className="h-8 shrink-0 px-2.5 text-xs font-medium text-muted-foreground hover:text-foreground"
-          >
-            Upgrade Docklift
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={isProcessing || hostLocked}
-            onClick={() => setShowPurgeDialog(true)}
-            className="h-8 shrink-0 px-2.5 text-xs font-medium text-muted-foreground hover:text-foreground"
-          >
-            Purge images
-          </Button>
-          <span
-            aria-hidden
-            className="mx-0.5 hidden h-4 w-px shrink-0 bg-border sm:inline-block"
-          />
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={isProcessing || hostLocked}
-            onClick={() => setShowResetDialog(true)}
-            className="h-8 shrink-0 px-2.5 text-xs font-medium text-muted-foreground hover:text-foreground"
-          >
-            Reset stack
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={isProcessing || hostLocked}
-            onClick={() => setShowRebootDialog(true)}
-            className="h-8 shrink-0 px-2.5 text-xs font-medium text-destructive hover:bg-destructive/10 hover:text-destructive"
-          >
-            Reboot
-          </Button>
+    <div className={cn("flex min-h-0 flex-col gap-3", className)}>
+      {/* Host actions — two quiet button groups; scroll horizontally on small screens */}
+      <div className="flex shrink-0 items-center gap-3">
+        <span className="hidden shrink-0 text-[13px] text-muted-foreground sm:inline">
+          Host actions
+        </span>
+        <div className="-mx-4 flex min-w-0 flex-1 gap-2 overflow-x-auto px-4 scrollbar-none sm:mx-0 sm:px-0">
+          <div className={HOST_GROUP}>
+            <Button
+              variant="ghost"
+              disabled={hostBusy}
+              onClick={() => setShowUpdateConfirm(true)}
+              className={HOST_ITEM}
+            >
+              Update packages
+            </Button>
+            <Button
+              variant="ghost"
+              disabled={hostBusy}
+              onClick={() => void openUpgradeConfirm()}
+              className={HOST_ITEM}
+            >
+              Upgrade Docklift
+            </Button>
+            <Button
+              variant="ghost"
+              disabled={isProcessing || hostLocked}
+              onClick={() => setShowPurgeDialog(true)}
+              className={HOST_ITEM}
+            >
+              Purge images
+            </Button>
+          </div>
+          <div className={HOST_GROUP}>
+            <Button
+              variant="ghost"
+              disabled={isProcessing || hostLocked}
+              onClick={() => setShowResetDialog(true)}
+              className={HOST_ITEM}
+            >
+              Reset stack
+            </Button>
+            <Button
+              variant="ghost"
+              disabled={isProcessing || hostLocked}
+              onClick={() => setShowRebootDialog(true)}
+              className={cn(HOST_ITEM, "text-danger hover:text-danger")}
+            >
+              Reboot
+            </Button>
+          </div>
         </div>
       </div>
 
-      {/* Shell frame — fills remaining viewport; xterm FitAddon follows ResizeObserver */}
+      {/* Shell frame — fixed dark surface in both themes (the `dark` class scopes the
+          dark tokens to it); xterm FitAddon follows ResizeObserver */}
       <div
         className={cn(
-          "flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border/60 bg-background",
+          "dark flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border text-foreground",
           isFullscreen &&
             "fixed inset-0 z-50 m-0 h-screen w-screen rounded-none border-0",
         )}
+        style={{ ...DARK_SCOPE, background: termBg }}
       >
-        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border/60 px-3 py-1.5 sm:py-2">
-          <div className="flex min-w-0 items-baseline gap-2">
+        <div className="flex h-9 shrink-0 items-center justify-between gap-3 border-b border-border bg-card pl-3 pr-1">
+          <div className="flex min-w-0 items-center gap-2">
+            <span
+              aria-hidden="true"
+              className={cn(
+                "size-2 shrink-0 rounded-full",
+                connected
+                  ? "bg-ok"
+                  : connecting
+                    ? "animate-pulse bg-warn motion-reduce:animate-none"
+                    : "bg-subtle",
+              )}
+            />
             <span className="truncate font-mono text-xs text-foreground">
               root@docklift
             </span>
-            <span className="text-muted-foreground/50">·</span>
-            <span
-              className={cn(
-                "shrink-0 text-[11px] tabular-nums",
-                connected
-                  ? "text-foreground"
-                  : connecting
-                    ? "text-muted-foreground"
-                    : "text-muted-foreground/70",
-              )}
-            >
+            <span className="shrink-0 text-xs text-muted-foreground">
               {statusLabel}
             </span>
           </div>
@@ -967,20 +964,16 @@ export function TerminalView({ className }: { className?: string }) {
               setIsFullscreen((v) => !v);
               fitAfterLayout();
             }}
-            className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
+            className="size-7 shrink-0 text-muted-foreground pointer-coarse:size-10"
             title={isFullscreen ? "Exit full screen" : "Full screen"}
           >
-            {isFullscreen ? (
-              <Minimize2 className="h-3.5 w-3.5" />
-            ) : (
-              <Maximize2 className="h-3.5 w-3.5" />
-            )}
+            {isFullscreen ? <Minimize2 /> : <Maximize2 />}
           </Button>
         </div>
 
         <div
           ref={terminalRef}
-          className="min-h-0 flex-1 p-2"
+          className="min-h-0 flex-1 py-2 pl-3 pr-1"
           style={{ background: termBg }}
         />
       </div>
@@ -992,8 +985,8 @@ export function TerminalView({ className }: { className?: string }) {
           else setShowUpgradeConfirm(true);
         }}
       >
-        <DialogContent className="sm:max-w-md gap-5">
-          <DialogHeader className="space-y-2 pr-6">
+        <DialogContent>
+          <DialogHeader>
             <DialogTitle>Upgrade Docklift?</DialogTitle>
             <DialogDescription>
               The panel will go offline while the stack rebuilds. Keep this tab
@@ -1001,38 +994,42 @@ export function TerminalView({ className }: { className?: string }) {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="rounded-lg border border-border bg-muted/40 px-3 py-3 font-mono text-xs">
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-muted-foreground">Now</span>
-              <span className="tabular-nums text-foreground">
+          <dl className="divide-y divide-border border-y border-border text-[13px] leading-5">
+            <div className="flex items-baseline justify-between gap-3 py-2">
+              <dt className="text-muted-foreground">Current version</dt>
+              <dd className="font-mono text-foreground">
                 {versionLoading && !versionInfo
                   ? "…"
                   : formatVersion(versionInfo?.current)}
-              </span>
+              </dd>
             </div>
-            <div className="mt-2 flex items-center justify-between gap-3 border-t border-border/70 pt-2">
-              <span className="text-muted-foreground">Installing</span>
-              <span className="tabular-nums font-medium text-foreground">
+            <div className="flex items-baseline justify-between gap-3 py-2">
+              <dt className="text-muted-foreground">Installing</dt>
+              <dd className="font-mono font-medium text-foreground">
                 {upgradeTargetLabel}
-              </span>
+              </dd>
             </div>
-          </div>
+          </dl>
 
-          <p className="text-sm text-muted-foreground">
-            {upgradeTargetLabel === "unknown"
-              ? "Could not resolve the target version from GitHub. You can still start — upgrade.sh will pull the latest release."
-              : "Usually ready in 1–2 minutes. Deployed apps keep running; only the Docklift panel restarts."}
-          </p>
+          {upgradeTargetLabel === "unknown" ? (
+            <p className="rounded-md border border-warn/40 bg-secondary/60 px-3 py-2.5 text-[13px] leading-5 text-foreground">
+              Could not resolve the target version from GitHub. You can still start — upgrade.sh will pull the latest release.
+            </p>
+          ) : (
+            <p className="text-[13px] leading-5 text-muted-foreground">
+              Usually ready in 1–2 minutes. Deployed apps keep running; only the Docklift panel restarts.
+            </p>
+          )}
 
           <form
-            className="space-y-3"
+            className="space-y-4"
             onSubmit={(e) => {
               e.preventDefault();
               void startUpgradeFromConfirm();
             }}
           >
-            <div className="space-y-2">
-              <label className="text-sm font-medium" htmlFor="upgrade-password">
+            <div className="space-y-1.5">
+              <label className="block text-[13px] font-medium" htmlFor="upgrade-password">
                 Account password
               </label>
               <Input
@@ -1044,20 +1041,20 @@ export function TerminalView({ className }: { className?: string }) {
                   setUpgradePassword(e.target.value);
                   if (upgradePasswordError) setUpgradePasswordError("");
                 }}
-                className="h-10 font-mono"
+                className="font-mono"
                 autoComplete="current-password"
                 autoFocus
                 disabled={isProcessing}
               />
               {upgradePasswordError ? (
-                <p className="text-sm text-destructive">{upgradePasswordError}</p>
+                <p className="text-[13px] text-danger">{upgradePasswordError}</p>
               ) : (
                 <p className="text-xs text-muted-foreground">
                   JWT alone is not enough. Wrong password stays here so you can try again.
                 </p>
               )}
             </div>
-            <DialogFooter className="gap-2 sm:gap-0">
+            <DialogFooter>
               <Button
                 type="button"
                 variant="outline"
@@ -1082,19 +1079,19 @@ export function TerminalView({ className }: { className?: string }) {
       </Dialog>
 
       <Dialog open={showUpdateConfirm} onOpenChange={setShowUpdateConfirm}>
-        <DialogContent className="sm:max-w-md gap-5">
-          <DialogHeader className="space-y-2 pr-6">
+        <DialogContent>
+          <DialogHeader>
             <DialogTitle>Update host packages?</DialogTitle>
             <DialogDescription>
               Runs <span className="font-mono text-foreground">apt update</span>{" "}
               and upgrade on the server. This can take several minutes.
             </DialogDescription>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-[13px] leading-5 text-muted-foreground">
             The panel usually stays up. If this page stops responding, wait 1–2
             minutes, then refresh.
           </p>
-          <DialogFooter className="gap-2 sm:gap-0">
+          <DialogFooter>
             <Button
               variant="outline"
               onClick={() => setShowUpdateConfirm(false)}
@@ -1122,12 +1119,11 @@ export function TerminalView({ className }: { className?: string }) {
         }}
       >
         <DialogContent
-          className="sm:max-w-md gap-5"
           showCloseButton={false}
           onPointerDownOutside={(e) => e.preventDefault()}
           onEscapeKeyDown={(e) => e.preventDefault()}
         >
-          <DialogHeader className="space-y-2">
+          <DialogHeader>
             <DialogTitle>
               {waitState?.kind === "upgrade"
                 ? waitState.simulated
@@ -1149,30 +1145,30 @@ export function TerminalView({ className }: { className?: string }) {
           </DialogHeader>
 
           {waitState?.kind === "upgrade" && !waitState.simulated && (
-            <div className="rounded-lg border border-border bg-muted/40 px-3 py-3 font-mono text-xs">
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-muted-foreground">Target</span>
-                <span className="tabular-nums font-medium text-foreground">
+            <dl className="divide-y divide-border border-y border-border text-[13px] leading-5">
+              <div className="flex items-baseline justify-between gap-3 py-2">
+                <dt className="text-muted-foreground">Target</dt>
+                <dd className="font-mono font-medium text-foreground">
                   {formatVersion(waitState.latest)}
-                </span>
+                </dd>
               </div>
               {waitState.current && (
-                <div className="mt-2 flex items-center justify-between gap-3 border-t border-border/70 pt-2">
-                  <span className="text-muted-foreground">From</span>
-                  <span className="tabular-nums text-foreground">
+                <div className="flex items-baseline justify-between gap-3 py-2">
+                  <dt className="text-muted-foreground">From</dt>
+                  <dd className="font-mono text-foreground">
                     {formatVersion(waitState.current)}
-                  </span>
+                  </dd>
                 </div>
               )}
-            </div>
+            </dl>
           )}
 
           {!waitState?.simulated && (
-            <p className="text-sm text-muted-foreground">
+            <p className="text-[13px] leading-5 text-muted-foreground">
               {refreshInSec > 0 ? (
                 <>
                   Try refreshing in about{" "}
-                  <span className="font-medium tabular-nums text-foreground">
+                  <span className="font-mono text-foreground">
                     {Math.floor(refreshInSec / 60)}:
                     {String(refreshInSec % 60).padStart(2, "0")}
                   </span>
@@ -1186,7 +1182,7 @@ export function TerminalView({ className }: { className?: string }) {
             </p>
           )}
 
-          <DialogFooter className="gap-2 sm:gap-0">
+          <DialogFooter>
             {(waitState?.simulated || refreshInSec === 0) && (
               <Button
                 variant="outline"
@@ -1206,7 +1202,7 @@ export function TerminalView({ className }: { className?: string }) {
       </Dialog>
 
       <Dialog open={showRebootDialog} onOpenChange={setShowRebootDialog}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>Reboot this server?</DialogTitle>
             <DialogDescription>
@@ -1214,7 +1210,7 @@ export function TerminalView({ className }: { className?: string }) {
               deployments stop. The machine restarts completely.
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter className="gap-2 sm:gap-0">
+          <DialogFooter>
             <Button variant="outline" onClick={() => setShowRebootDialog(false)}>
               Cancel
             </Button>
@@ -1230,7 +1226,7 @@ export function TerminalView({ className }: { className?: string }) {
       </Dialog>
 
       <Dialog open={showResetDialog} onOpenChange={setShowResetDialog}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>Reset Docklift services?</DialogTitle>
             <DialogDescription>
@@ -1238,7 +1234,7 @@ export function TerminalView({ className }: { className?: string }) {
               projects stay up unless they depend on the panel briefly.
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter className="gap-2 sm:gap-0">
+          <DialogFooter>
             <Button variant="outline" onClick={() => setShowResetDialog(false)}>
               Cancel
             </Button>
@@ -1253,7 +1249,7 @@ export function TerminalView({ className }: { className?: string }) {
       </Dialog>
 
       <Dialog open={showPurgeDialog} onOpenChange={setShowPurgeDialog}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>Purge unused Docklift images?</DialogTitle>
             <DialogDescription>
@@ -1262,11 +1258,12 @@ export function TerminalView({ className }: { className?: string }) {
               workloads.
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter className="gap-2 sm:gap-0">
+          <DialogFooter>
             <Button variant="outline" onClick={() => setShowPurgeDialog(false)}>
               Cancel
             </Button>
             <Button
+              variant="destructive"
               disabled={isProcessing}
               onClick={() => handleSystemAction("purge")}
             >
@@ -1282,7 +1279,7 @@ export function TerminalView({ className }: { className?: string }) {
           if (!open) cancelPasswordPrompt();
         }}
       >
-        <DialogContent className="sm:max-w-md">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>{passwordPrompt.title}</DialogTitle>
             <DialogDescription>{passwordPrompt.description}</DialogDescription>
@@ -1294,22 +1291,22 @@ export function TerminalView({ className }: { className?: string }) {
             }}
             className="space-y-4"
           >
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               <Input
                 ref={passwordInputRef}
                 type="password"
                 placeholder="Account password"
                 value={passwordInput}
                 onChange={(e) => setPasswordInput(e.target.value)}
-                className="h-10 font-mono"
+                className="font-mono"
                 autoComplete="current-password"
                 autoFocus
               />
               {passwordError && (
-                <p className="text-sm text-destructive">{passwordError}</p>
+                <p className="text-[13px] text-danger">{passwordError}</p>
               )}
             </div>
-            <DialogFooter className="gap-2 sm:gap-0">
+            <DialogFooter>
               <Button
                 type="button"
                 variant="outline"
