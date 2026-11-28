@@ -1,7 +1,7 @@
 # Docklift HTTP routes and contract coverage
 
-All 101 routes of the HTTP API: 99 under `/api` (auth 9, backup 12, databases 8, deployments 14,
-domains 8, files 3, github 15, logs 2, ports 2, projects 15, system 11), `GET /api/health` and the
+All 102 routes of the HTTP API: 100 under `/api` (auth 9, backup 12, databases 8, deployments 14,
+domains 9, files 3, github 15, logs 2, ports 2, projects 15, system 11), `GET /api/health` and the
 `/ws/terminal` upgrade.
 
 The **Handler** column is the handler function under `server/internal/` (file:line); the mount
@@ -71,68 +71,77 @@ Auth types:
 | 42 | POST | /api/deployments/:projectId/cancel | bearer | api/deployments/deployments.go:277 `cancel` | TestStopRestartCancelWithoutRuntime/idle_cancel, TestDeploymentHistory |
 | 43 | GET | /api/deployments/:projectId/logs | bearer | api/deployments/deployments.go:166 `logs` | TestDeploymentLogsAndStats, TestDeploymentNotFoundAndValidation (+ docker) |
 | 44 | GET | /api/deployments/:projectId/stats | bearer | api/deployments/deployments.go:180 `stats` | TestDeploymentLogsAndStats, TestDeploymentNotFoundAndValidation (+ docker) |
-| 45 | GET | /api/domains/ssl/email | bearer | api/domains/domains.go:145 `getEmail` | TestACMEEmail, TestACMEEmailDefaultsToAdmin |
-| 46 | PUT | /api/domains/ssl/email | bearer | api/domains/domains.go:156 `putEmail` | TestACMEEmail |
-| 47 | GET | /api/domains | bearer | api/domains/domains.go:190 `list` | TestPanelDomains |
-| 48 | POST | /api/domains | bearer | api/domains/domains.go:254 `add` | TestPanelDomains |
-| 49 | POST | /api/domains/dns-check | bearer | api/domains/domains.go:295 `dnsCheck` | TestPanelDomains (lookups need DOCKLIFT_NETWORK=1) |
-| 50 | GET | /api/domains/:domain/ssl | bearer | api/domains/domains.go:335 `sslStatus` | TestPanelDomains |
-| 51 | POST | /api/domains/:domain/ssl/retry | bearer | api/domains/domains.go:361 `sslRetry` | TestPanelDomains |
-| 52 | DELETE | /api/domains/:domain | bearer | api/domains/domains.go:384 `remove` | TestPanelDomains |
-| 53 | GET | /api/files/:projectId | bearer | api/files/files.go:116 `tree` | TestFilesTree, TestFilesSymlinks, TestFilesDirLinkEscape |
-| 54 | GET | /api/files/:projectId/content | bearer | api/files/files.go:283 `read` | TestFilesReadWrite, TestFilesPathSecurity, TestFilesSymlinks, TestFilesDirLinkEscape |
-| 55 | PUT | /api/files/:projectId/content | bearer | api/files/files.go:315 `write` | TestFilesReadWrite, TestFilesPathSecurity, TestFilesSymlinks, TestFilesDirLinkEscape |
-| 56 | POST | /api/github/manifest | bearer | api/github/github.go:217 `manifest` | TestGithubManifestAndSetupState |
-| 57 | GET | /api/github/manifest/callback | public | api/github/github.go:269 `manifestCallback` | TestGithubManifestAndSetupState (code exchange needs DOCKLIFT_NETWORK=1); query `state` must equal the state cookie |
-| 58 | GET | /api/github/app-status | bearer | api/github/github.go:370 `appStatus` | TestGithubUnconfigured, TestSeeded/github_app_configured_state, TestSeeded/github_disconnect |
-| 59 | POST | /api/github/check-installation | bearer | api/github/github.go:415 `checkInstallation` | TestGithubUnconfigured, TestSeeded/github_app_configured_state |
-| 60 | POST | /api/github/install-session | bearer | api/github/github.go:532 `installSession` | TestGithubUnconfigured, TestSeeded/github_app_configured_state; `installUrl` carries `?state=` |
-| 61 | GET | /api/github/install | bearer | api/github/github.go:553 `install` | TestGithubUnconfigured, TestSeeded/github_app_configured_state |
-| 62 | GET | /api/github/setup | public | api/github/github.go:568 `setup` | TestGithubManifestAndSetupState, TestSeeded/github_app_configured_state; query `state` must equal the state cookie |
-| 63 | GET | /api/github/callback | public | api/github/github.go:645 `callback` | TestGithubManifestAndSetupState/legacy_callback |
-| 64 | GET | /api/github/status | bearer | api/github/github.go:659 `status` | TestGithubUnconfigured, TestSeeded/github_app_configured_state, TestSeeded/github_disconnect |
-| 65 | GET | /api/github/installations | bearer | api/github/github.go:709 `installations` | TestGithubUnconfigured, TestSeeded/github_app_configured_state |
-| 66 | GET | /api/github/repos | bearer | api/github/repos.go:169 `repos` | TestGithubUnconfigured, TestSeeded/github_app_configured_state |
-| 67 | GET | /api/github/branches | bearer | api/github/repos.go:289 `refs` | TestGithubUnconfigured, TestSeeded/github_app_configured_state |
-| 68 | GET | /api/github/tags | bearer | api/github/repos.go:289 `refs` | TestGithubUnconfigured |
-| 69 | POST | /api/github/disconnect | bearer | api/github/github.go:747 `disconnect` | TestGithubUnconfigured, TestSeeded/github_disconnect |
-| 70 | POST | /api/github/webhook | public (HMAC for push) | api/github/webhook.go:87 `webhook` | TestGithubWebhookWithoutSecret, TestSeeded/webhook_* (3 subtests), TestCriticalRestoreGate |
-| 71 | GET | /api/logs/:projectId/containers | bearer | api/logs/logs.go:83 `containers` | TestContainerLogs (+ docker) |
-| 72 | GET | /api/logs/:projectId/stream/:containerName | sse | api/logs/logs.go:147 `stream` | TestContainerLogs |
-| 73 | GET | /api/ports | bearer | api/ports/ports.go:100 `list` | TestPorts, TestInternalSecretHeader |
-| 74 | DELETE | /api/ports/:port | bearer | api/ports/ports.go:173 `release` | TestPorts |
-| 75 | GET | /api/projects | bearer | api/projects/projects.go:179 `list` | TestProjectReadUpdate, TestSeeded/project_reads_resync_status_from_docker |
-| 76 | GET | /api/projects/:id | bearer | api/projects/projects.go:195 `get` | TestProjectReadUpdate, TestDeployWithoutDocker, TestPorts |
-| 77 | POST | /api/projects | bearer | api/projects/create.go:218 `create` | TestProjectCreateValidation, TestProjectCreateUnsafeZip, TestProjectCreateUploadFields; `http://` GitHub URLs refused |
-| 78 | PATCH | /api/projects/:id | bearer | api/projects/projects.go:257 `update` | TestProjectReadUpdate, TestPorts; `github_url` validated as on create |
-| 79 | GET | /api/projects/:id/build/detect | bearer | api/projects/storage.go:64 `detect` | TestProjectBuildDetect, TestDeploymentNotFoundAndValidation; a scanned service named `docklift*` is refused (400) |
-| 80 | GET | /api/projects/:id/storage | bearer | api/projects/storage.go:97 `listStorage` | TestProjectStorage (+ docker: TestDockerStorage) |
-| 81 | POST | /api/projects/:id/storage | bearer | api/projects/storage.go:109 `createStorage` | TestProjectStorage (+ docker: TestDockerStorage) |
-| 82 | DELETE | /api/projects/:id/storage/:storageId | bearer | api/projects/storage.go:174 `deleteStorage` | TestProjectStorage (+ docker: TestDockerStorage) |
-| 83 | DELETE | /api/projects/:id | bearer | api/projects/projects.go:320 `remove` | TestProjectDelete, TestDeployInProgressConflicts (+ docker); compose runs outside the checkout and only `docklift-<id8>-*` images are removed (no `--rmi all`) |
-| 84 | GET | /api/projects/:id/env | bearer | api/projects/env.go:80 `listEnv` | TestEnvVariables, TestSeeded/database_links |
-| 85 | POST | /api/projects/:id/env | bearer | api/projects/env.go:97 `createEnv` | TestEnvVariables, TestSeeded/managed_credential_env_is_locked |
-| 86 | POST | /api/projects/:id/env/bulk | bearer | api/projects/env.go:176 `bulkEnv` | TestEnvVariables, TestSeeded/managed_credential_env_is_locked |
-| 87 | DELETE | /api/projects/:id/env/:envId | bearer | api/projects/env.go:237 `deleteEnv` | TestEnvVariables, TestSeeded/managed_credential_env_is_locked, TestSeeded/database_links |
-| 88 | PATCH | /api/projects/:id/auto-deploy | bearer | api/projects/projects.go:362 `setAutoDeploy` | TestProjectAutoDeployUpload, TestSeeded/github_auto-deploy_toggles |
-| 89 | GET | /api/projects/:id/auto-deploy | bearer | api/projects/projects.go:414 `getAutoDeploy` | TestProjectAutoDeployUpload, TestSeeded/github_auto-deploy_toggles |
-| 90 | GET | /api/system/stats | bearer | api/system/system.go:165 `statsHandler` | TestSystemStats, Test401Shapes |
-| 91 | GET | /api/system/logs/:service | sse | api/system/system.go:176 `logStream` | TestSystemLogStreams, TestSelfSignedTokens, TestInternalSecretHeader |
-| 92 | GET | /api/system/quick | bearer | api/system/system.go:191 `quick` | TestSystemStats |
-| 93 | GET | /api/system/ip | bearer | api/system/system.go:202 `ip` | TestSystemStats |
-| 94 | POST | /api/system/purge | step-up | api/system/purge.go:74 `purge` | TestSystemDangerousEndpointsRequireStepUp, TestSeeded/purge_without_docker |
-| 95 | POST | /api/system/reboot | step-up | api/system/system.go:250 `reboot` | TestSystemDangerousEndpointsRequireStepUp, TestFreshInstallFlow (rejection only) |
-| 96 | POST | /api/system/reset | step-up | api/system/system.go:270 `reset` | TestSystemDangerousEndpointsRequireStepUp (rejection only) |
-| 97 | POST | /api/system/execute | bearer + password | api/system/system.go:388 `execute` | TestSystemExecute, TestInternalSecretHeader, TestStepUpPasswordThrottle |
-| 98 | GET | /api/system/version | bearer | api/system/system.go:209 `versionHandler` | TestSystemStats, TestHealth |
-| 99 | POST | /api/system/update-system | step-up | api/system/system.go:337 `updateSystem` | TestSystemDangerousEndpointsRequireStepUp (rejection only) |
-| 100 | POST | /api/system/upgrade | step-up | api/system/system.go:357 `upgrade` | TestSystemDangerousEndpointsRequireStepUp (rejection only) |
-| 101 | GET (upgrade) | /ws/terminal | terminal | api/terminal/terminal.go (Attach) | TestTerminalWebSocket, TestFreshInstallFlow (revoked terminal token) |
+| 45 | GET | /api/domains/ssl/email | bearer | api/domains/domains.go:148 `getEmail` | TestACMEEmail, TestACMEEmailDefaultsToAdmin |
+| 46 | PUT | /api/domains/ssl/email | bearer | api/domains/domains.go:159 `putEmail` | TestACMEEmail |
+| 47 | GET | /api/domains | bearer | api/domains/domains.go:206 `list` | TestPanelDomains, TestPanelAccess; each entry has `access` {domainOnly, canEnable, reason?} |
+| 48 | POST | /api/domains | bearer | api/domains/domains.go:275 `add` | TestPanelDomains |
+| 49 | POST | /api/domains/dns-check | bearer | api/domains/domains.go:316 `dnsCheck` | TestPanelDomains (lookups need DOCKLIFT_NETWORK=1) |
+| 50 | GET | /api/domains/:domain/ssl | bearer | api/domains/domains.go:356 `sslStatus` | TestPanelDomains |
+| 51 | POST | /api/domains/:domain/ssl/retry | bearer | api/domains/domains.go:382 `sslRetry` | TestPanelDomains; turns domain-only access off when the domain ends without HTTPS |
+| 52 | DELETE | /api/domains/:domain | bearer | api/domains/domains.go:410 `remove` | TestPanelDomains, TestPanelAccess; turns domain-only access off for the removed domain |
+| 53 | PUT | /api/domains/:domain/access | bearer (on: step-up) | api/domains/domains.go:446 `setAccess` | TestPanelAccess, TestPanelDomains; `{"domainOnly": true, "password"}` needs an HTTPS dashboard panel domain and a request through the trusted proxy over HTTPS for that host (else 409), `{"domainOnly": false}` needs only the session |
+| 54 | GET | /api/files/:projectId | bearer | api/files/files.go:116 `tree` | TestFilesTree, TestFilesSymlinks, TestFilesDirLinkEscape |
+| 55 | GET | /api/files/:projectId/content | bearer | api/files/files.go:283 `read` | TestFilesReadWrite, TestFilesPathSecurity, TestFilesSymlinks, TestFilesDirLinkEscape |
+| 56 | PUT | /api/files/:projectId/content | bearer | api/files/files.go:315 `write` | TestFilesReadWrite, TestFilesPathSecurity, TestFilesSymlinks, TestFilesDirLinkEscape |
+| 57 | POST | /api/github/manifest | bearer | api/github/github.go:217 `manifest` | TestGithubManifestAndSetupState |
+| 58 | GET | /api/github/manifest/callback | public | api/github/github.go:269 `manifestCallback` | TestGithubManifestAndSetupState (code exchange needs DOCKLIFT_NETWORK=1); query `state` must equal the state cookie |
+| 59 | GET | /api/github/app-status | bearer | api/github/github.go:370 `appStatus` | TestGithubUnconfigured, TestSeeded/github_app_configured_state, TestSeeded/github_disconnect |
+| 60 | POST | /api/github/check-installation | bearer | api/github/github.go:415 `checkInstallation` | TestGithubUnconfigured, TestSeeded/github_app_configured_state |
+| 61 | POST | /api/github/install-session | bearer | api/github/github.go:532 `installSession` | TestGithubUnconfigured, TestSeeded/github_app_configured_state; `installUrl` carries `?state=` |
+| 62 | GET | /api/github/install | bearer | api/github/github.go:553 `install` | TestGithubUnconfigured, TestSeeded/github_app_configured_state |
+| 63 | GET | /api/github/setup | public | api/github/github.go:568 `setup` | TestGithubManifestAndSetupState, TestSeeded/github_app_configured_state; query `state` must equal the state cookie |
+| 64 | GET | /api/github/callback | public | api/github/github.go:645 `callback` | TestGithubManifestAndSetupState/legacy_callback |
+| 65 | GET | /api/github/status | bearer | api/github/github.go:659 `status` | TestGithubUnconfigured, TestSeeded/github_app_configured_state, TestSeeded/github_disconnect |
+| 66 | GET | /api/github/installations | bearer | api/github/github.go:709 `installations` | TestGithubUnconfigured, TestSeeded/github_app_configured_state |
+| 67 | GET | /api/github/repos | bearer | api/github/repos.go:169 `repos` | TestGithubUnconfigured, TestSeeded/github_app_configured_state |
+| 68 | GET | /api/github/branches | bearer | api/github/repos.go:289 `refs` | TestGithubUnconfigured, TestSeeded/github_app_configured_state |
+| 69 | GET | /api/github/tags | bearer | api/github/repos.go:289 `refs` | TestGithubUnconfigured |
+| 70 | POST | /api/github/disconnect | bearer | api/github/github.go:747 `disconnect` | TestGithubUnconfigured, TestSeeded/github_disconnect |
+| 71 | POST | /api/github/webhook | public (HMAC for push) | api/github/webhook.go:87 `webhook` | TestGithubWebhookWithoutSecret, TestSeeded/webhook_* (3 subtests), TestCriticalRestoreGate |
+| 72 | GET | /api/logs/:projectId/containers | bearer | api/logs/logs.go:83 `containers` | TestContainerLogs (+ docker) |
+| 73 | GET | /api/logs/:projectId/stream/:containerName | sse | api/logs/logs.go:147 `stream` | TestContainerLogs |
+| 74 | GET | /api/ports | bearer | api/ports/ports.go:100 `list` | TestPorts, TestInternalSecretHeader |
+| 75 | DELETE | /api/ports/:port | bearer | api/ports/ports.go:173 `release` | TestPorts |
+| 76 | GET | /api/projects | bearer | api/projects/projects.go:179 `list` | TestProjectReadUpdate, TestSeeded/project_reads_resync_status_from_docker |
+| 77 | GET | /api/projects/:id | bearer | api/projects/projects.go:195 `get` | TestProjectReadUpdate, TestDeployWithoutDocker, TestPorts |
+| 78 | POST | /api/projects | bearer | api/projects/create.go:218 `create` | TestProjectCreateValidation, TestProjectCreateUnsafeZip, TestProjectCreateUploadFields; `http://` GitHub URLs refused |
+| 79 | PATCH | /api/projects/:id | bearer | api/projects/projects.go:257 `update` | TestProjectReadUpdate, TestPorts; `github_url` validated as on create |
+| 80 | GET | /api/projects/:id/build/detect | bearer | api/projects/storage.go:64 `detect` | TestProjectBuildDetect, TestDeploymentNotFoundAndValidation; a scanned service named `docklift*` is refused (400) |
+| 81 | GET | /api/projects/:id/storage | bearer | api/projects/storage.go:97 `listStorage` | TestProjectStorage (+ docker: TestDockerStorage) |
+| 82 | POST | /api/projects/:id/storage | bearer | api/projects/storage.go:109 `createStorage` | TestProjectStorage (+ docker: TestDockerStorage) |
+| 83 | DELETE | /api/projects/:id/storage/:storageId | bearer | api/projects/storage.go:174 `deleteStorage` | TestProjectStorage (+ docker: TestDockerStorage) |
+| 84 | DELETE | /api/projects/:id | bearer | api/projects/projects.go:320 `remove` | TestProjectDelete, TestDeployInProgressConflicts (+ docker); compose runs outside the checkout and only `docklift-<id8>-*` images are removed (no `--rmi all`) |
+| 85 | GET | /api/projects/:id/env | bearer | api/projects/env.go:80 `listEnv` | TestEnvVariables, TestSeeded/database_links |
+| 86 | POST | /api/projects/:id/env | bearer | api/projects/env.go:97 `createEnv` | TestEnvVariables, TestSeeded/managed_credential_env_is_locked |
+| 87 | POST | /api/projects/:id/env/bulk | bearer | api/projects/env.go:176 `bulkEnv` | TestEnvVariables, TestSeeded/managed_credential_env_is_locked |
+| 88 | DELETE | /api/projects/:id/env/:envId | bearer | api/projects/env.go:237 `deleteEnv` | TestEnvVariables, TestSeeded/managed_credential_env_is_locked, TestSeeded/database_links |
+| 89 | PATCH | /api/projects/:id/auto-deploy | bearer | api/projects/projects.go:362 `setAutoDeploy` | TestProjectAutoDeployUpload, TestSeeded/github_auto-deploy_toggles |
+| 90 | GET | /api/projects/:id/auto-deploy | bearer | api/projects/projects.go:414 `getAutoDeploy` | TestProjectAutoDeployUpload, TestSeeded/github_auto-deploy_toggles |
+| 91 | GET | /api/system/stats | bearer | api/system/system.go:165 `statsHandler` | TestSystemStats, Test401Shapes |
+| 92 | GET | /api/system/logs/:service | sse | api/system/system.go:176 `logStream` | TestSystemLogStreams, TestSelfSignedTokens, TestInternalSecretHeader |
+| 93 | GET | /api/system/quick | bearer | api/system/system.go:191 `quick` | TestSystemStats |
+| 94 | GET | /api/system/ip | bearer | api/system/system.go:202 `ip` | TestSystemStats |
+| 95 | POST | /api/system/purge | step-up | api/system/purge.go:74 `purge` | TestSystemDangerousEndpointsRequireStepUp, TestSeeded/purge_without_docker |
+| 96 | POST | /api/system/reboot | step-up | api/system/system.go:250 `reboot` | TestSystemDangerousEndpointsRequireStepUp, TestFreshInstallFlow (rejection only) |
+| 97 | POST | /api/system/reset | step-up | api/system/system.go:270 `reset` | TestSystemDangerousEndpointsRequireStepUp (rejection only) |
+| 98 | POST | /api/system/execute | bearer + password | api/system/system.go:388 `execute` | TestSystemExecute, TestInternalSecretHeader, TestStepUpPasswordThrottle |
+| 99 | GET | /api/system/version | bearer | api/system/system.go:209 `versionHandler` | TestSystemStats, TestHealth |
+| 100 | POST | /api/system/update-system | step-up | api/system/system.go:337 `updateSystem` | TestSystemDangerousEndpointsRequireStepUp (rejection only) |
+| 101 | POST | /api/system/upgrade | step-up | api/system/system.go:357 `upgrade` | TestSystemDangerousEndpointsRequireStepUp (rejection only) |
+| 102 | GET (upgrade) | /ws/terminal | terminal | api/terminal/terminal.go (Attach) | TestTerminalWebSocket, TestFreshInstallFlow (revoked terminal token) |
 
 Cross-cutting behaviour (security headers, CORS, body limits, restore-critical and maintenance gate, rate
 limiters, mount-level auth, error handler, JSON 404) is covered by TestSecurityHeaders, TestCORS, TestRequestBodies,
 TestUnknownAPIPath, Test401Shapes, TestCriticalRestoreGate, TestAuthenticatedRestore, TestRateLimitHeaders,
 TestSetupRateLimit and TestAuthRateLimitExhaustion.
+
+"Only allow access through the domain" (settings row `panel_domain_only`, value = the panel domain) is
+enforced in front of every route, before the terminal upgrade, auth guards and body parsing. While it is on,
+a request whose socket peer is not a trusted proxy (`TRUSTED_PROXIES`; forwarded headers are never consulted)
+gets: `GET`/`HEAD /api/health` → 200 `{"status":"ok"}`; `POST /api/github/webhook` → served as usual
+(HMAC-checked); a browser navigation (`GET`/`HEAD` accepting `text/html`, no `Upgrade`) → 302 to
+`https://<domain>` with the same path and query; anything else (API, WebSocket, SSE, assets) → 403
+`{"error":"Dashboard access by IP is disabled. Use https://<domain>"}`. Covered by TestPanelAccess.
 
 Bodies are parsed inside each group after its rate limiter and auth guard. Unauthenticated requests to a guarded group get 401 without the body being read;
 `/api/auth/*` and the public GitHub callbacks accept JSON/urlencoded bodies up to 64 KB (413 above);

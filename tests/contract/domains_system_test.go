@@ -25,11 +25,15 @@ func TestPanelDomains(t *testing.T) {
 			c.Get(t, "/api/domains/"+d+"/ssl").ExpectError(t, 400, "Invalid domain format")
 			c.Post(t, "/api/domains/"+d+"/ssl/retry", nil).ExpectError(t, 400, "Invalid domain format")
 			c.Delete(t, "/api/domains/"+d).ExpectError(t, 400, "Invalid domain format")
+			c.Put(t, "/api/domains/"+d+"/access", map[string]any{"domainOnly": false}).ExpectError(t, 400, "Invalid domain format")
 		}
 		missing := "missing-" + randHex(3) + ".contract-test.dev"
 		c.Get(t, "/api/domains/"+missing+"/ssl").ExpectError(t, 404, "Domain configuration not found")
 		c.Post(t, "/api/domains/"+missing+"/ssl/retry", nil).ExpectError(t, 404, "Domain configuration not found")
 		c.Delete(t, "/api/domains/"+missing).ExpectError(t, 404, "Domain configuration not found")
+		c.Put(t, "/api/domains/"+missing+"/access", map[string]any{"domainOnly": false}).ExpectError(t, 404, "Domain configuration not found")
+		c.Put(t, "/api/domains/"+missing+"/access", map[string]any{"domainOnly": "yes"}).ExpectError(t, 400, "domainOnly must be true or false")
+		mainInst.Anon().Put(t, "/api/domains/"+missing+"/access", map[string]any{"domainOnly": false}).ExpectError(t, 401, "Authentication required")
 		c.Post(t, "/api/domains/dns-check", map[string]any{}).ExpectError(t, 400, "Provide at least one domain")
 		c.Post(t, "/api/domains/dns-check", map[string]any{"domains": "a.test"}).ExpectError(t, 400, "Provide at least one domain")
 		c.Post(t, "/api/domains/dns-check", map[string]any{"domains": []any{"bad domain", 5, nil}}).ExpectError(t, 400, "Provide at least one domain")
@@ -41,7 +45,8 @@ func TestPanelDomains(t *testing.T) {
 		// The conf is written, then the nginx reload fails: 500, but the mapping exists.
 		c.Post(t, "/api/domains", map[string]any{"domain": "  PANEL" + host[5:] + "  ", "port": "8443"}).Expect(t, 500, Obj{"error": Prefix("Nginx reload failed: ")})
 		list := c.Get(t, "/api/domains").Arr(t)
-		match(t, "listed panel domain", Obj{"domain": host, "port": 8443, "ssl": sslMissing(host)}, findBy(list, "domain", host))
+		match(t, "listed panel domain", Obj{"domain": host, "port": 8443, "ssl": sslMissing(host),
+			"access": Obj{"domainOnly": false, "canEnable": false, "reason": "This domain points to another port, not the Docklift dashboard"}}, findBy(list, "domain", host))
 		c.Get(t, "/api/domains/"+host+"/ssl").Expect(t, 200, Obj{"ssl": sslMissing(host), "events": Arr{}})
 		c.Get(t, "/api/domains/"+"PANEL"+host[5:]+"/ssl").Expect(t, 200, Obj{"ssl": sslMissing(host), "events": Arr{}})
 		if mainInst.Booted() {
