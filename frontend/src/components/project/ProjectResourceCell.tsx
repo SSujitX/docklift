@@ -8,43 +8,66 @@ export interface ProjectResourceStats {
   memoryPercent: number;
 }
 
-function Meter({
+/** Fill colour for a 0–100 reading: ink until it crosses a threshold. */
+export function meterFill(percent: number | null): string {
+  if (percent == null) return "bg-transparent";
+  if (percent >= 90) return "bg-danger";
+  if (percent >= 75) return "bg-warn";
+  return "bg-foreground/70";
+}
+
+/** Value text colour for a 0–100 reading. */
+export function meterText(percent: number | null): string {
+  if (percent == null) return "text-subtle";
+  if (percent >= 90) return "text-danger";
+  if (percent >= 75) return "text-warn";
+  return "text-foreground";
+}
+
+/**
+ * One-line meter: label, 4px track, mono value. `percent` drives the fill and
+ * threshold colour; `display` is the text shown (may differ, e.g. "301M").
+ */
+export function ResourceMeter({
   label,
-  value,
+  percent,
   display,
-  tone = "brand",
+  className,
+  trackClassName,
 }: {
   label: string;
-  value: number | null;
+  percent: number | null;
   display: string;
-  tone?: "brand" | "muted" | "danger";
+  className?: string;
+  trackClassName?: string;
 }) {
-  const width = value == null ? 0 : Math.min(100, Math.max(0, value));
+  const width = percent == null ? 0 : Math.min(100, Math.max(0, percent));
   return (
-    <div className="min-w-30">
-      <div className="mb-0.5 flex items-center justify-between gap-2 text-[10px] font-medium tabular-nums">
-        <span className="text-muted-foreground">{label}</span>
+    <div className={cn("flex items-center gap-2 text-xs leading-4", className)}>
+      <span className="w-8 shrink-0 text-muted-foreground">{label}</span>
+      <span
+        aria-hidden="true"
+        className={cn(
+          "h-1 min-w-10 flex-1 overflow-hidden rounded-full bg-secondary",
+          trackClassName,
+        )}
+      >
         <span
           className={cn(
-            value == null ? "text-muted-foreground/60" : "text-foreground",
-          )}
-        >
-          {display}
-        </span>
-      </div>
-      <div className="h-1.5 overflow-hidden rounded-full bg-secondary">
-        <div
-          className={cn(
-            "h-full rounded-full transition-[width] duration-300",
-            tone === "danger"
-              ? "bg-red-500/70"
-              : tone === "muted"
-                ? "bg-zinc-400/50"
-                : "bg-brand",
+            "block h-full rounded-full transition-[width] duration-300",
+            meterFill(percent),
           )}
           style={{ width: `${width}%` }}
         />
-      </div>
+      </span>
+      <span
+        className={cn(
+          "w-10 shrink-0 text-right font-mono tabular-nums",
+          meterText(percent),
+        )}
+      >
+        {display}
+      </span>
     </div>
   );
 }
@@ -62,29 +85,14 @@ export function ProjectResourceCell({
   stats?: ProjectResourceStats | null;
   live: boolean;
 }) {
-  if (!live) {
-    return (
-      <div className="space-y-1.5">
-        <Meter label="CPU" value={null} display="—" tone="muted" />
-        <Meter label="RAM" value={null} display="—" tone="muted" />
-      </div>
-    );
-  }
+  const wrap = "w-full min-w-36 max-w-48 space-y-1";
 
-  if (stats === undefined) {
+  if (!live || stats === undefined || stats === null) {
+    const display = !live ? "—" : stats === undefined ? "…" : "n/a";
     return (
-      <div className="space-y-1.5">
-        <Meter label="CPU" value={null} display="…" tone="muted" />
-        <Meter label="RAM" value={null} display="…" tone="muted" />
-      </div>
-    );
-  }
-
-  if (stats === null) {
-    return (
-      <div className="space-y-1.5">
-        <Meter label="CPU" value={null} display="n/a" tone="muted" />
-        <Meter label="RAM" value={null} display="n/a" tone="muted" />
+      <div className={wrap}>
+        <ResourceMeter label="CPU" percent={null} display={display} />
+        <ResourceMeter label="RAM" percent={null} display={display} />
       </div>
     );
   }
@@ -92,23 +100,11 @@ export function ProjectResourceCell({
   const cpu = Number.isFinite(stats.cpuPercent) ? stats.cpuPercent : 0;
   const ramPct = Number.isFinite(stats.memoryPercent) ? stats.memoryPercent : 0;
   const ramMb = Number.isFinite(stats.memoryMb) ? stats.memoryMb : 0;
-  const cpuTone = cpu >= 90 ? "danger" : "brand";
-  const ramTone = ramPct >= 90 ? "danger" : "brand";
 
   return (
-    <div className="space-y-1.5">
-      <Meter
-        label="CPU"
-        value={cpu}
-        display={`${Math.round(cpu)}%`}
-        tone={cpuTone}
-      />
-      <Meter
-        label="RAM"
-        value={ramPct}
-        display={formatRam(ramMb)}
-        tone={ramTone}
-      />
+    <div className={wrap}>
+      <ResourceMeter label="CPU" percent={cpu} display={`${Math.round(cpu)}%`} />
+      <ResourceMeter label="RAM" percent={ramPct} display={formatRam(ramMb)} />
     </div>
   );
 }
