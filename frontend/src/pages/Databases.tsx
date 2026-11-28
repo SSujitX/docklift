@@ -1,4 +1,4 @@
-// Databases page — same shell width / responsive patterns as Projects.
+// Databases page — same list pattern as Projects.
 
 import {
   useEffect,
@@ -20,15 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Project } from "@/lib/types";
 import { API_URL, cn } from "@/lib/utils";
 import { authFetch } from "@/lib/auth";
-import {
-  Plus,
-  RefreshCw,
-  Database,
-  Sparkles,
-  ChevronLeft,
-  ChevronRight,
-  Server,
-} from "lucide-react";
+import { Plus, RefreshCw, ChevronLeft, ChevronRight } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 type StatusFilter = "all" | "running" | "stopped" | "building" | "error";
@@ -212,21 +204,28 @@ export default function DatabasesPage() {
     id: StatusFilter;
     label: string;
     count: number;
-    tone?: "success" | "warning" | "danger";
+    tone?: "danger";
   }> = [
-    { id: "all", label: "Total", count: projects.length },
-    { id: "running", label: "Running", count: runningCount, tone: "success" },
+    { id: "all", label: "All", count: projects.length },
+    { id: "running", label: "Running", count: runningCount },
     { id: "stopped", label: "Stopped", count: stoppedCount },
-    { id: "building", label: "Building", count: buildingCount, tone: "warning" },
-    { id: "error", label: "Errored", count: errorCount, tone: "danger" },
+    { id: "building", label: "Building", count: buildingCount },
+    { id: "error", label: "Failed", count: errorCount, tone: "danger" },
   ];
+
+  const rangeLabel =
+    filtered.length === 0
+      ? "0"
+      : `${safePage * PAGE_SIZE + 1}–${Math.min(
+          (safePage + 1) * PAGE_SIZE,
+          filtered.length,
+        )}`;
 
   return (
     <>
       <PageHeader
         title="Databases"
-        description="Managed Postgres, MySQL, Redis, and more — private by default, linkable into any app."
-        icon={Database}
+        description="Managed Postgres, MySQL, Redis and more. Private by default, linked into apps over the Docker network."
         actions={
           <>
             <Button
@@ -234,24 +233,22 @@ export default function DatabasesPage() {
               size="icon"
               onClick={() => fetchProjects()}
               title="Refresh databases"
-              className="h-10 w-10 border-border/60 bg-background hover:bg-secondary/80"
             >
-              <RefreshCw className="h-4 w-4 text-muted-foreground" />
+              <RefreshCw className="text-subtle" />
             </Button>
             <Button
               onClick={() => navigate("/databases/new")}
-              className="h-10 flex-1 bg-brand px-4 font-semibold text-brand-foreground shadow-lg shadow-brand/20 hover:brightness-110 sm:flex-none sm:px-5"
+              className="flex-1 sm:flex-none"
             >
-              <Plus className="h-4 w-4" />
-              <span className="sm:hidden">New</span>
-              <span className="hidden sm:inline">New Database</span>
+              <Plus />
+              New database
             </Button>
           </>
         }
       />
 
       <div
-        className="-mx-3 mb-4 flex gap-2 overflow-x-auto px-3 pb-1 [-ms-overflow-style:none] scrollbar-none sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0 [&::-webkit-scrollbar]:hidden"
+        className="hairline-b mb-4 flex gap-5 overflow-x-auto scrollbar-none"
         role="group"
         aria-label="Filter databases by status"
       >
@@ -264,186 +261,158 @@ export default function DatabasesPage() {
               aria-pressed={active}
               onClick={() => setFilter(tab.id)}
               className={cn(
-                "inline-flex shrink-0 items-center gap-2 rounded-xl border px-3 py-1.5 text-sm font-medium transition-colors",
+                "inline-flex h-10 shrink-0 items-center gap-1.5 border-b-2 text-[13.5px] transition-colors duration-150 focus-visible:-outline-offset-2",
                 active
-                  ? tab.tone === "success"
-                    ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-                    : tab.tone === "warning"
-                      ? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300"
-                      : tab.tone === "danger"
-                        ? "border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-300"
-                        : "border-brand/30 bg-brand/10 text-brand"
-                  : "border-border/60 bg-secondary/40 text-muted-foreground hover:text-foreground",
+                  ? "border-brand font-medium text-foreground"
+                  : "border-transparent text-muted-foreground hover:text-foreground",
               )}
             >
-              <span className="text-[10px] font-semibold uppercase tracking-wider opacity-70">
-                {tab.label}
+              {tab.label}
+              <span
+                className={cn(
+                  "font-mono text-[13px] tabular-nums",
+                  tab.tone === "danger" && tab.count > 0
+                    ? "text-danger"
+                    : "text-subtle",
+                )}
+              >
+                {tab.count}
               </span>
-              <span className="font-bold tabular-nums">{tab.count}</span>
             </button>
           );
         })}
       </div>
 
       {error && (
-        <div className="mb-4 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-600 dark:text-red-400">
+        <div className="mb-4 rounded-md border border-danger/40 bg-secondary/60 px-3 py-2.5 text-[13px] text-foreground">
           {error}
         </div>
       )}
 
-      {loading ? (
-        <div className="overflow-hidden rounded-2xl border border-border/60">
-          {[1, 2, 3, 4].map((i) => (
-            <div
-              key={i}
-              className="h-16 animate-pulse border-b border-border/40 bg-secondary/20 last:border-b-0"
-            />
-          ))}
-        </div>
-      ) : projects.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-border/60 px-4 py-20 text-center">
-          <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-[28px] border border-brand/20 bg-brand/10">
-            <Database className="h-9 w-9 text-brand" />
+      <div className="overflow-hidden rounded-lg border border-border bg-card">
+        {loading ? (
+          <div className="divide-y divide-border" aria-hidden="true">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="flex h-14 items-center gap-6 px-4">
+                <div className="space-y-2">
+                  <div className="h-2.5 w-36 rounded-sm bg-secondary" />
+                  <div className="h-2 w-52 rounded-sm bg-secondary/70" />
+                </div>
+              </div>
+            ))}
           </div>
-          <h2 className="mb-3 text-2xl font-bold">No databases yet</h2>
-          <p className="mb-8 max-w-sm leading-relaxed text-muted-foreground">
-            One-click official images with volumes and generated credentials. Link
-            into a project or service — no public IP:port required.
-          </p>
-          <Button
-            onClick={() => navigate("/databases/new")}
-            size="lg"
-            className="h-12 bg-brand px-8 font-semibold text-brand-foreground shadow-xl shadow-brand/20 hover:brightness-110"
-          >
-            <Sparkles className="h-4 w-4" />
-            Launch Database
-          </Button>
-        </div>
-      ) : filtered.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-border/60 px-4 py-16 text-center">
-          <p className="text-sm text-muted-foreground">
-            No databases match this filter.
-          </p>
-          <button
-            type="button"
-            onClick={() => setFilter("all")}
-            className="mt-3 text-sm font-semibold text-brand hover:underline"
-          >
-            Show all databases
-          </button>
-        </div>
-      ) : (
-        <>
-          <div className="space-y-3 md:hidden">
-            {pageItems.map((project) => {
-              const created = formatDateTime(project.created_at);
-              const updated = formatDateTime(project.updated_at);
-              const live =
-                project.status === "running" || project.status === "degraded";
-              return (
-                <article
-                  key={project.id}
-                  role="link"
-                  tabIndex={0}
-                  aria-label={`Open ${project.name}`}
-                  onClick={() => navigate(`/projects/${project.id}`)}
-                  onKeyDown={(e) =>
-                    openFromKeyboard(e, () =>
-                      navigate(`/projects/${project.id}`),
-                    )
-                  }
-                  className="rounded-2xl border border-border/60 bg-card p-4 shadow-xs transition-colors hover:bg-secondary/30 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-brand/40"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex min-w-0 items-start gap-3">
-                      <span
-                        className={cn(
-                          "mt-1.5 h-2 w-2 shrink-0 rounded-full",
-                          project.status === "running"
-                            ? "bg-emerald-500"
-                            : project.status === "building"
-                              ? "animate-pulse bg-amber-500"
-                              : project.status === "error"
-                                ? "bg-red-500"
-                                : project.status === "degraded"
-                                  ? "bg-orange-500"
-                                  : "bg-zinc-400",
-                        )}
-                      />
+        ) : projects.length === 0 ? (
+          <div className="px-4 py-14 text-center">
+            <h2 className="text-[15px] font-semibold">No databases yet</h2>
+            <p className="mx-auto mt-1 max-w-sm text-[13.5px] leading-5 text-muted-foreground">
+              Official images with a volume and generated credentials. Link one
+              into a project or service; no public IP:port required.
+            </p>
+            <Button
+              variant="outline"
+              onClick={() => navigate("/databases/new")}
+              className="mt-5"
+            >
+              <Plus />
+              Create database
+            </Button>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="px-4 py-14 text-center">
+            <p className="text-[13.5px] text-muted-foreground">
+              No databases match this filter.
+            </p>
+            <Button
+              type="button"
+              variant="link"
+              onClick={() => setFilter("all")}
+              className="mt-1 h-auto px-0 text-[13.5px]"
+            >
+              Show all databases
+            </Button>
+          </div>
+        ) : (
+          <>
+            <div className="divide-y divide-border md:hidden">
+              {pageItems.map((project) => {
+                const created = formatDateTime(project.created_at);
+                const updated = formatDateTime(project.updated_at);
+                const live =
+                  project.status === "running" || project.status === "degraded";
+                return (
+                  <article
+                    key={project.id}
+                    role="link"
+                    tabIndex={0}
+                    aria-label={`Open ${project.name}`}
+                    onClick={() => navigate(`/projects/${project.id}`)}
+                    onKeyDown={(e) =>
+                      openFromKeyboard(e, () =>
+                        navigate(`/projects/${project.id}`),
+                      )
+                    }
+                    className="cursor-pointer px-4 py-3.5 transition-colors duration-150 hover:bg-secondary/50 focus-visible:bg-secondary/50 focus-visible:-outline-offset-2"
+                  >
+                    <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <p className="truncate text-base font-semibold tracking-tight">
+                        <p className="truncate text-sm font-medium leading-5">
                           {project.name}
                         </p>
-                        <div className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
-                          <Server className="h-3 w-3 shrink-0" />
-                          <span className="truncate">
-                            {engineLabel(project.db_engine)}
-                          </span>
-                        </div>
+                        <Manifest parts={databaseManifest(project)} />
                       </div>
+                      <span className="pt-0.5">
+                        <StatusBadge status={project.status} />
+                      </span>
                     </div>
-                    <StatusBadge status={project.status} size="sm" />
-                  </div>
 
-                  <div className="mt-3 grid grid-cols-2 gap-3 text-xs">
-                    <div title={created.full}>
-                      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                        Created
-                      </p>
-                      <p className="mt-0.5 tabular-nums text-foreground">
-                        {created.date}
-                      </p>
-                      <p className="tabular-nums text-muted-foreground">
+                    <div className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1 text-xs leading-4 text-muted-foreground">
+                      <span title={created.full}>
+                        Created{" "}
+                        <span className="text-foreground">{created.date}</span>{" "}
                         {created.time}
-                      </p>
-                    </div>
-                    <div title={updated.full}>
-                      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                        Updated
-                      </p>
-                      <p className="mt-0.5 tabular-nums text-foreground">
-                        {updated.date}
-                      </p>
-                      <p className="tabular-nums text-muted-foreground">
+                      </span>
+                      <span title={updated.full}>
+                        Updated{" "}
+                        <span className="text-foreground">{updated.date}</span>{" "}
                         {updated.time}
-                      </p>
+                      </span>
                     </div>
-                  </div>
 
-                  <div className="mt-3 border-t border-border/40 pt-3">
-                    <ProjectResourceCell
-                      live={live}
-                      stats={projectStats[project.id]}
-                    />
-                  </div>
+                    <div className="mt-3 [&>div]:grid [&>div]:max-w-none [&>div]:grid-cols-2 [&>div]:gap-x-5 [&>div]:space-y-0">
+                      <ProjectResourceCell
+                        live={live}
+                        stats={projectStats[project.id]}
+                      />
+                    </div>
 
-                  <div className="mt-3 border-t border-border/40 pt-3">
-                    <ProjectQuickActions
-                      project={project}
-                      onRefresh={fetchProjects}
-                      compact
-                      className="w-full"
-                    />
-                  </div>
-                </article>
-              );
-            })}
-          </div>
+                    <div className="mt-3">
+                      <ProjectQuickActions
+                        project={project}
+                        onRefresh={fetchProjects}
+                        compact
+                        className="w-full"
+                      />
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
 
-          <div className="hidden overflow-hidden rounded-2xl border border-border/60 bg-card md:block">
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[860px] text-left text-sm">
+            <div className="hidden overflow-x-auto md:block">
+              <table className="w-full min-w-[880px] text-left text-sm">
                 <thead>
-                  <tr className="border-b border-border/60 bg-secondary/30 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                    <th className="px-4 py-3 font-semibold">Database</th>
-                    <th className="px-4 py-3 font-semibold">Status</th>
-                    <th className="px-4 py-3 font-semibold">Created</th>
-                    <th className="px-4 py-3 font-semibold">Updated</th>
-                    <th className="px-4 py-3 font-semibold">Resources</th>
-                    <th className="px-4 py-3 text-right font-semibold">Actions</th>
+                  <tr className="h-9 border-b border-border text-xs text-muted-foreground">
+                    <th className="px-4 font-medium">Database</th>
+                    <th className="px-4 font-medium">Status</th>
+                    <th className="px-4 font-medium">Created</th>
+                    <th className="px-4 font-medium">Updated</th>
+                    <th className="px-4 font-medium">Resources</th>
+                    <th className="px-4 text-right font-medium">
+                      <span className="sr-only">Actions</span>
+                    </th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="divide-y divide-border">
                   {pageItems.map((project) => {
                     const created = formatDateTime(project.created_at);
                     const updated = formatDateTime(project.updated_at);
@@ -459,59 +428,32 @@ export default function DatabasesPage() {
                             navigate(`/projects/${project.id}`),
                           )
                         }
-                        className="cursor-pointer border-b border-border/40 transition-colors last:border-b-0 hover:bg-secondary/40 focus-visible:bg-secondary/40 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-brand/40"
+                        className="h-14 cursor-pointer transition-colors duration-150 hover:bg-secondary/50 focus-visible:bg-secondary/50 focus-visible:-outline-offset-2"
                       >
-                        <td className="px-4 py-3.5">
-                          <div className="flex min-w-0 items-center gap-3">
-                            <span
-                              className={cn(
-                                "h-2 w-2 shrink-0 rounded-full",
-                                project.status === "running"
-                                  ? "bg-emerald-500 shadow-xs shadow-emerald-500/50"
-                                  : project.status === "building"
-                                    ? "animate-pulse bg-amber-500"
-                                    : project.status === "error"
-                                      ? "bg-red-500"
-                                      : project.status === "degraded"
-                                        ? "bg-orange-500"
-                                        : "bg-zinc-400",
-                              )}
-                            />
-                            <div className="min-w-0">
-                              <p className="truncate font-semibold tracking-tight">
-                                {project.name}
-                              </p>
-                              <div className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
-                                <Server className="h-3 w-3 shrink-0" />
-                                <span className="truncate">
-                                  {engineLabel(project.db_engine)}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
+                        <td className="max-w-80 px-4 py-2.5">
+                          <p className="truncate text-sm font-medium leading-5">
+                            {project.name}
+                          </p>
+                          <Manifest parts={databaseManifest(project)} />
                         </td>
-                        <td className="px-4 py-3.5">
-                          <StatusBadge status={project.status} size="sm" />
+                        <td className="px-4 py-2.5">
+                          <StatusBadge status={project.status} />
                         </td>
                         <td
-                          className="px-4 py-3.5 tabular-nums"
+                          className="whitespace-nowrap px-4 py-2.5 leading-5"
                           title={created.full}
                         >
-                          <p className="text-sm text-foreground">{created.date}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {created.time}
-                          </p>
+                          <p className="text-[13px] text-foreground">{created.date}</p>
+                          <p className="text-xs text-muted-foreground">{created.time}</p>
                         </td>
                         <td
-                          className="px-4 py-3.5 tabular-nums"
+                          className="whitespace-nowrap px-4 py-2.5 leading-5"
                           title={updated.full}
                         >
-                          <p className="text-sm text-foreground">{updated.date}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {updated.time}
-                          </p>
+                          <p className="text-[13px] text-foreground">{updated.date}</p>
+                          <p className="text-xs text-muted-foreground">{updated.time}</p>
                         </td>
-                        <td className="px-4 py-3.5">
+                        <td className="px-4 py-2.5">
                           <ProjectResourceCell
                             live={
                               project.status === "running" ||
@@ -521,7 +463,7 @@ export default function DatabasesPage() {
                           />
                         </td>
                         <td
-                          className="px-4 py-3.5 text-right"
+                          className="px-4 py-2.5 text-right"
                           onClick={(e) => e.stopPropagation()}
                         >
                           <ProjectQuickActions
@@ -536,58 +478,72 @@ export default function DatabasesPage() {
                 </tbody>
               </table>
             </div>
-          </div>
-        </>
-      )}
+          </>
+        )}
 
-      {!loading && projects.length > 0 && (
-        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-xs leading-relaxed text-muted-foreground">
-            Showing{" "}
-            <span className="font-semibold text-foreground">
-              {filtered.length === 0
-                ? 0
-                : `${safePage * PAGE_SIZE + 1}–${Math.min(
-                    (safePage + 1) * PAGE_SIZE,
-                    filtered.length,
-                  )}`}
-            </span>{" "}
-            of{" "}
-            <span className="font-semibold text-foreground">
-              {filtered.length}
-            </span>{" "}
-            databases
-          </p>
+        {!loading && projects.length > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-t border-border px-4 py-2">
+            <p className="text-[13px] text-muted-foreground">
+              <span className="font-mono text-foreground tabular-nums">
+                {rangeLabel}
+              </span>{" "}
+              of{" "}
+              <span className="font-mono text-foreground tabular-nums">
+                {filtered.length}
+              </span>{" "}
+              databases
+            </p>
 
-          <div className="flex items-center justify-between gap-1.5 sm:justify-end">
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              className="h-9 w-9 border-border/60 sm:h-8 sm:w-8"
-              disabled={safePage <= 0}
-              onClick={() => setPage(Math.max(0, safePage - 1))}
-              aria-label="Previous page"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <span className="min-w-18 text-center text-xs font-medium tabular-nums text-muted-foreground">
-              {safePage + 1} / {pageCount}
-            </span>
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              className="h-9 w-9 border-border/60 sm:h-8 sm:w-8"
-              disabled={safePage >= pageCount - 1}
-              onClick={() => setPage(Math.min(pageCount - 1, safePage + 1))}
-              aria-label="Next page"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </Button>
+            <div className="flex items-center gap-1">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                disabled={safePage <= 0}
+                onClick={() => setPage(Math.max(0, safePage - 1))}
+                aria-label="Previous page"
+              >
+                <ChevronLeft />
+              </Button>
+              <span className="min-w-12 text-center font-mono text-xs text-muted-foreground tabular-nums">
+                {safePage + 1} / {pageCount}
+              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                disabled={safePage >= pageCount - 1}
+                onClick={() => setPage(Math.min(pageCount - 1, safePage + 1))}
+                aria-label="Next page"
+              >
+                <ChevronRight />
+              </Button>
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </>
   );
+}
+
+/** Mono facts under a resource name, joined with " · ". */
+function Manifest({ parts }: { parts: string[] }) {
+  if (parts.length === 0) return null;
+  return (
+    <p className="mt-0.5 truncate font-mono text-xs leading-4 text-muted-foreground">
+      {parts.map((part, i) => (
+        <span key={`${i}-${part}`}>
+          {i > 0 && <span className="text-subtle"> · </span>}
+          {part}
+        </span>
+      ))}
+    </p>
+  );
+}
+
+function databaseManifest(project: Project): string[] {
+  const parts: string[] = [engineLabel(project.db_engine)];
+  if (project.internal_port) parts.push(`:${project.internal_port}`);
+  if (project.container_name) parts.push(project.container_name);
+  return parts;
 }
