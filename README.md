@@ -248,7 +248,9 @@ claude mcp add --transport http docklift https://panel.example.com/mcp --header 
 ```
 
 Every tool call runs through the normal API with the token's permissions. See the
-[API guide](https://docklift.dev/guide/api) and the [MCP guide](https://docklift.dev/guide/mcp).
+[API guide](https://docklift.dev/guide/api), the [full API reference](https://docklift.dev/guide/api-reference)
+(every route, generated from the server's route table) and the [MCP guide](https://docklift.dev/guide/mcp)
+(Claude Code, Claude Desktop, Cursor, VS Code and Codex setup, and the tool reference).
 
 ### Upgrade
 

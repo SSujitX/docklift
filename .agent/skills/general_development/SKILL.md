@@ -177,7 +177,13 @@ TypeScript needs the TypeScript 7 language server (VS Code: "TypeScript Native P
 5. Add the route to `server/internal/api/openapi/routes.go` with its real request shape (body keys,
    query parameters, step-up, streaming, `SessionOnly`/`FullScope`): `TestOpenAPITableMatchesRouter`
    fails until the router and the table agree. That table is `GET /api/openapi.json`, the dashboard's
-   endpoint browser and the MCP `docklift_list_endpoints` tool.
+   endpoint browser and the MCP `docklift_list_endpoints` tool. It is also the website's
+   **generated** page `website/guide/api-reference.md`: after changing the table, run
+   `go run ./cmd/gen-docs` in `server/` and commit the result (never edit that page by hand). The
+   same command rewrites the "## Tool reference" section of `website/guide/mcp.md` (up to the next
+   `## ` heading; the rest of that page is hand-written) from `server/internal/api/mcp/tools.go`, so
+   run it after changing a tool too. `TestGeneratedDocsUpToDate` (`server/cmd/gen-docs`, part of `go test ./...`) fails while
+   either page is stale. Both are pinned to LF in `.gitattributes`; the test compares bytes.
 6. Decide what an API token may do: nothing to add for normal routes (read tokens are GET-only); add
    `r.With(auth.SessionOnly)` for account, token or lock-out routes, `auth.FullScopeOnly` for a GET
    that returns every secret. A dangerous route calls `RequireStepUpPassword`.

@@ -26,9 +26,13 @@ const operate = [
   { text: "Backup & Restore", link: "/guide/backup" },
   { text: "Profile", link: "/guide/profile" },
   { text: "Reset Password", link: "/guide/reset-password" },
-  { text: "API Reference", link: "/guide/api" },
-  { text: "AI Agents (MCP)", link: "/guide/mcp" },
   { text: "Troubleshooting", link: "/guide/troubleshooting" },
+];
+
+const automate = [
+  { text: "API Guide", link: "/guide/api" },
+  { text: "Full API Reference", link: "/guide/api-reference" },
+  { text: "AI Agents (MCP)", link: "/guide/mcp" },
 ];
 
 export default defineConfig({
@@ -65,6 +69,7 @@ export default defineConfig({
     nav: [
       { text: "Quick Start", link: "/guide/quick-start" },
       { text: "Commands", link: "/guide/commands" },
+      { text: "API & MCP", link: "/guide/api" },
       { text: "Changelog", link: "/changelog" },
       { text: "Install", link: "/guide/installation" },
       {
@@ -76,6 +81,7 @@ export default defineConfig({
       { text: "Get started", items: guide },
       { text: "Deploy", items: deploy },
       { text: "Operate", items: operate },
+      { text: "API & agents", items: automate },
     ],
     socialLinks: [
       { icon: "github", link: "https://github.com/SSujitX/docklift" },

@@ -454,6 +454,18 @@ func tools() []tool {
 	}
 }
 
+// ToolDefs returns the definition of every tool, in the order they are
+// defined here. The docs generator (cmd/gen-docs) builds the website's tool
+// reference from it.
+func ToolDefs() []*mcp.Tool {
+	list := tools()
+	defs := make([]*mcp.Tool, 0, len(list))
+	for _, t := range list {
+		defs = append(defs, t.def)
+	}
+	return defs
+}
+
 func lifecycle(name, route, desc string) tool {
 	return simple(&mcp.Tool{Name: name, Description: desc,
 		InputSchema: schema(map[string]any{"projectId": projectIDProp, "waitSeconds": waitProp}, "projectId"), Annotations: writes(name, false)},

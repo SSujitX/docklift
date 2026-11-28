@@ -21,6 +21,7 @@ Think of it as a lighter Coolify / Dokku-style workflow with a real dashboard: g
 | Host monitoring | CPU, RAM, GPU, disk, network, top processes |
 | Web terminal | Root shell in the browser, behind step-up password |
 | Backup & restore | Control DB, sources, vhosts, and certificates in one archive |
+| [API](./api.md) and [MCP](./mcp.md) | Every dashboard action is a REST endpoint ([full reference](./api-reference.md), OpenAPI at `/api/openapi.json`); AI agents (Claude Code, Cursor, VS Code, Codex and others) connect to `/mcp`. Both use scoped API tokens (read or full, optional dangerous actions, expiry) |
 
 ## How it works
 
@@ -55,3 +56,4 @@ Raw HTTP on a public IP is convenient for first-run — it is **not** private or
 1. [Install](./installation.md) on your VPS
 2. Follow the [Quick Start](./quick-start.md)
 3. Connect [GitHub](./github.md), [deploy](./deployment.md), and attach a [domain](./domains.md)
+4. Automate it with the [API](./api.md) or hand it to an AI agent over [MCP](./mcp.md)
