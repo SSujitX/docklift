@@ -20,13 +20,19 @@ RUN --mount=type=cache,target=/root/.bun/install/cache \
 COPY frontend/ ./
 # Same-origin API and WebSocket: the Go server serves both.
 ENV VITE_API_URL=
-RUN bun run build
+# Vite only: CI typechecks (tsc), and tsc + vite together need more memory
+# than a 1 GB server has (killed with exit 137).
+RUN bunx vite build
 
 # --- 2. Go server --------------------------------------------------------------
 FROM --platform=$BUILDPLATFORM golang:1.27.4-alpine3.24 AS server
 ARG TARGETOS
 ARG TARGETARCH
 ARG VERSION=
+# Go GC target for the compile. Empty = 50 on hosts with under 2 GB of RAM
+# (compiling modernc.org/sqlite needs ~800 MB at the default 100, ~600 MB at
+# 50, for a few percent more CPU), Go's default otherwise.
+ARG GO_GOGC=
 ENV CGO_ENABLED=0 GOTOOLCHAIN=local GOFLAGS=-mod=readonly
 WORKDIR /src/server
 COPY server/go.mod server/go.sum ./
@@ -42,6 +48,10 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     set -eu; \
     v="${VERSION:-$(sed -n 's/^[[:space:]]*"version":[[:space:]]*"\([^"]*\)".*/\1/p' /src/package.json | head -n 1)}"; \
     [ -n "$v" ] || { echo "cannot determine version (root package.json)" >&2; exit 1; }; \
+    gogc="$GO_GOGC"; \
+    mem_kb=$(awk '/^MemTotal:/ { print $2 }' /proc/meminfo 2>/dev/null || echo 0); \
+    if [ -z "$gogc" ] && [ "${mem_kb:-0}" -gt 0 ] && [ "$mem_kb" -lt 1945600 ]; then gogc=50; fi; \
+    if [ -n "$gogc" ]; then export GOGC="$gogc"; echo "GOGC=$gogc (host RAM ${mem_kb} kB)"; fi; \
     GOOS="$TARGETOS" GOARCH="$TARGETARCH" go build -trimpath \
       -ldflags "-s -w -X docklift/internal/version.Version=${v}" \
       -o /out/docklift ./cmd/docklift; \
