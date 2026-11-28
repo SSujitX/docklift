@@ -8,6 +8,10 @@ import { toast } from "sonner";
 import { useAuth } from "@/components/AuthProvider";
 import { cn } from "@/lib/utils";
 
+/** Menu row: 32px (40px on touch). */
+const MENU_ITEM =
+  "flex h-8 w-full items-center gap-2.5 rounded-md px-2 text-left text-[13px] font-medium text-foreground transition-colors duration-150 pointer-coarse:h-10 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring";
+
 function initials(name?: string, email?: string): string {
   const source = name?.trim() || email?.trim() || "";
   if (!source) return "U";
@@ -76,32 +80,27 @@ export function AccountMenu() {
         aria-label={`Account menu for ${label}`}
         title={email || label}
         className={cn(
-          "flex h-9 w-9 items-center justify-center rounded-full transition-colors",
-          open ? "bg-secondary/70" : "hover:bg-secondary/50",
+          "flex size-8 shrink-0 items-center justify-center rounded-full transition-colors duration-150 pointer-coarse:size-10",
+          "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
+          open ? "bg-secondary" : "hover:bg-secondary",
         )}
       >
-        <span className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-linear-to-br/srgb from-brand to-blue-600 text-[11px] font-bold text-white">
+        <span className="flex size-[26px] shrink-0 items-center justify-center rounded-full border border-border bg-secondary text-[11.5px] font-semibold text-foreground">
           {initials(user.name, user.email)}
-          <span className="absolute -bottom-px -right-px h-2 w-2 rounded-full border-2 border-background bg-emerald-500" />
         </span>
       </button>
 
       {open && (
         <div
           role="menu"
-          className="absolute right-0 top-full z-50 mt-2 w-[min(17rem,calc(100vw-1.5rem))] overflow-hidden rounded-2xl border border-border/60 bg-background shadow-xl shadow-black/10 animate-in fade-in slide-in-from-top-2 duration-150"
+          className="absolute right-0 top-full z-50 mt-1.5 w-[min(16rem,calc(100vw-1.5rem))] overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-popover animate-in fade-in-0 slide-in-from-top-1 duration-150"
         >
-          <div className="border-b border-border/60 px-3 py-3">
-            <div className="flex items-center gap-3">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-linear-to-br/srgb from-brand to-blue-600 text-xs font-bold text-white">
-                {initials(user.name, user.email)}
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold">{label}</p>
-                {email && label.toLowerCase() !== email.toLowerCase() && (
-                  <p className="text-[11px] text-muted-foreground">Signed in</p>
-                )}
-              </div>
+          <div className="border-b border-border p-2">
+            <div className="px-2 pb-1.5 pt-1">
+              <p className="truncate text-[13.5px] font-medium leading-5">{label}</p>
+              {email && label.toLowerCase() !== email.toLowerCase() && (
+                <p className="text-xs text-muted-foreground">Signed in</p>
+              )}
             </div>
             {email && (
               <button
@@ -109,28 +108,28 @@ export function AccountMenu() {
                 role="menuitem"
                 onClick={() => void copyEmail()}
                 title="Copy email"
-                className="mt-2.5 flex w-full items-center gap-2 rounded-xl border border-border/60 bg-secondary/30 px-2.5 py-2 text-left transition-colors hover:border-brand/30 hover:bg-brand/5"
+                className={cn(MENU_ITEM, "bg-secondary/60 hover:bg-secondary")}
               >
-                <span className="min-w-0 flex-1 truncate font-mono text-xs text-foreground/90">
+                <span className="min-w-0 flex-1 truncate font-mono text-xs text-foreground">
                   {email}
                 </span>
                 {copied ? (
-                  <Check className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
+                  <Check className="size-3.5 shrink-0 text-ok" />
                 ) : (
-                  <Copy className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  <Copy className="size-3.5 shrink-0 text-subtle" />
                 )}
               </button>
             )}
           </div>
 
-          <div className="p-1.5">
+          <div className="p-1">
             <Link
               to="/settings?tab=profile"
               role="menuitem"
               onClick={() => setOpen(false)}
-              className="flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-sm font-medium text-foreground/85 transition-colors hover:bg-secondary hover:text-foreground"
+              className={cn(MENU_ITEM, "hover:bg-secondary")}
             >
-              <UserCircle className="h-4 w-4" />
+              <UserCircle className="size-4 text-subtle" />
               Profile settings
             </Link>
             <button
@@ -140,9 +139,9 @@ export function AccountMenu() {
                 setOpen(false);
                 logout();
               }}
-              className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-sm font-medium text-red-500 transition-colors hover:bg-red-500/10"
+              className={cn(MENU_ITEM, "hover:bg-secondary")}
             >
-              <LogOut className="h-4 w-4" />
+              <LogOut className="size-4 text-subtle" />
               Sign out
             </button>
           </div>
