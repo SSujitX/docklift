@@ -3,7 +3,7 @@
 // viewed through an HTTPS panel domain, and the step-up password dialog that
 // turns the restriction on.
 import { useState } from "react";
-import { Loader2, Lock, ShieldCheck, Terminal, X } from "lucide-react";
+import { Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -81,15 +81,10 @@ export function usePanelAccess(serverIP: string, onChanged: () => unknown) {
 
   const dialog = (
     <Dialog open={target !== null} onOpenChange={(open) => !open && !busy && close()}>
-      <DialogContent className="bg-background border-border shadow-2xl sm:max-w-md">
-        <DialogHeader className="space-y-3">
-          <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-2xl bg-brand/10">
-            <ShieldCheck className="h-6 w-6 text-brand" />
-          </div>
-          <DialogTitle className="text-center text-xl font-bold tracking-tight">
-            Only allow access through the domain
-          </DialogTitle>
-          <DialogDescription className="text-center text-sm text-muted-foreground">
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Only allow access through the domain</DialogTitle>
+          <DialogDescription>
             <span className="font-mono text-foreground break-all">{dashboardIPURL(serverIP)}</span> stops
             working at once: browsers are sent to{" "}
             <span className="font-mono text-foreground break-all">https://{target}</span>, API and terminal
@@ -97,24 +92,22 @@ export function usePanelAccess(serverIP: string, onChanged: () => unknown) {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="my-2 min-w-0 space-y-2 rounded-xl border border-border bg-secondary/30 p-3">
-          <p className="flex items-center gap-2 text-xs font-semibold">
-            <Terminal className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-            If the domain ever stops working, run on the server:
-          </p>
-          <code className="block rounded bg-background px-2 py-1.5 text-[11px] break-all select-all">
+        <div className="min-w-0 space-y-1.5 rounded-md bg-secondary/60 px-3 py-2.5">
+          <p className="text-[13px] font-medium">If the domain ever stops working, run on the server:</p>
+          <code className="block font-mono text-xs break-all text-foreground select-all">
             {PANEL_ACCESS_RECOVERY_COMMAND}
           </code>
         </div>
 
         <form
+          className="space-y-4"
           onSubmit={(e) => {
             e.preventDefault();
             void enable();
           }}
         >
-          <div className="mb-2 space-y-2">
-            <label htmlFor="panel-access-password" className="text-xs font-semibold text-muted-foreground">
+          <div className="space-y-1.5">
+            <label htmlFor="panel-access-password" className="text-[13px] font-medium">
               Confirm with account password
             </label>
             <Input
@@ -124,15 +117,14 @@ export function usePanelAccess(serverIP: string, onChanged: () => unknown) {
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Your DockLift password"
               autoComplete="current-password"
-              className="rounded-xl"
             />
           </div>
-          <DialogFooter className="flex flex-col gap-2 pt-2 sm:flex-row">
-            <Button type="button" variant="ghost" onClick={close} disabled={busy} className="flex-1 rounded-xl font-bold">
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={close} disabled={busy}>
               Cancel
             </Button>
-            <Button type="submit" disabled={busy || !password.trim()} className="flex-1 rounded-xl font-bold">
-              {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            <Button type="submit" disabled={busy || !password.trim()}>
+              {busy && <Loader2 className="animate-spin" />}
               Turn on
             </Button>
           </DialogFooter>
@@ -163,18 +155,17 @@ export function PanelAccessSwitch({
   const state = panelAccessSwitchState(domain ? access : undefined, busy);
   const id = `panel-access-${domain ?? "none"}`;
   return (
-    <div className="flex items-start justify-between gap-3 rounded-lg border border-border/50 bg-background/60 p-3">
-      <div className="min-w-0 space-y-0.5">
-        <label htmlFor={id} className="flex items-center gap-1.5 text-xs font-semibold">
-          <Lock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+    <div className="flex items-start justify-between gap-4 rounded-md bg-secondary/60 px-3 py-2.5">
+      <div className="min-w-0 space-y-1">
+        <label htmlFor={id} className="block text-[13px] font-medium leading-5">
           Only allow access through the domain
         </label>
-        <p className="text-[11px] text-muted-foreground wrap-break-word">
+        <p className="text-xs leading-[1.125rem] text-muted-foreground wrap-break-word">
           <span className="font-mono">{dashboardIPURL(serverIP)}</span> will stop working; use{" "}
           <span className="font-mono">https://{domain ?? "<domain>"}</span>. Recovery:{" "}
-          <code className="font-mono">{PANEL_ACCESS_RECOVERY_COMMAND}</code>
+          <code className="font-mono text-foreground">{PANEL_ACCESS_RECOVERY_COMMAND}</code>
         </p>
-        {state.hint && <p className="text-[11px] text-amber-600 wrap-break-word">{state.hint}</p>}
+        {state.hint && <p className="text-xs leading-[1.125rem] text-warn wrap-break-word">{state.hint}</p>}
       </div>
       <button
         id={id}
@@ -188,14 +179,14 @@ export function PanelAccessSwitch({
           else onEnable(domain);
         }}
         className={cn(
-          "relative mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50",
-          state.checked ? "border-brand bg-brand" : "border-border bg-secondary",
+          "relative mt-0.5 inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-50 pointer-coarse:after:absolute pointer-coarse:after:-inset-2.5",
+          state.checked ? "border-brand bg-brand" : "border-input bg-card",
         )}
       >
         <span
           className={cn(
-            "inline-block h-4 w-4 rounded-full bg-background shadow-sm transition-transform",
-            state.checked ? "translate-x-6" : "translate-x-1",
+            "inline-block size-3.5 rounded-full transition-[transform,background-color] duration-150",
+            state.checked ? "translate-x-[1.0625rem] bg-brand-foreground" : "translate-x-[0.1875rem] bg-subtle",
           )}
         />
       </button>
@@ -218,30 +209,29 @@ export function PanelAccessSuggestion({
   onDismiss: (domain: string) => void;
 }) {
   return (
-    <div className="flex flex-col gap-3 rounded-xl border border-brand/30 bg-brand/5 p-3 sm:flex-row sm:items-center">
-      <ShieldCheck className="hidden h-5 w-5 shrink-0 text-brand sm:block" />
+    <div className="flex flex-col gap-3 rounded-md border border-info/40 bg-secondary/60 px-3 py-2.5 sm:flex-row sm:items-center">
       <div className="min-w-0 flex-1 space-y-0.5">
-        <p className="text-xs font-semibold">
+        <p className="text-[13px] font-medium leading-5">
           You are using <span className="font-mono break-all">https://{domain}</span>. Close the unencrypted address?
         </p>
-        <p className="text-[11px] text-muted-foreground wrap-break-word">
+        <p className="text-xs leading-[1.125rem] text-muted-foreground wrap-break-word">
           Turn on &ldquo;Only allow access through the domain&rdquo; so{" "}
           <span className="font-mono">{dashboardIPURL(serverIP)}</span> stops working.
         </p>
       </div>
-      <div className="flex shrink-0 items-center gap-1.5">
-        <Button type="button" size="sm" className="h-8 text-xs" disabled={busy} onClick={() => onEnable(domain)}>
+      <div className="flex shrink-0 items-center gap-1">
+        <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => onEnable(domain)}>
           Turn on
         </Button>
         <Button
           type="button"
           variant="ghost"
           size="icon"
-          className="h-8 w-8 text-muted-foreground"
+          className="text-subtle"
           onClick={() => onDismiss(domain)}
           aria-label="Dismiss suggestion"
         >
-          <X className="h-4 w-4" />
+          <X />
         </Button>
       </div>
     </div>
