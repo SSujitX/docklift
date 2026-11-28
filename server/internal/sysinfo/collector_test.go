@@ -275,7 +275,9 @@ func TestQuickAndMemoryPercent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := toMap(t, q); got["cpu"] != 12.3 || got["memory"] != 75.0 || got["timestamp"] != "2026-01-02T03:04:05.678Z" {
+	// Memory is total - available of the host meminfo (the figure Stats
+	// reports), not total - free: page cache is not used memory.
+	if got := toMap(t, q); got["cpu"] != 12.3 || got["memory"] != 25.0 || got["timestamp"] != "2026-01-02T03:04:05.678Z" {
 		t.Fatalf("quick: %v", got)
 	}
 	src.MemInfo.Used = 4.5e9 / 1.0 // 56.25 %

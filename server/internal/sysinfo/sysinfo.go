@@ -49,9 +49,12 @@ type CPUInfo struct {
 // MemInfo is si.mem() in bytes; Used is Total - Free (buffers and cache
 // count as used, as in 2.x).
 type MemInfo struct {
-	Total     float64
-	Free      float64
-	Used      float64
+	Total float64
+	Free  float64
+	Used  float64
+	// Available is what programs can still claim without swapping (free plus
+	// reclaimable cache); 0 when the platform does not report it.
+	Available float64
 	SwapTotal float64
 	SwapUsed  float64
 }
@@ -473,6 +476,8 @@ func topProcesses(list []RawProcess) []Process {
 }
 
 // Quick is the header widget reading: CPU load and memory use in percent.
+// Memory counts what is not available (total - available), the same figure
+// Stats reports, so page cache does not read as used memory.
 func (c *Collector) Quick(ctx context.Context) (*Quick, error) {
 	load, err := c.src.CurrentLoad(ctx)
 	if err != nil {
@@ -482,7 +487,16 @@ func (c *Collector) Quick(ctx context.Context) (*Quick, error) {
 	if err != nil {
 		return nil, fmt.Errorf("memory: %w", err)
 	}
-	return &Quick{CPU: js.Num(toFixed(load, 1)), Memory: js.Num(toFixed(m.Used/m.Total*100, 1)), Timestamp: ISOString(c.now())}, nil
+	used, total := m.Used, m.Total
+	if m.Available > 0 {
+		used = m.Total - m.Available
+	}
+	if content, ok := c.src.ReadHostFile(HostMemInfoPath); ok && content != "" {
+		if host := ParseMemInfo(content); host.Total != 0 && host.Available != 0 {
+			used, total = host.Total-host.Available, host.Total
+		}
+	}
+	return &Quick{CPU: js.Num(toFixed(load, 1)), Memory: js.Num(toFixed(used/total*100, 1)), Timestamp: ISOString(c.now())}, nil
 }
 
 // MemoryPercent is Math.round(used / total * 100) of si.mem() (purge

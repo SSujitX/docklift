@@ -120,7 +120,7 @@ func (h *HostSource) Mem(ctx context.Context) (MemInfo, error) {
 	if err != nil {
 		return MemInfo{}, fmt.Errorf("virtual memory: %w", err)
 	}
-	m := MemInfo{Total: float64(vm.Total), Free: float64(vm.Free), Used: float64(vm.Total) - float64(vm.Free)}
+	m := MemInfo{Total: float64(vm.Total), Free: float64(vm.Free), Used: float64(vm.Total) - float64(vm.Free), Available: float64(vm.Available)}
 	if sw, err := mem.SwapMemoryWithContext(ctx); err == nil {
 		m.SwapTotal = float64(sw.Total)
 		m.SwapUsed = float64(sw.Total) - float64(sw.Free)
