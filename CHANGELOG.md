@@ -1,3 +1,114 @@
+# [3.0.0](https://github.com/SSujitX/docklift/compare/v2.1.6...v3.0.0) (2026-11-28)
+
+
+* feat!: Docklift 3.0 with the Go backend (BREAKING CHANGE) ([52bc105](https://github.com/SSujitX/docklift/commit/52bc105f969cc3b08e43024bdd9a6df956dcc34a))
+
+
+### Bug Fixes
+
+* **backup:** keep archive file modes on restore, make certificate keys owner-only ([c4dbd31](https://github.com/SSujitX/docklift/commit/c4dbd319cd6959e1f96903eae6ab50312c881523))
+* **frontend:** restore Tailwind 3 look, drop removed containers, close terminal prompt on timeout ([f928c36](https://github.com/SSujitX/docklift/commit/f928c36982a4c254766b8117a42d5f005fec57f2))
+* **install:** retry Docker install and show its error output ([3dd66a4](https://github.com/SSujitX/docklift/commit/3dd66a47a6da498e54c45e563cdbc190b182761e))
+* **server:** harden auth, uploads and sessions; reattach proxy after upgrade ([87927cd](https://github.com/SSujitX/docklift/commit/87927cd12fc027073cfe83c57ca1050f0cc3be75))
+* **server:** wire purge retention and harden system, logs and terminal ([d9c2c8e](https://github.com/SSujitX/docklift/commit/d9c2c8e051e2cdf26630332ffe723074681e731e))
+* stop ignoring the Go logs route package ([b48a8bf](https://github.com/SSujitX/docklift/commit/b48a8bfe076d3807d5bd4731e76265ab9fd55155))
+* **ui:** bust the cached favicon ([f588ae6](https://github.com/SSujitX/docklift/commit/f588ae636cfce669c07733e0acd87ad66bb60efb))
+
+
+### Features
+
+* **frontend:** API & MCP page for tokens and endpoints ([56e4ea3](https://github.com/SSujitX/docklift/commit/56e4ea305131644df2f5915ce58fd6de9af4d9c6))
+* **frontend:** domain-only access switch in Settings ([dc20609](https://github.com/SSujitX/docklift/commit/dc20609c21e6a628b6d45db51d8893a1ef10ba2f))
+* **scripts:** progress display, temporary build swap on small hosts, short failure output ([5691eed](https://github.com/SSujitX/docklift/commit/5691eedb680c49a346cc98c3eac5b3e0a684f5db))
+* **server:** add backup and crash-safe restore ([69a8f30](https://github.com/SSujitX/docklift/commit/69a8f30eec65829fa6af4f6dc7ced00ecd190756))
+* **server:** add command runner, Docker wrapper and deploy core ([2936466](https://github.com/SSujitX/docklift/commit/2936466d47f7c5ac809fa3802b8cd87814996180))
+* **server:** add deployment pipeline, rollback and webhook queue ([2bf1986](https://github.com/SSujitX/docklift/commit/2bf1986e491cab102b47eb61833ce68e7f408adb))
+* **server:** add git, path safety, unzip, files and ports routes ([a64ec8e](https://github.com/SSujitX/docklift/commit/a64ec8e5489d62b9c397244c668a3124928d4e57))
+* **server:** add GitHub App integration and webhooks ([722aad9](https://github.com/SSujitX/docklift/commit/722aad90213107b6ed0139969ee4d6585608fb08))
+* **server:** add Go backend foundation with auth and database layer ([fae5e7a](https://github.com/SSujitX/docklift/commit/fae5e7ae65e4d9604444ccd9fa0ea132799b3449))
+* **server:** add managed database routes ([3dd7eb5](https://github.com/SSujitX/docklift/commit/3dd7eb53db03c57c81aaefb714c7828f8f4ca046))
+* **server:** add nginx, certificate and DNS services ([3160847](https://github.com/SSujitX/docklift/commit/31608473fa256445ae25755d916fd7ecd00676c0))
+* **server:** add panel domain and SSL routes ([6445fba](https://github.com/SSujitX/docklift/commit/6445fbac7b655f8925828686050bb644d784cfe7))
+* **server:** add projects routes ([948b552](https://github.com/SSujitX/docklift/commit/948b5521a99464080e2cfdbeaa6b2bcba615f0c9))
+* **server:** API tokens, OpenAPI endpoint map and MCP server ([aca8e98](https://github.com/SSujitX/docklift/commit/aca8e9884ac800a3362be90d8b178f9be42e2ccf))
+* **server:** domain-only dashboard access with CLI escape hatch ([192e8c7](https://github.com/SSujitX/docklift/commit/192e8c70a5cf772080efd199b17da7c3fc988488))
+* **server:** trust forwarded headers only from known proxies ([e1f2049](https://github.com/SSujitX/docklift/commit/e1f20494fcf775eacfec48777f83c4381fb49ae2))
+* **server:** wire Docker, deploy, edge and git services into startup ([3aa0afb](https://github.com/SSujitX/docklift/commit/3aa0afbbeb5c02dd056439f10045a68ba80f14db))
+* **server:** wire GitHub App and deploy queue, limit password guesses, share JS helpers ([3207fc7](https://github.com/SSujitX/docklift/commit/3207fc7ed4768918c10f3d8bd9ba6afb5abcbb1d))
+* **ui:** new design tokens and global styles ([00ca002](https://github.com/SSujitX/docklift/commit/00ca0029685a0da28560747b8120709e39e572ae))
+* **ui:** redesign app shell layout ([eb04339](https://github.com/SSujitX/docklift/commit/eb04339e3b025479f5ba9d0ab2b2f90ed4823548))
+* **ui:** redesign AttachDatabasePanel ([ad0e5a1](https://github.com/SSujitX/docklift/commit/ad0e5a1c46fcbb05b03b80e81325b8be75a3cea3))
+* **ui:** redesign BranchSelector ([ea53d0c](https://github.com/SSujitX/docklift/commit/ea53d0ca4582fb13feb7b623de11ef7f776f352a))
+* **ui:** redesign button primitive ([bd493f9](https://github.com/SSujitX/docklift/commit/bd493f9082f8cbce2b4c54240ae511f2691b18c4))
+* **ui:** redesign card primitive ([5581fc2](https://github.com/SSujitX/docklift/commit/5581fc252258a88324360a113b8d9adc813446ba))
+* **ui:** redesign Dashboard page ([896bcbf](https://github.com/SSujitX/docklift/commit/896bcbf95720509a5f1dad9c1c7ec25ca2351f57))
+* **ui:** redesign Databases page ([e6d2c1b](https://github.com/SSujitX/docklift/commit/e6d2c1b049eac2b8e5541bda88e9b52695f26ddf))
+* **ui:** redesign Developer page ([10caee7](https://github.com/SSujitX/docklift/commit/10caee739a1e615474c4c188c400f0b7988dd637))
+* **ui:** redesign dialog primitive ([09c6447](https://github.com/SSujitX/docklift/commit/09c644715e11a1c85be02bfaaa8c156f4edc2742))
+* **ui:** redesign DnsGuideCard ([4e05dfd](https://github.com/SSujitX/docklift/commit/4e05dfdca1678ecc96ac7a72316ef70a94356b9f))
+* **ui:** redesign EnvVarsManager ([a6e157d](https://github.com/SSujitX/docklift/commit/a6e157d699543924ee06f7314ad2e0e7cb7ae931))
+* **ui:** redesign FileEditor ([77fa7e3](https://github.com/SSujitX/docklift/commit/77fa7e33f6292c04d370e5b2b1eb482b6851d676))
+* **ui:** redesign FileTree ([fe5ab59](https://github.com/SSujitX/docklift/commit/fe5ab592346c263c81df9868b5fff7d11b3529c6))
+* **ui:** redesign GitHubConnect ([bebd5ad](https://github.com/SSujitX/docklift/commit/bebd5ad97576836e44777875234dc07acb1632fa))
+* **ui:** redesign input primitive ([874b929](https://github.com/SSujitX/docklift/commit/874b9294578c801835827acaeed20fcdf6e32e4c))
+* **ui:** redesign Logs page ([0a96493](https://github.com/SSujitX/docklift/commit/0a96493ba07c8eefb3269a5fb94a56c6545bce1b))
+* **ui:** redesign LogViewer ([31ddff3](https://github.com/SSujitX/docklift/commit/31ddff3634ee0b86f12708caf043bac87baff77d))
+* **ui:** redesign ManagedDatabasePanel ([eb551e5](https://github.com/SSujitX/docklift/commit/eb551e51c2bf5a1fe500ef962b05ee8c8458206d))
+* **ui:** redesign NewDatabase page ([693ae01](https://github.com/SSujitX/docklift/commit/693ae018419f41453a9217f86967233cb6402fe1))
+* **ui:** redesign NewProject page ([ea5b88a](https://github.com/SSujitX/docklift/commit/ea5b88a97f64ddbf59e08d323644db6c3a2e7b2b))
+* **ui:** redesign PanelAccess ([148dd42](https://github.com/SSujitX/docklift/commit/148dd425f271f98d8b77b9d5dad485eb4e06e2c7))
+* **ui:** redesign PanelDomainCard ([d606301](https://github.com/SSujitX/docklift/commit/d6063010a3fd48f082abb3d5553f85ff8aad8622))
+* **ui:** redesign Ports page ([b108d09](https://github.com/SSujitX/docklift/commit/b108d09b675c13f9eda793b102777d10e77096fb))
+* **ui:** redesign ProjectActionBar ([494352c](https://github.com/SSujitX/docklift/commit/494352cebbe458f5eb19a7f80ef778774c0ae4d4))
+* **ui:** redesign ProjectCard ([497992f](https://github.com/SSujitX/docklift/commit/497992f164ea04404731270446410e53f65d6c23))
+* **ui:** redesign ProjectDetail page ([50e1801](https://github.com/SSujitX/docklift/commit/50e18013fa54052e146e9b4f332aaebebb8bbf4e))
+* **ui:** redesign ProjectQuickActions ([f603717](https://github.com/SSujitX/docklift/commit/f60371746f9ece93b5907296f25032c87e0eb857))
+* **ui:** redesign ProjectResourceCell ([5072a13](https://github.com/SSujitX/docklift/commit/5072a13d37336421bd44b31b24d6bbf6941cef2a))
+* **ui:** redesign ScrollToTop ([0d4b4d9](https://github.com/SSujitX/docklift/commit/0d4b4d915d1b76c3c373c6304f39c2202ef35743))
+* **ui:** redesign ServiceDomainCard ([9a38721](https://github.com/SSujitX/docklift/commit/9a387218699c00f30c7d8e46eed426554c7aa6d8))
+* **ui:** redesign ServiceSwitcher ([c31c45c](https://github.com/SSujitX/docklift/commit/c31c45c28edbe3a5ef6115ce61c1b16c8fb3f854))
+* **ui:** redesign Settings page ([48a6cfb](https://github.com/SSujitX/docklift/commit/48a6cfbf72db40cffbf460fea8c77903936ffcb4))
+* **ui:** redesign Setup page ([8a9d321](https://github.com/SSujitX/docklift/commit/8a9d3217571d5c9abb72b18e6a19b1a1450630ae))
+* **ui:** redesign shell AccountMenu ([6e1cd72](https://github.com/SSujitX/docklift/commit/6e1cd72bfd6a348fa8629381ebbf49ecf80b5d08))
+* **ui:** redesign shell CommandPalette ([ca76c60](https://github.com/SSujitX/docklift/commit/ca76c60c2996fb6f11f0f6a39d929ae47461cddb))
+* **ui:** redesign shell PageHeader ([3fdfe43](https://github.com/SSujitX/docklift/commit/3fdfe430f941afbb3f2daaf764f9a60953c402a9))
+* **ui:** redesign shell Sidebar ([16186b7](https://github.com/SSujitX/docklift/commit/16186b7575ecfb12fdf046283a5531b1e3ed235a))
+* **ui:** redesign shell SidebarStatus ([ae1ddc6](https://github.com/SSujitX/docklift/commit/ae1ddc6a34f12d3cae90d9cef00523925f5b491a))
+* **ui:** redesign shell TopBar ([3bc0e77](https://github.com/SSujitX/docklift/commit/3bc0e77dfbb28a2fb658de2670a86ecdb7af9f3d))
+* **ui:** redesign SignIn page ([0a43bd9](https://github.com/SSujitX/docklift/commit/0a43bd961b3ce8628b4405818504907240d94d41))
+* **ui:** redesign sonner primitive ([c4e8d8b](https://github.com/SSujitX/docklift/commit/c4e8d8b30e6aaed0f82e9e7bed769568ce4229ca))
+* **ui:** redesign SslStatusBadge ([f5ce479](https://github.com/SSujitX/docklift/commit/f5ce4797f5081f476167bb8fb69a014e089c047f))
+* **ui:** redesign StatusBadge ([e00b5ff](https://github.com/SSujitX/docklift/commit/e00b5ffd1a906b0f8f91f5953b8c8652e81b7acc))
+* **ui:** redesign SystemLogsPanel ([6ab4dfa](https://github.com/SSujitX/docklift/commit/6ab4dfaa35e1ad1f65c05b5b8daaa67bca62e1ef))
+* **ui:** redesign SystemOverview ([330e379](https://github.com/SSujitX/docklift/commit/330e3796b17dcd2f2e2af01fb9d18eabbb10f3f3))
+* **ui:** redesign tabs primitive ([3a3cd96](https://github.com/SSujitX/docklift/commit/3a3cd966bd47b7b68f4f583a98af69fc7d2b483c))
+* **ui:** redesign Terminal ([f8b96f5](https://github.com/SSujitX/docklift/commit/f8b96f5f7486c634c5dcebd787c8dda98215f58d))
+* **ui:** redesign Terminal page ([c484643](https://github.com/SSujitX/docklift/commit/c484643d49c7dc6590f10c0f8e3e32294085d665))
+* **ui:** redesign TerminalView ([d948430](https://github.com/SSujitX/docklift/commit/d948430072c33236e6ac2683c38a1e20612f9dab))
+* **ui:** redesign textarea primitive ([89866e0](https://github.com/SSujitX/docklift/commit/89866e097983d46a19de6af2a2ff24c8eb742c24))
+* **ui:** redesign VersionChecker ([1541a75](https://github.com/SSujitX/docklift/commit/1541a7572132fd41072e1b9701f0545439cc154d))
+* **ui:** update navigation labels ([493b6ca](https://github.com/SSujitX/docklift/commit/493b6ca926cd5d5bb5890dd8723c914d02173aae))
+* **ui:** use the Docklift mark as the dashboard favicon ([e08b893](https://github.com/SSujitX/docklift/commit/e08b893854c28ae5d031e23820fb1dac9ac18966))
+* **website:** add custom home page ([68abcba](https://github.com/SSujitX/docklift/commit/68abcbaa73fde32363d619706ab85b684e0d4644))
+* **website:** add dashboard screenshots ([dd1aa23](https://github.com/SSujitX/docklift/commit/dd1aa238794f76da59e56ba24e9489339e02bf88))
+* **website:** new favicon ([9de01b0](https://github.com/SSujitX/docklift/commit/9de01b0db2588527284016c802620f34d06e835b))
+* **website:** new fonts and theme colour ([819c142](https://github.com/SSujitX/docklift/commit/819c142eca4ad58fb8479a6562dae4b91fb81bc3))
+* **website:** new logo ([f56ec5f](https://github.com/SSujitX/docklift/commit/f56ec5fc1589de269c03f650ebc3482ab82b6cf7))
+* **website:** redesign docs theme styles ([60f75b1](https://github.com/SSujitX/docklift/commit/60f75b1189767bea7236680d8a04af3b092da189))
+* **website:** register home page component ([44c1f20](https://github.com/SSujitX/docklift/commit/44c1f209a6e47c71bffb07cd1559ca1e6406e041))
+* **website:** restyle changelog preview ([374913e](https://github.com/SSujitX/docklift/commit/374913efcb326bef540d71b0e3b6d560df3f14b9))
+* **website:** use the new home page ([e427a06](https://github.com/SSujitX/docklift/commit/e427a068893059dee6c431f1dc760cec2412ef9b))
+
+
+### Performance Improvements
+
+* **frontend:** cache GET data in memory, prefetch on hover, parallel loads ([dbe6714](https://github.com/SSujitX/docklift/commit/dbe6714b38ecea97d17d2ed925baf1c6e075e9db))
+
+
+### BREAKING CHANGES
+
+* the TypeScript backend is replaced by a single Go binary that also serves the dashboard. An install now runs 3 containers (docklift-backend, docklift-nginx-proxy, docklift-certbot) instead of 5; docklift-frontend and docklift-nginx no longer exist.
+
 ## [2.1.6](https://github.com/SSujitX/docklift/compare/v2.1.5...v2.1.6) (2026-11-26)
 
 
