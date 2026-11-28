@@ -291,7 +291,7 @@ describe("dataForHref", () => {
     expect(dataForHref("/")).toEqual([API.projects, API.systemQuick]);
     expect(dataForHref("/ports")).toEqual([API.ports]);
     expect(dataForHref("/settings?tab=domain")).toEqual([API.domains, API.sslEmail, API.systemIP]);
-    expect(dataForHref("/settings?tab=github")).toEqual([API.githubStatus, API.githubInstallations]);
+    expect(dataForHref("/settings?tab=github")).toEqual([API.githubStatus]);
   });
 
   test("streams, tabs without data and external links prefetch nothing", () => {
