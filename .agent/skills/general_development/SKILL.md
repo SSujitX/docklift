@@ -201,7 +201,9 @@ quoted identifiers and `?` placeholders. Unique violations surface as `ErrConfli
 ## Conventions
 
 - Run `gofmt` (CI fails on unformatted files in `server` and `tests/contract`) and `go vet`.
-- Conventional commits (`feat:`, `fix:`, `docs:`...). Releases are derived from them. See `release_process`.
+- Conventional commits (`feat:`, `fix:`, `docs:`...): the subjects become the release notes and
+  `CHANGELOG.md` lines. The version lives in the root `VERSION` file; releases are a manual run of the
+  Release workflow. See `release_process`.
 - Build Docker names with the helpers in `server/internal/deploy/naming.go`; never build those strings inline.
 - Reuse `LogViewer` for anything log-shaped rather than writing another console.
 - Read the `security_hardening` checklist before adding an endpoint.

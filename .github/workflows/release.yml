@@ -1,41 +1,165 @@
-# Manual release only. Run Install + CI on master first; this does not re-test.
-# After semantic-release, deploys Docs (changelog + Pages) in the same run.
+# Manual release only. Run CI + Install on master first; this does not re-test.
+# Bumps VERSION (or releases it as it is), syncs every copy of it
+# (scripts/sync-version.sh), adds the CHANGELOG.md section, commits
+# "chore(release): vX.Y.Z", tags vX.Y.Z, publishes the GitHub Release
+# "Docklift vX.Y.Z" (marked latest: install.sh / upgrade.sh pick it up), then
+# deploys Docs (changelog + Pages) in the same run.
 name: Release
-run-name: "Release · ${{ github.ref_name }}"
+run-name: "Release · ${{ inputs.bump }}${{ inputs.dry_run && ' (dry run)' || '' }} · ${{ github.ref_name }}"
 
 on:
   workflow_dispatch:
+    inputs:
+      bump:
+        description: Semver bump of VERSION (current = release VERSION as it is, no bump)
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+          - current
+        default: patch
+      dry_run:
+        description: Bump + sync + notes only (no commit, tag, push, GitHub Release or Docs)
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   release:
-    name: semantic-release
+    name: Bump, tag, and publish release
+    runs-on: ubuntu-latest
     permissions:
       contents: write
-      issues: write
-      pull-requests: write
-
-    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.bump.outputs.tag }}
     steps:
+      - name: Require master
+        if: github.ref != 'refs/heads/master'
+        run: |
+          echo "Release runs from master only (got ${GITHUB_REF})" >&2
+          exit 1
+
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 0
+          # Pushes the release commit + tag. GH_TOKEN (PAT with repo scope) when
+          # master is branch-protected; otherwise the workflow's GITHUB_TOKEN.
+          token: ${{ secrets.GH_TOKEN || github.token }}
 
-      - name: Setup Node.js
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: "26"
-
-      - run: npm ci
-      - run: npx semantic-release
+      - name: Bump VERSION
+        id: bump
         env:
-          # Prefer GH_TOKEN (PAT) for branch-protected repos; otherwise empty secret falls back to GITHUB_TOKEN.
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
+          BUMP: ${{ inputs.bump }}
+        run: |
+          set -euo pipefail
+          current="$(tr -d '[:space:]' < VERSION)"
+          if [[ ! "$current" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            echo "Invalid VERSION: $current" >&2
+            exit 1
+          fi
+          major="${BASH_REMATCH[1]}"
+          minor="${BASH_REMATCH[2]}"
+          patch="${BASH_REMATCH[3]}"
+          case "$BUMP" in
+            major) major=$((major + 1)); minor=0; patch=0 ;;
+            minor) minor=$((minor + 1)); patch=0 ;;
+            patch) patch=$((patch + 1)) ;;
+            current) ;;
+            *) echo "Unknown bump: $BUMP" >&2; exit 1 ;;
+          esac
+          next="${major}.${minor}.${patch}"
+          echo "$next" > VERSION
+          echo "version=$next" >> "$GITHUB_OUTPUT"
+          echo "tag=v${next}" >> "$GITHUB_OUTPUT"
+          if [[ "$BUMP" == current ]]; then
+            echo "Releasing VERSION $next as it is (current)"
+          else
+            echo "Bumped $current -> $next ($BUMP)"
+          fi
+
+      - name: Reject duplicate tag
+        env:
+          BUMP: ${{ inputs.bump }}
+          TAG: ${{ steps.bump.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null \
+            || git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null; then
+            if [[ "$BUMP" == current ]]; then
+              echo "::error::Tag $TAG already exists: VERSION is already released. Run with patch, minor or major, or commit a new VERSION first." >&2
+            else
+              echo "::error::Tag $TAG already exists" >&2
+            fi
+            exit 1
+          fi
+
+      - name: Sync version copies
+        run: bash scripts/sync-version.sh
+
+      # Before the commit: the CHANGELOG.md section goes into the release commit.
+      - name: Build release notes and CHANGELOG
+        id: notes
+        env:
+          TAG: ${{ steps.bump.outputs.tag }}
+        run: |
+          set -euo pipefail
+          notes_file="${RUNNER_TEMP}/release-notes.md"
+          bash scripts/release-notes.sh "$TAG" "$notes_file"
+          echo "notes_file=$notes_file" >> "$GITHUB_OUTPUT"
+
+      - name: Show release diff
+        run: |
+          git status --short
+          git diff
+
+      - name: Commit, tag, and push
+        if: ${{ !inputs.dry_run }}
+        env:
+          TAG: ${{ steps.bump.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -u
+          # [skip ci] in the body: the push (made with GH_TOKEN) must not start
+          # CI / Install / Docs again; Docs runs below via workflow_call.
+          git commit -m "chore(release): ${TAG}" -m "[skip ci]"
+          git tag -a "$TAG" -m "Docklift ${TAG}"
+          # Atomic: if master moved since checkout, neither the commit nor the tag lands.
+          git push --atomic origin "HEAD:refs/heads/${GITHUB_REF_NAME}" "refs/tags/${TAG}"
+
+      - name: Create GitHub Release
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.bump.outputs.tag }}
+          NOTES_FILE: ${{ steps.notes.outputs.notes_file }}
+        run: |
+          set -euo pipefail
+          gh release create "$TAG" \
+            --title "Docklift ${TAG}" \
+            --notes-file "$NOTES_FILE" \
+            --verify-tag \
+            --latest
 
   docs:
     name: Docs
     needs: [release]
+    if: ${{ !inputs.dry_run }}
     uses: ./.github/workflows/docs.yml
+    with:
+      # The release tag: its CHANGELOG.md has the new section.
+      ref: ${{ needs.release.outputs.tag }}
     permissions:
       contents: read
       pages: write

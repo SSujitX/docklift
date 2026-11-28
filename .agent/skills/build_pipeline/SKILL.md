@@ -96,7 +96,8 @@ FROM alpine:3.24.4                                                # runtime
 - **server**: `CGO_ENABLED=0`, `GOTOOLCHAIN=local`, `-mod=readonly`. It deletes the tracked placeholder
   `server/web/dist`, copies the real `frontend/dist` in, and builds
   `go build -trimpath -ldflags "-s -w -X docklift/internal/version.Version=${v}" ./cmd/docklift`.
-  `v` is the `VERSION` build arg, or the `version` of the root `package.json` when the arg is empty.
+  `v` is the `VERSION` build arg, or the root `VERSION` file when the arg is empty. The dashboard
+  stage gets the same value (`DOCKLIFT_APP_VERSION`, else `vite.config.ts` reads `VERSION`).
   Both stages run on the build platform and cross-compile for `TARGETOS`/`TARGETARCH`
   (linux/amd64, linux/arm64), so multi-arch builds do not emulate Go or Bun.
 - **runtime** (`alpine:3.24.4`): `apk add ca-certificates tzdata docker-cli docker-cli-buildx
@@ -122,7 +123,7 @@ FROM alpine:3.24.4                                                # runtime
 
 `make build` (dashboard + binary into `bin/docklift`), `make server` (binary only, placeholder
 dashboard), `make test`, `make contract`, `make frontend`, `make lint`, `make vuln`, `make docker`,
-`make dev`, `make clean`. `VERSION` defaults to the root `package.json` version; `GOVULNCHECK_VERSION`
+`make dev`, `make clean`. `VERSION` defaults to the root `VERSION` file; `GOVULNCHECK_VERSION`
 (`v1.9.0`) matches `ci.yml`. The targets mirror the CI jobs.
 
 ## CI (`.github/workflows/`)
@@ -134,7 +135,7 @@ dashboard), `make test`, `make contract`, `make frontend`, `make lint`, `make vu
 | `go` | `gofmt -l server tests/contract`, `go vet` in `server` and `tests/contract`, `go test -count=1 ./...` in `server`, `govulncheck` |
 | `contract` | Builds the binary, runs `tests/contract` with `DOCKLIFT_GO_BIN` |
 | `frontend` | Bun 1.4.5: `bun install --frozen-lockfile`, `bunx tsc -p tsconfig.app.json --noEmit`, `bunx vite build`, `bun audit --prod` |
-| `shell` | `bash -n` + shellcheck on the install/upgrade/uninstall/`scripts` shell files, the `upgrade.sh` run-state test, `docker compose config`, compose-layout greps (exactly `backend certbot nginx-proxy`, `DASHBOARD_BIND:-0.0.0.0}:8080:8000`, fixed proxy addresses, `TRUSTED_PROXIES` default), release-blocker greps (`docker image prune` / `docker system prune` forbidden in non-test server code, Bun and Go base image pins) |
+| `shell` | `bash -n` + shellcheck on the install/upgrade/uninstall/`scripts` shell files, the `upgrade.sh` run-state test, `docker compose config`, compose-layout greps (exactly `backend certbot nginx-proxy`, `DASHBOARD_BIND:-0.0.0.0}:8080:8000`, fixed proxy addresses, `TRUSTED_PROXIES` default), `scripts/sync-version.sh check` (every copy of the version matches `VERSION`), release-blocker greps (`docker image prune` / `docker system prune` forbidden in non-test server code, Bun and Go base image pins) |
 | `docker` | `docker build`, smoke test (`/api/health`, `<div id="root">` served at `/`, health status, `docker`/`git`/`bash`/`nsenter`/`ps`/`railpack` present, `docker compose version`, `docker buildx version`), then Docker-gated `go test` (`DOCKLIFT_DOCKER=1`) for `server` and `tests/contract` |
 
 `install.yml` (push, pull request, manual, callable) runs `install.sh` on a clean runner, then
@@ -158,7 +159,7 @@ make dev                    # Go API on :8000 + Vite on :3600
 docker compose up -d --build              # build and start everything
 docker compose up -d --build backend      # rebuild the Docklift image only
 docker compose logs -f backend            # follow logs
-docker build --build-arg VERSION=2.2.0 -t docklift-backend .   # explicit version
+docker build --build-arg VERSION=3.1.0-rc.1 -t docklift-backend .   # explicit version
 ```
 
 ### Checks
@@ -178,7 +179,7 @@ cd server && go vet ./... && go test ./...
 | `bun audit --prod` fails | Vulnerable transitive dependency | Bump it or pin a fixed version in `frontend/package.json` `overrides` |
 | `error TS5102: Option 'baseUrl' has been removed` (or another removed option) | TypeScript 7 turned the 6.0 deprecations into errors | Drop the option (`paths` resolve relative to the tsconfig); see the TypeScript 7 release notes |
 | `Cannot find native binding` / missing `@rolldown/binding-*` or `lightningcss-*` | Vite 8 (Rolldown, Lightning CSS) uses per-platform native packages; `node_modules` was copied from another OS or installed without optional dependencies | Reinstall with `bun install --frozen-lockfile` on that platform |
-| `cannot determine version` in the Docker build | Root `package.json` has no `version` and no `VERSION` arg | Pass `--build-arg VERSION=...` |
+| `cannot determine version` in the Docker build | Root `VERSION` file empty (or missing from the build context, see `.dockerignore`) and no `VERSION` arg | Fix `VERSION`, or pass `--build-arg VERSION=...` |
 | Dashboard is the placeholder page | `frontend/dist` was not copied into `server/web/dist` before `go build` | Use `make build` or the Docker build |
 | `go: updates to go.mod needed` | Dependency change not committed in `go.mod`/`go.sum` | `cd server && go mod tidy`, commit both |
 

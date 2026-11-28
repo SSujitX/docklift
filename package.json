@@ -1,19 +1,6 @@
 {
   "name": "docklift-root",
   "private": true,
-  "scripts": {
-    "release": "semantic-release"
-  },
-  "devDependencies": {
-    "@semantic-release/changelog": "^7.0.0",
-    "@semantic-release/commit-analyzer": "^13.0.1",
-    "@semantic-release/exec": "^7.1.0",
-    "@semantic-release/git": "^11.0.1",
-    "@semantic-release/github": "^12.0.11",
-    "@semantic-release/npm": "^13.2.0",
-    "@semantic-release/release-notes-generator": "^14.1.1",
-    "conventional-changelog-conventionalcommits": "^10.4.1",
-    "semantic-release": "^26.0.1"
-  },
+  "description": "Not a Node package. The version lives in VERSION; scripts/sync-version.sh copies it here because the upgrade.sh of Docklift 3.0.0 and earlier installs reads it from this file.",
   "version": "3.0.0"
 }

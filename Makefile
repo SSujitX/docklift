@@ -16,8 +16,8 @@ SHELL := bash
 .SHELLFLAGS := -eu -o pipefail -c
 .DEFAULT_GOAL := build
 
-# Root package.json is the single source of the release version.
-VERSION ?= $(shell sed -n 's/^[[:space:]]*"version":[[:space:]]*"\([^"]*\)".*/\1/p' package.json | head -n 1)
+# The root VERSION file is the single source of the release version.
+VERSION ?= $(shell tr -d '[:space:]' < VERSION)
 GOVULNCHECK_VERSION ?= v1.9.0
 IMAGE ?= docklift-backend
 

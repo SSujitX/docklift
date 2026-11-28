@@ -1,7 +1,7 @@
 # Build context for the root Dockerfile: allow-list only what the image needs
-# (frontend sources, Go server sources, root package.json for the version).
+# (frontend sources, Go server sources, the root VERSION file).
 *
-!package.json
+!VERSION
 !frontend/
 !server/
 

@@ -120,6 +120,11 @@ jobs:
           shellcheck --version
           shellcheck "${scripts[@]}"
 
+      # VERSION is the single source of the release version; fails when a copy
+      # (package.json, frontend/package.json, release-pin examples) drifts.
+      - name: Version copies in sync (scripts/sync-version.sh check)
+        run: bash scripts/sync-version.sh check
+
       - name: Upgrade backend_run_state shell behavior (set -e + stubs)
         run: bash scripts/test-upgrade-backend-run-state.sh
 

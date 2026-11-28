@@ -12,7 +12,7 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        # Empty = the version in the root package.json.
+        # Empty = the version in the root VERSION file.
         VERSION: ${DOCKLIFT_BUILD_VERSION:-}
     container_name: docklift-backend
     hostname: docklift

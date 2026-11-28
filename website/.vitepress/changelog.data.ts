@@ -17,11 +17,13 @@ const rootChangelog = path.resolve(
 function splitReleases(src: string): string[] {
   const trimmed = src.replace(/^\uFEFF/, "").trim();
   if (!trimmed) return [];
-  return trimmed.split(/(?=^## \[)/m).filter((block) => block.trim().length > 0);
+  // "## [x.y.z](...)" per release; semantic-release wrote majors and minors as
+  // "# [x.y.0](...)" (up to 3.0.0), so split on both.
+  return trimmed.split(/(?=^##? \[)/m).filter((block) => block.trim().length > 0);
 }
 
 function versionOf(block: string): string {
-  const m = block.match(/^## \[([^\]]+)\]/);
+  const m = block.match(/^##? \[([^\]]+)\]/);
   return m?.[1] ?? "";
 }
 

@@ -118,7 +118,7 @@ elements and `top-20` for spaced ones.
   `setup_url` stay on the Vite origin, and uses its own keep-alive `http.Agent` (without one the
   proxy sends `Connection: close` on a reused keep-alive socket: intermittent `ECONNRESET` / 502)
 - Leave `VITE_API_URL` empty for same-origin / proxy (the production build does the same)
-- `__APP_VERSION__` is injected from `frontend/package.json` (shown in the sidebar footer)
+- `__APP_VERSION__` is injected from the root `VERSION` file (`vite.config.ts`; `DOCKLIFT_APP_VERSION` overrides it), shown in the sidebar footer
 - Path alias: `@/` -> `frontend/src/`
 
 ## Checks

@@ -1,91 +1,118 @@
 ---
 name: Release Process
-description: Guide to Docklift's automated release pipeline using semantic-release.
+description: Guide to Docklift's manual release flow (root VERSION file, sync-version.sh, Release workflow).
 ---
 
 # Release Process
 
-Docklift uses **semantic-release** to fully automate versioning, changelogs, and GitHub Releases.
+The root `VERSION` file (`X.Y.Z`, one line) is the single source of the product version. A release
+is a manual run of the **Release** workflow: it bumps `VERSION` (or releases it as it is), syncs the
+copies, writes the `CHANGELOG.md` section, commits, tags `vX.Y.Z`, publishes the GitHub Release
+"Docklift vX.Y.Z" and deploys the docs site.
 
 ## How It Works
 
 ```
-Push to master → CI + Install green → Run "Release" → semantic-release + Docs (Pages)
+Push to master → CI + Install green → Actions → "Release" (bump, dry_run) → tag + GitHub Release + Docs (Pages)
 ```
 
 ### Pipeline Steps
-1. **CI** (`ci.yml`) and **Install** (`install.yml`, Ubuntu matrix cell) run on push — not inside Release
-2. You manually run **Release** when those are green
-3. semantic-release analyzes commits, bumps the root `package.json` and `frontend/package.json`, updates `CHANGELOG.md`
-4. Commits `chore(release): X.Y.Z [skip ci]`, tags `vX.Y.Z`, creates GitHub Release
-5. Same Release run calls **Docs** (`workflow_call`) so docklift.dev gets the new changelog / Pages deploy
-6. Docs also runs alone on `website/**` / `CHANGELOG.md` pushes (no release needed)
+1. **CI** (`ci.yml`) and **Install** (`install.yml`) run on push; Release does not re-test. Wait for green.
+2. Run **Release** from master with `bump` = `patch` | `minor` | `major` | `current` and optionally `dry_run`.
+3. **Bump VERSION**: `patch` 3.0.0 → 3.0.1, `minor` → 3.1.0, `major` → 4.0.0. `current` keeps `VERSION`
+   as it is (for a `VERSION` you already changed in a commit).
+4. **Reject duplicate tag**: fails if `vX.Y.Z` exists locally or on origin. With `current` this means
+   "VERSION is already released": bump it, or commit a new `VERSION` first.
+5. **Sync version copies**: `scripts/sync-version.sh` (see below).
+6. **Build release notes and CHANGELOG**: `scripts/release-notes.sh vX.Y.Z NOTES_FILE` lists every
+   non-merge commit since the previous `v*` tag (oldest first, earlier `chore(release):` commits left
+   out) as `- subject ([sha](commit link))`. It writes the GitHub Release body (`## What's Changed`
+   + **Full Changelog** compare link) and adds `## [X.Y.Z](compare link) (YYYY-MM-DD)` with the same
+   list at the top of `CHANGELOG.md`. It fails when there is no commit since the previous tag.
+7. **Show release diff**: `git status` + `git diff` (the whole run so far is the dry-run preview).
+8. **Commit, tag, and push** (skipped on `dry_run`): `chore(release): vX.Y.Z` with `[skip ci]` in the
+   body, annotated tag `vX.Y.Z`, one `git push --atomic` of master and the tag (if master moved since
+   the run started, nothing lands).
+9. **Create GitHub Release** (skipped on `dry_run`): `gh release create vX.Y.Z --title "Docklift vX.Y.Z"
+   --verify-tag --latest`.
+10. **Docs** (skipped on `dry_run`): `docs.yml` via `workflow_call` with `ref: vX.Y.Z`, so docklift.dev
+    builds from the release commit (new changelog). Docs also runs alone on `website/**` /
+    `CHANGELOG.md` pushes.
 
-Homepage preview + `/changelog` sync from root `CHANGELOG.md` at VitePress build time (`website/scripts/sync-changelog.mjs`).
+The homepage preview and `/changelog` read the root `CHANGELOG.md` at VitePress build time
+(`website/scripts/sync-changelog.mjs`, `website/.vitepress/changelog.data.ts`, which splits releases on
+`## [x.y.z]` and the `# [x.y.0]` headings semantic-release wrote up to 3.0.0). Do not edit released
+sections by hand; fix wording in a later commit if needed.
 
 ## Key Files
 
 | File | Purpose |
 |------|---------|
-| `release.config.cjs` | semantic-release config (plugins, release rules, assets) |
-| `.github/workflows/release.yml` | Manual **Release** (semantic-release + Docs); Node 26 (semantic-release 26 requires >= 26.13) |
+| `VERSION` | **Version source of truth** |
+| `scripts/sync-version.sh` | `sync` (default) writes `VERSION` into every copy; `check` fails on drift (CI runs it) |
+| `scripts/release-notes.sh` | Release notes + `CHANGELOG.md` section from the git log since the previous tag |
+| `.github/workflows/release.yml` | Manual **Release** (`bump`, `dry_run`) + Docs |
 | `.github/workflows/install.yml` | Install smoke matrix (`fresh`, `from-release`; the `fresh` cell also runs `tests/e2e`) |
-| `.github/workflows/ci.yml` | Go fmt/vet/test/govulncheck, contract suite, frontend checks, shell checks, image build + smoke test |
-| `.github/workflows/docs.yml` | VitePress → GitHub Pages |
-| `CHANGELOG.md` | Auto-updated changelog |
-| `package.json` (root) | **Version source of truth** + semantic-release devDependencies |
+| `.github/workflows/ci.yml` | Go, contract suite, frontend, shell checks (incl. `sync-version.sh check`), image build + smoke test |
+| `.github/workflows/docs.yml` | VitePress → GitHub Pages (`workflow_call` input `ref`) |
+| `CHANGELOG.md` | One section per release, newest first |
+| `package.json` (root) | Not a Node package: only a synced `version` copy, kept for existing installs (below) |
 
-## Commit Convention
+## Where the version is read
 
-Commits **must** follow [Conventional Commits](https://www.conventionalcommits.org/) format:
+| Consumer | How it gets the version |
+|----------|-------------------------|
+| Go binary (`docklift/internal/version.Version`, `/api/health`, `/api/system/version`) | `-ldflags -X`: the `Dockerfile` reads `/src/VERSION` unless `--build-arg VERSION` is given (`DOCKLIFT_BUILD_VERSION` in compose); `make build` / `make server` / `make dev` read `VERSION` |
+| Dashboard label (`__APP_VERSION__`) | `frontend/vite.config.ts` reads `../VERSION`, or `DOCKLIFT_APP_VERSION` (the Dockerfile sets it from the `VERSION` build arg) |
+| `install.sh`, `install-dev.sh`, `upgrade.sh` | `$INSTALL_DIR/VERSION`; `install.sh` / `upgrade.sh` fall back to the root `package.json` for checkouts of 3.0.0 and older |
+| `frontend/package.json` `version` | Copy, synced |
+| Root `package.json` `version` | Copy, synced (see below) |
+| Release-pin examples (`v=X.Y.Z`, `DOCKLIFT_VERSION=X.Y.Z`, `--build-arg VERSION=X.Y.Z`) in `README.md`, `commands.md`, `website/guide/commands.md`, `website/guide/installation.md`, `install.sh`, `upgrade.sh`, `Dockerfile` | Copies, synced. Every such example in those files is rewritten; name an older release another way ("tag v2.1.6") |
 
-```
-type(scope): description
-```
+The Go module has no version of its own. `uninstall.sh` reads no version.
 
-### Release Rules (from `release.config.cjs`)
+### Why the root `package.json` stays
 
-| Commit Type | Release Type |
-|-------------|-------------|
-| `feat:` | patch |
-| `fix:` | patch |
-| `perf:`, `style:`, `refactor:` | patch |
-| `docs:`, `test:`, `ci:`, `chore:`, `build:` | patch |
-| `wip:` | patch |
-| `BREAKING CHANGE` (type, scope, or subject) | **major** |
-| `*force minor*` in subject | minor |
-| `*force major*` in subject | major |
-| `*force patch*` / `*force release*` in subject | patch |
-| `*skip release*` in subject | no release |
+The `upgrade.sh` shipped with 3.0.0 is on disk at `/opt/docklift/upgrade.sh` on existing installs, and
+the dashboard's **Upgrade** button runs that copy (`server/internal/api/system/host_linux.go`). After it
+checks out the new tag it reports the new version from the root `package.json`. Keeping a minimal
+`package.json` with the synced `version` lets those installs print `3.0.0 → X.Y.Z` instead of
+`unknown`. (2.1.x installs read `backend/package.json`, which 3.0.0 already removed.) The file can go
+once no supported install runs a pre-VERSION `upgrade.sh`.
 
-> **Note:** ALL commit types trigger a **patch** release. This is intentional — Docklift treats every commit type as release-worthy.
-
-### Examples
-
-Assume current version is **1.3.21** (root and frontend stay in sync):
+## How to Release
 
 ```bash
-# 1) Commit with conventional messages on master
-git commit -m "fix(deploy): description"       # → patch  → 1.3.22
-git commit -m "feat(api): description"          # → patch  → 1.3.22
-git commit -m "chore: cleanup"                  # → patch  → 1.3.22
-git commit -m "feat: something *force minor*"   # → minor  → 1.4.0
-git commit -m "feat: something *force major*"   # → major  → 2.0.0
-git commit -m "chore: docs *skip release*"      # → none   → stays 1.3.21
+# 1. Commit (conventional messages: they become the changelog lines) and push to master
+git commit -m "fix(deploy): description of change"
+git push origin master
 
-# 2) Push — wait for CI + Install to go green
-# 3) GitHub → Actions → "Release" → Run workflow
-# semantic-release bumps versions + CHANGELOG; Docs deploys in the same run
+# 2. Wait for CI + Install, then GitHub → Actions → "Release" → Run workflow
+#    bump: patch | minor | major | current, dry_run: true first to preview the diff and notes
+# 3. Run again with dry_run off
 ```
 
-| Commit signal | Release | Demo (`1.3.21` →) |
-|---------------|---------|-------------------|
-| `feat:`, `fix:`, `perf:`, `refactor:`, `docs:`, `test:`, `ci:`, `chore:` … | Patch | `1.3.22` |
-| `*force minor*` in subject | Minor | `1.4.0` |
-| `*force major*` / `BREAKING CHANGE` | Major | `2.0.0` |
-| `*skip release*` in subject | None | `1.3.21` (unchanged) |
+Local checks:
 
-Operator-facing copy: root [`commands.md`](../../../commands.md) §6 and website [`guide/commands.md`](../../../website/guide/commands.md).
+```bash
+./scripts/sync-version.sh check    # what CI runs
+./scripts/sync-version.sh          # after changing VERSION by hand (then commit; release with bump=current)
+```
+
+| `bump` | `VERSION` 3.0.0 → | Tag |
+|--------|-------------------|-----|
+| `patch` | 3.0.1 | `v3.0.1` |
+| `minor` | 3.1.0 | `v3.1.0` |
+| `major` | 4.0.0 | `v4.0.0` |
+| `current` | 3.0.0 (unchanged) | `v3.0.0`: fails, it exists |
+
+## What install and upgrade expect
+
+`install.sh` and `upgrade.sh` resolve the target through `GET /repos/SSujitX/docklift/releases/latest`
+(`tag_name`), check the tag with `git ls-remote`, then `git checkout` it; the server's version check
+(`/api/system/version`) strips the `v` from the same `tag_name`. Release tags must stay `vX.Y.Z`
+on master, and the GitHub Release must be the latest (non-draft, non-prerelease; `--latest`).
+The release title ("Docklift vX.Y.Z") is not read by anything.
 
 ## Server upgrade script (`upgrade.sh`)
 
@@ -116,64 +143,33 @@ When documenting or changing upgrades:
 
 Install scripts (`install.sh` / `install-dev.sh`): print Dashboard URL + Setup code; `cd /opt/docklift`
 before `docker compose`; same `format_time` rule. `install.sh` accepts optional release pin
-(`bash -s -- v=2.0.2` / `DOCKLIFT_VERSION`); default is GitHub `releases/latest`. Validates the
+(`bash -s -- v=X.Y.Z` / `DOCKLIFT_VERSION`); default is GitHub `releases/latest`. Validates the
 tag (ls-remote) before `compose down`; fails closed if latest cannot be resolved (no master fallback).
 
 Uninstall: DockLift-named/labelled resources only (incl. `dl-net-*`); **no** host-wide
 `docker system prune` / `builder prune`.
 
-## How to Release
-
-```bash
-# 1. Commit with a conventional message (see Examples above for bump → version map)
-git add -A
-git commit -m "fix(deploy): description of change"   # → patch
-
-# 2. Push to master
-git push origin master
-
-# 3. Wait for CI + Install, then Actions → "Release" → Run workflow
-# semantic-release + Docs (Pages) in one run
-```
-
-## Version Bump Strategy
-
-The root `package.json` `version` is the single source of truth. `@semantic-release/npm` bumps it.
-Nothing else needs a version edit:
-
-- The `Dockerfile` reads it (unless `--build-arg VERSION` is given) and stamps the Go binary with
-  `-ldflags "-X docklift/internal/version.Version=..."`. `make build` and `make dev` do the same.
-- `upgrade.sh` reads it from `package.json` to report the installed version.
-- The dashboard shows `frontend/package.json`'s version (`__APP_VERSION__` in `vite.config.ts`), so
-  `@semantic-release/exec` keeps that one in step:
-
-```bash
-npm version X.Y.Z --no-git-tag-version --allow-same-version --prefix frontend
-```
-
-The Go module has no version of its own.
-
-The `@semantic-release/git` plugin commits these files back:
-- `CHANGELOG.md`
-- `package.json`, `package-lock.json`
-- `frontend/package.json`
-- `npm-shrinkwrap.json` (listed in the config, not present in the repo today)
-
 ## GitHub Token
 
-The workflow uses `secrets.GH_TOKEN` (not the default `GITHUB_TOKEN`) to allow semantic-release to push commits back to master. This must be a Personal Access Token with `repo` scope.
+Checkout (and so the release push) uses `secrets.GH_TOKEN || github.token`. Set `GH_TOKEN` to a
+Personal Access Token with `repo` scope when master is branch-protected; otherwise the workflow's
+`GITHUB_TOKEN` (`contents: write`) is enough. `gh release create` uses `github.token`. A push made with
+the PAT would start CI / Install / Docs on the release commit; `[skip ci]` in the commit body stops that
+(Docs runs from Release instead). Pushes made with `GITHUB_TOKEN` start no workflows anyway.
 
 ## Troubleshooting
 
 | Issue | Fix |
 |-------|-----|
-| "No workspaces found" | Use `--prefix` instead of `--workspaces` in prepareCmd |
-| "Version not changed" | Add `--allow-same-version` flag |
-| No release created | Ensure commits use conventional format (`type: msg`) |
-| "Not allowed to push" | Check `GH_TOKEN` secret has `repo` scope |
-| Release shipped something broken | The Release workflow does not re-test; run CI and Install on master first and wait for green |
-| Binary reports the wrong version | Check the root `package.json` version and that the image build got no stale `VERSION` build arg (`DOCKLIFT_BUILD_VERSION` in compose) |
+| CI: "X is out of sync with VERSION" | Run `./scripts/sync-version.sh` and commit |
+| Release: "Tag vX.Y.Z already exists" | `current` on a released VERSION, or a tag made by hand: pick a bump, or delete the stray tag |
+| Release: "No commits since vX.Y.Z" | Nothing to release; commit something first |
+| Release: push rejected | master moved during the run (`--atomic`, nothing landed): run Release again; or the token cannot push to a protected master (set `GH_TOKEN`) |
+| "Release runs from master only" | Pick master in "Use workflow from" |
+| Release shipped something broken | Release does not re-test; run CI and Install on master first and wait for green |
+| Binary reports the wrong version | Check `VERSION` and that the image build got no stale `VERSION` build arg (`DOCKLIFT_BUILD_VERSION` in compose) |
+| Site shows no new changelog section | Docs must build the tag (`ref` input); re-run Docs with `workflow_dispatch` on master |
 
-## DO NOT Use `bumpp`
-
-The project previously used `bumpp` for manual version bumping. **Do not use `bumpp`** — it conflicts with semantic-release by creating tags that semantic-release doesn't expect. Let semantic-release handle all versioning.
+semantic-release (`release.config.cjs`, the root devDependencies) is gone; do not add it back, and do
+not bump versions with `npm version` / `bumpp`. Change `VERSION` (or let Release do it) and run
+`sync-version.sh`.

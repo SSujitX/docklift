@@ -130,7 +130,7 @@ Any other key gives 400. See the `logging_monitoring` skill for the stream forma
 
 ## Version Check
 
-`GET /api/system/version` returns `{ current, latest, updateAvailable, githubOk, checkedAt }`. `current` is the `docklift/internal/version.Version` set at build time (from the root `package.json`). It compares against GitHub `releases/latest`. TTL about 15 min when an update exists, 2 min when current, 30 s when GitHub fails (a failed probe is never cached as "no update"). Concurrent callers share one fetch; `?refresh=1` re-probes only if the cache is older than 30 s. The UI polls from the sidebar footer only.
+`GET /api/system/version` returns `{ current, latest, updateAvailable, githubOk, checkedAt }`. `current` is the `docklift/internal/version.Version` set at build time (from the root `VERSION` file). It compares against GitHub `releases/latest`. TTL about 15 min when an update exists, 2 min when current, 30 s when GitHub fails (a failed probe is never cached as "no update"). Concurrent callers share one fetch; `?refresh=1` re-probes only if the cache is older than 30 s. The UI polls from the sidebar footer only.
 
 ## Backup and Restore
 
@@ -197,7 +197,7 @@ Per-project failures produce `[ERROR]` lines and the stream ends as incomplete, 
 
 | Script | Purpose |
 |--------|---------|
-| `install.sh` | Production install into `/opt/docklift` (default **latest** release). Pin with `bash -s -- v=2.0.2` or `DOCKLIFT_VERSION`. Fails closed if the release tag cannot be resolved. Waits for health, prints `Dashboard: http://SERVER_IP:8080` and the **setup code** from `data/.bootstrap-secret`. Removes obsolete 2.x containers (`docklift-frontend`, `docklift-nginx`). |
+| `install.sh` | Production install into `/opt/docklift` (default **latest** release). Pin with `bash -s -- v=X.Y.Z` or `DOCKLIFT_VERSION`. Fails closed if the release tag cannot be resolved. Waits for health, prints `Dashboard: http://SERVER_IP:8080` and the **setup code** from `data/.bootstrap-secret`. Removes obsolete 2.x containers (`docklift-frontend`, `docklift-nginx`). |
 | `install-dev.sh` | Same, from `master` |
 | `upgrade.sh` | Stops the backend, takes an SQLite backup (`sqlite3 .backup`, or a file copy with the backend stopped), tags the running image `docklift-backend:pre-upgrade`, rebuilds, health-checks `/api/health`, and rolls back (tagged images plus database restore) on failure. Migrates a 2.x layout to the Go backend and removes the obsolete containers and the `docklift-frontend` image once the new backend is healthy. |
 | `uninstall.sh` | Removes Docklift containers, images, volumes, networks, build cache and `/opt/docklift`, restricted to Docklift-owned resources (`docklift*`, `dl_*`, `dl-*`, `dl-net-*`, `com.docklift.*` labels). Never a host-wide prune, never Docker Engine or git. |

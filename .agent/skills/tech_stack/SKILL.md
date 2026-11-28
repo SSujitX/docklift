@@ -27,7 +27,7 @@ quoting a version elsewhere.
 -   **Git**: the `git` binary, wrapped by `internal/gitops`
 -   **Host metrics**: [`gopsutil/v4`](https://github.com/shirou/gopsutil) (`internal/sysinfo`)
 -   **Logging**: standard library `log/slog`
--   **Version stamp**: `docklift/internal/version.Version`, set at link time from the root `package.json` version
+-   **Version stamp**: `docklift/internal/version.Version`, set at link time from the root `VERSION` file
 
 ## Frontend (`frontend/`)
 
@@ -67,6 +67,6 @@ The backend image also carries `docker-cli`, `docker-cli-buildx`, `docker-cli-co
 -   **CI**: GitHub Actions in `.github/workflows/` (`ci.yml`, `install.yml`, `release.yml`, `docs.yml`); actions are pinned by commit SHA
 -   **Frontend checks**: `bunx tsc -p tsconfig.app.json --noEmit`, `bunx vite build`, `bun audit --prod`
 -   **Shell scripts**: `bash -n` and shellcheck on `install.sh`, `install-dev.sh`, `upgrade.sh`, `uninstall.sh`, `scripts/*.sh`
--   **Releases**: [semantic-release](https://semantic-release.gitbook.io/) 26 (Node 26 in the workflow; semantic-release 26 needs Node >= 26.13), configured in `release.config.cjs`
+-   **Releases**: manual Release workflow (`release.yml`: `patch` / `minor` / `major` / `current` bump of the root `VERSION`, `scripts/sync-version.sh`, `scripts/release-notes.sh`); no Node tooling at the root
 -   **Docs site**: [VitePress](https://vitepress.dev/) in `website/`, deployed to GitHub Pages (https://docklift.dev)
 -   **Local entry points**: `Makefile` (`make build`, `test`, `contract`, `frontend`, `lint`, `vuln`, `docker`, `dev`)

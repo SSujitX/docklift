@@ -5,7 +5,7 @@ package version
 //
 //	go build -ldflags "-X docklift/internal/version.Version=<semver>"
 //
-// The root package.json "version" is the source of truth: the Dockerfile and
+// The root VERSION file is the source of truth: the Dockerfile and
 // `make build` read it and stamp it in. A plain `go build` reports the
 // development default below.
 var Version = "0.0.0-dev"

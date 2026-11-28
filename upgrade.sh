@@ -411,9 +411,15 @@ format_time() {
 }
 
 read_version() {
-    # Root package.json carries the release version in every layout (2.1.x and Go).
-    local v
-    v=$(grep -o '"version": *"[^"]*"' "$INSTALL_DIR/package.json" 2>/dev/null | head -1 | cut -d'"' -f4 || true)
+    # The root VERSION file carries the release version; releases up to 3.0.0
+    # (2.1.x and the first Go layout) only have it in the root package.json.
+    local v=""
+    if [ -f "$INSTALL_DIR/VERSION" ]; then
+        v=$(tr -d '[:space:]' < "$INSTALL_DIR/VERSION" || true)
+    fi
+    if [ -z "$v" ]; then
+        v=$(grep -o '"version": *"[^"]*"' "$INSTALL_DIR/package.json" 2>/dev/null | head -1 | cut -d'"' -f4 || true)
+    fi
     printf '%s' "${v:-unknown}"
 }
 

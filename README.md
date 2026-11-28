@@ -309,7 +309,7 @@ All variables are optional. Put them in `/opt/docklift/.env` (Compose reads it) 
 | `JWT_SECRET` | generated | Generated and kept in `data/.secrets` when empty. |
 | `INTERNAL_API_SECRET` | generated | Unused since 3.0; still read and stored so a rollback to 2.1.x works. |
 | `TRUSTED_PROXIES` | loopback and nginx-proxy | Peers whose `X-Forwarded-*` headers are believed. See [Security](#security). |
-| `DOCKLIFT_BUILD_VERSION` | root `package.json` | Version stamped into the image when building from a clone. |
+| `DOCKLIFT_BUILD_VERSION` | root `VERSION` file | Version stamped into the image when building from a clone. |
 
 The backend also reads `DATABASE_URL`, `DATA_PATH`, `DEPLOYMENTS_PATH`, `BACKUP_PATH`,
 `NGINX_CONF_PATH`, `LETSENCRYPT_PATH`, `DOCKER_NETWORK`, `CERTBOT_CONTAINER`,
@@ -362,7 +362,7 @@ Versions are the ones in `server/go.mod`, `frontend/package.json`, `Dockerfile` 
 | Frontend | React 19.3, Vite 8.4 (Rolldown), TypeScript 7.0 (native `tsc`), Tailwind CSS 4.3, Radix UI, React Router 7, Monaco editor, xterm.js 6, lucide, sonner. Built by Bun 1.4.5 and embedded in the Go binary with `go:embed`. |
 | Edge | nginx 1.30.8 (reverse proxy), certbot v5.10.0 (Let's Encrypt) |
 | Runtime | 3 containers: `docklift-backend` (alpine 3.24 image with the docker CLI, git, bash, Railpack), `docklift-nginx-proxy`, `docklift-certbot` |
-| Tooling | GitHub Actions (gofmt, go vet, go test, govulncheck, contract suite, frontend typecheck/build/audit, image build, install and upgrade test, end-to-end suite), semantic-release, VitePress docs |
+| Tooling | GitHub Actions (gofmt, go vet, go test, govulncheck, contract suite, frontend typecheck/build/audit, image build, install and upgrade test, end-to-end suite), manual Release workflow (root `VERSION`), VitePress docs |
 
 The Go server lives in `server/` (`cmd/docklift` for the entry point, `internal/` for the packages).
 SQL migrations are embedded and applied at start. The database keeps Prisma's `_prisma_migrations`
@@ -451,7 +451,7 @@ working directory of the server is loaded.
 | `make docker` | `docker build -t docklift-backend .` |
 | `docker compose up -d --build` | Build and start the whole stack from the clone |
 
-The version comes from the root `package.json` (bumped by semantic-release). The Dockerfile and
+The version comes from the root `VERSION` file (bumped by the Release workflow). The Dockerfile and
 `make build` stamp it into the binary with `-ldflags "-X docklift/internal/version.Version=..."`; a
 plain `go build` reports `0.0.0-dev`.
 
@@ -474,15 +474,16 @@ contract` also runs the tests that need a Docker daemon.
 
 - **CI** (`.github/workflows/ci.yml`): gofmt, `go vet`, `go test` and govulncheck; the contract
   suite against the built binary; frontend typecheck, build and `bun audit --prod`; `bash -n` and
-  shellcheck on the scripts, the upgrade-script regression test, the check that the scripts' shared
+  shellcheck on the scripts, `scripts/sync-version.sh check` (every copy of the version matches
+  `VERSION`), the upgrade-script regression test, the check that the scripts' shared
   progress helpers are identical and behave (`scripts/test-ui-helpers.sh`), `docker compose config` and layout
   checks; the image build with a smoke test (health, embedded dashboard, required tools), then the
   Docker-gated Go and contract tests.
 - **Install** (`.github/workflows/install.yml`): `install.sh` on a clean runner, first admin,
   checks, `upgrade.sh` over it, and also an install of the latest release upgraded to the current
   commit; then the end-to-end suite.
-- **Release** (`.github/workflows/release.yml`) runs semantic-release; **Docs** deploys the
-  VitePress site in `website/`.
+- **Release** (`.github/workflows/release.yml`, run by hand) bumps `VERSION`, tags and publishes the
+  GitHub Release; **Docs** deploys the VitePress site in `website/`.
 
 The frontend unit tests (`bun test`) are not part of the CI job yet.
 
@@ -501,10 +502,13 @@ install.sh upgrade.sh uninstall.sh install-dev.sh scripts/
 
 ### Releases
 
-Versions, `CHANGELOG.md` and GitHub Releases are produced by semantic-release from conventional
-commits; do not edit version fields by hand. Every conventional type ships a patch. Put
-`*force minor*` or `*force major*` (or a `BREAKING CHANGE`) in the subject for a larger bump, or
-`*skip release*` for none. Releases run from GitHub Actions, after CI and Install are green.
+The root `VERSION` file is the single source of the version. A release is a manual run of the
+**Release** workflow (GitHub Actions, after CI and Install are green) with a `bump` of `patch`,
+`minor`, `major` or `current` (release `VERSION` as it is) and an optional `dry_run`. It syncs every
+copy of the version (`scripts/sync-version.sh`), adds a `CHANGELOG.md` section listing the commits
+since the previous tag, commits `chore(release): vX.Y.Z`, tags `vX.Y.Z`, publishes the GitHub
+Release "Docklift vX.Y.Z" and deploys the docs. After changing `VERSION` by hand, run
+`./scripts/sync-version.sh`; CI fails on drift.
 See [commands.md](commands.md#6-version-check--release).
 
 ## Troubleshooting

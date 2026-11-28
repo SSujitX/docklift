@@ -1,5 +1,5 @@
 # Build VitePress site → GitHub Pages (docklift.dev).
-# Called from Release after semantic-release, or on website/CHANGELOG pushes.
+# Called from Release after the release commit + tag, or on website/CHANGELOG pushes.
 name: Docs
 run-name: "Docs · ${{ github.event_name == 'workflow_call' && format('after Release · {0}', github.ref_name) || github.event_name == 'workflow_dispatch' && format('manual · {0}', github.ref_name) || format('site · {0}', github.ref_name) }}"
 
@@ -12,6 +12,12 @@ on:
       - ".github/workflows/docs.yml"
   workflow_dispatch:
   workflow_call:
+    inputs:
+      ref:
+        description: Git ref to build (Release passes the new tag)
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -29,9 +35,11 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
-          # workflow_call from Release: tip of branch includes chore(release) + CHANGELOG.
+          # Called from Release: the new tag (chore(release) commit + CHANGELOG). A called
+          # workflow sees the caller's github context, so github.sha there is the commit
+          # Release started from, before the release commit.
           # push / dispatch: the triggering commit (or branch tip for dispatch).
-          ref: ${{ github.event_name == 'workflow_call' && github.ref_name || github.sha }}
+          ref: ${{ inputs.ref || github.sha }}
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: "1.4.5"

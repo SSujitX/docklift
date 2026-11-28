@@ -487,11 +487,11 @@ echo -e "  ${DIM}Self-Hosted Docker Deployment Platform${NC}\n"
 
 [ "$EUID" -ne 0 ] && echo -e "  ${RED}Error: Run with sudo${NC}" && exit 1
 
-# Pin a release: DOCKLIFT_VERSION=2.0.2 or bash -s -- v=2.0.2 (default: latest)
+# Pin a release: DOCKLIFT_VERSION=3.0.0 or bash -s -- v=3.0.0 (default: latest)
 # Examples:
 #   curl -fsSL .../install.sh | sudo bash
-#   curl -fsSL .../install.sh | sudo bash -s -- v=2.0.2
-#   curl -fsSL .../install.sh | sudo DOCKLIFT_VERSION=2.0.2 bash
+#   curl -fsSL .../install.sh | sudo bash -s -- v=3.0.0
+#   curl -fsSL .../install.sh | sudo DOCKLIFT_VERSION=3.0.0 bash
 REPO_URL="https://github.com/SSujitX/docklift.git"
 REQUESTED_VERSION="${DOCKLIFT_VERSION:-}"
 while [ $# -gt 0 ]; do
@@ -511,7 +511,7 @@ while [ $# -gt 0 ]; do
             ;;
         *)
             echo -e "  ${RED}Error: unknown install arg: $1${NC}"
-            echo -e "  ${DIM}Use: bash -s -- v=2.0.2   or   DOCKLIFT_VERSION=2.0.2${NC}"
+            echo -e "  ${DIM}Use: bash -s -- v=3.0.0   or   DOCKLIFT_VERSION=3.0.0${NC}"
             exit 1
             ;;
     esac
@@ -593,7 +593,7 @@ else
     if ! ui_run "Looking up release ${TARGET_TAG}" git ls-remote --exit-code --tags "$REPO_URL" "refs/tags/${TARGET_TAG}"; then
         fail_fetch \
             "Release tag not found: ${TARGET_TAG}" \
-            "See https://github.com/SSujitX/docklift/releases (e.g. bash -s -- v=2.0.2)."
+            "See https://github.com/SSujitX/docklift/releases (e.g. bash -s -- v=3.0.0)."
     fi
 
     if [ -d "$INSTALL_DIR/.git" ]; then
@@ -632,8 +632,15 @@ else
     fi
 fi
 
-# Root package.json is the single source of the release version
-VERSION=$(grep -o '"version": *"[^"]*"' "$INSTALL_DIR/package.json" 2>/dev/null | head -1 | cut -d'"' -f4 || true)
+# The root VERSION file carries the release version; releases up to 3.0.0
+# (a pinned older install) only have it in the root package.json.
+VERSION=""
+if [ -f "$INSTALL_DIR/VERSION" ]; then
+    VERSION=$(tr -d '[:space:]' < "$INSTALL_DIR/VERSION" || true)
+fi
+if [ -z "$VERSION" ]; then
+    VERSION=$(grep -o '"version": *"[^"]*"' "$INSTALL_DIR/package.json" 2>/dev/null | head -1 | cut -d'"' -f4 || true)
+fi
 VERSION=${VERSION:-unknown}
 ui_ok "Version $VERSION ($TARGET_TAG) $(format_time $(($(date +%s) - FETCH_ST)))"
 

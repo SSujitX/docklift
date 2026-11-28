@@ -24,8 +24,8 @@ data loader.
 **Docs** workflow (`.github/workflows/docs.yml`) deploys Pages when:
 
 - `website/**` or `CHANGELOG.md` is pushed, or
-- **Release** finishes and calls Docs via `workflow_call` (preferred after a version bump —
-  release commits use `[skip ci]`, so a push alone would not rebuild the site)
+- **Release** finishes and calls Docs via `workflow_call` with `ref` set to the new tag (release
+  commits carry `[skip ci]`, so their push alone does not rebuild the site)
 
 Output: `.vitepress/dist`.
 

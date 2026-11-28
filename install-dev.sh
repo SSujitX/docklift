@@ -521,8 +521,11 @@ else
     ui_run "Cloning https://github.com/SSujitX/docklift.git" git clone -q https://github.com/SSujitX/docklift.git "$INSTALL_DIR"
 fi
 cd "$INSTALL_DIR"
-# Root package.json is the single source of the release version
-VERSION=$(grep -o '"version": *"[^"]*"' "$INSTALL_DIR/package.json" 2>/dev/null | head -1 | cut -d'"' -f4 || true)
+# The root VERSION file carries the release version
+VERSION=""
+if [ -f "$INSTALL_DIR/VERSION" ]; then
+    VERSION=$(tr -d '[:space:]' < "$INSTALL_DIR/VERSION" || true)
+fi
 VERSION=${VERSION:-dev}
 COMMIT=$(cd "$INSTALL_DIR" && git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 ui_ok "Version $VERSION (master@$COMMIT) $(format_time $(($(date +%s) - FETCH_ST)))"

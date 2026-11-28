@@ -214,8 +214,8 @@ Guides: [API Reference](https://docklift.dev/guide/api), [AI Agents (MCP)](https
 ### See current version
 
 ```bash
-# Source of truth in the repo: the root package.json
-grep '"version"' package.json
+# Source of truth in the repo: the root VERSION file
+cat VERSION
 ```
 
 ```bash
@@ -224,40 +224,44 @@ curl -s http://SERVER_IP:8080/api/health   # only {"status":"ok"} while "Only al
 docker exec docklift-backend wget -qO- http://127.0.0.1:8000/api/health
 ```
 
-The UI also shows the version in the header / footer (authenticated compare against the latest release). The version is stamped into the Go binary at build time: the Docker build reads it from the root `package.json` (override with `--build-arg VERSION=…` or `DOCKLIFT_BUILD_VERSION=… docker compose build`), and `make build` does the same.
+The UI also shows the version in the header / footer (authenticated compare against the latest release). The version is stamped into the Go binary at build time: the Docker build reads it from the root `VERSION` file (override with `--build-arg VERSION=…` or `DOCKLIFT_BUILD_VERSION=… docker compose build`), and `make build` does the same.
 
-### How versions are changed (do not hand-edit)
+### How versions are changed
 
-Versioning is **automatic** via [semantic-release](https://github.com/semantic-release/semantic-release).
-Do **not** use `npm version`, `bumpp`, or manual bumps unless you know you are breaking the pipeline.
+The root `VERSION` file is the single source of the version. Releases are a **manual** run of the
+**Release** workflow; it bumps `VERSION` for you.
 
 ```bash
-# Assume current version is 1.3.21 (root package.json; frontend/package.json follows it)
-
-# 1) Commit with conventional messages on master
-git commit -m "fix(deploy): description"       # → patch  → 1.3.22
-git commit -m "feat(api): description"          # → patch  → 1.3.22
-git commit -m "chore: cleanup"                  # → patch  → 1.3.22
-git commit -m "feat: something *force minor*"   # → minor  → 1.4.0
-git commit -m "feat: something *force major*"   # → major  → 2.0.0
-git commit -m "chore: docs *skip release*"      # → none   → stays 1.3.21
-
+# 1) Commit with conventional messages on master (the subjects become the changelog lines)
+git commit -m "fix(deploy): description"
 # 2) Push — wait for CI + Install (Ubuntu) to go green
-# 3) GitHub → Actions → "Release" → Run workflow
-# semantic-release bumps package.json (root + frontend), CHANGELOG.md, tag + GitHub Release
-# Release then deploys Docs (changelog on docklift.dev). Do not edit CHANGELOG.md by hand.
+# 3) GitHub → Actions → "Release" → Run workflow: pick bump, run with dry_run first to preview
+# Release bumps VERSION, syncs the copies, adds the CHANGELOG.md section, commits
+# chore(release): vX.Y.Z, tags vX.Y.Z, publishes the GitHub Release "Docklift vX.Y.Z",
+# then deploys Docs (changelog on docklift.dev). Do not edit released CHANGELOG.md sections by hand.
 ```
 
-| Commit signal | Release | Demo (`1.3.21` →) |
-|---------------|---------|-------------------|
-| `feat:`, `fix:`, `perf:`, `refactor:`, `docs:`, `test:`, `ci:`, `chore:` … | Patch | `1.3.22` |
-| `*force minor*` in subject | Minor | `1.4.0` |
-| `*force major*` / `BREAKING CHANGE` | Major | `2.0.0` |
-| `*skip release*` in subject | None | `1.3.21` (unchanged) |
+| `bump` | Demo (`3.0.0` →) |
+|--------|------------------|
+| `patch` | `3.0.1` |
+| `minor` | `3.1.0` |
+| `major` | `4.0.0` |
+| `current` | `3.0.0`: releases `VERSION` as it is (after you changed it in a commit); fails if the tag exists |
 
-SemVer reminder: **patch** = bug fix / small change, **minor** = new feature (forced here), **major** = breaking change.
+`dry_run` does everything except the commit, tag, push, GitHub Release and Docs, and prints the diff
+and the release notes.
 
-Config: [`release.config.cjs`](https://github.com/SSujitX/docklift/blob/master/release.config.cjs) · Workflow: [`.github/workflows/release.yml`](https://github.com/SSujitX/docklift/blob/master/.github/workflows/release.yml)
+SemVer reminder: **patch** = bug fix / small change, **minor** = new feature, **major** = breaking change.
+
+Changing `VERSION` by hand (then release with `current`):
+
+```bash
+echo 3.1.0 > VERSION
+./scripts/sync-version.sh          # writes it into package.json, frontend/package.json and the docs' pin examples
+./scripts/sync-version.sh check    # what CI runs: fails when a copy drifts
+```
+
+Files: [`VERSION`](https://github.com/SSujitX/docklift/blob/master/VERSION) · [`scripts/sync-version.sh`](https://github.com/SSujitX/docklift/blob/master/scripts/sync-version.sh) · [`scripts/release-notes.sh`](https://github.com/SSujitX/docklift/blob/master/scripts/release-notes.sh) · Workflow: [`.github/workflows/release.yml`](https://github.com/SSujitX/docklift/blob/master/.github/workflows/release.yml)
 
 ### After a release on a server
 
@@ -409,7 +413,7 @@ Set in `docker-compose.yml`. Values written as `${…}` can be overridden from t
 | `CERTBOT_CONTAINER` / `NGINX_PROXY_CONTAINER` | `docklift-certbot` / `docklift-nginx-proxy` | Sidecar container names |
 | `DOCKLIFT_GITHUB_APP_ID`, `DOCKLIFT_GITHUB_CLIENT_ID`, `DOCKLIFT_GITHUB_CLIENT_SECRET`, `DOCKLIFT_GITHUB_PRIVATE_KEY_PATH` | unset | GitHub App (normally configured from the dashboard) |
 | `TERMINAL_ALLOW_NO_ORIGIN` | unset | `true` allows terminal WebSocket clients without an `Origin` header |
-| `DOCKLIFT_BUILD_VERSION` | root `package.json` | Version stamped into the image at build time |
+| `DOCKLIFT_BUILD_VERSION` | root `VERSION` file | Version stamped into the image at build time |
 
 ## Quick cheat sheet
 
@@ -423,7 +427,7 @@ Set in `docker-compose.yml`. Values written as `${…}` can be overridden from t
 | Reset password | `docker exec -it docklift-backend docklift reset-password` |
 | Reopen `:8080` (domain-only on) | `docker exec docklift-backend docklift panel-access open` |
 | New API token (scripts, MCP) | `docker exec docklift-backend docklift api-token create <name>` |
-| Check version | `grep '"version"' package.json` / `docker exec docklift-backend wget -qO- http://127.0.0.1:8000/api/health` |
+| Check version | `cat VERSION` / `docker exec docklift-backend wget -qO- http://127.0.0.1:8000/api/health` |
 | Run everything CI runs | `make lint test contract frontend docker` |
 | List apps | `docker ps --filter name=dl_` |
 | Ship a release | green CI + Install → Actions → **Release** |

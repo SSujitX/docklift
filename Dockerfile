@@ -4,8 +4,9 @@
 #   docker build -t docklift-backend .
 #   docker build --build-arg VERSION=3.0.0 -t docklift-backend .
 #
-# VERSION defaults to the "version" of the root package.json, the single
-# source of truth that semantic-release bumps.
+# VERSION defaults to the root VERSION file, the single source of the release
+# version (the Release workflow bumps it). It stamps the Go binary and the
+# dashboard's version label.
 #
 # The frontend and Go stages run on the build platform (the output is
 # architecture-independent JS, and Go cross-compiles), so multi-arch builds
@@ -13,16 +14,19 @@
 
 # --- 1. Dashboard (React + Vite) ---------------------------------------------
 FROM --platform=$BUILDPLATFORM oven/bun:1.4.5-alpine AS web
+ARG VERSION=
 WORKDIR /src/frontend
 COPY frontend/package.json frontend/bun.lock ./
 RUN --mount=type=cache,target=/root/.bun/install/cache \
     bun install --frozen-lockfile
 COPY frontend/ ./
+# vite.config.ts reads ../VERSION unless DOCKLIFT_APP_VERSION is set.
+COPY VERSION /src/VERSION
 # Same-origin API and WebSocket: the Go server serves both.
 ENV VITE_API_URL=
 # Vite only: CI typechecks (tsc), so the image build skips it and stays light
 # on 1 GB servers.
-RUN bunx vite build
+RUN DOCKLIFT_APP_VERSION="$VERSION" bunx vite build
 
 # --- 2. Go server --------------------------------------------------------------
 FROM --platform=$BUILDPLATFORM golang:1.27.4-alpine3.24 AS server
@@ -39,15 +43,15 @@ COPY server/go.mod server/go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod \
     go mod download
 COPY server/ ./
-COPY package.json /src/package.json
+COPY VERSION /src/VERSION
 # go:embed picks up the real build instead of the tracked placeholder.
 RUN rm -rf web/dist
 COPY --from=web /src/frontend/dist ./web/dist
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     set -eu; \
-    v="${VERSION:-$(sed -n 's/^[[:space:]]*"version":[[:space:]]*"\([^"]*\)".*/\1/p' /src/package.json | head -n 1)}"; \
-    [ -n "$v" ] || { echo "cannot determine version (root package.json)" >&2; exit 1; }; \
+    v="${VERSION:-$(tr -d '[:space:]' < /src/VERSION)}"; \
+    [ -n "$v" ] || { echo "cannot determine version (root VERSION file)" >&2; exit 1; }; \
     gogc="$GO_GOGC"; \
     mem_kb=$(awk '/^MemTotal:/ { print $2 }' /proc/meminfo 2>/dev/null || echo 0); \
     if [ -z "$gogc" ] && [ "${mem_kb:-0}" -gt 0 ] && [ "$mem_kb" -lt 1945600 ]; then gogc=50; fi; \
