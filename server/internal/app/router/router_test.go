@@ -284,3 +284,55 @@ func TestBackupSetupTokenFailsClosed(t *testing.T) {
 		t.Fatalf("setup token with a failing user count: %d %s", r.code, r.body)
 	}
 }
+
+// TestPanelAccessGuardsEveryRoute: the guard sits in front of the terminal
+// upgrade, the auth guards and the dashboard, and lets the proxy through.
+func TestPanelAccessGuardsEveryRoute(t *testing.T) {
+	d := apptest.NewDeps(t)
+	_, session := apptest.CreateAdmin(t, d, "ada@example.com", "password123")
+	h := New(d)
+	conf := "# docklift-panel-domain\nserver {\n    listen 443 ssl;\n    server_name panel.example.com;\n    set $dashboard docklift-backend.docklift_network;\n}\n"
+	if err := os.MkdirAll(d.Config.NginxConfPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(d.Config.NginxConfPath+"/panel.example.com.conf", []byte(conf), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.PanelAccess.Enable(t.Context(), "panel.example.com"); err != nil {
+		t.Fatal(err)
+	}
+	bearer := map[string]string{"Authorization": "Bearer " + session}
+	upgrade := map[string]string{"Upgrade": "websocket", "Connection": "Upgrade", "Sec-WebSocket-Version": "13",
+		"Sec-WebSocket-Key": "dGhlIHNhbXBsZSBub25jZQ==", "Origin": "http://203.0.113.9:8080"}
+	const gateway = "172.28.0.1:40000"
+	for _, tc := range []struct {
+		name, method, path string
+		headers            map[string]string
+	}{
+		{"session API", "GET", "/api/projects", bearer},
+		{"login", "POST", "/api/auth/login", nil},
+		{"terminal upgrade", "GET", "/ws/terminal?token=x", upgrade},
+		{"sse", "GET", "/api/system/logs/backend?token=x", map[string]string{"Accept": "text/event-stream"}},
+		{"asset", "GET", "/assets/app.js", nil},
+	} {
+		r := doFrom(t, h, gateway, tc.method, tc.path, tc.headers)
+		if r.code != 403 || r.errorMsg() != "Dashboard access by IP is disabled. Use https://panel.example.com" {
+			t.Errorf("direct %s = %d %s", tc.name, r.code, r.body)
+		}
+	}
+	if r := doFrom(t, h, gateway, "GET", "/settings?tab=domain", map[string]string{"Accept": "text/html"}); r.code != 302 || r.header.Get("Location") != "https://panel.example.com/settings?tab=domain" {
+		t.Errorf("direct navigation = %d %v", r.code, r.header)
+	}
+	if r := doFrom(t, h, gateway, "GET", "/api/health", nil); r.code != 200 || r.body != `{"status":"ok"}` {
+		t.Errorf("direct health = %d %s", r.code, r.body)
+	}
+	if r := doFrom(t, h, "127.0.0.1:40000", "GET", "/api/health", nil); r.code != 200 || !strings.Contains(r.body, `"instanceId"`) {
+		t.Errorf("in-container health (Docker healthcheck) = %d %s", r.code, r.body)
+	}
+	if r := doFrom(t, h, "172.28.255.254:40000", "GET", "/api/projects", bearer); r.code != 200 {
+		t.Errorf("through the proxy = %d %s", r.code, r.body)
+	}
+	if r := doFrom(t, h, "172.28.255.254:40000", "GET", "/", map[string]string{"Accept": "text/html"}); r.code != 200 {
+		t.Errorf("dashboard through the proxy = %d", r.code)
+	}
+}

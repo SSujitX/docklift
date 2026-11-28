@@ -27,10 +27,12 @@ import (
 
 	"docklift/internal/app"
 	"docklift/internal/app/apptest"
+	"docklift/internal/auth"
 	"docklift/internal/certs"
 	"docklift/internal/dnscheck"
 	"docklift/internal/httpx"
 	"docklift/internal/nginx"
+	"docklift/internal/panelaccess"
 )
 
 // fakeDocker answers every `docker exec` the nginx and certs services run.
@@ -527,4 +529,221 @@ func TestLockReleasesEntries(t *testing.T) {
 	if len(h.locks) != 0 {
 		t.Errorf("locks leaked: %v", h.locks)
 	}
+}
+
+// accessRequest says where a request comes from: the proxy (trusted peer
+// with X-Forwarded-Proto/-Host) or directly.
+type accessRequest struct {
+	viaProxy bool
+	proto    string // X-Forwarded-Proto when viaProxy
+	host     string // X-Forwarded-Host when viaProxy
+}
+
+// doAs is do for the signed-in admin userID, from the given place.
+func (f *fixture) doAs(t *testing.T, userID string, from accessRequest, method, path string, body any) (int, map[string]any, []any) {
+	t.Helper()
+	var rd io.Reader
+	if body != nil {
+		b, err := json.Marshal(body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rd = strings.NewReader(string(b))
+	}
+	req := httptest.NewRequest(method, path, rd)
+	req.Host = serverIP + ":8080"
+	if rd != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if from.viaProxy {
+		req.Header.Set("X-Forwarded-Proto", from.proto)
+		req.Header.Set("X-Forwarded-Host", from.host)
+	} else {
+		// A direct client may send anything; it is not believed.
+		req.Header.Set("X-Forwarded-Proto", "https")
+		req.Header.Set("X-Forwarded-Host", "panel.example.org")
+	}
+	ctx := httpx.WithPeerTrusted(req.Context(), from.viaProxy)
+	req = req.WithContext(auth.WithUser(ctx, auth.User{UserID: userID, Role: "admin"}))
+	rec := httptest.NewRecorder()
+	f.h.ServeHTTP(rec, req)
+	var obj map[string]any
+	var arr []any
+	raw := rec.Body.Bytes()
+	if len(raw) > 0 && raw[0] == '[' {
+		if err := json.Unmarshal(raw, &arr); err != nil {
+			t.Fatalf("%s %s: bad array %q", method, path, raw)
+		}
+	} else if err := json.Unmarshal(raw, &obj); err != nil {
+		t.Fatalf("%s %s: bad body %q", method, path, raw)
+	}
+	return rec.Code, obj, arr
+}
+
+// listedAccess is the access object of host in GET /.
+func (f *fixture) listedAccess(t *testing.T, userID string, from accessRequest, host string) map[string]any {
+	t.Helper()
+	code, _, list := f.doAs(t, userID, from, "GET", "/", nil)
+	if code != 200 {
+		t.Fatalf("list = %d", code)
+	}
+	for _, item := range list {
+		if m := item.(map[string]any); m["domain"] == host {
+			return m["access"].(map[string]any)
+		}
+	}
+	t.Fatalf("%s not listed: %v", host, list)
+	return nil
+}
+
+func (f *fixture) domainOnlyRow(t *testing.T) (string, bool) {
+	t.Helper()
+	v, ok, err := f.d.Store.GetSetting(context.Background(), panelaccess.SettingKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return v, ok
+}
+
+func TestPanelAccess(t *testing.T) {
+	f := newFixture(t)
+	u, _ := apptest.CreateAdmin(t, f.d, "ada@example.com", "password123")
+	const host = "panel.example.org"
+	f.installCert(t, host, 60)
+	if code, obj, _ := f.do(t, "POST", "/", map[string]any{"domain": host, "port": 8080}); code != 200 {
+		t.Fatalf("add = %d %v", code, obj)
+	}
+	f.do(t, "POST", "/", map[string]any{"domain": "plain.example.org", "port": 8080})
+	f.installCert(t, "app.example.org", 60)
+	f.do(t, "POST", "/", map[string]any{"domain": "app.example.org", "port": 3000})
+
+	direct := accessRequest{}
+	via := accessRequest{viaProxy: true, proto: "https", host: host}
+	open := "Open the dashboard at https://" + host + " first, then turn this on"
+	noCert := "https://plain.example.org has no certificate yet. Wait until HTTPS is active"
+	otherPort := "This domain points to another port, not the Docklift dashboard"
+	on := map[string]any{"domainOnly": true, "password": "password123"}
+
+	t.Run("status in the list", func(t *testing.T) {
+		if got := f.listedAccess(t, u.ID, direct, host); got["domainOnly"] != false || got["canEnable"] != false || got["reason"] != open {
+			t.Errorf("direct = %v", got)
+		}
+		if got := f.listedAccess(t, u.ID, via, host); got["domainOnly"] != false || got["canEnable"] != true || len(got) != 2 {
+			t.Errorf("through the domain = %v", got)
+		}
+		if got := f.listedAccess(t, u.ID, via, "plain.example.org"); got["canEnable"] != false || got["reason"] != noCert {
+			t.Errorf("no certificate = %v", got)
+		}
+		if got := f.listedAccess(t, u.ID, via, "app.example.org"); got["canEnable"] != false || got["reason"] != otherPort {
+			t.Errorf("other port = %v", got)
+		}
+	})
+
+	t.Run("validation", func(t *testing.T) {
+		for _, body := range []any{map[string]any{}, map[string]any{"domainOnly": "true"}, map[string]any{"domainOnly": 1}, map[string]any{"domainOnly": nil}} {
+			if code, obj, _ := f.doAs(t, u.ID, via, "PUT", "/"+host+"/access", body); code != 400 || obj["error"] != "domainOnly must be true or false" {
+				t.Errorf("%v = %d %v", body, code, obj)
+			}
+		}
+		if code, obj, _ := f.doAs(t, u.ID, via, "PUT", "/bad_domain.test/access", on); code != 400 || obj["error"] != msgInvalidFormat {
+			t.Errorf("invalid domain = %d %v", code, obj)
+		}
+		if code, obj, _ := f.doAs(t, u.ID, via, "PUT", "/missing.example.org/access", on); code != 404 || obj["error"] != msgNotFound {
+			t.Errorf("missing domain = %d %v", code, obj)
+		}
+	})
+
+	t.Run("enable guards", func(t *testing.T) {
+		for _, tc := range []struct {
+			name   string
+			from   accessRequest
+			domain string
+			msg    string
+		}{
+			{"not through the proxy", direct, host, open},
+			{"through the proxy for another host", accessRequest{viaProxy: true, proto: "https", host: "plain.example.org"}, host, open},
+			{"through the proxy over http", accessRequest{viaProxy: true, proto: "http", host: host}, host, open},
+			{"no certificate", accessRequest{viaProxy: true, proto: "https", host: "plain.example.org"}, "plain.example.org", noCert},
+			{"not the dashboard", accessRequest{viaProxy: true, proto: "https", host: "app.example.org"}, "app.example.org", otherPort},
+		} {
+			if code, obj, _ := f.doAs(t, u.ID, tc.from, "PUT", "/"+tc.domain+"/access", on); code != 409 || obj["error"] != tc.msg {
+				t.Errorf("%s = %d %v, want 409 %q", tc.name, code, obj, tc.msg)
+			}
+		}
+		code, obj, _ := f.doAs(t, u.ID, via, "PUT", "/"+host+"/access", map[string]any{"domainOnly": true})
+		if code != 403 || obj["requirePassword"] != true {
+			t.Errorf("no password = %d %v", code, obj)
+		}
+		code, obj, _ = f.doAs(t, u.ID, via, "PUT", "/"+host+"/access", map[string]any{"domainOnly": true, "password": "wrong"})
+		if code != 403 || obj["error"] != "Invalid password" {
+			t.Errorf("wrong password = %d %v", code, obj)
+		}
+		if _, ok := f.domainOnlyRow(t); ok || f.d.PanelAccess.Domain() != "" {
+			t.Fatal("a refused request changed the setting")
+		}
+	})
+
+	t.Run("enable and disable", func(t *testing.T) {
+		code, obj, _ := f.doAs(t, u.ID, via, "PUT", "/"+host+"/access", on)
+		access, _ := obj["access"].(map[string]any)
+		if code != 200 || obj["success"] != true || obj["domain"] != host || access["domainOnly"] != true {
+			t.Fatalf("enable = %d %v", code, obj)
+		}
+		if v, _ := f.domainOnlyRow(t); v != host || f.d.PanelAccess.Domain() != host {
+			t.Fatalf("setting %q cache %q", v, f.d.PanelAccess.Domain())
+		}
+		if got := f.listedAccess(t, u.ID, via, host); got["domainOnly"] != true {
+			t.Errorf("listed after enable = %v", got)
+		}
+		// Off for another domain changes nothing.
+		if code, obj, _ := f.doAs(t, u.ID, direct, "PUT", "/plain.example.org/access", map[string]any{"domainOnly": false}); code != 200 || f.d.PanelAccess.Domain() != host {
+			t.Errorf("off for another domain = %d %v", code, obj)
+		}
+		// Off needs no password and works from any session.
+		code, obj, _ = f.doAs(t, u.ID, direct, "PUT", "/"+host+"/access", map[string]any{"domainOnly": false})
+		if code != 200 || obj["access"].(map[string]any)["domainOnly"] != false || f.d.PanelAccess.Domain() != "" {
+			t.Fatalf("disable = %d %v", code, obj)
+		}
+		if v, ok := f.domainOnlyRow(t); ok {
+			t.Errorf("setting left: %q", v)
+		}
+	})
+
+	t.Run("certificate retry without a certificate turns it off", func(t *testing.T) {
+		if code, obj, _ := f.doAs(t, u.ID, via, "PUT", "/"+host+"/access", on); code != 200 {
+			t.Fatalf("enable = %d %v", code, obj)
+		}
+		f.setEmail(t)
+		f.docker.setCertbot(nil)
+		// The retry keeps HTTPS while a covering certificate exists.
+		f.do(t, "POST", "/"+host+"/ssl/retry", nil)
+		if f.d.PanelAccess.Domain() != host {
+			t.Fatal("a retry that kept HTTPS turned it off")
+		}
+		if err := os.RemoveAll(filepath.Join(f.le, "live", host)); err != nil {
+			t.Fatal(err)
+		}
+		f.do(t, "POST", "/"+host+"/ssl/retry", nil)
+		if strings.Contains(f.readConf(t, host), "listen 443") {
+			t.Fatal("retry kept HTTPS without a certificate")
+		}
+		if _, ok := f.domainOnlyRow(t); ok || f.d.PanelAccess.Domain() != "" {
+			t.Error("retry ended without HTTPS but the restriction stayed on")
+		}
+	})
+
+	t.Run("deleting the domain turns it off", func(t *testing.T) {
+		f.installCert(t, host, 60)
+		f.do(t, "POST", "/"+host+"/ssl/retry", nil)
+		if code, obj, _ := f.doAs(t, u.ID, via, "PUT", "/"+host+"/access", on); code != 200 {
+			t.Fatalf("enable = %d %v", code, obj)
+		}
+		f.docker.setReloadFails(true)
+		if code, _, _ := f.do(t, "DELETE", "/"+host, nil); code != 500 {
+			t.Fatalf("delete with a failing reload = %d", code)
+		}
+		if _, ok := f.domainOnlyRow(t); ok || f.d.PanelAccess.Domain() != "" {
+			t.Error("the conf is gone but the restriction stayed on")
+		}
+	})
 }

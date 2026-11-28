@@ -23,6 +23,7 @@ import (
 	"docklift/internal/gitops"
 	"docklift/internal/maintenance"
 	"docklift/internal/nginx"
+	"docklift/internal/panelaccess"
 	"docklift/internal/store"
 )
 
@@ -104,6 +105,7 @@ func serve(ctx context.Context, log *slog.Logger) (err error) {
 
 	st := store.New(database)
 	dockerX := dockerx.New(docker, cfg.DockerNetwork, cfg.NginxProxyContainer, log)
+	edge := nginx.NewStack(cfg, st, log)
 	d := &app.Deps{
 		Config:      cfg,
 		Log:         log,
@@ -114,7 +116,8 @@ func serve(ctx context.Context, log *slog.Logger) (err error) {
 		Docker:      docker,
 		DockerX:     dockerX,
 		Deploy:      deploy.NewRuntime(cfg, st, dockerX, log),
-		Edge:        nginx.NewStack(cfg, st, log),
+		Edge:        edge,
+		PanelAccess: panelaccess.New(st, edge.Nginx, log),
 		Git:         &gitops.Runner{},
 		InstanceID:  db.NewID(),
 		Background:  background,
@@ -124,6 +127,13 @@ func serve(ctx context.Context, log *slog.Logger) (err error) {
 
 	// Re-seal critical restore state from disk before accepting traffic.
 	d.Maintenance.LoadCriticalOnBoot()
+	// "Only allow access through the domain": read before accepting traffic
+	// (and turned off when its domain is gone), then re-read every
+	// RefreshInterval so `docklift panel-access` reaches this process.
+	if err := d.PanelAccess.Boot(ctx); err != nil {
+		return fmt.Errorf("panel access setting: %w", err)
+	}
+	go d.PanelAccess.Watch(background, panelaccess.RefreshInterval)
 
 	// Docker is optional for the API itself (local smoke runs have none).
 	if err := d.Lifecycle.Run(ctx, app.PhaseDockerNetwork); err != nil {

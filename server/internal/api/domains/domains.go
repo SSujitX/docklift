@@ -1,6 +1,7 @@
 // Package domains serves /api/domains: panel (dashboard) custom domains with
-// their Let's Encrypt certificates, DNS checks, SSL status and activity, and
-// the ACME account email.
+// their Let's Encrypt certificates, DNS checks, SSL status and activity,
+// "Only allow access through the domain" (internal/panelaccess) and the ACME
+// account email.
 //
 // Every hostname from the URL or the body is trimmed, lowercased and checked
 // against the hostname grammar before it reaches the nginx and certs
@@ -32,6 +33,7 @@ import (
 	"docklift/internal/httpx"
 	"docklift/internal/js"
 	"docklift/internal/nginx"
+	"docklift/internal/panelaccess"
 )
 
 // maxDNSCheckHosts is how many hostnames one DNS check looks at.
@@ -71,6 +73,7 @@ func Mount(r chi.Router, d *app.Deps) {
 	r.Post("/dns-check", h.dnsCheck)
 	r.Get("/{domain}/ssl", h.sslStatus)
 	r.Post("/{domain}/ssl/retry", h.sslRetry)
+	r.Put("/{domain}/access", h.setAccess)
 	r.Delete("/{domain}", h.remove)
 }
 
@@ -181,12 +184,25 @@ func (h *handlers) putEmail(w http.ResponseWriter, r *http.Request) {
 }
 
 type listedDomain struct {
-	Domain string       `json:"domain"`
-	Port   int          `json:"port"`
-	SSL    certs.Report `json:"ssl"`
+	Domain string             `json:"domain"`
+	Port   int                `json:"port"`
+	SSL    certs.Report       `json:"ssl"`
+	Access panelaccess.Status `json:"access"`
 }
 
-// GET / — panel domains with their SSL status.
+// access is the panel-access status of a listed domain for this request.
+func (h *handlers) access(r *http.Request, domain string) (panelaccess.Status, error) {
+	if !certs.IsValidHostname(domain) {
+		return panelaccess.Status{Reason: msgInvalidFormat}, nil
+	}
+	st, err := h.d.Edge.Nginx.PanelState(domain)
+	if err != nil {
+		return panelaccess.Status{}, err
+	}
+	return h.d.PanelAccess.StatusOf(r, domain, st), nil
+}
+
+// GET / — panel domains with their SSL and access status.
 func (h *handlers) list(w http.ResponseWriter, r *http.Request) {
 	domains, err := h.d.Edge.Nginx.ListPanelDomains()
 	if err != nil {
@@ -200,7 +216,12 @@ func (h *handlers) list(w http.ResponseWriter, r *http.Request) {
 			h.fail(w, "Failed to list domains", err)
 			return
 		}
-		out = append(out, listedDomain{Domain: p.Domain, Port: p.Port, SSL: ssl})
+		access, err := h.access(r, p.Domain)
+		if err != nil {
+			h.fail(w, "Failed to list domains", err)
+			return
+		}
+		out = append(out, listedDomain{Domain: p.Domain, Port: p.Port, SSL: ssl, Access: access})
 	}
 	httpx.JSON(w, http.StatusOK, out)
 }
@@ -369,6 +390,11 @@ func (h *handlers) sslRetry(w http.ResponseWriter, r *http.Request) {
 	defer unlock()
 
 	st, err := h.d.Edge.Nginx.RetryPanelSSL(ctx, domain)
+	// A retry that ends without HTTPS must not leave access restricted to it.
+	if rerr := h.d.PanelAccess.Reconcile(ctx); rerr != nil {
+		h.fail(w, "SSL retry failed", rerr)
+		return
+	}
 	if err != nil {
 		if errors.Is(err, nginx.ErrPanelDomainNotFound) {
 			httpx.Error(w, http.StatusNotFound, msgNotFound)
@@ -391,7 +417,14 @@ func (h *handlers) remove(w http.ResponseWriter, r *http.Request) {
 	unlock := h.lock(domain)
 	defer unlock()
 
-	if err := h.d.Edge.Nginx.DeletePanelDomain(ctx, domain); err != nil {
+	err := h.d.Edge.Nginx.DeletePanelDomain(ctx, domain)
+	// The conf is gone even when the reload failed: never leave access
+	// restricted to a domain that no longer exists.
+	if rerr := h.d.PanelAccess.Reconcile(ctx); rerr != nil {
+		h.fail(w, "Failed to delete domain", rerr)
+		return
+	}
+	if err != nil {
 		if errors.Is(err, nginx.ErrPanelDomainNotFound) {
 			httpx.Error(w, http.StatusNotFound, msgNotFound)
 			return
@@ -402,4 +435,68 @@ func (h *handlers) remove(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, struct {
 		Success bool `json:"success"`
 	}{true})
+}
+
+// PUT /:domain/access — turn "Only allow access through the domain" on
+// ({"domainOnly": true, "password": ...}) or off ({"domainOnly": false}).
+// Turning it on needs an HTTPS panel domain of the dashboard, a request that
+// came through the proxy over HTTPS for exactly that domain (so the admin
+// cannot lock themselves out of the page they are on) and the step-up
+// password. Turning it off needs only the session.
+func (h *handlers) setAccess(w http.ResponseWriter, r *http.Request) {
+	const failMsg = "Failed to change dashboard access"
+	domain, ok := validDomainParam(w, r)
+	if !ok {
+		return
+	}
+	on, isBool := httpx.BodyFrom(r).Get("domainOnly").Raw().(bool)
+	if !isBool {
+		httpx.Error(w, http.StatusBadRequest, "domainOnly must be true or false")
+		return
+	}
+	ctx, cancel := h.opContext()
+	defer cancel()
+	unlock := h.lock(domain)
+	defer unlock()
+
+	st, err := h.d.Edge.Nginx.PanelState(domain)
+	if err != nil {
+		h.fail(w, failMsg, err)
+		return
+	}
+	if !st.Exists {
+		httpx.Error(w, http.StatusNotFound, msgNotFound)
+		return
+	}
+	switch {
+	case on:
+		if reason := panelaccess.EnableBlocker(r, domain, st); reason != "" {
+			httpx.Error(w, http.StatusConflict, reason)
+			return
+		}
+		ok, err := h.d.Auth.RequireStepUpPassword(w, r)
+		if err != nil {
+			h.fail(w, failMsg, err)
+			return
+		}
+		if !ok {
+			return
+		}
+		if err := h.d.PanelAccess.Enable(ctx, domain); err != nil {
+			h.fail(w, failMsg, err)
+			return
+		}
+		h.d.Log.Info("[AUDIT] Dashboard access restricted to https://" + domain + " from IP: " + httpx.ClientIP(r))
+	case h.d.PanelAccess.Domain() == domain:
+		if _, err := h.d.PanelAccess.Disable(ctx); err != nil {
+			h.fail(w, failMsg, err)
+			return
+		}
+		h.d.Log.Info("[AUDIT] Dashboard access by IP reopened from IP: " + httpx.ClientIP(r))
+	}
+	httpx.JSON(w, http.StatusOK, struct {
+		Success bool               `json:"success"`
+		Domain  string             `json:"domain"`
+		Access  panelaccess.Status `json:"access"`
+	}{true, domain, h.d.PanelAccess.StatusOf(r, domain, st)})
 }

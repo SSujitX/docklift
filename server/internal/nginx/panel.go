@@ -27,6 +27,7 @@ var (
 	serverNameDirective = regexp.MustCompile(`server_name\s+([^;]+);`)
 	panelPortLine       = regexp.MustCompile(`# docklift-panel-port:\s*(\d+)`)
 	hostDockerPort      = regexp.MustCompile(`proxy_pass\s+http://host\.docker\.internal:(\d+);`)
+	panelHTTPSListen    = regexp.MustCompile(`(?m)^\s*listen\s+443\s+ssl\s*;`)
 )
 
 // PanelConfPath is the conf of a panel domain (<NGINX_CONF_PATH>/<domain>.conf).
@@ -140,6 +141,39 @@ func (s *Service) PanelDomainExists(domain string) (bool, error) {
 		return false, err
 	}
 	return true, nil
+}
+
+// PanelState is what the conf of one panel domain says about it.
+type PanelState struct {
+	// Exists is false when the domain has no panel conf.
+	Exists bool
+	// Dashboard is true when the conf proxies to the dashboard (port 8080)
+	// rather than to another host port.
+	Dashboard bool
+	// HTTPS is true when the conf serves the domain on :443 with a certificate.
+	HTTPS bool
+}
+
+// PanelState reads the panel conf of domain. A missing conf is a zero
+// PanelState and no error; the domain must be a valid hostname.
+func (s *Service) PanelState(domain string) (PanelState, error) {
+	path, err := s.PanelConfPath(domain)
+	if err != nil {
+		return PanelState{}, err
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return PanelState{}, nil
+		}
+		return PanelState{}, err
+	}
+	content := string(raw)
+	return PanelState{
+		Exists:    true,
+		Dashboard: strings.Contains(content, "$dashboard"),
+		HTTPS:     panelHTTPSListen.MatchString(content),
+	}, nil
 }
 
 // WritePanelDomainConfig writes a panel conf (after `nginx -t`, see

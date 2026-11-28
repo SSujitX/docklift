@@ -597,3 +597,36 @@ func TestStackBootAndWatcher(t *testing.T) {
 		t.Fatal("watcher did not stop")
 	}
 }
+
+// TestPanelState reads the generated panel confs: dashboard or host port,
+// with or without HTTPS.
+func TestPanelState(t *testing.T) {
+	e := newEnv(t)
+	if err := os.MkdirAll(e.confDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for golden, want := range map[string]PanelState{
+		"panel-dashboard-active.conf":    {Exists: true, Dashboard: true, HTTPS: true},
+		"panel-dashboard-http-only.conf": {Exists: true, Dashboard: true},
+		"panel-dashboard-pending.conf":   {Exists: true, Dashboard: true},
+		"panel-host-port-active.conf":    {Exists: true, HTTPS: true},
+		"panel-host-port-http-only.conf": {Exists: true},
+	} {
+		raw, err := os.ReadFile(filepath.Join("testdata", "golden", golden))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(e.confDir, "panel.example.com.conf"), raw, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if got, err := e.nginx.PanelState("panel.example.com"); err != nil || got != want {
+			t.Errorf("%s: %+v %v, want %+v", golden, got, err, want)
+		}
+	}
+	if got, err := e.nginx.PanelState("missing.example.com"); err != nil || got != (PanelState{}) {
+		t.Errorf("missing conf: %+v %v", got, err)
+	}
+	if _, err := e.nginx.PanelState("../etc"); err == nil {
+		t.Error("an invalid hostname must be refused")
+	}
+}

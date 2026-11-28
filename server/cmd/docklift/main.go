@@ -6,6 +6,7 @@
 //	docklift [serve]        run the server (default)
 //	docklift migrate        apply database migrations and exit
 //	docklift reset-password generate a new password for the first admin
+//	docklift panel-access   status|open|close [domain]: dashboard access by IP
 package main
 
 import (
@@ -30,7 +31,7 @@ func run(args []string) int {
 	if len(args) > 0 {
 		cmd = args[0]
 	}
-	if len(args) > 1 {
+	if len(args) > 1 && cmd != "panel-access" {
 		fmt.Fprintf(os.Stderr, "docklift %s takes no arguments\n", cmd)
 		return 2
 	}
@@ -46,6 +47,8 @@ func run(args []string) int {
 		err = migrate(ctx, log)
 	case "reset-password":
 		err = resetPassword(ctx, log)
+	case "panel-access":
+		err = panelAccess(ctx, log, args[1:])
 	case "help", "-h", "--help":
 		usage()
 		return 0
@@ -77,5 +80,7 @@ commands:
   serve           run the API server (default)
   migrate         apply database migrations and exit
   reset-password  set a random password for the first admin user and print it
+  panel-access    status | open | close [domain]: allow the dashboard only through
+                  its HTTPS panel domain, or by http://SERVER_IP:8080 again
 `)
 }

@@ -20,6 +20,7 @@ import (
 	"docklift/internal/gitops"
 	"docklift/internal/maintenance"
 	"docklift/internal/nginx"
+	"docklift/internal/panelaccess"
 	"docklift/internal/store"
 )
 
@@ -43,6 +44,9 @@ type Deps struct {
 	// Edge is the nginx/certificate/DNS stack. There is exactly one per
 	// process so every route shares the same SSL event log.
 	Edge *nginx.Stack
+	// PanelAccess is "Only allow access through the domain" (its cached
+	// setting and the middleware enforcing it).
+	PanelAccess *panelaccess.Guard
 	// Git runs git with the hardened defaults of internal/gitops.
 	Git *gitops.Runner
 	// InstanceID is a random UUID generated once per process (/api/health).

@@ -21,6 +21,7 @@ import (
 	"docklift/internal/gitops"
 	"docklift/internal/maintenance"
 	"docklift/internal/nginx"
+	"docklift/internal/panelaccess"
 	"docklift/internal/store"
 )
 
@@ -63,10 +64,12 @@ func NewDeps(t testing.TB) *app.Deps {
 	st := store.New(database)
 	secrets := auth.Secrets{JWTSecret: "apptest-jwt-secret", InternalAPISecret: "apptest-internal-secret"}
 	dockerX := dockerx.New(nil, cfg.DockerNetwork, cfg.NginxProxyContainer, log)
+	edge := nginx.NewStack(cfg, st, log)
 	return &app.Deps{
 		DockerX:     dockerX,
 		Deploy:      deploy.NewRuntime(cfg, st, dockerX, log),
-		Edge:        nginx.NewStack(cfg, st, log),
+		Edge:        edge,
+		PanelAccess: panelaccess.New(st, edge.Nginx, log),
 		Git:         &gitops.Runner{},
 		Config:      cfg,
 		Log:         log,

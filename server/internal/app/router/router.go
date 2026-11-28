@@ -60,8 +60,11 @@ func New(d *app.Deps) http.Handler {
 	root := chi.NewRouter()
 	// Peer trust is decided first: everything below (terminal origin check,
 	// HSTS, CORS, rate limits) reads forwarded headers only from trusted proxies.
+	// The panel-access guard comes right after it, before the terminal
+	// upgrade, every guard and body parser: while access is restricted to the
+	// panel domain, requests that did not come through the proxy stop there.
 	trust := httpx.NewTrustedProxies(d.Config.TrustedProxies.Trusted, d.Config.TrustedProxies.Excluded)
-	root.Use(httpx.Recover, trust.Middleware, httpx.HeadAsGet)
+	root.Use(httpx.Recover, trust.Middleware, d.PanelAccess.Middleware, httpx.HeadAsGet)
 	root.NotFound(httpx.NotFound)
 	root.MethodNotAllowed(httpx.NotFound)
 
