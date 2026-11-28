@@ -154,8 +154,8 @@ jobs:
           forbid -qE '^[[:space:]]*backend_run_state[[:space:]]*$' upgrade.sh
           grep -q 'arm_rollback' upgrade.sh
           grep -q 'remove_obsolete_containers' upgrade.sh
-          grep -q 'actions/checkout@v6' .github/workflows/ci.yml
-          forbid -q 'actions/checkout@v7' .github/workflows/*.yml
+          grep -qE 'actions/checkout@[0-9a-f]{40} # v6.' .github/workflows/ci.yml
+          forbid -qE 'actions/checkout@[0-9a-f]{40} # v7.' .github/workflows/*.yml
           grep -q 'oven/bun:1.4.5-alpine' Dockerfile
           grep -q 'golang:1.27.4-alpine' Dockerfile
           forbid -rF 'docker image prune' server/internal --include='*.go' --exclude='*_test.go'
