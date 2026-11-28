@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap') layer(base);
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap') layer(base);
 @import '@xterm/xterm/css/xterm.css' layer(base);
 
 @import 'tailwindcss';
@@ -27,6 +27,7 @@
 
   --color-muted: hsl(var(--muted));
   --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-subtle: hsl(var(--subtle));
 
   --color-accent: hsl(var(--accent));
   --color-accent-foreground: hsl(var(--accent-foreground));
@@ -47,14 +48,17 @@
   --color-brand: hsl(var(--brand));
   --color-brand-foreground: hsl(var(--brand-foreground));
 
-  --color-chart-1: hsl(var(--chart-1));
-  --color-chart-2: hsl(var(--chart-2));
-  --color-chart-3: hsl(var(--chart-3));
-  --color-chart-4: hsl(var(--chart-4));
-  --color-chart-5: hsl(var(--chart-5));
+  /* Status colours: state only, never decoration. */
+  --color-ok: hsl(var(--ok));
+  --color-warn: hsl(var(--warn));
+  --color-danger: hsl(var(--danger));
+  --color-info: hsl(var(--info));
 
-  /* Tailwind v3 palette values for the shades this app uses (v4 ships brighter oklch colours). */
---color-amber-50: #fffbeb;
+  /*
+    Tailwind v3 palette values for the shades pages still use (v4 ships brighter oklch colours).
+    Being replaced by the status tokens above; delete each entry once nothing references it.
+  */
+  --color-amber-50: #fffbeb;
   --color-amber-100: #fef3c7;
   --color-amber-200: #fde68a;
   --color-amber-300: #fcd34d;
@@ -131,12 +135,16 @@
   --color-zinc-800: #27272a;
   --color-zinc-900: #18181b;
 
+  /* 8px panels, 6px controls, 4px small boxes. Dialogs use rounded-[10px]. */
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
 
-  /* Tailwind v3 defaults for rings without an explicit colour (v4 uses currentColor). */
-  --default-ring-color: rgb(59 130 246 / 0.5);
+  /* The one shadow: menus, popovers, dialogs, toasts. `shadow-popover` */
+  --shadow-popover: 0 12px 32px -12px rgb(0 0 0 / 0.25);
+
+  /* Rings without an explicit colour use the brand ring (v4 would use currentColor). */
+  --default-ring-color: hsl(var(--ring) / 0.5);
 
   /*
     Tailwind v4 makes the line-height of text-xs/sm/base/... a unitless ratio, so a child with an
@@ -152,8 +160,8 @@
   --text-3xl--line-height: 2.25rem;
   --text-4xl--line-height: 2.5rem;
 
-  --font-sans: Inter, system-ui, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-sans: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 
@@ -184,6 +192,24 @@
     margin-inline-end: 0;
   }
 }
+
+/* Hide a scrollbar but keep the element scrollable (tab strips, filter rows). */
+@utility scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/*
+  A 1px bottom hairline drawn inside the box, so a child's 2px bottom border (the active tab
+  underline) sits on top of it, and it still works on an overflow-x scroller.
+*/
+@utility hairline-b {
+  box-shadow: inset 0 -1px 0 0 hsl(var(--border));
+}
+
 /*
   The default border color has changed to `currentcolor` in Tailwind CSS v4,
   so we've added these compatibility styles to make sure everything still
@@ -198,7 +224,7 @@
   ::before,
   ::backdrop,
   ::file-selector-button {
-    border-color: var(--color-gray-200, currentcolor);
+    border-color: var(--color-border, currentcolor);
   }
 }
 
@@ -211,7 +237,7 @@
 
   input::placeholder,
   textarea::placeholder {
-    color: var(--color-gray-400);
+    color: hsl(var(--subtle));
   }
 
   dialog {
@@ -221,114 +247,125 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 0 0% 3.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 0 0% 3.9%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 3.9%;
-    --primary: 0 0% 9%;
-    --primary-foreground: 0 0% 98%;
-    --secondary: 0 0% 96.1%;
-    --secondary-foreground: 0 0% 9%;
-    --muted: 0 0% 96.1%;
-    --muted-foreground: 0 0% 45.1%;
-    --accent: 0 0% 96.1%;
-    --accent-foreground: 0 0% 9%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 89.8%;
-    --input: 0 0% 89.8%;
-    --ring: 0 0% 3.9%;
-    --radius: 0.5rem;
-    --success: 142 71% 45%;
-    --warning: 38 92% 50%;
-    --chart-1: 12 76% 61%;
-    --chart-2: 173 58% 39%;
-    --chart-3: 197 37% 24%;
-    --chart-4: 43 74% 66%;
-    --chart-5: 27 87% 67%;
+    color-scheme: light;
 
-    /* Shell surface — the sidebar is its own plane, slightly recessed from content */
-    --sidebar: 0 0% 98%;
-    --sidebar-foreground: 0 0% 3.9%;
-    --sidebar-muted: 0 0% 45.1%;
-    --sidebar-border: 0 0% 91%;
-    --sidebar-accent: 0 0% 94%;
-    --brand: 189 94% 40%;
+    --background: 210 14% 97%;
+    --foreground: 213 22% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 213 22% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 213 22% 11%;
+    --primary: 213 22% 11%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 210 14% 94.5%;
+    --secondary-foreground: 213 22% 11%;
+    --muted: 210 14% 94.5%;
+    --muted-foreground: 214 9% 40%;
+    --subtle: 214 8% 54%;
+    --accent: 210 14% 94.5%;
+    --accent-foreground: 213 22% 11%;
+    --border: 214 14% 89%;
+    --input: 214 12% 82%;
+    --ring: 187 78% 28%;
+    --brand: 187 78% 28%;
     --brand-foreground: 0 0% 100%;
+    --ok: 152 55% 32%;
+    --warn: 32 88% 38%;
+    --danger: 4 68% 46%;
+    --info: 214 68% 46%;
+    --destructive: 4 68% 46%;
+    --destructive-foreground: 0 0% 100%;
+    --sidebar: 210 14% 97%;
+    --sidebar-foreground: 213 22% 11%;
+    --sidebar-muted: 214 9% 40%;
+    --sidebar-border: 214 14% 89%;
+    --sidebar-accent: 210 13% 92%;
+    --radius: 0.5rem;
   }
 
   .dark {
-    --background: 0 0% 3.9%;
-    --foreground: 0 0% 98%;
-    --card: 0 0% 3.9%;
-    --card-foreground: 0 0% 98%;
-    --popover: 0 0% 3.9%;
-    --popover-foreground: 0 0% 98%;
-    --primary: 0 0% 98%;
-    --primary-foreground: 0 0% 9%;
-    --secondary: 0 0% 14.9%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 0 0% 14.9%;
-    --muted-foreground: 0 0% 63.9%;
-    --accent: 0 0% 14.9%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 14.9%;
-    --input: 0 0% 14.9%;
-    --ring: 0 0% 83.1%;
-    --success: 142 71% 45%;
-    --warning: 38 92% 50%;
-    --chart-1: 220 70% 50%;
-    --chart-2: 160 60% 45%;
-    --chart-3: 30 80% 55%;
-    --chart-4: 280 65% 60%;
-    --chart-5: 340 75% 55%;
+    color-scheme: dark;
 
-    --sidebar: 0 0% 5.5%;
-    --sidebar-foreground: 0 0% 98%;
-    --sidebar-muted: 0 0% 60%;
-    --sidebar-border: 0 0% 13%;
-    --sidebar-accent: 0 0% 12%;
-    --brand: 189 94% 48%;
-    --brand-foreground: 0 0% 4%;
+    --background: 210 14% 7%;
+    --foreground: 210 14% 92%;
+    --card: 210 13% 9.5%;
+    --card-foreground: 210 14% 92%;
+    --popover: 210 12% 11.5%;
+    --popover-foreground: 210 14% 92%;
+    --primary: 210 14% 92%;
+    --primary-foreground: 210 14% 7%;
+    --secondary: 210 11% 13.5%;
+    --secondary-foreground: 210 14% 92%;
+    --muted: 210 11% 13.5%;
+    --muted-foreground: 212 9% 63%;
+    --subtle: 212 8% 46%;
+    --accent: 210 11% 13.5%;
+    --accent-foreground: 210 14% 92%;
+    --border: 210 10% 17%;
+    --input: 210 9% 23%;
+    --ring: 186 62% 52%;
+    --brand: 186 62% 52%;
+    --brand-foreground: 200 30% 8%;
+    --ok: 152 50% 50%;
+    --warn: 38 85% 58%;
+    --danger: 4 80% 66%;
+    --info: 214 82% 70%;
+    --destructive: 4 62% 50%;
+    --destructive-foreground: 0 0% 100%;
+    --sidebar: 210 14% 7%;
+    --sidebar-foreground: 210 14% 92%;
+    --sidebar-muted: 212 9% 63%;
+    --sidebar-border: 210 10% 17%;
+    --sidebar-accent: 210 11% 13.5%;
   }
 
   * {
     @apply border-border;
   }
 
+  html {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--input)) transparent;
+  }
+
   body {
     @apply bg-background text-foreground antialiased;
-    font-family: 'Inter', system-ui, sans-serif;
+    font-family: var(--font-sans);
     scroll-behavior: smooth;
   }
 
-  /* Selection colors - dark background with white text for maximum visibility */
+  /* Neutral selection: brand at low alpha, text keeps its colour. */
   ::selection {
-    background-color: rgba(30, 41, 59, 0.9); /* slate-800 */
-    color: #fff;
+    background-color: hsl(var(--brand) / 0.25);
   }
-  ::-moz-selection {
-    background-color: rgba(30, 41, 59, 0.9);
-    color: #fff;
-  }
-}
 
-/* Subtle Grain Effect */
-body::after {
-  content: "";
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  opacity: 0.015;
-  z-index: 9999;
-  pointer-events: none;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+  /* Every interactive element gets a visible keyboard focus outline unless it styles its own. */
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+
+  /* Icons: lucide at 1.75 stroke. A `stroke-[n]` utility still overrides this. */
+  svg.lucide {
+    stroke-width: 1.75;
+  }
+
+  /* Default icon size inside Button; any size/width/height utility on the icon wins. */
+  [data-slot='button'] svg {
+    width: 1rem;
+    height: 1rem;
+    flex-shrink: 0;
+    pointer-events: none;
+  }
+
+  /* Plex: tabular figures wherever mono is used for data. */
+  .font-mono,
+  code,
+  kbd,
+  samp,
+  pre {
+    font-variant-numeric: tabular-nums;
+  }
 }
 
 ::-webkit-scrollbar {
@@ -337,94 +374,40 @@ body::after {
 }
 
 ::-webkit-scrollbar-track {
-  @apply bg-transparent;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  @apply bg-border rounded-full;
+  background-color: hsl(var(--input));
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  @apply bg-muted-foreground/30;
+  background-color: hsl(var(--subtle));
 }
 
-@keyframes gradient {
-  0%, 100% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
-}
-
-.animate-gradient {
-  background-size: 200% 200%;
-  animation: gradient 8s ease infinite;
-}
-
-@keyframes shimmer {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(100%); }
-}
-
+/*
+  Legacy classes still referenced by page files (see redesign report). Kept as quiet, static
+  definitions so nothing breaks; remove them together with their last usage.
+*/
 .shimmer {
   position: relative;
   overflow: hidden;
 }
 
-.shimmer::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  transform: translateX(-100%);
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
-  animation: shimmer 2s infinite;
-}
-
-@keyframes pulse-ring {
-  0% { transform: scale(0.95); opacity: 1; }
-  100% { transform: scale(1.3); opacity: 0; }
-}
-
-.pulse-ring::before {
-  content: '';
-  position: absolute;
-  inset: -4px;
-  border-radius: 50%;
-  border: 2px solid currentColor;
-  animation: pulse-ring 1.5s ease-out infinite;
-}
-
-@keyframes float {
-  0%, 100% { transform: translateY(0px); }
-  50% { transform: translateY(-4px); }
-}
-
-.animate-float {
-  animation: float 3s ease-in-out infinite;
-}
-
-@keyframes progress-scan {
-  0% { left: -40%; width: 0%; }
-  50% { width: 40%; }
-  100% { left: 100%; width: 0%; }
-}
-
 .animate-progress-scan {
-  animation: progress-scan 2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-}
-
-.glass {
-  @apply bg-card/80 backdrop-blur-xl border border-border/50;
-}
-
-.glass-strong {
-  @apply bg-card/95 backdrop-blur-2xl border border-border/50;
+  left: 0;
 }
 
 /* ─── App shell ─────────────────────────────────────────────────────────────
    The sidebar is fixed so the document keeps scrolling normally; content is
    inset by the current rail width, which AppShell overrides when collapsed. */
 :root {
-  --shell-rail: 17rem;
-  --shell-rail-collapsed: 4.75rem;
-  --shell-topbar: 3.5rem;
+  --shell-rail: 14.5rem;
+  --shell-rail-collapsed: 3.5rem;
+  --shell-topbar: 3rem;
 }
 
 .shell-rail {
@@ -441,11 +424,8 @@ body::after {
   }
 }
 
-/* Hairline texture that gives the rail depth without a heavy border */
 .shell-rail-surface {
-  background-image:
-    linear-gradient(hsl(var(--sidebar)), hsl(var(--sidebar))),
-    radial-gradient(120% 60% at 0% 0%, hsl(var(--brand) / 0.09), transparent 70%);
+  background-color: hsl(var(--sidebar));
 }
 
 .shell-scroll {
@@ -465,24 +445,48 @@ body::after {
 }
 
 [data-sonner-toast].docklift-toast {
-  animation: docklift-toast-in 280ms cubic-bezier(0.16, 1, 0.3, 1);
+  animation: docklift-toast-in 140ms ease-out;
+}
+
+/* Status colour lives on the icon only; the surface stays neutral. */
+[data-sonner-toast][data-type='success'] [data-icon] {
+  color: hsl(var(--ok));
+}
+[data-sonner-toast][data-type='error'] [data-icon] {
+  color: hsl(var(--danger));
+}
+[data-sonner-toast][data-type='warning'] [data-icon] {
+  color: hsl(var(--warn));
+}
+[data-sonner-toast][data-type='info'] [data-icon] {
+  color: hsl(var(--info));
+}
+[data-sonner-toast][data-type='loading'] [data-icon] {
+  color: hsl(var(--subtle));
 }
 
 @keyframes docklift-toast-in {
   from {
     opacity: 0;
-    transform: translateY(-0.6rem) scale(0.98);
-    filter: blur(2px);
+    transform: translateY(-4px);
   }
   to {
     opacity: 1;
-    transform: translateY(0) scale(1);
-    filter: blur(0);
+    transform: translateY(0);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  [data-sonner-toast].docklift-toast {
-    animation: none;
+  html,
+  body {
+    scroll-behavior: auto;
+  }
+
+  *:not(.animate-spin),
+  *:not(.animate-spin)::before,
+  *:not(.animate-spin)::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }
