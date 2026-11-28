@@ -2,7 +2,7 @@
 # terminal and the embedded dashboard on PORT (8000).
 #
 #   docker build -t docklift-backend .
-#   docker build --build-arg VERSION=3.0.0 -t docklift-backend .
+#   docker build --build-arg VERSION=3.0.1 -t docklift-backend .
 #
 # VERSION defaults to the root VERSION file, the single source of the release
 # version (the Release workflow bumps it). It stamps the Go binary and the

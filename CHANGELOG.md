@@ -1,3 +1,10 @@
+## [3.0.1](https://github.com/SSujitX/docklift/compare/v3.0.0...v3.0.1) (2026-11-28)
+
+- build(release): manual VERSION-based release, drop semantic-release ([ab2e14c](https://github.com/SSujitX/docklift/commit/ab2e14ccab9ee59208cfeec8619b911cb4cf1aff))
+- ci: upgrade actions/checkout and setup-go to v7 ([546458e](https://github.com/SSujitX/docklift/commit/546458ee0fedd2d333da18e0bee007dbfb20c3c2))
+- docs(README): replace screenshots with the redesigned dashboard ([fa3ef21](https://github.com/SSujitX/docklift/commit/fa3ef216876f79a45b1e1d8599c1229ebebbc261))
+- fix(server): host RAM in the projects footer counted page cache as used ([2c24cde](https://github.com/SSujitX/docklift/commit/2c24cde77ce350ebccb743121023c56a89e3917d))
+
 # [3.0.0](https://github.com/SSujitX/docklift/compare/v2.1.6...v3.0.0) (2026-11-28)
 
 

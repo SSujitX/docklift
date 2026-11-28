@@ -1,6 +1,6 @@
 {
   "name": "docklift-dashboard",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "Docklift frontend - Vite dashboard for Docker management",
   "private": true,
   "type": "module",

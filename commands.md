@@ -36,12 +36,12 @@ curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh 
 
 ```bash
 # Fresh install — pin a release (argv; see github.com/SSujitX/docklift/releases)
-curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh | sudo bash -s -- v=3.0.0
+curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh | sudo bash -s -- v=3.0.1
 ```
 
 ```bash
 # Same pin via env
-curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh | sudo DOCKLIFT_VERSION=3.0.0 bash
+curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh | sudo DOCKLIFT_VERSION=3.0.1 bash
 ```
 
 ```bash
@@ -94,7 +94,7 @@ curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/upgrade.sh 
 
 ```bash
 # Upgrade to a specific release
-curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/upgrade.sh | sudo bash -s -- v=3.0.0
+curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/upgrade.sh | sudo bash -s -- v=3.0.1
 ```
 
 What `upgrade.sh` does, in order:

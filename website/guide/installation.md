@@ -13,11 +13,11 @@ curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh 
 Pin a specific release (see [Releases](https://github.com/SSujitX/docklift/releases)). Pass the version to bash, not in the curl URL:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh | sudo bash -s -- v=3.0.0
+curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh | sudo bash -s -- v=3.0.1
 ```
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh | sudo DOCKLIFT_VERSION=3.0.0 bash
+curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh | sudo DOCKLIFT_VERSION=3.0.1 bash
 ```
 
 Tags may include or omit a leading `v`. Omitting the pin installs latest.

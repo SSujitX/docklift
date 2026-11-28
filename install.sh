@@ -487,11 +487,11 @@ echo -e "  ${DIM}Self-Hosted Docker Deployment Platform${NC}\n"
 
 [ "$EUID" -ne 0 ] && echo -e "  ${RED}Error: Run with sudo${NC}" && exit 1
 
-# Pin a release: DOCKLIFT_VERSION=3.0.0 or bash -s -- v=3.0.0 (default: latest)
+# Pin a release: DOCKLIFT_VERSION=3.0.1 or bash -s -- v=3.0.1 (default: latest)
 # Examples:
 #   curl -fsSL .../install.sh | sudo bash
-#   curl -fsSL .../install.sh | sudo bash -s -- v=3.0.0
-#   curl -fsSL .../install.sh | sudo DOCKLIFT_VERSION=3.0.0 bash
+#   curl -fsSL .../install.sh | sudo bash -s -- v=3.0.1
+#   curl -fsSL .../install.sh | sudo DOCKLIFT_VERSION=3.0.1 bash
 REPO_URL="https://github.com/SSujitX/docklift.git"
 REQUESTED_VERSION="${DOCKLIFT_VERSION:-}"
 while [ $# -gt 0 ]; do
@@ -511,7 +511,7 @@ while [ $# -gt 0 ]; do
             ;;
         *)
             echo -e "  ${RED}Error: unknown install arg: $1${NC}"
-            echo -e "  ${DIM}Use: bash -s -- v=3.0.0   or   DOCKLIFT_VERSION=3.0.0${NC}"
+            echo -e "  ${DIM}Use: bash -s -- v=3.0.1   or   DOCKLIFT_VERSION=3.0.1${NC}"
             exit 1
             ;;
     esac
@@ -593,7 +593,7 @@ else
     if ! ui_run "Looking up release ${TARGET_TAG}" git ls-remote --exit-code --tags "$REPO_URL" "refs/tags/${TARGET_TAG}"; then
         fail_fetch \
             "Release tag not found: ${TARGET_TAG}" \
-            "See https://github.com/SSujitX/docklift/releases (e.g. bash -s -- v=3.0.0)."
+            "See https://github.com/SSujitX/docklift/releases (e.g. bash -s -- v=3.0.1)."
     fi
 
     if [ -d "$INSTALL_DIR/.git" ]; then

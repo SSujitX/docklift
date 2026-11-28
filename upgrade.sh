@@ -12,7 +12,7 @@ set -euo pipefail
 # the new backend is healthy.
 #
 #   curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/upgrade.sh | sudo bash
-#   ... | sudo bash -s -- v=3.0.0          # pin a release instead of the latest
+#   ... | sudo bash -s -- v=3.0.1          # pin a release instead of the latest
 #
 # Environment:
 #   DOCKLIFT_VERSION      release to upgrade to (default: latest GitHub release)
@@ -656,7 +656,7 @@ while [ $# -gt 0 ]; do
         v[0-9]*|[0-9]*.[0-9]*) REQUESTED_VERSION="$1" ;;
         *)
             echo -e "  ${RED}Error: unknown upgrade arg: $1${NC}"
-            echo -e "  ${DIM}Use: bash -s -- v=3.0.0   or   DOCKLIFT_VERSION=3.0.0${NC}"
+            echo -e "  ${DIM}Use: bash -s -- v=3.0.1   or   DOCKLIFT_VERSION=3.0.1${NC}"
             exit 1
             ;;
     esac

@@ -99,9 +99,9 @@ step fails it prints the last lines of that step's output and the full log
 bash (not in the URL):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh | sudo bash -s -- v=3.0.0
+curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh | sudo bash -s -- v=3.0.1
 # or
-curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh | sudo DOCKLIFT_VERSION=3.0.0 bash
+curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/install.sh | sudo DOCKLIFT_VERSION=3.0.1 bash
 ```
 
 `DOCKLIFT_INSTALL_DIR` changes the install directory. `install-dev.sh` installs unreleased code
@@ -257,7 +257,7 @@ Every tool call runs through the normal API with the token's permissions. See th
 ```bash
 curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/upgrade.sh | sudo bash
 # a specific release:
-curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/upgrade.sh | sudo bash -s -- v=3.0.0
+curl -fsSL https://raw.githubusercontent.com/SSujitX/docklift/master/upgrade.sh | sudo bash -s -- v=3.0.1
 ```
 
 `upgrade.sh` snapshots the database and nginx confs, builds the new image while nginx-proxy keeps

@@ -2,5 +2,5 @@
   "name": "docklift-root",
   "private": true,
   "description": "Not a Node package. The version lives in VERSION; scripts/sync-version.sh copies it here because the upgrade.sh of Docklift 3.0.0 and earlier installs reads it from this file.",
-  "version": "3.0.0"
+  "version": "3.0.1"
 }
